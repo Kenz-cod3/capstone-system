@@ -13,12 +13,16 @@ import AdminOrders from "./pages/admin/restaurant/OrdersReport";
 import ChatPage from "./pages/admin/messages/[userId]";
 
 // STAFF
+import StaffLayout from "./layouts/StaffLayout";
 import RestaurantDashboard from "./pages/staff/RestaurantDashboard";
 import Orders from "./pages/staff/Orders";
 import Menu from "./pages/staff/Menu";
+import Product from "./pages/staff/Product";
 
 // AUTH
 import Login from "./pages/auth/Login";
+
+
 
 export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
@@ -53,14 +57,17 @@ export default function App() {
 
             {/* 🍽️ STAFF ROUTES */}
             {user?.role === "staff" && (
-                <>
+                <Route element={<StaffLayout />}>
+
                     <Route path="/restaurant" element={<RestaurantDashboard />} />
                     <Route path="/orders" element={<Orders />} />
                     <Route path="/menu" element={<Menu />} />
+                    <Route path="/product" element={<Product />} />
 
                     {/* DEFAULT */}
                     <Route path="*" element={<Navigate to="/restaurant" />} />
-                </>
+
+                </Route>
             )}
         </Routes>
     );

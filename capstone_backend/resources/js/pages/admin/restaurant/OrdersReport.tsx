@@ -4,6 +4,7 @@ import api from "@/services/api";
 export default function AdminOrdersReport() {
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState("All");
 
     const fetchOrders = async () => {
         try {
@@ -25,8 +26,23 @@ export default function AdminOrdersReport() {
         fetchOrders();
     }, []);
 
-    const totalRevenue = orders.reduce(
-        (sum, o) => sum + Number(o.total_amount),
+    // 🔥 FILTERED ITEMS (FLAT)
+    const filteredItems = orders.flatMap((order: any) =>
+        order.items
+            .filter((item: any) => {
+                if (filter === "All") return true;
+                return item.menu_item?.category === filter;
+            })
+            .map((item: any) => ({
+                ...item,
+                order_id: order.id,
+                status: order.order_status
+            }))
+    );
+
+    // 💰 TOTAL BASED ON FILTER
+    const totalRevenue = filteredItems.reduce(
+        (sum, item) => sum + Number(item.subtotal),
         0
     );
 
@@ -39,10 +55,29 @@ export default function AdminOrdersReport() {
 
             <h2 className="text-2xl font-bold">Restaurant Sales Report</h2>
 
+            {/* 🔥 FILTER BUTTONS */}
+            <div className="flex gap-2">
+                {["All", "Drinks", "Meals", "Desserts"].map((cat) => (
+                    <button
+                        key={cat}
+                        onClick={() => setFilter(cat)}
+                        className={`px-4 py-2 rounded ${
+                            filter === cat
+                                ? "bg-orange-500 text-white"
+                                : "bg-gray-200"
+                        }`}
+                    >
+                        {cat}
+                    </button>
+                ))}
+            </div>
+
             {/* 💰 TOTAL */}
             <div className="bg-green-500 text-white p-4 rounded-xl w-fit">
-                <p>Total Revenue</p>
-                <h2 className="text-xl font-bold">₱{totalRevenue}</h2>
+                <p>Total Revenue ({filter})</p>
+                <h2 className="text-xl font-bold">
+                    ₱{totalRevenue.toFixed(2)}
+                </h2>
             </div>
 
             {/* 📊 TABLE */}
@@ -52,54 +87,42 @@ export default function AdminOrdersReport() {
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="p-3 text-left">Order #</th>
-                            <th className="p-3 text-left">Products</th>
-                            <th className="p-3 text-left">Total</th>
+                            <th className="p-3 text-left">Product</th>
+                            <th className="p-3 text-left">Subtotal</th>
                             <th className="p-3 text-left">Status</th>
                         </tr>
                     </thead>
 
                     <tbody>
-                        {orders.length === 0 && (
+                        {filteredItems.length === 0 && (
                             <tr>
                                 <td colSpan={4} className="p-4 text-center">
-                                    No paid orders yet
+                                    No data found
                                 </td>
                             </tr>
                         )}
 
-                        {orders.map((order: any) => (
-                            <tr key={order.id} className="border-t">
+                        {filteredItems.map((item: any, i: number) => (
+                            <tr key={i} className="border-t">
 
                                 {/* ORDER ID */}
                                 <td className="p-3">
-                                    #{order.id}
+                                    #{item.order_id}
                                 </td>
 
-                                {/* 🔥 PRODUCTS COLUMN */}
+                                {/* PRODUCT */}
                                 <td className="p-3">
-                                    {order.items && order.items.length > 0 ? (
-                                        order.items.map((item: any, i: number) => {
-                                            const name = item.menuItem?.name || `Product #${item.menu_item_id}`;
-
-                                            return (
-                                                <div key={i}>
-                                                    {name} x {item.quantity}
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <span className="text-gray-400">No items</span>
-                                    )}
+                                    {item.menu_item?.name} x {item.quantity}
                                 </td>
 
-                                {/* TOTAL */}
+                                {/* SUBTOTAL */}
                                 <td className="p-3 font-semibold">
-                                    ₱{order.total_amount}
+                                    ₱{Number(item.subtotal).toFixed(2)}
                                 </td>
 
                                 {/* STATUS */}
-                                <td className="p-3 capitalize text-green-600">
-                                    {order.order_status}
+                                <td className="p-3 text-green-600 capitalize">
+                                    {item.status}
                                 </td>
 
                             </tr>

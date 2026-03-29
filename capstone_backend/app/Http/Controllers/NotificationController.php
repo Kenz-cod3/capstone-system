@@ -46,19 +46,19 @@ class NotificationController extends Controller
 
 
 
-    // 🔹 MARK AS READ
-    public function update($id)
-    {
-        $notification = Notification::findOrFail($id);
+    // // 🔹 MARK AS READ
+    // public function update($id)
+    // {
+    //     $notification = Notification::findOrFail($id);
 
-        $notification->update([
-            'is_read' => true
-        ]);
+    //     $notification->update([
+    //         'is_read' => true
+    //     ]);
 
-        return response()->json([
-            'message' => 'Marked as read'
-        ]);
-    }
+    //     return response()->json([
+    //         'message' => 'Marked as read'
+    //     ]);
+    // }
 
     // 🔹 DELETE NOTIFICATION
     public function destroy($id)
@@ -84,7 +84,7 @@ class NotificationController extends Controller
 
     public function markAsRead($id)
     {
-        $notification = \App\Models\Notification::findOrFail($id);
+        $notification = Notification::findOrFail($id);
 
         $notification->update([
             'is_read' => true
@@ -105,12 +105,15 @@ class NotificationController extends Controller
     }
 
     // 🔥 GET NOTIFICATIONS PER USER (ADMIN ONLY)
-    public function getByUser($id)
+    public function getByUser(Request $request, $id)
     {
+        $limit = $request->query('limit', 10);
+
         return response()->json(
             Notification::where('user_id', $id)
-                ->orderByDesc('created_at')
-                ->limit(20)->get(),
+                ->latest()
+                ->take($limit)
+                ->get(),
             200
         );
     }

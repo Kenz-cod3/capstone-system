@@ -393,7 +393,7 @@ const OccupancyTrendChart = ({ data }: { data: OccupancyTrendItem[] }) => (
         </CardHeader>
         <CardContent className="pt-4">
             <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={300}>
                     <AreaChart data={data}>
                         <defs>
                             <linearGradient id="mintGradient" x1="0" y1="0" x2="0" y2="1">
@@ -438,7 +438,7 @@ const RoomStatusChart = ({ data }: { data: RoomStatusItem[] }) => (
         </CardHeader>
         <CardContent className="pt-4">
             <div className="h-80 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                         <Pie
                             data={data}

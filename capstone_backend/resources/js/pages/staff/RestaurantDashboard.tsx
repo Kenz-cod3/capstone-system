@@ -39,7 +39,7 @@ export default function RestaurantDashboard() {
     );
 
     return (
-        <StaffLayout>
+        <div>
             <h1 className="text-2xl font-bold mb-6">
                 🍽️ Restaurant Dashboard
             </h1>
@@ -91,6 +91,6 @@ export default function RestaurantDashboard() {
                 )}
             </div>
 
-        </StaffLayout>
+        </div>
     );
 }

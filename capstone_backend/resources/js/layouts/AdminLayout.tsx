@@ -66,6 +66,8 @@ const AdminLayout = ({
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
+    const [limit, setLimit] = useState(10); // 🔥 how many notif to show
+    const [expanded, setExpanded] = useState(false);
 
     const notifRef = useRef<HTMLDivElement | null>(null);
     const isScrolling = useRef(false);
@@ -214,7 +216,6 @@ const AdminLayout = ({
         if (!user?.id) return;
         if (document.visibilityState !== "visible") return;
         if (isScrolling.current) return;
-        if (isClickingNotif.current) return;
 
         if (isFirstLoad.current) {
             setNotificationsLoading(true);
@@ -222,36 +223,34 @@ const AdminLayout = ({
 
         try {
             const scrollTop = notifRef.current?.scrollTop || 0;
+            const prevHeight = notifRef.current?.scrollHeight || 0;
 
             const wasAtBottom =
                 notifRef.current &&
                 notifRef.current.scrollHeight - notifRef.current.scrollTop <= notifRef.current.clientHeight + 5;
 
-            const res = await api.get(`/notifications/user/${user.id}`);
+            const res = await api.get(`/notifications/user/${user.id}?limit=${limit}`);
 
             const notificationsData = res.data || [];
+            setNotifications(notificationsData);
+
+            // 🔥 RESTORE SCROLL POSITION
+            setTimeout(() => {
+                if (notifRef.current && isClickingNotif.current) {
+                    const newHeight = notifRef.current.scrollHeight;
+
+                    notifRef.current.scrollTop =
+                        scrollTop + (newHeight - prevHeight);
+
+                    isClickingNotif.current = false;
+                }
+            }, 0);
 
             // ✅ unread count (backend source of truth)
             const unreadRes = await api.get(`/notifications/user/${user.id}/unread-count`);
             setUnreadCount(unreadRes.data.count);
 
             let hasChanged = false;
-
-            setNotifications(prev => {
-                const merged = notificationsData;
-
-                const isSame =
-                    prev.length === merged.length &&
-                    prev.every(p =>
-                        merged.some((m: any) => m.id === p.id && m.is_read === p.is_read)
-                    );
-
-                if (isSame) return prev;
-
-                hasChanged = true;
-
-                return merged;
-            });
 
             // ✅ RESTORE SCROLL
             if (hasChanged) {
@@ -270,7 +269,7 @@ const AdminLayout = ({
                 isFirstLoad.current = false;
             }
         }
-    }, [user?.id, isNotifOpen]);
+    }, [user?.id, isNotifOpen, limit]);
 
     const markNotificationAsRead = async (id: number) => {
         try {
@@ -310,15 +309,7 @@ const AdminLayout = ({
         if (!user?.id) return;
 
         fetchNotifications();
-        fetchMessages();
-
-        const interval = setInterval(() => {
-            fetchNotifications();
-            fetchMessages();
-        }, 7000);
-
-        return () => clearInterval(interval);
-    }, []);
+    }, [limit]); // 🔥 refetch when limit changes
 
     if (!user) {
         return null;
@@ -362,7 +353,8 @@ const AdminLayout = ({
 
     const timeAgo = (dateString: string) => {
         const now = new Date();
-        const date = new Date(dateString);
+        const date = new Date(dateString); // 🔥 FIX
+
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
         if (seconds < 60) return "Just now";
@@ -470,6 +462,8 @@ const AdminLayout = ({
 
     const NotificationDropdownContent = () => (
         <div className="w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl">
+
+            {/* HEADER */}
             <div className="flex items-center justify-between px-4 py-3 border-b bg-white rounded-t-lg">
                 <h2 className="text-sm font-semibold text-gray-800">Notifications</h2>
                 <div className="flex items-center gap-2">
@@ -492,70 +486,88 @@ const AdminLayout = ({
                 </div>
             </div>
 
-            <div
-                ref={notifRef}
-                onScroll={(e) => {
-                    notifScroll.current = e.currentTarget.scrollTop;
+            {/* SCROLL AREA */}
+            <div className="relative">
+                <div
+                    ref={notifRef}
+                    onScroll={(e) => {
+                        const el = e.currentTarget;
+                        notifScroll.current = el.scrollTop;
+                        isScrolling.current = true;
 
-                    isScrolling.current = true;
-
-                    setTimeout(() => {
-                        isScrolling.current = false;
-                    }, 800);
-                }}
-                className="max-h-96 overflow-y-auto scrollbar-hide"
-            >
-                {notificationsLoading ? (
-                    <div className="p-8 text-center text-gray-400 text-sm">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
-                        Loading notifications...
-                    </div>
-                ) : notifications.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400 text-sm">
-                        You're all caught up 🎉
-                    </div>
-                ) : (
-                    notifications.map((n) => {
-                        const time = timeAgo(n.created_at);
-                        return (
-                            <div
-                                key={n.id}
-                                onClick={() => markNotificationAsRead(n.id)}
-                                className={`px-4 py-3 border-b cursor-pointer hover:bg-gray-50 transition-colors relative
-                                    ${!n.is_read ? 'bg-blue-50' : 'bg-white'}`}
-                            >
-                                {!n.is_read && (
-                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
-                                )}
-                                <div className="flex justify-between items-start mb-1">
-                                    <p className="text-sm font-semibold text-gray-800 pr-6">
-                                        {n.title}
-                                    </p>
-                                    {!n.is_read && (
-                                        <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0"></span>
-                                    )}
-                                </div>
-                                <p className="text-sm text-gray-600 line-clamp-2">
-                                    {n.message}
-                                </p>
-                                <p className="text-xs text-gray-400 mt-2">
-                                    {time}
-                                </p>
-                            </div>
-                        );
-                    })
-                )}
-            </div>
-
-            <div className="text-center py-2 border-t bg-white rounded-b-lg">
-                <button
-                    onClick={() => {
-                        handleNavigation('/notifications');
+                        setTimeout(() => {
+                            isScrolling.current = false;
+                        }, 800);
                     }}
-                    className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto custom-scroll`}
                 >
-                    View all notifications
-                </button>
+                    {notificationsLoading ? (
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
+                            Loading notifications...
+                        </div>
+                    ) : notifications.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                            You're all caught up 🎉
+                        </div>
+                    ) : (
+                        <>
+                            {notifications.map((n) => {
+                                const time = timeAgo(n.created_at);
+                                return (
+                                    <div
+                                        key={n.id}
+                                        onClick={() => markNotificationAsRead(n.id)}
+                                        className={`px-4 py-3 border-b cursor-pointer hover:bg-gray-50 transition-colors relative
+                ${!n.is_read ? 'bg-blue-50' : 'bg-white'}`}
+                                    >
+                                        {!n.is_read && (
+                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                                        )}
+
+                                        <div className="flex justify-between items-start mb-1">
+                                            <p className="text-sm font-semibold text-gray-800 pr-6">
+                                                {n.title}
+                                            </p>
+
+                                            {!n.is_read && (
+                                                <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                            )}
+                                        </div>
+
+                                        <p className="text-sm text-gray-600 line-clamp-2">
+                                            {n.message}
+                                        </p>
+
+                                        <p className="text-xs text-gray-400 mt-2">
+                                            {time}
+                                        </p>
+                                    </div>
+                                );
+                            })}
+
+                            {/* 🔥 BUTTON INSIDE LIST (CORRECT POSITION) */}
+                            {!expanded && notifications.length >= 10 && (
+                                <div className="text-center py-3">
+                                    <button
+                                        onClick={() => {
+                                            isClickingNotif.current = true;
+
+                                            setLimit(prev => prev + 10);
+                                            setExpanded(true);
+                                        }}
+                                        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                    >
+                                        See previous notifications
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+                {!expanded && notifications.length >= 10 && (
+                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
+                )}
             </div>
         </div>
     );

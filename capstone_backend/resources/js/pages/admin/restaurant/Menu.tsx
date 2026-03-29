@@ -4,6 +4,7 @@ import api from "@/services/api";
 export default function AdminMenu() {
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+    const [open, setOpen] = useState(false); // 🔥 modal state
 
     const [form, setForm] = useState({
         name: "",
@@ -15,21 +16,15 @@ export default function AdminMenu() {
         is_active: true,
     });
 
-    // 🔹 FETCH MENU
     const fetchItems = async () => {
-        try {
-            const res = await api.get("/menu-items");
-            setItems(res.data);
-        } catch (err) {
-            console.error(err);
-        }
+        const res = await api.get("/menu-items");
+        setItems(res.data);
     };
 
     useEffect(() => {
         fetchItems();
     }, []);
 
-    // 🔹 ADD PRODUCT
     const handleSubmit = async () => {
         if (!form.name || !form.price) {
             alert("Name and price required");
@@ -40,16 +35,12 @@ export default function AdminMenu() {
 
         try {
             await api.post("/menu-items", {
-                name: form.name,
-                description: form.description,
-                category: form.category,
+                ...form,
                 price: Number(form.price),
                 stock_quantity: Number(form.stock_quantity || 0),
                 low_stock_threshold: Number(form.low_stock_threshold || 0),
-                is_active: form.is_active,
             });
 
-            // reset form
             setForm({
                 name: "",
                 description: "",
@@ -60,6 +51,7 @@ export default function AdminMenu() {
                 is_active: true,
             });
 
+            setOpen(false); // 🔥 close modal
             fetchItems();
         } catch (err: any) {
             alert(err.response?.data?.message || "Error adding product");
@@ -68,123 +60,33 @@ export default function AdminMenu() {
         }
     };
 
-    // 🔹 DELETE PRODUCT
     const deleteItem = async (id: number) => {
         if (!confirm("Delete this product?")) return;
-
-        try {
-            await api.delete(`/menu-items/${id}`);
-            fetchItems();
-        } catch {
-            alert("Cannot delete (maybe used in orders)");
-        }
+        await api.delete(`/menu-items/${id}`);
+        fetchItems();
     };
 
     return (
         <div className="pt-5 space-y-6">
 
-            {/* 🔥 ADD PRODUCT FORM */}
-            <div className="bg-white p-6 rounded-xl shadow">
-                <h2 className="text-lg font-bold mb-4">Add Menu Item</h2>
-
-                <div className="grid grid-cols-2 gap-4">
-
-                    <input
-                        placeholder="Name"
-                        value={form.name}
-                        onChange={(e) =>
-                            setForm({ ...form, name: e.target.value })
-                        }
-                        className="border p-2 rounded"
-                    />
-
-                    <input
-                        placeholder="Price"
-                        type="number"
-                        value={form.price}
-                        onChange={(e) =>
-                            setForm({ ...form, price: e.target.value })
-                        }
-                        className="border p-2 rounded"
-                    />
-
-                    <input
-                        placeholder="Stock Quantity"
-                        type="number"
-                        value={form.stock_quantity}
-                        onChange={(e) =>
-                            setForm({ ...form, stock_quantity: e.target.value })
-                        }
-                        className="border p-2 rounded"
-                    />
-
-                    <input
-                        placeholder="Low Stock Alert"
-                        type="number"
-                        value={form.low_stock_threshold}
-                        onChange={(e) =>
-                            setForm({
-                                ...form,
-                                low_stock_threshold: e.target.value
-                            })
-                        }
-                        className="border p-2 rounded"
-                    />
-
-                    <select
-                        value={form.category}
-                        onChange={(e) =>
-                            setForm({ ...form, category: e.target.value })
-                        }
-                        className="border p-2 rounded"
-                    >
-                        <option value="Drinks">Drinks</option>
-                        <option value="Meals">Meals</option>
-                        <option value="Desserts">Desserts</option>
-                    </select>
-
-                    <select
-                        value={form.is_active ? "1" : "0"}
-                        onChange={(e) =>
-                            setForm({
-                                ...form,
-                                is_active: e.target.value === "1"
-                            })
-                        }
-                        className="border p-2 rounded"
-                    >
-                        <option value="1">Available</option>
-                        <option value="0">Unavailable</option>
-                    </select>
-
-                    <textarea
-                        placeholder="Description"
-                        value={form.description}
-                        onChange={(e) =>
-                            setForm({ ...form, description: e.target.value })
-                        }
-                        className="border p-2 rounded col-span-2"
-                    />
-                </div>
+            {/* 🔥 HEADER */}
+            <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold">Menu Items</h2>
 
                 <button
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    className="mt-4 bg-green-600 text-white px-6 py-2 rounded"
+                    onClick={() => setOpen(true)}
+                    className="bg-orange-500 text-white px-4 py-2 rounded"
                 >
-                    {loading ? "Adding..." : "Add Menu Item"}
+                    + Add Menu Item
                 </button>
             </div>
 
             {/* 🔥 PRODUCT LIST */}
             <div className="bg-white p-6 rounded-xl shadow">
-                <h2 className="text-lg font-bold mb-4">Menu Items</h2>
-
                 {items.length === 0 ? (
                     <p>No items yet</p>
                 ) : (
                     <div className="space-y-3 max-h-[400px] overflow-y-auto">
-
                         {items.map((item) => (
                             <div
                                 key={item.id}
@@ -214,6 +116,113 @@ export default function AdminMenu() {
                     </div>
                 )}
             </div>
+
+            {/* 🔥 MODAL */}
+            {open && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+
+                    <div className="bg-white p-6 rounded-xl shadow w-[500px] space-y-4">
+
+                        <h2 className="text-lg font-bold">Add Menu Item</h2>
+
+                        <div className="grid grid-cols-2 gap-3">
+
+                            <input
+                                placeholder="Name"
+                                value={form.name}
+                                onChange={(e) =>
+                                    setForm({ ...form, name: e.target.value })
+                                }
+                                className="border p-2 rounded"
+                            />
+
+                            <input
+                                placeholder="Price"
+                                type="number"
+                                value={form.price}
+                                onChange={(e) =>
+                                    setForm({ ...form, price: e.target.value })
+                                }
+                                className="border p-2 rounded"
+                            />
+
+                            <input
+                                placeholder="Stock"
+                                type="number"
+                                value={form.stock_quantity}
+                                onChange={(e) =>
+                                    setForm({ ...form, stock_quantity: e.target.value })
+                                }
+                                className="border p-2 rounded"
+                            />
+
+                            <input
+                                placeholder="Low Stock"
+                                type="number"
+                                value={form.low_stock_threshold}
+                                onChange={(e) =>
+                                    setForm({ ...form, low_stock_threshold: e.target.value })
+                                }
+                                className="border p-2 rounded"
+                            />
+
+                            <select
+                                value={form.category}
+                                onChange={(e) =>
+                                    setForm({ ...form, category: e.target.value })
+                                }
+                                className="border p-2 rounded"
+                            >
+                                <option>Drinks</option>
+                                <option>Meals</option>
+                                <option>Desserts</option>
+                            </select>
+
+                            <select
+                                value={form.is_active ? "1" : "0"}
+                                onChange={(e) =>
+                                    setForm({
+                                        ...form,
+                                        is_active: e.target.value === "1"
+                                    })
+                                }
+                                className="border p-2 rounded"
+                            >
+                                <option value="1">Available</option>
+                                <option value="0">Unavailable</option>
+                            </select>
+
+                            <textarea
+                                placeholder="Description"
+                                value={form.description}
+                                onChange={(e) =>
+                                    setForm({ ...form, description: e.target.value })
+                                }
+                                className="border p-2 rounded col-span-2"
+                            />
+                        </div>
+
+                        {/* 🔥 ACTIONS */}
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setOpen(false)}
+                                className="bg-gray-300 px-4 py-2 rounded"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                onClick={handleSubmit}
+                                disabled={loading}
+                                className="bg-green-600 text-white px-4 py-2 rounded"
+                            >
+                                {loading ? "Adding..." : "Save"}
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

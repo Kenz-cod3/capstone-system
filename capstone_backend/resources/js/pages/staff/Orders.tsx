@@ -90,7 +90,7 @@ export default function Orders() {
     };
 
     return (
-        <StaffLayout>
+        <div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {/* 🍔 MENU */}
@@ -173,6 +173,6 @@ export default function Orders() {
                 </div>
 
             </div>
-        </StaffLayout>
+        </div>
     );
 }
