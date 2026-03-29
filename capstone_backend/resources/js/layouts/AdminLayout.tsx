@@ -166,49 +166,47 @@ const AdminLayout = ({
         return user?.email?.split('@')[0] || 'Admin';
     };
 
-    const fetchMessages = useCallback(async () => {
-        if (!user?.id) return;
+    const isFetching = useRef(false);
 
-        if (messages.length === 0) {
-            setMessagesLoading(true);
-        }
+    const fetchMessages = async () => {
+        if (!user?.id || isFetching.current) return;
+
+        isFetching.current = true;
 
         try {
             const res = await api.get(`/messages/conversations`);
             const data = Array.isArray(res.data) ? res.data : [];
 
-            // ✅ SAVE SCROLL
-            const scrollTop = messageRef.current?.scrollTop || 0;
-
+            // ✅ UPDATE ONLY IF CHANGED
             setMessages(prev => {
-                if (JSON.stringify(prev) === JSON.stringify(data)) {
-                    return prev;
+                if (prev.length === data.length) {
+                    let same = true;
+
+                    for (let i = 0; i < prev.length; i++) {
+                        if (prev[i].last_message !== data[i].last_message) {
+                            same = false;
+                            break;
+                        }
+                    }
+
+                    if (same) return prev;
                 }
+
                 return data;
             });
 
-            // ✅ FIX UNREAD (no unnecessary re-render)
             const unread = data.reduce((sum, c) => sum + (c.unread || 0), 0);
 
             setUnreadMessages(prev =>
                 prev === unread ? prev : unread
             );
 
-            // ✅ RESTORE SCROLL
-            setTimeout(() => {
-                if (messageRef.current) {
-                    messageRef.current.scrollTop = scrollTop;
-                }
-            }, 0);
-
         } catch (err) {
             console.error(err);
         } finally {
-            if (messages.length === 0) {
-                setMessagesLoading(false);
-            }
+            isFetching.current = false;
         }
-    }, [user?.id]);
+    };
 
 
 
@@ -309,7 +307,25 @@ const AdminLayout = ({
         if (!user?.id) return;
 
         fetchNotifications();
-    }, [limit]); // 🔥 refetch when limit changes
+
+        const interval = setInterval(() => {
+            fetchNotifications();
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        fetchMessages();
+
+        const interval = setInterval(() => {
+            fetchMessages();
+        }, 3000); // every 3 sec
+
+        return () => clearInterval(interval);
+    }, [user?.id]);
 
     if (!user) {
         return null;
@@ -791,7 +807,16 @@ const AdminLayout = ({
                     userId={activeChatUser.id}
                     userName={activeChatUser.name}
                     onClose={() => setActiveChatUser(null)}
-                    onMessageSent={fetchMessages}
+                    onMessageSent={(msg) => {
+                        setMessages(prev => [
+                            {
+                                user: { id: activeChatUser.id, first_name: activeChatUser.name },
+                                last_message: msg,
+                                unread: 0
+                            },
+                            ...prev
+                        ]);
+                    }}
                 />
             )}
 

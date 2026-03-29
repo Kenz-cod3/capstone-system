@@ -7,7 +7,7 @@ type ChatBoxProps = {
     userId: number;
     userName: string;
     onClose: () => void;
-    onMessageSent?: () => void;
+    onMessageSent?: (msg: string) => void;
 };
 
 export default function ChatBox({ userId, userName, onClose, onMessageSent }: ChatBoxProps) {
@@ -18,9 +18,12 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
     const [newMessage, setNewMessage] = useState("");
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
+    const isAtBottom = useRef(true);
 
     useEffect(() => {
-        if (bottomRef.current) {
+        if (!bottomRef.current) return;
+
+        if (isAtBottom.current) {
             bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
         }
     }, [messages]);
@@ -35,11 +38,30 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
 
     const fetchMessages = async () => {
         try {
-            const res = await api.get(`/messages/conversation/${currentUser.id}/${userId}`);
-            setMessages(Array.isArray(res.data) ? res.data : []);
-
-            // 🔥 ALWAYS MARK AS READ AFTER FETCH
+            // ✅ mark first
             await markAsRead();
+
+            // ✅ then fetch updated data
+            const res = await api.get(`/messages/conversation/${currentUser.id}/${userId}`);
+            setMessages(prev => {
+                const newData = Array.isArray(res.data) ? res.data : [];
+
+                // 🔥 keep temp messages (yung sending pa)
+                const tempMessages = prev.filter(m => m.status === "sending");
+
+                // 🔥 merge backend + existing status
+                const merged = newData.map(msg => {
+                    const existing = prev.find(p => p.id === msg.id);
+
+                    return {
+                        ...msg,
+                        status: existing?.status || "sent"
+                    };
+                });
+
+                // ✅ combine both
+                return [...merged, ...tempMessages];
+            });
 
         } catch (err) {
             console.error(err);
@@ -51,7 +73,6 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
         if (!userId) return;
 
         const load = async () => {
-            await markAsRead();
             await fetchMessages();
         };
 
@@ -65,10 +86,31 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
     const sendMessage = async () => {
         if (!newMessage.trim()) return;
 
+        const messageToSend = newMessage;
+
+        // 🔥 create temp message
+        const tempId = Date.now();
+
+        // ✅ INSTANT UI
+        setMessages(prev => [
+            ...prev,
+            {
+                id: tempId,
+                message: {
+                    message: messageToSend,
+                    sender_id: currentUser.id
+                },
+                is_read: false,
+                status: "sending" // 🔥 NEW
+            }
+        ]);
+
+        setNewMessage("");
+
         try {
             await api.post("/messages", {
                 sender_id: currentUser.id,
-                content: newMessage,
+                content: messageToSend,
                 targets: [
                     {
                         target_id: userId,
@@ -77,15 +119,30 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                 ]
             });
 
-            setNewMessage("");
-            await fetchMessages();
+            // ✅ UPDATE STATUS → SENT
+            setMessages(prev =>
+                prev.map(m =>
+                    m.id === tempId
+                        ? { ...m, status: "sent" }
+                        : m
+                )
+            );
 
             if (onMessageSent) {
-                onMessageSent(); // 🔥 refresh dropdown
+                onMessageSent(messageToSend);
             }
 
         } catch (err) {
             console.error(err);
+
+            // ❌ UPDATE STATUS → FAILED
+            setMessages(prev =>
+                prev.map(m =>
+                    m.id === tempId
+                        ? { ...m, status: "failed" }
+                        : m
+                )
+            );
         }
     };
 
@@ -111,6 +168,14 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
             {/* MESSAGES */}
             <div
                 ref={bottomRef}
+                onScroll={(e) => {
+                    const el = e.currentTarget;
+
+                    const isBottom =
+                        el.scrollHeight - el.scrollTop <= el.clientHeight + 20;
+
+                    isAtBottom.current = isBottom;
+                }}
                 className="flex-1 overflow-y-auto p-3 space-y-2 hide-scrollbar"
             >
                 {messages.map((m, index) => {
@@ -133,7 +198,9 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                             {/* ✅ SEEN INDICATOR */}
                             {isMine && isLast && (
                                 <div className="text-[10px] text-gray-400 mt-1 text-right">
-                                    {m.is_read ? "Seen" : "Sent"}
+                                    {m.status === "sending" && "Sending..."}
+                                    {m.status === "failed" && "Failed ❌"}
+                                    {m.status === "sent" && (m.is_read ? "Seen" : "Sent")}
                                 </div>
                             )}
 
