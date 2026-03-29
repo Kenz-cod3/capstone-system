@@ -1,10 +1,27 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/services/api";
-import AdminLayout from "@/layouts/AdminLayout";
 
 export default function Reports() {
-    const [data, setData] = useState<any>(null);
     const [statusFilter, setStatusFilter] = useState("all");
+
+    const [filters, setFilters] = useState({
+        start_date: "",
+        end_date: "",
+    });
+
+    // ✅ TANSTACK QUERY
+    const { data, isLoading } = useQuery({
+        queryKey: ["reports", filters],
+        queryFn: async () => {
+            const res = await api.get("/reports", {
+                params: filters,
+            });
+            return res.data;
+        },
+        staleTime: 1000 * 60 * 5, // 5 minutes cache
+        refetchOnWindowFocus: false,
+    });
 
     const getFilteredTransactions = () => {
         if (!data?.recent_bookings) return [];
@@ -16,28 +33,17 @@ export default function Reports() {
         );
     };
 
-    const [filters, setFilters] = useState({
-        start_date: "",
-        end_date: "",
-    });
-
-    const fetchReports = async () => {
-        try {
-            const res = await api.get("/reports", {
-                params: filters,
-            });
-            setData(res.data);
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    useEffect(() => {
-        fetchReports();
-    }, []);
+    // ✅ LOADING UI
+    if (isLoading) {
+        return (
+            <div className="p-6">
+                <p className="text-gray-500">Loading reports...</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="space-y-8 pb-8">
+        <div className="space-y-8 pt-4 pb-8">
 
             {/* HEADER */}
             <div>
@@ -67,8 +73,9 @@ export default function Reports() {
                     className="border border-gray-300 px-3 py-2 rounded-lg text-sm"
                 />
 
+                {/* ❌ NO MORE fetchReports */}
                 <button
-                    onClick={fetchReports}
+                    onClick={() => setFilters({ ...filters })}
                     className="bg-mint-600 hover:bg-mint-700 text-white px-4 py-2 rounded-lg text-sm"
                 >
                     Apply Filter
@@ -99,12 +106,13 @@ export default function Reports() {
                 </div>
             </div>
 
-            {/* ALL TRANSACTIONS */}
+            {/* TABLE */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
                 <div className="p-5 border-b flex justify-between items-center">
                     <h2 className="text-lg font-semibold text-gray-800">
                         All Transactions
                     </h2>
+
                     <div className="flex gap-2">
                         <button
                             onClick={() => setStatusFilter("all")}
@@ -152,7 +160,7 @@ export default function Reports() {
                             </thead>
 
                             <tbody>
-                                {data?.recent_bookings?.length === 0 ? (
+                                {getFilteredTransactions().length === 0 ? (
                                     <tr>
                                         <td colSpan={5} className="text-center py-6 text-gray-500">
                                             No transactions found
@@ -160,44 +168,32 @@ export default function Reports() {
                                     </tr>
                                 ) : (
                                     getFilteredTransactions().map((b: any) => (
-                                        <tr
-                                            key={b.id}
-                                            className="border-t hover:bg-gray-50 transition"
-                                        >
-                                            {/* Guest */}
+                                        <tr key={b.id} className="border-t hover:bg-gray-50">
                                             <td className="px-6 py-4 font-medium text-gray-800">
                                                 {b.walk_in_guest?.guest_name ||
                                                     b.user?.name ||
                                                     "Guest"}
                                             </td>
 
-                                            {/* Type */}
                                             <td className="px-6 py-4">
-                                                <span
-                                                    className={`px-2 py-1 text-xs font-medium rounded-full ${b.booking_type === "walk_in"
+                                                <span className={`px-2 py-1 text-xs rounded-full ${b.booking_type === "walk_in"
                                                         ? "bg-blue-100 text-blue-800"
                                                         : "bg-emerald-100 text-emerald-800"
-                                                        }`}
-                                                >
+                                                    }`}>
                                                     {b.booking_type === "walk_in"
                                                         ? "Walk-in"
                                                         : "Online"}
                                                 </span>
                                             </td>
 
-                                            {/* Status */}
-                                            <td className="px-6 py-4">
-                                                <span className="text-xs font-semibold text-gray-700">
-                                                    {b.booking_status?.replace("_", " ").toUpperCase()}
-                                                </span>
+                                            <td className="px-6 py-4 text-xs font-semibold text-gray-700">
+                                                {b.booking_status?.replace("_", " ").toUpperCase()}
                                             </td>
 
-                                            {/* Date */}
                                             <td className="px-6 py-4 text-gray-600">
                                                 {new Date(b.check_in_date).toLocaleDateString()}
                                             </td>
 
-                                            {/* Total */}
                                             <td className="px-6 py-4 font-semibold text-gray-900">
                                                 ₱{b.total_price?.toLocaleString()}
                                             </td>

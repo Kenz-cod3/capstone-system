@@ -348,8 +348,8 @@ const AdminLayout = ({
         {
             label: "RESTAURANT",
             items: [
-                { name: "Products", href: "/products", icon: ShoppingCart },
-                { name: "Orders", href: "/orders", icon: UtensilsCrossed },
+                { name: "Menu", href: "/admin/menu", icon: ShoppingCart },
+                { name: "Orders", href: "/admin/orders", icon: UtensilsCrossed },
             ],
         },
         {
@@ -768,7 +768,7 @@ const AdminLayout = ({
                         </div>
                     </header>
 
-                    <div className="p-4 sm:p-6 lg:p-8 h-[calc(100vh-64px)] flex flex-col">
+                    <div className="px-4 sm:px-6 lg:px-8 pb-4 h-[calc(100vh-64px)] flex flex-col">
                         <Outlet />
                     </div>
                 </main>

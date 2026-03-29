@@ -36,7 +36,7 @@ class OrderItemController extends Controller
             'order_id' => $validated['order_id'],
             'menu_item_id' => $menuItem->id,
             'quantity' => $validated['quantity'],
-            'price' => $price,
+            'price_at_time_of_order' => $price, // ✅ FIX
             'subtotal' => $subtotal
         ]);
 
@@ -68,7 +68,8 @@ class OrderItemController extends Controller
             'quantity' => 'required|integer|min:1'
         ]);
 
-        $subtotal = $item->price * $validated['quantity'];
+        // 🔥 FIX: gamitin tamang column
+        $subtotal = $item->price_at_time_of_order * $validated['quantity'];
 
         $item->update([
             'quantity' => $validated['quantity'],

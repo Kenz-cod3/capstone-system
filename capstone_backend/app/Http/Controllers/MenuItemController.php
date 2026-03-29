@@ -23,7 +23,14 @@ class MenuItemController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'price' => 'required|numeric|min:0',
-            'status' => 'required|in:available,unavailable'
+            'category' => 'required|string|max:100',
+
+            // 🔥 MATCH MODEL
+            'stock_quantity' => 'required|integer|min:0',
+            'low_stock_threshold' => 'nullable|integer|min:0',
+            'is_active' => 'required|boolean',
+
+            'image_path' => 'nullable|string'
         ]);
 
         $menuItem = MenuItem::create($validated);
@@ -51,7 +58,13 @@ class MenuItemController extends Controller
             'name' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
             'price' => 'sometimes|numeric|min:0',
-            'status' => 'sometimes|in:available,unavailable'
+            'category' => 'sometimes|string|max:100',
+
+            'stock_quantity' => 'sometimes|integer|min:0',
+            'low_stock_threshold' => 'sometimes|integer|min:0',
+            'is_active' => 'sometimes|boolean',
+
+            'image_path' => 'nullable|string'
         ]);
 
         $item->update($validated);
@@ -67,7 +80,6 @@ class MenuItemController extends Controller
     {
         $item = MenuItem::findOrFail($id);
 
-        // Optional: prevent delete if used in orders
         if ($item->orderItems()->count() > 0) {
             return response()->json([
                 'message' => 'Cannot delete menu item used in orders'
@@ -85,7 +97,7 @@ class MenuItemController extends Controller
     public function available()
     {
         return response()->json(
-            MenuItem::where('status', 'available')->get(),
+            MenuItem::where('is_active', true)->get(),
             200
         );
     }

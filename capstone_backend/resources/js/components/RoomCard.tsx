@@ -18,14 +18,21 @@ const RoomCard = memo(({ room, onEdit, onDelete }: any) => {
         }
     };
 
-    const imageSrc = room.image_url || "https://via.placeholder.com/300";
+    const DEFAULT_IMAGE = "/images/default-room.jpg";
+    const imageSrc = room.image_url
+        ? `${room.image_url}?t=${room.updated_at || ""}`
+        : DEFAULT_IMAGE;
+
+    // useEffect(() => {
+    //     if (imageCache.has(imageSrc)) {
+    //         setLoaded(true);
+    //     } else {
+    //         setLoaded(false);
+    //     }
+    // }, [imageSrc]);
 
     useEffect(() => {
-        if (imageCache.has(imageSrc)) {
-            setLoaded(true);
-        } else {
-            setLoaded(false);
-        }
+        setLoaded(imageCache.has(imageSrc));
     }, [imageSrc]);
 
 
@@ -47,12 +54,15 @@ const RoomCard = memo(({ room, onEdit, onDelete }: any) => {
                         setLoaded(true);
                     }}
                     onError={(e) => {
-                        e.currentTarget.src = "https://via.placeholder.com/300";
+                        if (!e.currentTarget.src.includes(DEFAULT_IMAGE)) {
+                            e.currentTarget.src = DEFAULT_IMAGE;
+                            imageCache.add(DEFAULT_IMAGE);
+                        }
                         setLoaded(true);
                     }}
                     className={`w-full h-40 object-cover rounded transition-opacity duration-300 ${loaded || imageCache.has(imageSrc)
-                            ? "opacity-100"
-                            : "opacity-0"
+                        ? "opacity-100"
+                        : "opacity-0"
                         }`}
                 />
             </div>

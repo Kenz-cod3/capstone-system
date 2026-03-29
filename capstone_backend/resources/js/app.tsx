@@ -8,6 +8,8 @@ import WalkIn from "./pages/admin/operations/WalkIn";
 import Rooms from "./pages/admin/management/Rooms";
 import Guests from "./pages/admin/management/Guests";
 import Reports from "./pages/admin/analytics/Reports";
+import AdminMenu from "./pages/admin/restaurant/Menu";
+import AdminOrders from "./pages/admin/restaurant/OrdersReport";
 import ChatPage from "./pages/admin/messages/[userId]";
 
 // STAFF
@@ -40,6 +42,8 @@ export default function App() {
                     <Route path="/rooms" element={<Rooms />} />
                     <Route path="/guests" element={<Guests />} />
                     <Route path="/reports" element={<Reports />} />
+                    <Route path="/admin/menu" element={<AdminMenu />} />
+                    <Route path="/admin/orders" element={<AdminOrders />} />
                     <Route path="/messages/:userId" element={<ChatPage />} />
 
                     {/* DEFAULT */}
