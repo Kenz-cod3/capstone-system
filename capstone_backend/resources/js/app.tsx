@@ -1,3 +1,7 @@
+import { useLoadingStore } from "@/stores/useLoadingStore";
+import LoadingScreen from "@/components/LoadingScreen";
+import { useEffect } from "react";
+
 import { Routes, Route, Navigate } from "react-router-dom";
 import AdminLayout from "./layouts/AdminLayout";
 
@@ -26,49 +30,59 @@ import Login from "./pages/auth/Login";
 
 export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
+    const { loading, setLoading } = useLoadingStore();
+
+    useEffect(() => {
+        setTimeout(() => {
+            setLoading(false);
+        }, 1200);
+    }, []);
 
     return (
-        <Routes>
-            {/* 🔓 PUBLIC ROUTE */}
-            <Route path="/login" element={<Login />} />
+        <>
+            {loading && <LoadingScreen />}
+            <Routes>
+                {/* 🔓 PUBLIC ROUTE */}
+                <Route path="/login" element={<Login />} />
 
-            {/* 🔐 NOT LOGGED IN */}
-            {!user && (
-                <Route path="*" element={<Navigate to="/login" />} />
-            )}
+                {/* 🔐 NOT LOGGED IN */}
+                {!user && (
+                    <Route path="*" element={<Navigate to="/login" />} />
+                )}
 
-            {/* 🔐 ADMIN ROUTES */}
-            {user?.role === "admin" && (
-                <Route element={<AdminLayout />}>
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/bookings" element={<Bookings />} />
-                    <Route path="/walk-in-guests" element={<WalkIn />} />
-                    <Route path="/rooms" element={<Rooms />} />
-                    <Route path="/guests" element={<Guests />} />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/admin/menu" element={<AdminMenu />} />
-                    <Route path="/admin/orders" element={<AdminOrders />} />
-                    <Route path="/messages/:userId" element={<ChatPage />} />
+                {/* 🔐 ADMIN ROUTES */}
+                {user?.role === "admin" && (
+                    <Route element={<AdminLayout />}>
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/bookings" element={<Bookings />} />
+                        <Route path="/walk-in-guests" element={<WalkIn />} />
+                        <Route path="/rooms" element={<Rooms />} />
+                        <Route path="/guests" element={<Guests />} />
+                        <Route path="/reports" element={<Reports />} />
+                        <Route path="/admin/menu" element={<AdminMenu />} />
+                        <Route path="/admin/orders" element={<AdminOrders />} />
+                        <Route path="/messages/:userId" element={<ChatPage />} />
 
-                    {/* DEFAULT */}
-                    <Route path="*" element={<Navigate to="/dashboard" />} />
-                </Route>
-            )}
+                        {/* DEFAULT */}
+                        <Route path="*" element={<Navigate to="/dashboard" />} />
+                    </Route>
+                )}
 
-            {/* 🍽️ STAFF ROUTES */}
-            {user?.role === "staff" && (
-                <Route element={<StaffLayout />}>
+                {/* 🍽️ STAFF ROUTES */}
+                {user?.role === "staff" && (
+                    <Route element={<StaffLayout />}>
 
-                    <Route path="/restaurant" element={<RestaurantDashboard />} />
-                    <Route path="/orders" element={<Orders />} />
-                    <Route path="/menu" element={<Menu />} />
-                    <Route path="/product" element={<Product />} />
+                        <Route path="/restaurant" element={<RestaurantDashboard />} />
+                        <Route path="/orders" element={<Orders />} />
+                        <Route path="/menu" element={<Menu />} />
+                        <Route path="/product" element={<Product />} />
 
-                    {/* DEFAULT */}
-                    <Route path="*" element={<Navigate to="/restaurant" />} />
+                        {/* DEFAULT */}
+                        <Route path="*" element={<Navigate to="/restaurant" />} />
 
-                </Route>
-            )}
-        </Routes>
+                    </Route>
+                )}
+            </Routes>
+        </>
     );
 }

@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createRoom, uploadRoomImage } from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
+import { X, Upload, AlertCircle, CheckCircle } from "lucide-react";
 
 export default function AddRoomModal({ onClose, refresh }: any) {
     const [roomTypes, setRoomTypes] = useState<any[]>([]);
     const [file, setFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [isDragging, setIsDragging] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [form, setForm] = useState({
         room_number: "",
@@ -17,129 +22,362 @@ export default function AddRoomModal({ onClose, refresh }: any) {
         getRoomTypesCached().then(setRoomTypes);
     }, []);
 
+    // Cleanup preview URL on unmount
+    useEffect(() => {
+        return () => {
+            if (preview && preview.startsWith('blob:')) {
+                URL.revokeObjectURL(preview);
+            }
+        };
+    }, [preview]);
+
+    const validateForm = () => {
+        const newErrors: Record<string, string> = {};
+        
+        if (!form.room_number.trim()) {
+            newErrors.room_number = "Room number is required";
+        } else if (form.room_number.trim().length < 2) {
+            newErrors.room_number = "Room number must be at least 2 characters";
+        }
+        
+        if (!form.room_type_id) {
+            newErrors.room_type_id = "Please select a room type";
+        }
+        
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const validateAndSetFile = (file: File) => {
+        // Validate file type (match backend mimes)
+        const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+        if (!validTypes.includes(file.type)) {
+            setErrors({ ...errors, image: "Please upload a valid image file (JPEG, PNG only)" });
+            return false;
+        }
+        
+        // Validate file size (2MB to match backend max:2048)
+        if (file.size > 2 * 1024 * 1024) {
+            setErrors({ ...errors, image: "Image size should be less than 2MB" });
+            return false;
+        }
+        
+        return true;
+    };
+
+    const handleFileSelect = (selectedFile: File | null) => {
+        if (!selectedFile) return;
+        
+        if (validateAndSetFile(selectedFile)) {
+            setFile(selectedFile);
+            if (preview && preview.startsWith('blob:')) {
+                URL.revokeObjectURL(preview);
+            }
+            setPreview(URL.createObjectURL(selectedFile));
+            setErrors({ ...errors, image: "" });
+        }
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selected = e.target.files?.[0] || null;
+        handleFileSelect(selected);
+    };
+
+    // Drag and drop handlers
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        
+        const droppedFile = e.dataTransfer.files[0];
+        if (droppedFile) {
+            handleFileSelect(droppedFile);
+        }
+    };
+
     const handleSubmit = async (e: any) => {
         e.preventDefault();
-
-        // ✅ VALIDATION
-        if (!form.room_number) {
-            alert("Room number is required");
+        
+        if (!validateForm()) {
             return;
         }
-
-        if (!form.room_type_id) {
-            alert("Please select room type");
-            return;
-        }
-
+        
+        setLoading(true);
+        
         try {
+            // First create the room
             const res = await createRoom({
                 ...form,
                 room_type_id: Number(form.room_type_id),
             });
 
+            const roomId = res.data.data.id;
+
+            // If there's an image, upload it using the dedicated endpoint
             if (file) {
                 const fd = new FormData();
-                fd.append("room_id", res.data.data.id);
+                fd.append("room_id", roomId.toString());
                 fd.append("image", file);
+                fd.append("image_type", "main"); // or whatever default type you want
+                
                 await uploadRoomImage(fd);
             }
-
-            alert("✅ Room added successfully!");
 
             refresh();
             onClose();
         } catch (err: any) {
             console.error(err);
-
-            // 🔥 SHOW BACKEND ERROR
+            
             if (err.response?.data?.errors) {
-                console.log(err.response.data.errors);
-                alert(JSON.stringify(err.response.data.errors));
+                const backendErrors = err.response.data.errors;
+                const formattedErrors: Record<string, string> = {};
+                
+                Object.keys(backendErrors).forEach(key => {
+                    formattedErrors[key] = backendErrors[key][0] || backendErrors[key];
+                });
+                
+                setErrors(formattedErrors);
             } else {
-                alert("❌ Failed to add room");
+                setErrors({
+                    submit: err.response?.data?.message || "Failed to add room. Please try again."
+                });
             }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch(status) {
+            case 'available': return 'text-green-600 bg-green-50';
+            case 'occupied': return 'text-red-600 bg-red-50';
+            case 'maintenance': return 'text-yellow-600 bg-yellow-50';
+            default: return 'text-gray-600 bg-gray-50';
         }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <form className="bg-white p-6 rounded w-96" onSubmit={handleSubmit}>
-                <h2 className="text-xl font-bold mb-4">Add Room</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+                {/* Header */}
+                <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-900">Add New Room</h2>
+                        <p className="text-sm text-gray-500 mt-1">Fill in the details below</p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
 
-                {/* ROOM NUMBER */}
-                <input
-                    className="border w-full p-2 mb-2"
-                    placeholder="Room Number"
-                    onChange={e =>
-                        setForm(prev => ({
-                            ...prev,
-                            room_number: e.target.value,
-                        }))
-                    }
-                />
+                <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                    {/* Room Number */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Room Number <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${
+                                errors.room_number ? 'border-red-500' : 'border-gray-300'
+                            }`}
+                            placeholder="e.g., 101, A-202"
+                            value={form.room_number}
+                            onChange={e => {
+                                setForm(prev => ({ ...prev, room_number: e.target.value }));
+                                if (errors.room_number) setErrors({ ...errors, room_number: "" });
+                            }}
+                        />
+                        {errors.room_number && (
+                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                <AlertCircle className="w-4 h-4" />
+                                {errors.room_number}
+                            </p>
+                        )}
+                    </div>
 
-                {/* ROOM TYPE */}
-                <select
-                    className="border w-full p-2 mb-2"
-                    value={form.room_type_id}
-                    onChange={e =>
-                        setForm(prev => ({
-                            ...prev,
-                            room_type_id: e.target.value,
-                        }))
-                    }
-                >
-                    <option value="">Select Type</option>
-                    {roomTypes.map(t => (
-                        <option key={t.id} value={t.id}>
-                            {t.type_name} - ₱{t.base_price}
-                        </option>
-                    ))}
-                </select>
+                    {/* Room Type */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Room Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${
+                                errors.room_type_id ? 'border-red-500' : 'border-gray-300'
+                            }`}
+                            value={form.room_type_id}
+                            onChange={e => {
+                                setForm(prev => ({ ...prev, room_type_id: e.target.value }));
+                                if (errors.room_type_id) setErrors({ ...errors, room_type_id: "" });
+                            }}
+                        >
+                            <option value="">Select Room Type</option>
+                            {roomTypes.map(t => (
+                                <option key={t.id} value={t.id}>
+                                    {t.type_name} - ₱{t.base_price.toLocaleString()}
+                                </option>
+                            ))}
+                        </select>
+                        {errors.room_type_id && (
+                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                <AlertCircle className="w-4 h-4" />
+                                {errors.room_type_id}
+                            </p>
+                        )}
+                    </div>
 
-                {/* STATUS */}
-                <select
-                    className="border w-full p-2 mb-2"
-                    value={form.status}
-                    onChange={e =>
-                        setForm(prev => ({
-                            ...prev,
-                            status: e.target.value,
-                        }))
-                    }
-                >
-                    <option value="available">Available</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="maintenance">Maintenance</option>
-                </select>
+                    {/* Status */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Status
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                            {['available', 'occupied', 'maintenance'].map(status => (
+                                <button
+                                    key={status}
+                                    type="button"
+                                    onClick={() => setForm(prev => ({ ...prev, status }))}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${
+                                        form.status === status
+                                            ? `${getStatusColor(status)} ring-2 ring-offset-1 ring-blue-500`
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {status}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
 
-                {/* IMAGE INPUT */}
-                <input
-                    type="file"
-                    className="mb-2"
-                    onChange={e => {
-                        const selected = e.target.files?.[0] || null;
-                        setFile(selected);
+                    {/* Room Image with Drag & Drop */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Room Image <span className="text-xs text-gray-400">(Max 2MB, JPEG/PNG only)</span>
+                        </label>
+                        <div
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${
+                                isDragging 
+                                    ? 'border-blue-500 bg-blue-50' 
+                                    : errors.image 
+                                        ? 'border-red-500 bg-red-50' 
+                                        : 'border-gray-300 hover:border-blue-500'
+                            }`}
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                accept="image/jpeg,image/png,image/jpg"
+                                onChange={handleFileChange}
+                            />
+                            
+                            {preview ? (
+                                <div className="space-y-3">
+                                    <img
+                                        src={preview}
+                                        alt="Room preview"
+                                        className="w-full h-48 object-cover rounded-lg"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setFile(null);
+                                            if (preview) URL.revokeObjectURL(preview);
+                                            setPreview(null);
+                                            if (fileInputRef.current) fileInputRef.current.value = '';
+                                        }}
+                                        className="text-sm text-red-500 hover:text-red-700"
+                                    >
+                                        Remove image
+                                    </button>
+                                </div>
+                            ) : (
+                                <div>
+                                    <Upload className={`w-10 h-10 mx-auto mb-2 ${
+                                        isDragging ? 'text-blue-500' : 'text-gray-400'
+                                    }`} />
+                                    <p className="text-sm text-gray-600">
+                                        {isDragging ? 'Drop your image here' : 'Click to upload or drag and drop'}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        JPEG, PNG up to 2MB
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        {errors.image && (
+                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                <AlertCircle className="w-4 h-4" />
+                                {errors.image}
+                            </p>
+                        )}
+                    </div>
 
-                        if (selected) {
-                            setPreview(URL.createObjectURL(selected));
-                        }
-                    }}
-                />
+                    {/* Submit Error */}
+                    {errors.submit && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600 flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />
+                                {errors.submit}
+                            </p>
+                        </div>
+                    )}
 
-                {/* PREVIEW */}
-                {preview && (
-                    <img
-                        src={preview}
-                        className="w-full h-40 object-cover rounded mb-3"
-                    />
-                )}
-
-                {/* BUTTON */}
-                <button className="bg-blue-500 text-white px-4 py-2 w-full rounded">
-                    Save
-                </button>
-            </form>
+                    {/* Buttons */}
+                    <div className="flex gap-3 pt-4">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {loading ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    Adding...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle className="w-4 h-4" />
+                                    Add Room
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 }

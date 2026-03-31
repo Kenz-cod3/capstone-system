@@ -36,6 +36,7 @@ import {
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import { Badge } from "@/components/ui/badge";
 import api from "@/services/api";
+import logo from "../../images/logo1.png"; // Adjust this path to your actual logo location
 
 const AdminLayout = ({
     children,
@@ -66,7 +67,7 @@ const AdminLayout = ({
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isNotifOpen, setIsNotifOpen] = useState(false);
-    const [limit, setLimit] = useState(10); // 🔥 how many notif to show
+    const [limit, setLimit] = useState(10);
     const [expanded, setExpanded] = useState(false);
 
     const notifRef = useRef<HTMLDivElement | null>(null);
@@ -118,7 +119,7 @@ const AdminLayout = ({
 
     const handleLogout = async () => {
         try {
-            await api.post("/auth/logout"); // may token pa dito ✅
+            await api.post("/auth/logout");
         } catch (err) {
             console.log("Logout API failed");
         }
@@ -177,7 +178,6 @@ const AdminLayout = ({
             const res = await api.get(`/messages/conversations`);
             const data = Array.isArray(res.data) ? res.data : [];
 
-            // ✅ UPDATE ONLY IF CHANGED
             setMessages(prev => {
                 if (prev.length === data.length) {
                     let same = true;
@@ -208,8 +208,6 @@ const AdminLayout = ({
         }
     };
 
-
-
     const fetchNotifications = useCallback(async () => {
         if (!user?.id) return;
         if (document.visibilityState !== "visible") return;
@@ -232,7 +230,6 @@ const AdminLayout = ({
             const notificationsData = res.data || [];
             setNotifications(notificationsData);
 
-            // 🔥 RESTORE SCROLL POSITION
             setTimeout(() => {
                 if (notifRef.current && isClickingNotif.current) {
                     const newHeight = notifRef.current.scrollHeight;
@@ -244,13 +241,11 @@ const AdminLayout = ({
                 }
             }, 0);
 
-            // ✅ unread count (backend source of truth)
             const unreadRes = await api.get(`/notifications/user/${user.id}/unread-count`);
             setUnreadCount(unreadRes.data.count);
 
             let hasChanged = false;
 
-            // ✅ RESTORE SCROLL
             if (hasChanged) {
                 requestAnimationFrame(() => {
                     if (notifRef.current && !wasAtBottom && !isNotifOpen) {
@@ -273,7 +268,6 @@ const AdminLayout = ({
         try {
             await api.put(`/notifications/${id}/read`);
 
-            // update UI agad (no refresh needed)
             setNotifications(prev =>
                 prev.map(n =>
                     n.id === id ? { ...n, is_read: true } : n
@@ -286,7 +280,6 @@ const AdminLayout = ({
             console.error("Failed to mark notification as read:", err);
         }
     };
-
 
     const markAllNotificationsAsRead = async () => {
         try {
@@ -322,7 +315,7 @@ const AdminLayout = ({
 
         const interval = setInterval(() => {
             fetchMessages();
-        }, 3000); // every 3 sec
+        }, 3000);
 
         return () => clearInterval(interval);
     }, [user?.id]);
@@ -369,7 +362,7 @@ const AdminLayout = ({
 
     const timeAgo = (dateString: string) => {
         const now = new Date();
-        const date = new Date(dateString); // 🔥 FIX
+        const date = new Date(dateString);
 
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
@@ -394,15 +387,6 @@ const AdminLayout = ({
                 <div className="flex items-center justify-between px-4 py-3 border-b bg-white rounded-t-lg">
                     <h2 className="text-sm font-semibold text-gray-800">Messages</h2>
                     <div className="flex items-center gap-2">
-                        {/* {unreadMessages > 0 && (
-                            <button
-                                onClick={markAllMessagesAsRead}
-                                className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
-                            >
-                                <CheckCheck className="h-3 w-3" />
-                                Mark all read
-                            </button>
-                        )} */}
                         <button
                             onClick={refreshData}
                             className="text-xs text-gray-500 hover:text-gray-700"
@@ -427,7 +411,7 @@ const AdminLayout = ({
                         messages.map((c) => {
                             const user = c.user;
 
-                            if (!user) return null; // ✅ IMPORTANT FIX
+                            if (!user) return null;
 
                             return (
                                 <div
@@ -479,7 +463,6 @@ const AdminLayout = ({
     const NotificationDropdownContent = () => (
         <div className="w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl">
 
-            {/* HEADER */}
             <div className="flex items-center justify-between px-4 py-3 border-b bg-white rounded-t-lg">
                 <h2 className="text-sm font-semibold text-gray-800">Notifications</h2>
                 <div className="flex items-center gap-2">
@@ -502,7 +485,6 @@ const AdminLayout = ({
                 </div>
             </div>
 
-            {/* SCROLL AREA */}
             <div className="relative">
                 <div
                     ref={notifRef}
@@ -562,7 +544,6 @@ const AdminLayout = ({
                                 );
                             })}
 
-                            {/* 🔥 BUTTON INSIDE LIST (CORRECT POSITION) */}
                             {!expanded && notifications.length >= 10 && (
                                 <div className="text-center py-3">
                                     <button
@@ -605,14 +586,30 @@ const AdminLayout = ({
                         ${isSidebarOpen ? 'w-64' : 'w-20'} 
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
                 >
-                    {/* Logo */}
+                    {/* Logo Section - Circle matches logo size */}
                     <div className={`h-16 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} border-b border-emerald-800/50 shrink-0`}>
                         <div
                             onClick={() => handleNavigation('/dashboard')}
                             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                            <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg">
-                                <Hotel className="h-5 w-5 text-white" />
+                            {/* Logo with White Circle - Exactly matching logo size */}
+                            <div className="h-12 w-12 rounded-full overflow-hidden">
+                                <img 
+                                    src={logo} 
+                                    alt="Traveler's Inn Logo" 
+                                    className="h-full w-auto object-contain scale-125"
+                                    onError={(e) => {
+                                        // Fallback if logo fails to load
+                                        e.currentTarget.style.display = 'none';
+                                        const parent = e.currentTarget.parentElement;
+                                        if (parent) {
+                                            const fallbackIcon = document.createElement('div');
+                                            fallbackIcon.className = 'h-7 w-7 text-emerald-600 flex items-center justify-center';
+                                            fallbackIcon.innerHTML = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>';
+                                            parent.appendChild(fallbackIcon);
+                                        }
+                                    }}
+                                />
                             </div>
                             {isSidebarOpen && (
                                 <span className="font-bold text-lg tracking-tight">Traveler's Inn</span>
@@ -730,7 +727,8 @@ const AdminLayout = ({
 
                 {/* Main Content */}
                 <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
-                    <header className="bg-white sticky top-0 z-30 border-b border-gray-200">
+                    {/* TRANSPARENT HEADER */}
+                    <header className="bg-transparent sticky top-0 z-30 backdrop-blur-md bg-white/80 border-b border-gray-200/50">
                         <div className="px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                 <Button
@@ -801,7 +799,7 @@ const AdminLayout = ({
                     </div>
                 </main>
             </div>
-            {/* 🔥 CHAT BOX HERE */}
+            {/* CHAT BOX HERE */}
             {activeChatUser && (
                 <ChatBox
                     userId={activeChatUser.id}
