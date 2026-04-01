@@ -265,7 +265,7 @@ export default function Bookings() {
                 <thead className="bg-mint-50 border-b border-mint-200 sticky top-0 z-10">
                     <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Guest Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Guest Name</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Room</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Type</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
@@ -299,8 +299,8 @@ export default function Bookings() {
                                 <td className="px-4 py-4 text-sm text-gray-900 text-center">#{b.id}</td>
 
                                 {/* Guest Name */}
-                                <td className="px-2 py-4 min-w-[180px] text-center">
-                                    <div className="font-medium text-gray-900 whitespace-nowrap text-center">
+                                <td className="px-4 py-4 min-w-[180px] text-left">
+                                    <div className="font-medium text-gray-900 whitespace-nowrap text-left">
                                         {getGuestName(b)}
                                     </div>
                                 </td>

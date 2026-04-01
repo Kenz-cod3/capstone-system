@@ -1,6 +1,7 @@
 import { useLoadingStore } from "@/stores/useLoadingStore";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useEffect } from "react";
+import "pannellum/build/pannellum.css";
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import AdminLayout from "./layouts/AdminLayout";
@@ -10,6 +11,7 @@ import Dashboard from "./pages/admin/main/Dashboard";
 import Bookings from "./pages/admin/management/Bookings";
 import WalkIn from "./pages/admin/operations/WalkIn";
 import Rooms from "./pages/admin/management/Rooms";
+import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
 import Guests from "./pages/admin/management/Guests";
 import Reports from "./pages/admin/analytics/Reports";
 import AdminMenu from "./pages/admin/restaurant/Menu";
@@ -59,6 +61,7 @@ export default function App() {
                         <Route path="/rooms" element={<Rooms />} />
                         <Route path="/guests" element={<Guests />} />
                         <Route path="/reports" element={<Reports />} />
+                        <Route path="/panorama" element={<PanoramaViewer />} />
                         <Route path="/admin/menu" element={<AdminMenu />} />
                         <Route path="/admin/orders" element={<AdminOrders />} />
                         <Route path="/messages/:userId" element={<ChatPage />} />

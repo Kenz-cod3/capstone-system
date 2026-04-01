@@ -55,24 +55,58 @@ class RoomImageController extends Controller
             'image_type' => 'nullable|string'
         ]);
 
+        $data = [
+            'room_id' => $request->room_id ?? $roomImage->room_id,
+            'image_type' => $request->image_type ?? $roomImage->image_type
+        ];
+
         // 🔥 If new image uploaded
         if ($request->hasFile('image')) {
+
             // delete old image
             if ($roomImage->image_path) {
                 Storage::disk('public')->delete($roomImage->image_path);
             }
 
+            // upload new
             $path = $request->file('image')->store('room_images', 'public');
-            $roomImage->image_path = $path;
+
+            // ✅ SAVE NEW PATH
+            $data['image_path'] = $path;
         }
 
-        $roomImage->update([
-            'room_id' => $request->room_id ?? $roomImage->room_id,
-            'image_type' => $request->image_type ?? $roomImage->image_type
-        ]);
+        $roomImage->update($data);
 
         return response()->json($roomImage);
     }
+    // public function update(Request $request, $id)
+    // {
+    //     $roomImage = RoomImage::findOrFail($id);
+
+    //     $request->validate([
+    //         'room_id' => 'sometimes|exists:rooms,id',
+    //         'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+    //         'image_type' => 'nullable|string'
+    //     ]);
+
+    //     // 🔥 If new image uploaded
+    //     if ($request->hasFile('image')) {
+    //         // delete old image
+    //         if ($roomImage->image_path) {
+    //             Storage::disk('public')->delete($roomImage->image_path);
+    //         }
+
+    //         $path = $request->file('image')->store('room_images', 'public');
+    //         $roomImage->image_path = $path;
+    //     }
+
+    //     $roomImage->update([
+    //         'room_id' => $request->room_id ?? $roomImage->room_id,
+    //         'image_type' => $request->image_type ?? $roomImage->image_type
+    //     ]);
+
+    //     return response()->json($roomImage);
+    // }
 
     //DELETE
     public function destroy($id)

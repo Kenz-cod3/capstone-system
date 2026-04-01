@@ -26,7 +26,6 @@ class NotificationController extends Controller
         ]);
 
         $validated['is_read'] = false;
-        $validated['created_at'] = now();
 
         $notification = Notification::create($validated);
 
@@ -108,10 +107,12 @@ class NotificationController extends Controller
     public function getByUser(Request $request, $id)
     {
         $limit = $request->query('limit', 10);
+        $offset = $request->query('offset', 0);
 
         return response()->json(
             Notification::where('user_id', $id)
                 ->latest()
+                ->skip($offset)
                 ->take($limit)
                 ->get(),
             200

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRooms, deleteRoom } from "@/services/roomService";
-import RoomCard from "@/components/RoomCard";
-import EditRoomModal from "@/components/AdminComponents/EditRoomModal";
-import AddRoomModal from "@/components/AdminComponents/AddRoomModal";
+import RoomCard from "@/components/AdminComponents/room/RoomCard";
+import EditRoomModal from "@/components/AdminComponents/room/EditRoomModal";
+import AddRoomModal from "@/components/AdminComponents/room/AddRoomModal";
+import PanoramaModal from "@/components/AdminComponents/room/PanoramaModal";
 
 interface Room {
     id: number;
@@ -21,6 +22,7 @@ export default function Rooms() {
     const [open, setOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<any>(null);
+    const [panoramaData, setPanoramaData] = useState<any>(null);
 
     const queryClient = useQueryClient();
 
@@ -200,6 +202,7 @@ export default function Rooms() {
                                     setEditOpen(true);
                                 }}
                                 onDelete={handleDelete}
+                                onView={(data: any) => setPanoramaData(data)}
                             />
                         ))}
                     </div>
@@ -223,6 +226,13 @@ export default function Rooms() {
                         setSelectedRoom(null);
                     }}
                     refresh={() => queryClient.invalidateQueries({ queryKey: ["rooms"] })}
+                />
+            )}
+            {/* PANORAMA MODAL */}
+            {panoramaData && (
+                <PanoramaModal
+                    data={panoramaData}
+                    onClose={() => setPanoramaData(null)}
                 />
             )}
         </div>

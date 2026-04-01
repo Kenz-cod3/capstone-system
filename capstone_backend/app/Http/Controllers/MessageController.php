@@ -189,6 +189,7 @@ class MessageController extends Controller
             return [
                 'user' => $otherUser,
                 'last_message' => $lastMessage->message->message,
+                'last_sender_id' => $lastMessage->message->sender_id,
                 'unread' => $group
                     ->where('target_id', $currentUserId)
                     ->where('is_read', false)

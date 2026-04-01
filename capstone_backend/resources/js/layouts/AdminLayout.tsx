@@ -53,9 +53,12 @@ const AdminLayout = ({
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const [messages, setMessages] = useState<any[]>([]);
+    const [chatFilter, setChatFilter] = useState<"all" | "guest" | "staff">("all");
     const [unreadMessages, setUnreadMessages] = useState(0);
+    const [isChatOpen, setIsChatOpen] = useState(false);
 
     const messageRef = useRef<HTMLDivElement | null>(null);
+    const chatButtonRef = useRef<HTMLButtonElement | null>(null);
 
     const [messagesLoading, setMessagesLoading] = useState(false);
 
@@ -63,6 +66,9 @@ const AdminLayout = ({
         id: number;
         name: string;
     } | null>(null);
+
+    const chatDropdownRef = useRef<HTMLDivElement | null>(null);
+    const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
     const [notifications, setNotifications] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -75,8 +81,11 @@ const AdminLayout = ({
     const notifScroll = useRef(0);
     const isFirstLoad = React.useRef(true);
     const isClickingNotif = useRef(false);
-
+    const notifButtonRef = useRef<HTMLButtonElement | null>(null);
+    const notifDropdownRef = useRef<HTMLDivElement | null>(null);
+    const timeMapRef = useRef<{ [key: number]: string }>({});
     const [notificationsLoading, setNotificationsLoading] = useState(false);
+    const [offset, setOffset] = useState(0);
 
     const user = JSON.parse(localStorage.getItem("user") || "null");
     const location = useLocation();
@@ -212,6 +221,7 @@ const AdminLayout = ({
         if (!user?.id) return;
         if (document.visibilityState !== "visible") return;
         if (isScrolling.current) return;
+        if (isClickingNotif.current) return;
 
         if (isFirstLoad.current) {
             setNotificationsLoading(true);
@@ -225,10 +235,28 @@ const AdminLayout = ({
                 notifRef.current &&
                 notifRef.current.scrollHeight - notifRef.current.scrollTop <= notifRef.current.clientHeight + 5;
 
-            const res = await api.get(`/notifications/user/${user.id}?limit=${limit}`);
+            const res = await api.get(
+                `/notifications/user/${user.id}?limit=10&offset=${offset}`
+            );
 
-            const notificationsData = res.data || [];
-            setNotifications(notificationsData);
+            const notificationsData = (res.data || []).map((n: any) => {
+                if (!timeMapRef.current[n.id]) {
+                    timeMapRef.current[n.id] = timeAgo(n.created_at);
+                }
+
+                return {
+                    ...n,
+                    display_time: timeMapRef.current[n.id] // 🔥 LOCK TIME
+                };
+            });
+            setNotifications(prev => {
+                if (offset === 0) {
+                    return prev.length === notificationsData.length ? prev : notificationsData;
+                }
+
+                const merged = [...prev, ...notificationsData];
+                return merged.slice(0, 20);
+            });
 
             setTimeout(() => {
                 if (notifRef.current && isClickingNotif.current) {
@@ -262,11 +290,15 @@ const AdminLayout = ({
                 isFirstLoad.current = false;
             }
         }
-    }, [user?.id, isNotifOpen, limit]);
+    }, [user?.id, isNotifOpen, offset]);
 
     const markNotificationAsRead = async (id: number) => {
         try {
+            isClickingNotif.current = true; // 🔥 IMPORTANT
+
             await api.put(`/notifications/${id}/read`);
+
+            const scrollTop = notifRef.current?.scrollTop || 0;
 
             setNotifications(prev =>
                 prev.map(n =>
@@ -275,6 +307,14 @@ const AdminLayout = ({
             );
 
             setUnreadCount(prev => (prev > 0 ? prev - 1 : 0));
+
+            // restore scroll
+            setTimeout(() => {
+                if (notifRef.current) {
+                    notifRef.current.scrollTop = scrollTop;
+                }
+                isClickingNotif.current = false; // 🔥 reset after click
+            }, 0);
 
         } catch (err) {
             console.error("Failed to mark notification as read:", err);
@@ -299,15 +339,20 @@ const AdminLayout = ({
     useEffect(() => {
         if (!user?.id) return;
 
-        fetchNotifications();
+        // 🔥 ONLY FETCH WHEN FIRST LOAD
+        if (offset === 0) {
+            fetchNotifications();
+        }
 
         const interval = setInterval(() => {
-            fetchNotifications();
+            if (!isNotifOpen && offset === 0) {
+                fetchNotifications();
+            }
         }, 5000);
 
         return () => clearInterval(interval);
-    }, [user?.id]);
 
+    }, [user?.id, offset, isNotifOpen]);
     useEffect(() => {
         if (!user?.id) return;
 
@@ -323,6 +368,34 @@ const AdminLayout = ({
     if (!user) {
         return null;
     }
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
+
+            const insideChatDropdown = chatDropdownRef.current?.contains(target);
+            const insideChatBox = chatBoxRef.current?.contains(target);
+            const insideChatButton = chatButtonRef.current?.contains(target);
+
+            const insideNotifDropdown = notifDropdownRef.current?.contains(target);
+            const insideNotifButton = notifButtonRef.current?.contains(target);
+
+            if (
+                !insideChatDropdown &&
+                !insideChatBox &&
+                !insideChatButton &&
+                !insideNotifDropdown &&
+                !insideNotifButton
+            ) {
+                setIsChatOpen(false);
+                setIsNotifOpen(false);
+            }
+        };
+
+        window.addEventListener("mousedown", handleClickOutside);
+
+        return () => window.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const navigationGroups = [
         {
@@ -369,35 +442,78 @@ const AdminLayout = ({
         if (seconds < 60) return "Just now";
 
         const minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+        if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
 
         const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
 
         const days = Math.floor(hours / 24);
-        if (days === 1) return "Yesterday";
-        if (days < 7) return `${days} days ago`;
+        if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
 
-        return date.toLocaleDateString();
+        const weeks = Math.floor(days / 7);
+        if (weeks < 4) return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+
+        const months = Math.floor(days / 30);
+        if (months < 12) return `${months} month${months > 1 ? 's' : ''} ago`;
+
+        const years = Math.floor(days / 365);
+        return `${years} year${years > 1 ? 's' : ''} ago`;
     };
 
     const MessageDropdownContent = () => {
         return (
-            <div className="w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl">
-                <div className="flex items-center justify-between px-4 py-3 border-b bg-white rounded-t-lg">
-                    <h2 className="text-sm font-semibold text-gray-800">Messages</h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={refreshData}
-                            className="text-xs text-gray-500 hover:text-gray-700"
-                        >
-                            <RefreshCw className="h-3 w-3" />
-                        </button>
-                        <span className="text-xs text-gray-500">{unreadMessages} unread</span>
+            <div className="chat-dropdown w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-gray-100 shadow-sm">
+
+                {/* HEADER */}
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+
+                    {/* LEFT → TITLE */}
+                    <h2 className="text-base font-bold text-gray-900">
+                        Chats
+                    </h2>
+
+                    {/* RIGHT → FILTER + ACTION */}
+                    <div className="flex items-center gap-4">
+
+                        {/* FILTER */}
+                        <div className="flex gap-2">
+                            {["all", "guest", "staff"].map((type) => (
+                                <button
+                                    key={type}
+                                    onClick={() => setChatFilter(type as any)}
+                                    className={`px-3 py-1 text-xs rounded-full capitalize transition ${chatFilter === type
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                        }`}
+                                >
+                                    {type}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* ACTION */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={refreshData}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                            </button>
+
+                            <span className="text-xs text-gray-500">
+                                {unreadMessages} unread
+                            </span>
+                        </div>
+
                     </div>
                 </div>
 
-                <div ref={messageRef} className="max-h-96 overflow-y-auto scrollbar-hide">
+                {/* MESSAGE LIST */}
+                <div
+                    ref={messageRef}
+                    data-scroll-area
+                    className="max-h-96 overflow-y-auto scrollbar-hide px-2 py-2"
+                >
                     {messagesLoading ? (
                         <div className="p-8 text-center text-gray-400 text-sm">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
@@ -408,166 +524,223 @@ const AdminLayout = ({
                             No messages
                         </div>
                     ) : (
-                        messages.map((c) => {
-                            const user = c.user;
+                        messages
+                            .filter((c) => {
+                                if (chatFilter === "all") return true;
+                                return c.user?.role?.toLowerCase() === chatFilter;
+                            })
+                            .map((c) => {
+                                const chatUser = c.user;
+                                if (!chatUser) return null;
 
-                            if (!user) return null;
+                                return (
+                                    <div
+                                        key={chatUser.id}
+                                        onClick={() => {
+                                            setActiveChatUser({
+                                                id: chatUser.id,
+                                                name: chatUser.first_name
+                                            });
 
-                            return (
-                                <div
-                                    key={user.id}
-                                    onClick={() => {
-                                        setActiveChatUser({
-                                            id: user.id,
-                                            name: user.first_name
-                                        });
-                                        fetchMessages();
-                                    }}
-                                    className="px-4 py-3 border-b cursor-pointer hover:bg-gray-50"
-                                >
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-sm font-semibold text-gray-800">
-                                            {user.first_name}
-                                        </p>
+                                            setMessages(prev =>
+                                                prev.map(msg =>
+                                                    msg.user.id === chatUser.id
+                                                        ? { ...msg, unread: 0 }
+                                                        : msg
+                                                )
+                                            );
 
-                                        {c.unread > 0 && (
-                                            <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
-                                                {c.unread}
-                                            </span>
-                                        )}
+                                            fetchMessages();
+                                        }}
+                                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1"
+                                    >
+                                        <div className="flex items-center gap-3">
+
+                                            {/* AVATAR */}
+                                            <Avatar className="h-9 w-9 border-0 ring-0 shadow-none overflow-hidden">
+                                                <AvatarImage
+                                                    src={chatUser.avatar_url}
+                                                    className="h-full w-full object-cover border-0"
+                                                />
+                                                <AvatarFallback
+                                                    className="bg-emerald-500 text-white flex items-center justify-center w-full h-full border-0 ring-0 shadow-none"
+                                                >
+                                                    {chatUser.first_name?.[0]}
+                                                </AvatarFallback>
+                                            </Avatar>
+
+                                            {/* NAME + MESSAGE */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-center">
+                                                    <p className="text-sm font-semibold text-gray-800 truncate">
+                                                        {chatUser.first_name}
+                                                    </p>
+
+                                                    {c.unread > 0 && (
+                                                        <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                                                            {c.unread}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <p className="text-xs text-gray-500 truncate">
+                                                    {c.last_sender_id === user?.id && (
+                                                        <span className="text-gray-400">You: </span>
+                                                    )}
+                                                    {c.last_message}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
-
-                                    <p className="text-xs text-gray-500 truncate">
-                                        {c.last_message}
-                                    </p>
-                                </div>
-                            );
-                        })
+                                );
+                            })
                     )}
                 </div>
 
-                <div className="text-center py-2 border-t bg-white rounded-b-lg">
+                {/* FOOTER */}
+                <div className="text-center py-3 border-t border-gray-100">
                     <button
-                        onClick={() => {
-                            handleNavigation('/messages');
-                        }}
+                        onClick={() => handleNavigation('/messages')}
                         className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
                     >
                         View all messages
                     </button>
                 </div>
             </div>
-        )
+        );
     };
 
-    const NotificationDropdownContent = () => (
-        <div className="w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl">
+    const NotificationDropdownContent = () => {
+        return (
+            <div className="chat-dropdown w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-gray-100 shadow-sm">
 
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-white rounded-t-lg">
-                <h2 className="text-sm font-semibold text-gray-800">Notifications</h2>
-                <div className="flex items-center gap-2">
-                    {unreadCount > 0 && (
+                {/* HEADER */}
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+
+                    <h2 className="text-base font-bold text-gray-900">
+                        Notifications
+                    </h2>
+
+                    <div className="flex items-center gap-3">
+
+                        {unreadCount > 0 && (
+                            <button
+                                onClick={markAllNotificationsAsRead}
+                                className="text-xs text-emerald-600 hover:text-emerald-700"
+                            >
+                                Mark all
+                            </button>
+                        )}
+
                         <button
-                            onClick={markAllNotificationsAsRead}
-                            className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                            onClick={refreshData}
+                            className="text-gray-500 hover:text-gray-700"
                         >
-                            <CheckCheck className="h-3 w-3" />
-                            Mark all read
+                            <RefreshCw className="h-4 w-4" />
                         </button>
-                    )}
-                    <button
-                        onClick={refreshData}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                    >
-                        <RefreshCw className="h-3 w-3" />
-                    </button>
-                    <span className="text-xs text-gray-500">{unreadCount} unread</span>
+
+                        <span className="text-xs text-gray-500">
+                            {unreadCount} unread
+                        </span>
+                    </div>
                 </div>
-            </div>
 
-            <div className="relative">
-                <div
-                    ref={notifRef}
-                    onScroll={(e) => {
-                        const el = e.currentTarget;
-                        notifScroll.current = el.scrollTop;
-                        isScrolling.current = true;
+                {/* LIST + GRADIENT */}
+                <div className="relative">
 
-                        setTimeout(() => {
-                            isScrolling.current = false;
-                        }, 800);
-                    }}
-                    className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto custom-scroll`}
-                >
-                    {notificationsLoading ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
-                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
-                            Loading notifications...
-                        </div>
-                    ) : notifications.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
-                            You're all caught up 🎉
-                        </div>
-                    ) : (
-                        <>
-                            {notifications.map((n) => {
-                                const time = timeAgo(n.created_at);
-                                return (
+                    <div
+                        ref={notifRef}
+                        onScroll={(e) => {
+                            const el = e.currentTarget;
+                            notifScroll.current = el.scrollTop;
+                            isScrolling.current = true;
+
+                            setTimeout(() => {
+                                isScrolling.current = false;
+                            }, 800);
+                        }}
+                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto px-2 py-2`}
+                    >
+                        {notificationsLoading ? (
+                            <div className="p-8 text-center text-gray-400 text-sm">
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
+                                Loading notifications...
+                            </div>
+                        ) : notifications.length === 0 ? (
+                            <div className="p-8 text-center text-gray-400 text-sm">
+                                No notifications
+                            </div>
+                        ) : (
+                            <>
+                                {notifications.map((n) => (
                                     <div
                                         key={n.id}
                                         onClick={() => markNotificationAsRead(n.id)}
-                                        className={`px-4 py-3 border-b cursor-pointer hover:bg-gray-50 transition-colors relative
-                ${!n.is_read ? 'bg-blue-50' : 'bg-white'}`}
+                                        className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 ${!n.is_read ? "bg-blue-50" : ""
+                                            }`}
                                     >
-                                        {!n.is_read && (
-                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
-                                        )}
+                                        <div className="flex justify-between items-center">
 
-                                        <div className="flex justify-between items-start mb-1">
-                                            <p className="text-sm font-semibold text-gray-800 pr-6">
+                                            <p className="text-sm font-semibold text-gray-800 truncate">
                                                 {n.title}
                                             </p>
 
                                             {!n.is_read && (
-                                                <span className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                                <div className="h-2 w-2 bg-blue-500 rounded-full ml-2 flex-shrink-0"></div>
                                             )}
                                         </div>
 
-                                        <p className="text-sm text-gray-600 line-clamp-2">
+                                        <p className="text-xs text-gray-500 truncate">
                                             {n.message}
                                         </p>
 
-                                        <p className="text-xs text-gray-400 mt-2">
-                                            {time}
+                                        <p className="text-[10px] text-gray-400 mt-1">
+                                            {timeAgo(n.created_at)}
                                         </p>
                                     </div>
-                                );
-                            })}
+                                ))}
 
-                            {!expanded && notifications.length >= 10 && (
-                                <div className="text-center py-3">
-                                    <button
-                                        onClick={() => {
-                                            isClickingNotif.current = true;
+                                {/* SEE MORE BUTTON */}
+                                {!expanded && notifications.length >= 10 && (
+                                    <div className="text-center py-3">
+                                        <button
+                                            onClick={async () => {
+                                                isClickingNotif.current = true;
 
-                                            setLimit(prev => prev + 10);
-                                            setExpanded(true);
-                                        }}
-                                        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                                    >
-                                        See previous notifications
-                                    </button>
-                                </div>
-                            )}
-                        </>
+                                                const newOffset = offset + 10;
+                                                setOffset(newOffset);
+                                                setExpanded(true);
+
+                                                // 🔥 DIRECT FETCH (ETO ANG KULANG MO)
+                                                const res = await api.get(
+                                                    `/notifications/user/${user.id}?limit=10&offset=${newOffset}`
+                                                );
+
+                                                const data = res.data || [];
+
+                                                setNotifications(prev => {
+                                                    const merged = [...prev, ...data];
+                                                    return merged.slice(0, 20);
+                                                });
+                                            }}
+                                            className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                        >
+                                            See previous notifications
+                                        </button>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    {/* GRADIENT FADE */}
+                    {!expanded && notifications.length >= 10 && (
+                        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
                     )}
                 </div>
-                {!expanded && notifications.length >= 10 && (
-                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
-                )}
             </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <>
@@ -594,9 +767,9 @@ const AdminLayout = ({
                         >
                             {/* Logo with White Circle - Exactly matching logo size */}
                             <div className="h-12 w-12 rounded-full overflow-hidden">
-                                <img 
-                                    src={logo} 
-                                    alt="Traveler's Inn Logo" 
+                                <img
+                                    src={logo}
+                                    alt="Traveler's Inn Logo"
                                     className="h-full w-auto object-contain scale-125"
                                     onError={(e) => {
                                         // Fallback if logo fails to load
@@ -758,38 +931,83 @@ const AdminLayout = ({
 
                             <div className="flex items-center gap-2">
                                 {/* Messages Dropdown */}
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="relative">
-                                            <MessageCircle className="h-5 w-5" />
-                                            {unreadMessages > 0 && (
-                                                <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-blue-500 text-white text-[10px]">
-                                                    {unreadMessages > 99 ? '99+' : unreadMessages}
-                                                </Badge>
-                                            )}
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="p-0 bg-transparent border-none shadow-none">
-                                        <MessageDropdownContent />
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="relative">
+
+                                    {/* CHAT BUTTON */}
+
+                                    <button
+                                        ref={chatButtonRef}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsNotifOpen(false);
+                                            setIsChatOpen(prev => !prev);
+                                        }}
+                                        className="relative p-2 rounded-lg hover:bg-gray-100"
+                                    >
+                                        <MessageCircle className="h-5 w-5" />
+
+                                        {unreadMessages > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] px-1.5 rounded-full">
+                                                {unreadMessages}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    {/* CHAT DROPDOWN */}
+                                    {isChatOpen && (
+                                        <div
+                                            ref={chatDropdownRef}
+                                            className="absolute right-0 mt-2 z-50"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <MessageDropdownContent />
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Notifications Dropdown */}
-                                <DropdownMenu open={isNotifOpen} onOpenChange={setIsNotifOpen}>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="relative">
-                                            <Bell className="h-5 w-5" />
-                                            {unreadCount > 0 && (
-                                                <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-[10px]">
-                                                    {unreadCount > 99 ? '99+' : unreadCount}
-                                                </Badge>
-                                            )}
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="p-0 bg-transparent border-none shadow-none">
-                                        <NotificationDropdownContent />
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="relative">
+
+                                    {/* NOTIF BUTTON */}
+                                    <button
+                                        ref={notifButtonRef}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsChatOpen(false);
+
+                                            setIsNotifOpen(prev => {
+                                                const next = !prev;
+
+                                                if (next) {
+                                                    setOffset(0); // 🔥 reset ONLY when opening
+                                                    setExpanded(false);
+                                                }
+
+                                                return next;
+                                            });
+                                        }}
+                                        className="relative p-2 rounded-lg hover:bg-gray-100"
+                                    >
+                                        <Bell className="h-5 w-5" />
+
+                                        {unreadCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 rounded-full">
+                                                {unreadCount > 99 ? '99+' : unreadCount}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    {/* NOTIF DROPDOWN */}
+                                    {isNotifOpen && (
+                                        <div
+                                            ref={notifDropdownRef}
+                                            className="absolute right-0 mt-2 z-50"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <NotificationDropdownContent />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </header>
@@ -801,21 +1019,41 @@ const AdminLayout = ({
             </div>
             {/* CHAT BOX HERE */}
             {activeChatUser && (
-                <ChatBox
-                    userId={activeChatUser.id}
-                    userName={activeChatUser.name}
-                    onClose={() => setActiveChatUser(null)}
-                    onMessageSent={(msg) => {
-                        setMessages(prev => [
-                            {
-                                user: { id: activeChatUser.id, first_name: activeChatUser.name },
-                                last_message: msg,
-                                unread: 0
-                            },
-                            ...prev
-                        ]);
-                    }}
-                />
+                <div ref={chatBoxRef}>
+                    <ChatBox
+                        userId={activeChatUser.id}
+                        userName={activeChatUser.name}
+                        onClose={() => setActiveChatUser(null)}
+                        onMessageSent={(msg) => {
+                            setMessages(prev => {
+                                const exists = prev.find(m => m.user.id === activeChatUser.id);
+
+                                if (exists) {
+                                    // update existing convo
+                                    return prev.map(m =>
+                                        m.user.id === activeChatUser.id
+                                            ? {
+                                                ...m,
+                                                last_message: msg,
+                                                last_sender_id: user.id,
+                                                unread: 0
+                                            }
+                                            : m
+                                    );
+                                }
+                                return [
+                                    {
+                                        user: { id: activeChatUser.id, first_name: activeChatUser.name },
+                                        last_message: msg,
+                                        last_sender_id: user.id,
+                                        unread: 0
+                                    },
+                                    ...prev
+                                ];
+                            });
+                        }}
+                    />
+                </div>
             )}
 
 

@@ -7,41 +7,31 @@ use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
-    // public function index()
-    // {
-    //     return response()->json(
-    //         Room::with(['roomType', 'images'])->get(),
-    //         200
-    //     );
-    // }
-
-    // public function index()
-    // {
-    //     $rooms = Room::with(['roomType', 'images'])->get()->map(function ($room) {
-
-    //         $room->image_url = $room->images->count()
-    //             ? asset('storage/' . $room->images->last()->image_path)
-    //             : null;
-
-    //         return $room;
-    //     });
-
-    //     return response()->json($rooms, 200);
-    // }
-
     public function index()
     {
         $rooms = Room::with([
             'roomType:id,type_name,base_price',
-            'images' => function ($q) {
-                $q->latest()->limit(1);
-            }
+            'images'
         ])
-            ->orderByRaw('CAST(room_number AS UNSIGNED) ASC') // 🔥 SORT FIX
+            ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
 
         return response()->json(
             $rooms->map(function ($room) {
+
+                // 📷 NORMAL IMAGE (may fallback)
+                $normalImage = $room->images
+                    ->where('image_type', 'normal')
+                    ->sortByDesc('created_at')
+                    ->first()
+                    ?? $room->images->sortByDesc('created_at')->first();
+
+                // 👁️ 360 IMAGE
+                $panoramaImage = $room->images
+                    ->where('image_type', '360')
+                    ->sortByDesc('created_at')
+                    ->first();
+
                 return [
                     'id' => $room->id,
                     'room_number' => $room->room_number,
@@ -50,14 +40,49 @@ class RoomController extends Controller
                     'room_type_id' => $room->room_type_id,
                     'room_type' => $room->roomType,
 
-                    'image_url' => $room->images->first()
-                        ? asset('storage/' . $room->images->first()->image_path)
-                        : null
+                    // 📷 CARD IMAGE
+                    'image_url' => $normalImage
+                        ? asset('storage/' . $normalImage->image_path)
+                        : null,
+
+                    // 👁️ POV IMAGE
+                    'panorama_url' => $panoramaImage
+                        ? asset('storage/' . $panoramaImage->image_path)
+                        : null,
                 ];
             })
         );
     }
-    
+
+    // public function index()
+    // {
+    //     $rooms = Room::with([
+    //         'roomType:id,type_name,base_price',
+    //         'images' => function ($q) {
+    //             $q->latest()->limit(1);
+    //         }
+    //     ])
+    //         ->orderByRaw('CAST(room_number AS UNSIGNED) ASC') // 🔥 SORT FIX
+    //         ->get();
+
+    //     return response()->json(
+    //         $rooms->map(function ($room) {
+    //             return [
+    //                 'id' => $room->id,
+    //                 'room_number' => $room->room_number,
+    //                 'status' => $room->status,
+
+    //                 'room_type_id' => $room->room_type_id,
+    //                 'room_type' => $room->roomType,
+
+    //                 'image_url' => $room->images->first()
+    //                     ? asset('storage/' . $room->images->first()->image_path)
+    //                     : null
+    //             ];
+    //         })
+    //     );
+    // }
+
     public function store(Request $request)
     {
         $validated = $request->validate([

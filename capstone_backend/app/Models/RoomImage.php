@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class RoomImage extends Model
 {
-    protected $primaryKey = 'room_image_id';
     public $timestamps = false;
 
     protected $fillable = [
