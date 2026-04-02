@@ -17,7 +17,7 @@ class OrderController extends Controller
     {
         return response()->json(
             Order::with(['items.menuItem', 'staff'])
-                ->orderBy('id', 'desc') // ✅ FIX
+                ->orderBy('id', 'desc')
                 ->get(),
             200
         );

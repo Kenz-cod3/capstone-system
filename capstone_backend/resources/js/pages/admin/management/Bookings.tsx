@@ -1,128 +1,123 @@
 import { useEffect, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreOutlined } from "@ant-design/icons";
+import {
+    Table,
+    Tabs,
+    Input,
+    Button,
+    message,
+    Modal,
+    Tag,
+    Dropdown,
+    Alert,
+    Typography
+} from "antd";
+import type { MenuProps } from "antd";
 import api from "@/services/api";
 
+const { Title, Text } = Typography;
+const { Search } = Input;
+
 export default function Bookings() {
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [total, setTotal] = useState(0);
     const [active, setActive] = useState<any[]>([]);
     const [history, setHistory] = useState<any[]>([]);
     const [trash, setTrash] = useState<any[]>([]);
-    const [view, setView] = useState<"active" | "history" | "trash">("active");
+    const [activeTab, setActiveTab] = useState<string>("active");
     const [loading, setLoading] = useState(false);
-    const [search, setSearch] = useState("");
-    const [toast, setToast] = useState<string | null>(null);
-    const [openDropdown, setOpenDropdown] = useState<number | null>(null);
-    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+    const [searchText, setSearchText] = useState("");
 
     useEffect(() => {
-        const cached = sessionStorage.getItem("bookings_cache");
-
-        if (cached) {
-            const data = JSON.parse(cached);
-
-            setActive(data.active);
-            setHistory(data.history);
-            setTrash(data.trash);
-
-            // 🔥 silent fetch (no loading UI)
-            fetchAll(true);
-        } else {
-            fetchAll(); // normal loading
-        }
-    }, []);
+        setCurrentPage(1);
+        setSearchText(""); // ✅ reset search
+    }, [activeTab]);
 
     useEffect(() => {
-        const handleClickOutside = () => {
-            setOpenDropdown(null);
-        };
+        fetchAll(currentPage, pageSize);
+    }, [activeTab, currentPage, pageSize]);
 
-        window.addEventListener("click", handleClickOutside);
+    const fetchAll = async (page = currentPage, perPage = pageSize) => {
+        setLoading(true);
 
-        return () => window.removeEventListener("click", handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-        const handleScroll = () => {
-            setOpenDropdown(null);
-        };
-
-        window.addEventListener("scroll", handleScroll, true);
-
-        return () => window.removeEventListener("scroll", handleScroll, true);
-    }, []);
-
-    const fetchAll = async (silent = false) => {
-        if (!silent) setLoading(true);
         try {
-            const [a, h, t] = await Promise.all([
-                api.get("/bookings/active"),
-                api.get("/bookings/history"),
-                api.get("/bookings/trash")
-            ]);
+            let endpoint = "/bookings/active";
 
-            setActive(a.data);
-            setHistory(h.data);
-            setTrash(t.data);
+            if (activeTab === "history") endpoint = "/bookings/history";
+            if (activeTab === "trash") endpoint = "/bookings/trash";
 
-            // ✅ SAVE CACHE
-            sessionStorage.setItem("bookings_cache", JSON.stringify({
-                active: a.data,
-                history: h.data,
-                trash: t.data
-            }));
+            const res = await api.get(`${endpoint}?page=${page}&per_page=${perPage}`);
+
+            const response = res.data;
+
+            // ✅ FIX: prevent invalid page (important for trash 1 page bug)
+            if (response.current_page > response.last_page) {
+                setCurrentPage(response.last_page || 1);
+                return;
+            }
+
+            const data = response.data || [];
+
+            // ✅ SET DATA PER TAB (clean)
+            if (activeTab === "active") {
+                setActive(data);
+            } else if (activeTab === "history") {
+                setHistory(data);
+            } else if (activeTab === "trash") {
+                setTrash(data);
+            }
+
+            // ✅ SET TOTAL (single only, no duplicate)
+            setTotal(response.total ?? 0);
 
         } catch (err) {
             console.error(err);
+            message.error("Failed to load bookings");
         } finally {
             setLoading(false);
         }
     };
 
     const filterData = (data: any[]) => {
+        if (!searchText) return data;
+        if (!Array.isArray(data)) return [];
+
         return data.filter((b) => {
-            const name =
-                b.booking_type === "online"
-                    ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`.trim()
-                    : b.walk_in_guest?.guest_name ?? "";
+            const name = b.booking_type === "online"
+                ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`.trim()
+                : b.walk_in_guest?.guest_name ?? "";
 
             return (
-                name.toLowerCase().includes(search.toLowerCase()) ||
-                b.booking_type.toLowerCase().includes(search.toLowerCase()) ||
-                String(b.id).includes(search)
+                name.toLowerCase().includes(searchText.toLowerCase()) ||
+                b.booking_type?.toLowerCase().includes(searchText.toLowerCase()) ||
+                String(b.id).includes(searchText)
             );
         });
     };
 
     const handleUpdateStatus = async (id: number, status: string) => {
         try {
-            await api.put(`/bookings/${id}`, {
-                booking_status: status
-            });
+            await api.put(`/bookings/${id}`, { booking_status: status });
 
-            setActive(prev => {
-                const updated = prev.find(b => b.id === id);
-                if (!updated) return prev;
-
-                const updatedBooking = { ...updated, booking_status: status };
-
-                // 🔥 if checkout → move to history
-                if (status === "checked_out" || status === "cancelled") {
-                    setHistory(h => [updatedBooking, ...h]);
-                    return prev.filter(b => b.id !== id);
+            // ✅ FIX: Update local state correctly
+            if (status === "checked_out" || status === "cancelled") {
+                const bookingToMove = active.find(b => b.id === id);
+                if (bookingToMove) {
+                    const updatedBooking = { ...bookingToMove, booking_status: status };
+                    setHistory(prev => [updatedBooking, ...prev]);
+                    setActive(prev => prev.filter(b => b.id !== id));
                 }
-
-                // 🔥 else update normally
-                return prev.map(b =>
-                    b.id === id ? updatedBooking : b
+            } else {
+                setActive(prev =>
+                    prev.map(b => b.id === id ? { ...b, booking_status: status } : b)
                 );
-            });
+            }
 
-            setToast(`✅ Booking #${id} status updated to ${status}`);
-            setTimeout(() => setToast(null), 3000);
-
+            message.success(`Booking #${id} status updated to ${status}`);
         } catch (err) {
             console.error(err);
-            setToast("❌ Failed to update status");
-            setTimeout(() => setToast(null), 3000);
+            message.error("Failed to update status");
         }
     };
 
@@ -130,7 +125,6 @@ export default function Bookings() {
         try {
             await api.post(`/walk-in-guests/${bookingId}/checkout`);
 
-            // Find the booking being checked out
             const checkedOutBooking = active.find(b => b.id === bookingId);
 
             if (checkedOutBooking) {
@@ -139,45 +133,40 @@ export default function Bookings() {
                 setActive(prev => prev.filter(b => b.id !== bookingId));
             }
 
-            setToast(`✅ Booking #${bookingId} checked out successfully`);
-            setTimeout(() => setToast(null), 3000);
-
+            message.success(`Booking #${bookingId} checked out successfully`);
         } catch (error) {
             console.error(error);
-            setToast("❌ Checkout failed");
-            setTimeout(() => setToast(null), 3000);
+            message.error("Checkout failed");
         }
     };
 
     const handleDelete = async (id: number) => {
-        const confirmDelete = confirm("Move this booking to trash?");
-        if (!confirmDelete) return;
+        Modal.confirm({
+            title: "Move to Trash",
+            content: "Are you sure you want to move this booking to trash?",
+            okText: "Yes",
+            cancelText: "Cancel",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                try {
+                    await api.delete(`/bookings/${id}`);
 
-        try {
-            await api.delete(`/bookings/${id}`);
+                    const deleted = active.find(b => b.id === id) || history.find(b => b.id === id);
 
-            // ✅ GET THE DELETED ITEM
-            const deleted =
-                active.find(b => b.id === id) ||
-                history.find(b => b.id === id);
+                    setActive(prev => prev.filter(b => b.id !== id));
+                    setHistory(prev => prev.filter(b => b.id !== id));
 
-            // ✅ REMOVE FROM ACTIVE + HISTORY
-            setActive(prev => prev.filter(b => b.id !== id));
-            setHistory(prev => prev.filter(b => b.id !== id));
+                    if (deleted) {
+                        setTrash(prev => [{ ...deleted, deleted_at: new Date() }, ...prev]);
+                    }
 
-            // ✅ ADD TO TRASH (IMPORTANT)
-            if (deleted) {
-                setTrash(prev => [deleted, ...prev]);
+                    message.success(`Booking #${id} moved to trash`);
+                } catch (err) {
+                    console.error(err);
+                    message.error("Failed to move booking to trash");
+                }
             }
-
-            setToast(`✅ Booking #${id} moved to trash`);
-            setTimeout(() => setToast(null), 3000);
-
-        } catch (err) {
-            console.error(err);
-            setToast("❌ Failed to move booking to trash");
-            setTimeout(() => setToast(null), 3000);
-        }
+        });
     };
 
     const handleRestore = async (id: number) => {
@@ -185,47 +174,48 @@ export default function Bookings() {
             await api.post(`/bookings/${id}/restore`);
 
             const restored = trash.find(b => b.id === id);
-
             setTrash(prev => prev.filter(b => b.id !== id));
 
             if (restored) {
+                const { deleted_at, ...cleanRestored } = restored;
                 if (restored.booking_status === "checked_out" || restored.booking_status === "cancelled") {
-                    setHistory(prev => [restored, ...prev]);
+                    setHistory(prev => [cleanRestored, ...prev]);
                 } else {
-                    setActive(prev => [restored, ...prev]);
+                    setActive(prev => [cleanRestored, ...prev]);
                 }
             }
 
-            setToast("✅ Booking restored successfully");
-            setTimeout(() => setToast(null), 3000);
-
+            message.success("Booking restored successfully");
         } catch (err) {
             console.error(err);
-            setToast("❌ Failed to restore booking");
-            setTimeout(() => setToast(null), 3000);
+            message.error("Failed to restore booking");
         }
     };
 
     const handleForceDelete = async (id: number) => {
-        const confirmDelete = confirm(
-            "⚠️ WARNING: This will permanently delete the booking.\n\nThis action cannot be undone.\n\nAre you absolutely sure?"
-        );
-
-        if (!confirmDelete) return;
-
-        try {
-            await api.delete(`/bookings/${id}/force-delete`);
-
-            setTrash(prev => prev.filter(b => b.id !== id));
-
-            setToast(`✅ Booking #${id} permanently deleted`);
-            setTimeout(() => setToast(null), 3000);
-
-        } catch (err) {
-            console.error(err);
-            setToast("❌ Failed to delete booking permanently");
-            setTimeout(() => setToast(null), 3000);
-        }
+        Modal.confirm({
+            title: "Permanent Deletion",
+            content: (
+                <div>
+                    <Text type="danger">⚠️ This action cannot be undone!</Text>
+                    <br />
+                    <Text>Are you sure you want to permanently delete this booking?</Text>
+                </div>
+            ),
+            okText: "Delete Forever",
+            cancelText: "Cancel",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                try {
+                    await api.delete(`/bookings/${id}/force-delete`);
+                    setTrash(prev => prev.filter(b => b.id !== id));
+                    message.success(`Booking #${id} permanently deleted`);
+                } catch (err) {
+                    console.error(err);
+                    message.error("Failed to delete booking permanently");
+                }
+            }
+        });
     };
 
     const formatDate = (date: string) => {
@@ -239,13 +229,13 @@ export default function Bookings() {
 
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
-            pending: "bg-amber-100 text-amber-800",
-            confirmed: "bg-emerald-100 text-emerald-800",
-            checked_in: "bg-blue-100 text-blue-800",
-            checked_out: "bg-purple-100 text-purple-800",
-            cancelled: "bg-rose-100 text-rose-800"
+            pending: "orange",
+            confirmed: "green",
+            checked_in: "blue",
+            checked_out: "default",
+            cancelled: "red"
         };
-        return colors[status] || "bg-gray-100 text-gray-800";
+        return colors[status] || "default";
     };
 
     const getGuestName = (booking: any) => {
@@ -254,290 +244,472 @@ export default function Bookings() {
             const lastName = booking.user?.last_name ?? "";
             return `${firstName} ${lastName}`.trim() || "N/A";
         } else {
-            // Walk-in guest name
             return booking.walk_in_guest?.guest_name || "Guest";
         }
     };
 
-    const renderTable = (data: any[], type: string) => (
-        <div className="overflow-x-auto bg-white rounded-lg shadow-sm border border-mint-200 max-h-[460px] overflow-y-auto relative">
-            <table className="w-full">
-                <thead className="bg-mint-50 border-b border-mint-200 sticky top-0 z-10">
-                    <tr>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Guest Name</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Room</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Type</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Check In</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Check Out</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Total</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
+    const getActionMenu = (record: any, type: string): MenuProps => {
+        const items: MenuProps["items"] = [];
 
-                <tbody className="divide-y divide-gray-200">
-                    {loading ? (
-                        <tr>
-                            <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                <div className="flex items-center justify-center space-x-2">
-                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-mint-600"></div>
-                                    <span>Loading...</span>
-                                </div>
-                            </td>
-                        </tr>
-                    ) : data.length === 0 ? (
-                        <tr>
-                            <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                No bookings found
-                            </td>
-                        </tr>
-                    ) : (
-                        data.map((b: any) => (
-                            <tr key={b.id} className="hover:bg-gray-50 transition-colors">
-                                {/* ID */}
-                                <td className="px-4 py-4 text-sm text-gray-900 text-center">#{b.id}</td>
+        if (type === "active") {
+            // ✅ FIX: Only show relevant status transitions
+            if (record.booking_status === "pending") {
+                items.push({
+                    key: "confirm",
+                    label: "Confirm",
+                    onClick: () => handleUpdateStatus(record.id, "confirmed")
+                });
+            }
 
-                                {/* Guest Name */}
-                                <td className="px-4 py-4 min-w-[180px] text-left">
-                                    <div className="font-medium text-gray-900 whitespace-nowrap text-left">
-                                        {getGuestName(b)}
-                                    </div>
-                                </td>
-                                <td className="px-4 py-4 text-sm text-gray-700 min-w-[80px] text-center">
-                                    {b.rooms?.length
-                                        ? b.rooms.map((r: any) => r.room_number).join(", ")
-                                        : "N/A"}
-                                </td>
+            if (record.booking_status === "confirmed") {
+                items.push({
+                    key: "checkin",
+                    label: "Check In",
+                    onClick: () => handleUpdateStatus(record.id, "checked_in")
+                });
+            }
 
-                                {/* TYPE */}
-                                <td className="px-6 py-4 text-center">
-                                    <span
-                                        className={`px-2 py-1 text-xs font-medium rounded-full ${b.booking_type === "walk_in"
-                                            ? "bg-blue-100 text-blue-800"
-                                            : "bg-emerald-100 text-emerald-800"
-                                            }`}
-                                    >
-                                        {b.booking_type === "walk_in" ? "Walk-in" : "Online"}
-                                    </span>
-                                </td>
+            if (record.booking_status === "checked_in") {
+                items.push({
+                    key: "checkout",
+                    label: "Check Out",
+                    onClick: () => {
+                        if (record.booking_type === "walk_in") handleCheckout(record.id);
+                        else handleUpdateStatus(record.id, "checked_out");
+                    }
+                });
+            }
 
-                                {/* STATUS */}
-                                <td className="px-6 py-4 text-center">
-                                    <span
-                                        className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(b.booking_status)}`}
-                                    >
-                                        {b.booking_status?.replace(/_/g, " ").toUpperCase()}
-                                    </span>
-                                </td>
-
-                                {/* Dates */}
-                                <td className="px-6 py-4 text-sm text-gray-600 text-center">
-                                    {formatDate(b.check_in_date)}
-                                </td>
-
-                                <td className="px-6 py-4 text-sm text-gray-600 text-center">
-                                    {formatDate(b.check_out_date)}
-                                </td>
-
-                                {/* Total */}
-                                <td className="px-6 py-4 text-sm font-semibold text-gray-900 text-center">
-                                    ₱ {b.total_price?.toLocaleString()}
-                                </td>
-
-                                {/* Actions */}
-                                <td className="px-6 py-4 relative text-center">
-                                    <div className="relative group inline-block">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const rect = e.currentTarget.getBoundingClientRect();
-
-                                                const dropdownWidth = 180;
-
-                                                let left = rect.right - dropdownWidth;
-
-                                                // prevent overflow sa right
-                                                if (left + dropdownWidth > window.innerWidth) {
-                                                    left = window.innerWidth - dropdownWidth - 10;
-                                                }
-
-                                                // prevent overflow sa left
-                                                if (left < 10) {
-                                                    left = 10;
-                                                }
-
-                                                setDropdownPos({
-                                                    top: rect.bottom + 5,
-                                                    left,
-                                                });
-
-                                                setOpenDropdown(openDropdown === b.id ? null : b.id);
-                                            }}
-                                            className="p-2 rounded hover:bg-gray-100"
-                                        >
-                                            <MoreHorizontal className="w-5 h-5 text-gray-600" />
-                                        </button>
-
-                                        {/* Dropdown */}
-                                        {openDropdown === b.id && (
-                                            <div
-                                                style={{
-                                                    position: "fixed",
-                                                    top: dropdownPos.top,
-                                                    left: dropdownPos.left,
-                                                }}
-                                                className="z-50 w-44 bg-white border rounded-lg shadow-lg"
-                                            >
-                                                {/* 🔥 ARROW */}
-                                                <div className="absolute -top-2 right-4 w-3 h-3 bg-white border-l border-t rotate-45"></div>
-                                                {type === "active" && (
-                                                    <>
-                                                        <button onClick={() => handleUpdateStatus(b.id, "confirmed")} className="dropdown">
-                                                            Confirm
-                                                        </button>
-                                                        <button onClick={() => handleUpdateStatus(b.id, "checked_in")} className="dropdown">
-                                                            Check In
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (b.booking_type === "walk_in") handleCheckout(b.id);
-                                                                else handleUpdateStatus(b.id, "checked_out");
-                                                            }}
-                                                            className="dropdown"
-                                                        >
-                                                            Check Out
-                                                        </button>
-                                                        <button onClick={() => handleDelete(b.id)} className="dropdown text-rose-600">
-                                                            Move to Trash
-                                                        </button>
-                                                    </>
-                                                )}
-
-                                                {type === "history" && (
-                                                    <button onClick={() => handleDelete(b.id)} className="dropdown text-rose-600">
-                                                        Move to Trash
-                                                    </button>
-                                                )}
-
-                                                {type === "trash" && (
-                                                    <>
-                                                        <button onClick={() => handleRestore(b.id)} className="dropdown">
-                                                            Restore
-                                                        </button>
-                                                        <button onClick={() => handleForceDelete(b.id)} className="dropdown text-rose-600">
-                                                            Delete Forever
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
-
-    const getTabClass = (tabName: string) => {
-        const baseClass = "px-6 py-2.5 text-sm font-medium rounded-lg transition-all duration-200";
-        if (view === tabName) {
-            return `${baseClass} bg-mint-600 text-white shadow-sm`;
+            items.push({
+                key: "trash",
+                label: "Move to Trash",
+                danger: true,
+                onClick: () => handleDelete(record.id)
+            });
+        } else if (type === "history") {
+            items.push({
+                key: "trash",
+                label: "Move to Trash",
+                danger: true,
+                onClick: () => handleDelete(record.id)
+            });
+        } else if (type === "trash") {
+            items.push(
+                {
+                    key: "restore",
+                    label: "Restore",
+                    onClick: () => handleRestore(record.id)
+                },
+                {
+                    key: "delete",
+                    label: "Delete Forever",
+                    danger: true,
+                    onClick: () => handleForceDelete(record.id)
+                }
+            );
         }
-        return `${baseClass} bg-white text-gray-600 hover:bg-gray-50 border border-gray-200`;
+
+        return { items };
     };
 
-    return (
-        <div className="pt-4 space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800">Bookings Management</h1>
-                    <p className="text-sm text-gray-500 mt-1">Manage and track all reservations</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <input
-                        type="text"
-                        placeholder="Search bookings..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-mint-500"
+    const columns = [
+        {
+            title: "ID",
+            dataIndex: "id",
+            key: "id",
+            width: 100,
+            render: (id: number) => <Text strong>#{id}</Text>
+        },
+        {
+            title: "Guest Name",
+            key: "guest_name",
+            width: 220,
+            render: (_: any, record: any) => (
+                <Text style={{ fontSize: "14px" }}>{getGuestName(record)}</Text>
+            )
+        },
+        {
+            title: "Room",
+            key: "room",
+            width: 120,
+            render: (_: any, record: any) => (
+                <Text>{record.rooms?.length ? record.rooms.map((r: any) => r.room_number).join(", ") : "N/A"}</Text>
+            )
+        },
+        {
+            title: "Type",
+            key: "type",
+            width: 110,
+            render: (_: any, record: any) => (
+                <Tag color={record.booking_type === "walk_in" ? "blue" : "green"} style={{ fontSize: "12px", padding: "4px 12px" }}>
+                    {record.booking_type === "walk_in" ? "Walk-in" : "Online"}
+                </Tag>
+            )
+        },
+        {
+            title: "Status",
+            key: "status",
+            width: 130,
+            render: (_: any, record: any) => (
+                <Tag color={getStatusColor(record.booking_status)} style={{ fontSize: "12px", padding: "4px 12px" }}>
+                    {record.booking_status?.replace(/_/g, " ").toUpperCase()}
+                </Tag>
+            )
+        },
+        {
+            title: "Check In",
+            key: "check_in",
+            width: 130,
+            render: (_: any, record: any) => (
+                <Text>{formatDate(record.check_in_date)}</Text>
+            )
+        },
+        {
+            title: "Check Out",
+            key: "check_out",
+            width: 130,
+            render: (_: any, record: any) => (
+                <Text>{formatDate(record.check_out_date)}</Text>
+            )
+        },
+        {
+            title: "Total",
+            key: "total",
+            width: 130,
+            render: (_: any, record: any) => (
+                <Text strong style={{ color: "#52c41a", fontSize: "14px" }}>
+                    ₱ {record.total_price?.toLocaleString()}
+                </Text>
+            )
+        },
+        {
+            title: "Action",
+            key: "action",
+            width: 100,
+            align: "center" as const,
+            render: (_: any, record: any) => (
+                <Dropdown menu={getActionMenu(record, activeTab)} trigger={["click"]}>
+                    <Button type="text" icon={<MoreOutlined />} size="middle" />
+                </Dropdown>
+            )
+        }
+    ];
+
+    const getTableData = () => {
+        switch (activeTab) {
+            case "active":
+                return filterData(active);
+            case "history":
+                return filterData(history);
+            case "trash":
+                return filterData(trash);
+            default:
+                return [];
+        }
+    };
+
+    const tabItems = [
+        {
+            key: "active",
+            label: `Active (${active.length})`,
+            children: (
+                <>
+                    <Table
+                        className="no-border-table"
+                        columns={columns}
+                        dataSource={getTableData()}
+                        rowKey="id"
+                        loading={loading}
+                        size="large"
+                        bordered={false}
+                        pagination={false}
+                        scroll={{ y: 400 }}
                     />
-                </div>
-            </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-gray-200 pb-2">
-                <button
-                    onClick={() => setView("active")}
-                    className={getTabClass("active")}
-                >
-                    Active Bookings
-                    {active.length > 0 && view === "active" && (
-                        <span className="ml-2 px-2 py-0.5 text-xs bg-white text-mint-600 rounded-full">
-                            {active.length}
-                        </span>
-                    )}
-                </button>
+                    {/* 🔥 CUSTOM PAGINATION */}
+                    <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginTop: 16,
+                        flexWrap: "wrap"
+                    }}>
 
-                <button
-                    onClick={() => setView("history")}
-                    className={getTabClass("history")}
-                >
-                    History
-                    {history.length > 0 && view === "history" && (
-                        <span className="ml-2 px-2 py-0.5 text-xs bg-white text-mint-600 rounded-full">
-                            {history.length}
-                        </span>
-                    )}
-                </button>
+                        {/* LEFT SIDE */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
 
-                <button
-                    onClick={() => setView("trash")}
-                    className={getTabClass("trash")}
-                >
-                    Trash
-                    {trash.length > 0 && view === "trash" && (
-                        <span className="ml-2 px-2 py-0.5 text-xs bg-white text-rose-600 rounded-full">
-                            {trash.length}
-                        </span>
-                    )}
-                </button>
-            </div>
+                            <Button
+                                disabled={currentPage === 1 || loading}
+                                onClick={() => setCurrentPage(prev => prev - 1)}
+                            >
+                                Prev
+                            </Button>
 
-            {/* Warning Banner for Trash */}
-            {view === "trash" && trash.length > 0 && (
-                <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-md">
-                    <div className="flex items-center">
-                        <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
+                            <Text>
+                                Page {currentPage} of {Math.ceil(total / pageSize) || 1}
+                            </Text>
+
+                            <Button
+                                disabled={currentPage >= Math.ceil(total / pageSize) || loading}
+                                onClick={() => setCurrentPage(prev => prev + 1)}
+                            >
+                                Next
+                            </Button>
+
                         </div>
-                        <div className="ml-3">
-                            <p className="text-sm text-rose-700">
-                                <span className="font-medium">Warning:</span> Items in trash will be permanently deleted. Use "Delete Forever" with caution.
-                            </p>
+
+                        {/* RIGHT SIDE */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+
+                            {/* TOTAL */}
+                            <Text>
+                                Total: {total}
+                            </Text>
+
+                            {/* ROWS */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <Text>Rows:</Text>
+
+                                <select
+                                    value={pageSize}
+                                    onChange={(e) => {
+                                        setPageSize(Number(e.target.value));
+                                        setCurrentPage(1);
+                                    }}
+                                    style={{
+                                        padding: "4px 8px",
+                                        borderRadius: 6,
+                                        border: "1px solid #d9d9d9"
+                                    }}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+
+                                <Text>/ page</Text>
+                            </div>
+
                         </div>
+
                     </div>
-                </div>
-            )}
+                </>
+            )
+        },
+        {
+            key: "history",
+            label: `History (${history.length})`,
+            children: (
+                <>
+                    <Table
+                        className="no-border-table"
+                        columns={columns}
+                        dataSource={getTableData()}
+                        rowKey="id"
+                        loading={loading}
+                        size="large"
+                        bordered={false}
+                        pagination={false}
+                        scroll={{ y: 400 }}
+                    />
 
-            {/* Table Content */}
-            <div className="animate-fadeIn">
-                {view === "active" && renderTable(filterData(active), "active")}
-                {view === "history" && renderTable(filterData(history), "history")}
-                {view === "trash" && renderTable(filterData(trash), "trash")}
+                    {/* 🔥 CUSTOM PAGINATION */}
+                    <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginTop: 16,
+                        flexWrap: "wrap"
+                    }}>
+
+                        {/* LEFT SIDE */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+
+                            <Button
+                                disabled={currentPage === 1 || loading}
+                                onClick={() => setCurrentPage(prev => prev - 1)}
+                            >
+                                Prev
+                            </Button>
+
+                            <Text>
+                                Page {currentPage} of {Math.ceil(total / pageSize) || 1}
+                            </Text>
+
+                            <Button
+                                disabled={currentPage >= Math.ceil(total / pageSize) || loading}
+                                onClick={() => setCurrentPage(prev => prev + 1)}
+                            >
+                                Next
+                            </Button>
+
+                        </div>
+
+                        {/* RIGHT SIDE */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+
+                            {/* TOTAL */}
+                            <Text>
+                                Total: {total}
+                            </Text>
+
+                            {/* ROWS */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <Text>Rows:</Text>
+
+                                <select
+                                    value={pageSize}
+                                    onChange={(e) => {
+                                        setPageSize(Number(e.target.value));
+                                        setCurrentPage(1);
+                                    }}
+                                    style={{
+                                        padding: "4px 8px",
+                                        borderRadius: 6,
+                                        border: "1px solid #d9d9d9"
+                                    }}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+
+                                <Text>/ page</Text>
+                            </div>
+
+                        </div>
+
+                    </div>
+                </>
+            )
+        },
+        {
+            key: "trash",
+            label: `Trash (${trash.length})`,
+            children: (
+                <>
+                    {trash.length > 0 && (
+                        <Alert
+                            message="Warning"
+                            description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
+                            type="warning"
+                            showIcon
+                            closable
+                            style={{ marginBottom: 16 }}
+                        />
+                    )}
+                    <>
+                        <Table
+                            className="no-border-table"
+                            columns={columns}
+                            dataSource={getTableData()}
+                            rowKey="id"
+                            loading={loading}
+                            size="large"
+                            bordered={false}
+                            pagination={false}
+                            scroll={{ y: 400 }}
+                        />
+
+                        {/* 🔥 CUSTOM PAGINATION */}
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginTop: 16,
+                            flexWrap: "wrap"
+                        }}>
+
+                            {/* LEFT SIDE */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+
+                                <Button
+                                    disabled={currentPage === 1 || loading}
+                                    onClick={() => setCurrentPage(prev => prev - 1)}
+                                >
+                                    Prev
+                                </Button>
+
+                                <Text>
+                                    Page {currentPage} of {Math.ceil(total / pageSize) || 1}
+                                </Text>
+
+                                <Button
+                                    disabled={currentPage >= Math.ceil(total / pageSize) || loading}
+                                    onClick={() => setCurrentPage(prev => prev + 1)}
+                                >
+                                    Next
+                                </Button>
+
+                            </div>
+
+                            {/* RIGHT SIDE */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+
+                                {/* TOTAL */}
+                                <Text>
+                                    Total: {total}
+                                </Text>
+
+                                {/* ROWS */}
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <Text>Rows:</Text>
+
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            setPageSize(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}
+                                        style={{
+                                            padding: "4px 8px",
+                                            borderRadius: 6,
+                                            border: "1px solid #d9d9d9"
+                                        }}
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={20}>20</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+
+                                    <Text>/ page</Text>
+                                </div>
+
+                            </div>
+
+                        </div>
+                    </>
+                </>
+            )
+        }
+    ];
+
+    return (
+        <div style={{ padding: "24px", maxWidth: "1600px", margin: "0 auto" }}>
+            <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+                <div>
+                    <Title level={2} style={{ margin: 0 }}>Bookings Management</Title>
+                    <Text type="secondary">Manage and track all reservations</Text>
+                </div>
+                <Search
+                    placeholder="Search by name, ID, or type"
+                    allowClear
+                    onChange={(e) => setSearchText(e.target.value)}
+                    style={{ width: 300 }}
+                    size="large"
+                />
             </div>
 
-            {toast && (
-                <div className="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg animate-fadeIn z-50">
-                    {toast}
-                </div>
-            )}
+            <Tabs
+                className="mint-tabs"
+                activeKey={activeTab}
+                onChange={setActiveTab}
+                items={tabItems}
+                size="large"
+            />
         </div>
     );
 }

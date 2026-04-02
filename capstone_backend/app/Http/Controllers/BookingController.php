@@ -63,47 +63,48 @@ class BookingController extends Controller
         return response()->json($bookings, 200);
     }
 
-    // ===============================
-    // 🔹 ACTIVE BOOKINGS
-    // ===============================
-    public function active()
+    // ACTIVE BOOKINGS
+    public function active(Request $request)
     {
+        $perPage = $request->per_page ?? 10;
+
         $bookings = Booking::with(['user', 'walkInGuest', 'rooms'])
             ->whereNull('deleted_at')
             ->whereNotIn('booking_status', ['checked_out', 'cancelled'])
-            ->get();
+            ->latest()
+            ->paginate($perPage);
 
         return response()->json($bookings);
     }
 
-    // ===============================
-    // 🔹 HISTORY (COMPLETED)
-    // ===============================
-    public function history()
+    // HISTORY 
+    public function history(Request $request)
     {
+        $perPage = $request->per_page ?? 10;
+
         $bookings = Booking::with(['user', 'walkInGuest', 'rooms'])
             ->whereNull('deleted_at')
             ->whereIn('booking_status', ['checked_out', 'cancelled'])
-            ->get();
+            ->latest()
+            ->paginate($perPage);
 
         return response()->json($bookings);
     }
 
-    // ===============================
-    // 🔹 TRASH
-    // ===============================
-    public function trash()
+    // TRASH
+    public function trash(Request $request)
     {
+        $perPage = $request->per_page ?? 10;
+
         $bookings = Booking::onlyTrashed()
             ->with(['user', 'walkInGuest', 'rooms'])
-            ->get();
+            ->latest()
+            ->paginate($perPage);
 
         return response()->json($bookings);
     }
 
-    // ===============================
-    // 🔹 CREATE BOOKING
-    // ===============================
+    // CREATE BOOKING
     public function store(Request $request)
     {
         $validated = $request->validate([

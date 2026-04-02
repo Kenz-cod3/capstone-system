@@ -255,4 +255,47 @@
   .dropdown {
     @apply block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition;
   }
+
+  /* REMOVE ALL HEADER SEPARATORS (IMPORTANT 🔥) */
+  .no-border-table .ant-table-thead>tr>th::before {
+    display: none !important;
+  }
+
+  /* REMOVE COLUMN DIVIDER LINES */
+  .no-border-table .ant-table-thead>tr>th,
+  .no-border-table .ant-table-tbody>tr>td {
+    border-right: none !important;
+  }
+
+  /* REMOVE BOTTOM HEADER LINE */
+  .no-border-table .ant-table-thead>tr>th {
+    border-bottom: none !important;
+  }
+
+  /* REMOVE TABLE OUTER BORDER */
+  .no-border-table .ant-table {
+    border: none !important;
+  }
+
+  /* REMOVE ROW BORDER (optional clean look) */
+  .no-border-table .ant-table-tbody>tr>td {
+    border-bottom: none !important;
+  }
+
+  /* ACTIVE TAB TEXT */
+  .mint-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+    color: #34d399 !important;
+    /* mint green */
+    font-weight: 600;
+  }
+
+  /* UNDERLINE (INK BAR) */
+  .mint-tabs .ant-tabs-ink-bar {
+    background: #34d399 !important;
+  }
+
+  /* HOVER EFFECT */
+  .mint-tabs .ant-tabs-tab:hover {
+    color: #34d399 !important;
+  }
 }

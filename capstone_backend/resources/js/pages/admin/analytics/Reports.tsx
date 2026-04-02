@@ -1,18 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/services/api";
-import { 
-    TrendingUp, 
-    Calendar, 
-    Users, 
-    CheckCircle, 
-    Clock, 
-    Filter, 
-    Download, 
-    ChevronDown, 
+import {
+    TrendingUp,
+    Calendar,
+    Users,
+    CheckCircle,
+    Clock,
+    Filter,
+    Download,
+    ChevronDown,
     ChevronUp,
     RefreshCw,
-    DollarSign,
     Building2,
     UserCheck,
     AlertCircle,
@@ -20,56 +19,112 @@ import {
     PieChart,
     BarChart3
 } from "lucide-react";
+import { Table, Tag, Button, Space, Card, Row, Col, Statistic, Tabs, message } from 'antd';
+import { ReloadOutlined, ExportOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+
+// Type definitions
+interface WalkInGuest {
+    guest_name: string;
+}
+
+interface User {
+    name: string;
+}
+
+interface Booking {
+    id: number;
+    booking_type: 'online' | 'walk_in';
+    booking_status: 'checked_in' | 'checked_out' | 'confirmed' | 'pending' | 'cancelled';
+    check_in_date: string;
+    total_price: number;
+    room_number?: string;
+    walk_in_guest?: WalkInGuest;
+    user?: User;
+}
+
+interface PaginatedData {
+    current_page: number;
+    data: Booking[];
+    first_page_url: string;
+    from: number;
+    last_page: number;
+    last_page_url: string;
+    links: Array<{
+        url: string | null;
+        label: string;
+        active: boolean;
+    }>;
+    next_page_url: string | null;
+    path: string;
+    per_page: number;
+    prev_page_url: string | null;
+    to: number;
+    total: number;
+}
+
+interface ReportsData {
+    total_revenue: number;
+    total_bookings: number;
+    checked_in: number;
+    bookings: PaginatedData;
+    recent_bookings: Booking[];
+}
 
 export default function Reports() {
-    const [statusFilter, setStatusFilter] = useState("all");
-    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [statusFilter, setStatusFilter] = useState<string>("all");
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const [perPage, setPerPage] = useState<number>(10);
     const [filters, setFilters] = useState({
         start_date: "",
         end_date: "",
     });
 
     // TanStack Query
-    const { data, isLoading, refetch, isFetching } = useQuery({
-        queryKey: ["reports", filters],
+    const { data, isLoading, refetch, isFetching } = useQuery<ReportsData>({
+        queryKey: ["reports", filters, currentPage, perPage],
         queryFn: async () => {
             const res = await api.get("/reports", {
-                params: filters,
+                params: {
+                    ...filters,
+                    page: currentPage,
+                    per_page: perPage,
+                },
             });
             return res.data;
         },
+
+        placeholderData: (prev) => prev,
         staleTime: 1000 * 60 * 5,
         refetchOnWindowFocus: false,
     });
 
-    const getFilteredTransactions = () => {
-        if (!data?.recent_bookings) return [];
+    const getFilteredTransactions = (): Booking[] => {
+        if (!data?.bookings?.data) return [];
 
-        if (statusFilter === "all") return data.recent_bookings;
+        if (statusFilter === "all") return data.bookings.data;
 
-        return data.recent_bookings.filter(
-            (b: any) => b.booking_status === statusFilter
+        return data.bookings.data.filter(
+            (b: Booking) => b.booking_status === statusFilter
         );
     };
 
-    const getStatusColor = (status: string) => {
-        switch(status) {
-            case "checked_in": return "bg-blue-100 text-blue-800";
-            case "checked_out": return "bg-purple-100 text-purple-800";
-            case "confirmed": return "bg-green-100 text-green-800";
-            case "pending": return "bg-yellow-100 text-yellow-800";
-            case "cancelled": return "bg-red-100 text-red-800";
-            default: return "bg-gray-100 text-gray-800";
+    const getStatusColor = (status: string): string => {
+        switch (status) {
+            case "checked_in": return "blue";
+            case "checked_out": return "purple";
+            case "confirmed": return "green";
+            case "pending": return "yellow";
+            case "cancelled": return "red";
+            default: return "default";
         }
     };
 
-    const getBookingTypeColor = (type: string) => {
-        return type === "walk_in" 
-            ? "bg-blue-100 text-blue-800" 
-            : "bg-emerald-100 text-emerald-800";
+    const getBookingTypeColor = (type: string): string => {
+        return type === "walk_in" ? "blue" : "green";
     };
 
-    const formatDate = (date: string) => {
+    const formatDate = (date: string): string => {
         return new Date(date).toLocaleDateString("en-PH", {
             year: "numeric",
             month: "short",
@@ -77,7 +132,7 @@ export default function Reports() {
         });
     };
 
-    const formatCurrency = (amount: number) => {
+    const formatCurrency = (amount: number): string => {
         return new Intl.NumberFormat("en-PH", {
             style: "currency",
             currency: "PHP",
@@ -87,17 +142,20 @@ export default function Reports() {
 
     const exportToCSV = () => {
         const transactions = getFilteredTransactions();
-        if (transactions.length === 0) return;
+        if (transactions.length === 0) {
+            message.warning("No transactions to export");
+            return;
+        }
 
         const headers = ["Guest", "Booking Type", "Status", "Check In Date", "Total Amount"];
-        const csvData = transactions.map((b: any) => [
+        const csvData = transactions.map((b: Booking) => [
             b.walk_in_guest?.guest_name || b.user?.name || "Guest",
             b.booking_type === "walk_in" ? "Walk-in" : "Online",
             b.booking_status?.replace("_", " ").toUpperCase(),
             formatDate(b.check_in_date),
             b.total_price
         ]);
-        
+
         const csvContent = [headers, ...csvData].map(row => row.join(",")).join("\n");
         const blob = new Blob([csvContent], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
@@ -106,17 +164,18 @@ export default function Reports() {
         a.download = `reports_${new Date().toISOString().split("T")[0]}.csv`;
         a.click();
         URL.revokeObjectURL(url);
+        message.success("Export successful!");
     };
 
     // Calculate additional stats
     const getAdditionalStats = () => {
         if (!data?.recent_bookings) return { averageRevenue: 0, onlineVsWalkin: { online: 0, walkin: 0 } };
-        
+
         const bookings = data.recent_bookings;
         const totalRevenue = data.total_revenue || 0;
-        const onlineBookings = bookings.filter((b: any) => b.booking_type === "online").length;
-        const walkinBookings = bookings.filter((b: any) => b.booking_type === "walk_in").length;
-        
+        const onlineBookings = bookings.filter((b: Booking) => b.booking_type === "online").length;
+        const walkinBookings = bookings.filter((b: Booking) => b.booking_type === "walk_in").length;
+
         return {
             averageRevenue: bookings.length > 0 ? totalRevenue / bookings.length : 0,
             onlineVsWalkin: {
@@ -128,7 +187,91 @@ export default function Reports() {
 
     const additionalStats = getAdditionalStats();
 
-    if (isLoading) {
+    // Helper function to check if pagination should be shown
+    const shouldShowPagination = () => {
+        const totalRecords = data?.bookings?.total || 0;
+        return totalRecords > perPage;
+    };
+
+    // Table columns definition
+    const columns: ColumnsType<Booking> = [
+        {
+            title: 'Guest',
+            dataIndex: 'id',
+            key: 'guest',
+            render: (_, record) => (
+                <div>
+                    <div style={{ fontWeight: 500 }}>
+                        {record.walk_in_guest?.guest_name || record.user?.name || "Guest"}
+                    </div>
+                    {record.room_number && (
+                        <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '4px' }}>
+                            Room {record.room_number}
+                        </div>
+                    )}
+                </div>
+            ),
+        },
+        {
+            title: 'Type',
+            dataIndex: 'booking_type',
+            key: 'type',
+            render: (type: string) => (
+                <Tag color={getBookingTypeColor(type)}>
+                    {type === "walk_in" ? "Walk-in" : "Online"}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Status',
+            dataIndex: 'booking_status',
+            key: 'status',
+            render: (status: string) => (
+                <Tag color={getStatusColor(status)}>
+                    {status?.replace("_", " ").toUpperCase()}
+                </Tag>
+            ),
+        },
+        {
+            title: 'Check In Date',
+            dataIndex: 'check_in_date',
+            key: 'check_in_date',
+            render: (date: string) => formatDate(date),
+        },
+        {
+            title: 'Total Amount',
+            dataIndex: 'total_price',
+            key: 'total_amount',
+            render: (amount: number) => (
+                <span style={{ fontWeight: 600 }}>
+                    {formatCurrency(amount)}
+                </span>
+            ),
+        },
+    ];
+
+    // Status filter tabs items
+    const filterItems = [
+        {
+            key: 'all',
+            label: 'All',
+        },
+        {
+            key: 'checked_out',
+            label: 'Checked Out',
+        },
+        {
+            key: 'checked_in',
+            label: 'Checked In',
+        },
+    ];
+
+    const handleTableChange = (pagination: any) => {
+        setCurrentPage(pagination.current);
+        setPerPage(pagination.pageSize);
+    };
+
+    if (!data) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
                 <div className="text-center">
@@ -153,35 +296,33 @@ export default function Reports() {
                             Comprehensive overview of bookings, revenue, and transactions
                         </p>
                     </div>
-                    
-                    <div className="flex gap-3">
-                        <button
+
+                    <Space>
+                        <Button
+                            icon={<ReloadOutlined />}
                             onClick={() => refetch()}
-                            disabled={isFetching}
-                            className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                            loading={isFetching}
                         >
-                            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
                             Refresh
-                        </button>
-                        
-                        <button
+                        </Button>
+
+                        <Button
+                            icon={<ExportOutlined />}
                             onClick={exportToCSV}
-                            className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
                         >
-                            <Download className="w-4 h-4" />
                             Export CSV
-                        </button>
-                    </div>
+                        </Button>
+                    </Space>
                 </div>
 
                 {/* Date Range Filter */}
-                <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
+                <Card style={{ marginBottom: 24 }}>
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center gap-2">
                             <Calendar className="w-5 h-5 text-gray-400" />
                             <span className="font-medium text-gray-700">Date Range</span>
                         </div>
-                        
+
                         <div className="flex flex-col sm:flex-row gap-3 flex-1 max-w-2xl">
                             <div className="flex-1">
                                 <label className="block text-xs text-gray-500 mb-1">Start Date</label>
@@ -194,7 +335,7 @@ export default function Reports() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                 />
                             </div>
-                            
+
                             <div className="flex-1">
                                 <label className="block text-xs text-gray-500 mb-1">End Date</label>
                                 <input
@@ -206,260 +347,249 @@ export default function Reports() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                 />
                             </div>
-                            
+
                             <div className="flex items-end">
-                                <button
-                                    onClick={() => setFilters({ ...filters })}
-                                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-colors"
+                                <Button
+                                    type="primary"
+                                    onClick={() => {
+                                        setCurrentPage(1);
+                                        setFilters({ ...filters });
+                                    }}
+                                    style={{ backgroundColor: '#f97316', borderColor: '#f97316' }}
                                 >
                                     Apply Filter
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     </div>
-                </div>
+                </Card>
 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500">Total Revenue</p>
-                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-5 h-5 text-green-600" />
+                <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+                    <Col xs={24} sm={12} lg={6}>
+                        <Card>
+                            <Statistic
+                                title="Total Revenue"
+                                value={data?.total_revenue || 0}
+                                precision={2}
+                                valueStyle={{ color: '#3f8600' }}
+                                formatter={(value) => formatCurrency(value as number)}
+                            />
+                            <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '8px' }}>
+                                Total earnings
                             </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            {formatCurrency(data?.total_revenue || 0)}
-                        </h2>
-                        <p className="text-xs text-gray-400 mt-2">Total earnings</p>
-                    </div>
+                        </Card>
+                    </Col>
 
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500">Total Bookings</p>
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <Users className="w-5 h-5 text-blue-600" />
+                    <Col xs={24} sm={12} lg={6}>
+                        <Card>
+                            <Statistic
+                                title="Total Bookings"
+                                value={data?.total_bookings || 0}
+                                prefix={<Users className="w-4 h-4 text-blue-600" />}
+                            />
+                            <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '8px' }}>
+                                Total reservations
                             </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            {data?.total_bookings || 0}
-                        </h2>
-                        <p className="text-xs text-gray-400 mt-2">Total reservations</p>
-                    </div>
+                        </Card>
+                    </Col>
 
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500">Checked In</p>
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <UserCheck className="w-5 h-5 text-blue-600" />
+                    <Col xs={24} sm={12} lg={6}>
+                        <Card>
+                            <Statistic
+                                title="Checked In"
+                                value={data?.checked_in || 0}
+                                prefix={<UserCheck className="w-4 h-4 text-blue-600" />}
+                                valueStyle={{ color: '#1890ff' }}
+                            />
+                            <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '8px' }}>
+                                Currently checked in
                             </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-blue-600">
-                            {data?.checked_in || 0}
-                        </h2>
-                        <p className="text-xs text-gray-400 mt-2">Currently checked in</p>
-                    </div>
+                        </Card>
+                    </Col>
 
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500">Average Revenue</p>
-                            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                                <BarChart3 className="w-5 h-5 text-purple-600" />
+                    <Col xs={24} sm={12} lg={6}>
+                        <Card>
+                            <Statistic
+                                title="Average Revenue"
+                                value={additionalStats.averageRevenue}
+                                precision={2}
+                                prefix={<BarChart3 className="w-4 h-4 text-purple-600" />}
+                                formatter={(value) => formatCurrency(value as number)}
+                            />
+                            <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: '8px' }}>
+                                Per booking average
                             </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            {formatCurrency(additionalStats.averageRevenue)}
-                        </h2>
-                        <p className="text-xs text-gray-400 mt-2">Per booking average</p>
-                    </div>
-                </div>
+                        </Card>
+                    </Col>
+                </Row>
 
                 {/* Additional Stats Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Building2 className="w-5 h-5 text-gray-400" />
-                            <h3 className="font-semibold text-gray-900">Booking Type Distribution</h3>
-                        </div>
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Online Bookings</span>
-                                <span className="font-semibold text-gray-900">{additionalStats.onlineVsWalkin.online}</span>
+                <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+                    <Col xs={24} lg={12}>
+                        <Card title={
+                            <Space>
+                                <Building2 className="w-4 h-4 text-gray-400" />
+                                <span>Booking Type Distribution</span>
+                            </Space>
+                        }>
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-gray-600">Online Bookings</span>
+                                    <span className="font-semibold text-gray-900">{additionalStats.onlineVsWalkin.online}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className="bg-emerald-500 rounded-full h-2 transition-all"
+                                        style={{
+                                            width: `${(additionalStats.onlineVsWalkin.online / (data?.total_bookings || 1)) * 100}% 
+                                        `}}
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center mt-3">
+                                    <span className="text-sm text-gray-600">Walk-in Bookings</span>
+                                    <span className="font-semibold text-gray-900">{additionalStats.onlineVsWalkin.walkin}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                        className="bg-blue-500 rounded-full h-2 transition-all"
+                                        style={{
+                                            width: `${(additionalStats.onlineVsWalkin.walkin / (data?.total_bookings || 1)) * 100}% 
+                                        `}}
+                                    />
+                                </div>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div 
-                                    className="bg-emerald-500 rounded-full h-2 transition-all"
-                                    style={{ 
-                                        width: `${(additionalStats.onlineVsWalkin.online / (data?.total_bookings || 1)) * 100}% 
-                                    `}}
-                                />
-                            </div>
-                            <div className="flex justify-between items-center mt-3">
-                                <span className="text-sm text-gray-600">Walk-in Bookings</span>
-                                <span className="font-semibold text-gray-900">{additionalStats.onlineVsWalkin.walkin}</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div 
-                                    className="bg-blue-500 rounded-full h-2 transition-all"
-                                    style={{ 
-                                        width: `${(additionalStats.onlineVsWalkin.walkin / (data?.total_bookings || 1)) * 100}% 
-                                    `}}
-                                />
-                            </div>
-                        </div>
-                    </div>
+                        </Card>
+                    </Col>
 
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                        <div className="flex items-center gap-2 mb-4">
-                            <PieChart className="w-5 h-5 text-gray-400" />
-                            <h3 className="font-semibold text-gray-900">Quick Stats</h3>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <p className="text-xs text-gray-500 mb-1">Total Guests</p>
-                                <p className="text-xl font-bold text-gray-900">
-                                    {data?.recent_bookings?.length || 0}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 mb-1">Completion Rate</p>
-                                <p className="text-xl font-bold text-gray-900">
-                                    {data?.total_bookings > 0 
-                                        ? Math.round((data.checked_in / data.total_bookings) * 100) 
-                                        : 0}%
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    <Col xs={24} lg={12}>
+                        <Card title={
+                            <Space>
+                                <PieChart className="w-4 h-4 text-gray-400" />
+                                <span>Quick Stats</span>
+                            </Space>
+                        }>
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Statistic
+                                        title="Total Guests"
+                                        value={data?.bookings?.total || 0}
+                                    />
+                                </Col>
+                                <Col span={12}>
+                                    <Statistic
+                                        title="Completion Rate"
+                                        value={data?.total_bookings && data?.total_bookings > 0
+                                            ? Math.round(((data?.checked_in || 0) / data.total_bookings) * 100)
+                                            : 0}
+                                        suffix="%"
+                                    />
+                                </Col>
+                            </Row>
+                        </Card>
+                    </Col>
+                </Row>
 
                 {/* Transactions Table */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900">All Transactions</h2>
-                            <p className="text-sm text-gray-500 mt-1">
-                                Showing {getFilteredTransactions().length} transactions
-                            </p>
-                        </div>
+                <Card>
+                    <div style={{ marginBottom: 16 }}>
+                        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">
+                                    All Transactions
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Showing {data?.bookings?.data?.length || 0} of {data?.bookings?.total || 0} transactions
+                                </p>
+                            </div>
 
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setStatusFilter("all")}
-                                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                                    statusFilter === "all"
-                                        ? "bg-orange-500 text-white shadow-md"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                            >
-                                All
-                            </button>
-
-                            <button
-                                onClick={() => setStatusFilter("checked_out")}
-                                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                                    statusFilter === "checked_out"
-                                        ? "bg-purple-500 text-white shadow-md"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                            >
-                                Checked Out
-                            </button>
-
-                            <button
-                                onClick={() => setStatusFilter("checked_in")}
-                                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                                    statusFilter === "checked_in"
-                                        ? "bg-blue-500 text-white shadow-md"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                }`}
-                            >
-                                Checked In
-                            </button>
-                        </div>
+                            <Tabs
+                                activeKey={statusFilter}
+                                onChange={setStatusFilter}
+                                items={[
+                                    { key: "all", label: "All" },
+                                    { key: "checked_out", label: "Checked Out" },
+                                    { key: "checked_in", label: "Checked In" },
+                                ]}
+                            />
+                        </Space>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <div className="max-h-[500px] overflow-y-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-gray-50 sticky top-0">
-                                    <tr className="border-b border-gray-200">
-                                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Guest
-                                        </th>
-                                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Type
-                                        </th>
-                                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Check In Date
-                                        </th>
-                                        <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Total Amount
-                                        </th>
-                                    </tr>
-                                </thead>
+                    {/* TABLE */}
+                    <Table
+                        columns={columns}
+                        dataSource={(data?.bookings?.data || []).filter((b: any) => {
+                            if (statusFilter === "all") return true;
+                            return b.booking_status === statusFilter;
+                        })}
+                        rowKey="id"
+                        loading={isFetching}
+                        pagination={false}
+                        scroll={{ x: 800, y: 400 }}
+                        locale={{
+                            emptyText: (
+                                <div className="flex flex-col items-center gap-2 py-12">
+                                    <AlertCircle className="w-12 h-12 text-gray-300" />
+                                    <p className="text-gray-500">No transactions found</p>
+                                    <p className="text-xs text-gray-400">
+                                        Try adjusting your filters or date range
+                                    </p>
+                                </div>
+                            ),
+                        }}
+                    />
 
-                                <tbody className="divide-y divide-gray-200">
-                                    {getFilteredTransactions().length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} className="px-6 py-12 text-center">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <AlertCircle className="w-12 h-12 text-gray-300" />
-                                                    <p className="text-gray-500">No transactions found</p>
-                                                    <p className="text-xs text-gray-400">
-                                                        Try adjusting your filters or date range
-                                                    </p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        getFilteredTransactions().map((b: any) => (
-                                            <tr key={b.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4">
-                                                    <div className="font-medium text-gray-900">
-                                                        {b.walk_in_guest?.guest_name ||
-                                                         b.user?.name ||
-                                                         "Guest"}
-                                                    </div>
-                                                    {b.room_number && (
-                                                        <div className="text-xs text-gray-500 mt-1">
-                                                            Room {b.room_number}
-                                                        </div>
-                                                    )}
-                                                </td>
+                    {/* CUSTOM PAGINATION - ONLY SHOW IF TOTAL > PAGE SIZE */}
+                    {shouldShowPagination() && (
+                        <div className="flex items-center justify-between mt-4">
+                            {/* PREV */}
+                            <button
+                                disabled={!data?.bookings?.prev_page_url}
+                                onClick={() => setCurrentPage((prev) => prev - 1)}
+                                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+                            >
+                                Prev
+                            </button>
 
-                                                <td className="px-6 py-4">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getBookingTypeColor(b.booking_type)}`}>
-                                                        {b.booking_type === "walk_in" ? "Walk-in" : "Online"}
-                                                    </span>
-                                                </td>
+                            {/* PAGE INFO */}
+                            <span className="text-sm text-gray-600">
+                                Page {data?.bookings?.current_page || 1} of {data?.bookings?.last_page || 1}
+                            </span>
 
-                                                <td className="px-6 py-4">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(b.booking_status)}`}>
-                                                        {b.booking_status?.replace("_", " ").toUpperCase()}
-                                                    </span>
-                                                </td>
+                            {/* NEXT */}
+                            <button
+                                disabled={!data?.bookings?.next_page_url}
+                                onClick={() => setCurrentPage((prev) => prev + 1)}
+                                className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+                            >
+                                Next
+                            </button>
 
-                                                <td className="px-6 py-4 text-gray-600">
-                                                    {formatDate(b.check_in_date)}
-                                                </td>
-
-                                                <td className="px-6 py-4">
-                                                    <span className="font-semibold text-gray-900">
-                                                        {formatCurrency(b.total_price)}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                            {/* GO TO PAGE */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm">Go to</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={data?.bookings?.last_page || 1}
+                                    placeholder="Page"
+                                    className="w-16 px-2 py-1 border rounded"
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            const value = Number((e.target as HTMLInputElement).value);
+                                            if (
+                                                value >= 1 &&
+                                                value <= (data?.bookings?.last_page || 1)
+                                            ) {
+                                                setCurrentPage(value);
+                                            }
+                                        }
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </div>
-                </div>
+                    )}
+                </Card>
             </div>
         </div>
     );

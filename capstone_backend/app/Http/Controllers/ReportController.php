@@ -12,23 +12,27 @@ class ReportController extends Controller
         $start = $request->start_date;
         $end = $request->end_date;
 
-        $query = Booking::query();
+        $query = Booking::with(['user', 'walkInGuest']);
 
-        // FILTER BY DATE
         if ($start && $end) {
             $query->whereBetween('check_in_date', [$start, $end]);
         }
 
         return response()->json([
-            'total_revenue' => $query->sum('total_price'),
-            'total_bookings' => $query->count(),
+            'total_revenue' => (clone $query)->sum('total_price'),
+            'total_bookings' => (clone $query)->count(),
             'checked_in' => (clone $query)->where('booking_status', 'checked_in')->count(),
 
-            // RECENT BOOKINGS (FAST)
-            'recent_bookings' => Booking::with(['user', 'walkInGuest'])
+            // ✅ PAGINATED DATA
+            'bookings' => (clone $query)
+                ->latest()
+                ->paginate($request->per_page ?? 10),
+
+            // optional recent
+            'recent_bookings' => (clone $query)
                 ->latest()
                 ->limit(10)
-                ->get()
+                ->get(),
         ]);
     }
 }
