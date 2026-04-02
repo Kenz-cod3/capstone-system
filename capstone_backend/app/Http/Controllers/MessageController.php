@@ -23,15 +23,45 @@ class MessageController extends Controller
             'sender_id' => 'required|exists:users,id',
             'content' => 'required|string',
             'targets' => 'required|array',
-            'targets.*.target_id' => 'required|integer',
+            'targets.*.target_id' => 'required|integer|exists:users,id',
             'targets.*.target_type' => 'required|string'
         ]);
 
+        $sender = \App\Models\User::findOrFail($validated['sender_id']);
+
+        // 🔥 VALIDATE ROLE RULES
+        foreach ($validated['targets'] as $target) {
+            $receiver = \App\Models\User::findOrFail($target['target_id']);
+
+            // ❌ guest → staff NOT allowed
+            if ($sender->role === 'guest' && $receiver->role === 'staff') {
+                return response()->json([
+                    'error' => 'Guest can only message admin'
+                ], 403);
+            }
+
+            // ❌ staff → guest NOT allowed
+            if ($sender->role === 'staff' && $receiver->role === 'guest') {
+                return response()->json([
+                    'error' => 'Staff cannot message guest'
+                ], 403);
+            }
+
+            // ❌ optional: prevent self messaging
+            if ($sender->id === $receiver->id) {
+                return response()->json([
+                    'error' => 'You cannot message yourself'
+                ], 400);
+            }
+        }
+
+        // ✅ CREATE MESSAGE
         $message = Message::create([
             'sender_id' => $validated['sender_id'],
             'message' => $validated['content']
         ]);
 
+        // ✅ CREATE TARGETS
         foreach ($validated['targets'] as $target) {
             MessageTarget::create([
                 'message_id' => $message->id,
@@ -46,7 +76,6 @@ class MessageController extends Controller
             'data' => $message->load(['targets.target', 'sender'])
         ], 201);
     }
-
     public function show($id)
     {
         $message = Message::with(['targets.target'])->findOrFail($id);
@@ -145,7 +174,20 @@ class MessageController extends Controller
 
     public function chatUsers()
     {
-        $users = \App\Models\User::where('role', 'staff')->get();
+        $currentUser = Auth::user();
+
+        if ($currentUser->role === 'guest') {
+            // guest → admin only
+            $users = \App\Models\User::where('role', 'admin')->get();
+        } elseif ($currentUser->role === 'admin') {
+            // admin → guest + staff
+            $users = \App\Models\User::whereIn('role', ['guest', 'staff'])->get();
+        } elseif ($currentUser->role === 'staff') {
+            // staff → admin only
+            $users = \App\Models\User::where('role', 'admin')->get();
+        } else {
+            $users = [];
+        }
 
         return response()->json($users);
     }

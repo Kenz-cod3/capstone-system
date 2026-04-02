@@ -23,7 +23,6 @@ class AuthController extends Controller
 
         //FORCE ROLE AS GUEST
         $validated['role'] = 'guest';
-
         $validated['password'] = Hash::make($validated['password']);
         $validated['is_active'] = true;
 
@@ -54,7 +53,7 @@ class AuthController extends Controller
         }
 
         // ✅ ALLOW ADMIN + STAFF
-        if (!in_array($user->role, ['admin', 'staff'])) {
+        if (!in_array($user->role, ['admin', 'staff', 'guest'])) {
             return response()->json([
                 'message' => 'Access denied.'
             ], 403);

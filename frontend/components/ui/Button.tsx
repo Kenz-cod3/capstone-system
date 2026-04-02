@@ -7,3 +7,8 @@ export default function Button({ title, onPress }: any) {
         </TouchableOpacity>
     );
 }
+
+
+
+
+

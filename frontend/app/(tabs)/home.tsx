@@ -1,168 +1,187 @@
 import {
   View,
   Text,
-  Image,
+  TextInput,
+  FlatList,
   TouchableOpacity,
+  Image,
+  StatusBar,
   ScrollView,
-  ImageBackground,
-  Dimensions,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useEffect, useState } from "react";
+import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "expo-router";
-import { useAuthStore } from "../../store/authStore";
-
-const { width, height } = Dimensions.get("window");
+import { getRooms } from "@/services/roomService";
 
 export default function Home() {
+  const { user, token, isLoaded } = useAuthStore();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets(); // 🔥 IMPORTANT
 
-  const handleBook = () => {
-    if (!user) {
-      router.push("/auth/login");
-    } else {
-      router.push("/bookings/details");
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [groupedRooms, setGroupedRooms] = useState<any>({});
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // 🔒 Protect route
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!user) router.replace("/auth/login");
+  }, [user, isLoaded]);
+
+  // 🔄 Fetch rooms
+  useEffect(() => {
+    if (!isLoaded || !token) return;
+    fetchRooms();
+  }, [isLoaded, token]);
+
+  const fetchRooms = async () => {
+    try {
+      setLoading(true);
+      const res = await getRooms();
+      const result = res?.data || res;
+
+      const data = Array.isArray(result) ? result : [];
+      setRooms(data);
+
+      const grouped: any = {};
+      data.forEach((room) => {
+        const type = room.room_type?.type_name || "Others";
+        if (!grouped[type]) grouped[type] = [];
+        grouped[type].push(room);
+      });
+
+      setGroupedRooms(grouped);
+    } catch (e) {
+      setRooms([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  if (!isLoaded || loading) {
+    return (
+      <SafeAreaView className="flex-1 justify-center items-center bg-white">
+        <Text className="text-gray-500">Loading rooms...</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <ScrollView className="flex-1 bg-white">
-      
-      {/* HERO */}
-      <ImageBackground
-        source={require("../../assets/bg.jpg")}
-        style={{ height: height * 0.5 }}
-        resizeMode="cover"
-        className="justify-center items-center"
+    <SafeAreaView className="flex-1 bg-white">
+      <StatusBar barStyle="dark-content" />
+
+      <ScrollView
+        className="flex-1 px-4 pt-2"
+        contentContainerStyle={{
+          paddingBottom: 100 + insets.bottom, // 🔥 FIX HERE
+        }}
+        showsVerticalScrollIndicator={false}
       >
-        {/* OVERLAY */}
-        <View className="absolute inset-0 bg-green-800/50" />
 
-        <View
-          className="items-center"
-          style={{ paddingHorizontal: width * 0.08 }}
-        >
-          {/* LOGO */}
-          <Image
-            source={require("../../assets/logo.jpg")}
-            style={{
-              width: height * 0.12,
-              height: height * 0.12,
-            }}
-            className="mb-4 rounded-full border-4 border-white"
-          />
-
-          {/* TITLE */}
-          <Text
-            style={{ fontSize: height * 0.028 }}
-            className="text-white font-bold text-center"
-          >
-            Lyn Enia's Travelers' Inn
-          </Text>
-
-          {/* SUBTITLE */}
-          <Text
-            style={{ fontSize: height * 0.016 }}
-            className="text-white text-center mt-2 opacity-90"
-          >
-            Your home away from home
-          </Text>
-
-          {/* BUTTONS */}
-          <View className="flex-row mt-6 gap-3">
-            <TouchableOpacity
-              onPress={handleBook}
-              style={{
-                paddingHorizontal: width * 0.06,
-                paddingVertical: height * 0.015,
-              }}
-              className="bg-green-500 rounded-full shadow-lg"
-            >
-              <Text className="text-white font-semibold">Book Now</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => router.push("/auth/login")}
-              style={{
-                paddingHorizontal: width * 0.06,
-                paddingVertical: height * 0.015,
-              }}
-              className="bg-white rounded-full shadow-lg"
-            >
-              <Text className="text-gray-800 font-semibold">Login</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ImageBackground>
-
-      {/* SERVICES */}
-      <View style={{ paddingHorizontal: width * 0.05 }} className="py-6">
-        <Text className="text-xl font-bold text-center mb-4">
-          Why Stay With Us?
+        {/* 👋 HEADER */}
+        <Text className="text-2xl font-bold mb-4">
+          Hello, {user?.first_name || "Guest"} 👋
         </Text>
 
-        {[
-          "Comfortable Rooms",
-          "Secure & Safe",
-          "WiFi Available",
-        ].map((item, i) => (
-          <View
-            key={i}
-            className="bg-gray-50 p-4 rounded-2xl mb-3 shadow-sm"
-          >
-            <Text className="font-semibold">{item}</Text>
-            <Text className="text-gray-500 text-sm mt-1">
-              Clean, safe and comfortable experience
+        {/* 🔍 SEARCH */}
+        <TextInput
+          placeholder="Search rooms..."
+          value={search}
+          onChangeText={setSearch}
+          className="border border-gray-200 rounded-xl p-3 mb-4"
+        />
+
+        {/* 📂 ROOM TYPES */}
+        {Object.keys(groupedRooms).map((type) => (
+          <View key={type} className="mb-6">
+
+            <Text className="text-lg font-bold mb-3">
+              {type}
             </Text>
-          </View>
-        ))}
-      </View>
 
-      {/* ROOMS */}
-      <View style={{ paddingHorizontal: width * 0.05 }} className="pb-6">
-        <Text className="text-xl font-bold text-center mb-4">
-          Available Rooms
-        </Text>
+            <FlatList
+              data={groupedRooms[type]}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item: any) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (isNavigating) return;
 
-        {[
-          "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2",
-          "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b",
-        ].map((img, i) => (
-          <View
-            key={i}
-            className="bg-white rounded-2xl mb-4 shadow-md overflow-hidden"
-          >
-            <Image
-              source={{ uri: img }}
-              style={{
-                width: "100%",
-                height: height * 0.22,
-              }}
-              resizeMode="cover"
+                    setIsNavigating(true);
+
+                    router.push({
+                      pathname: "/bookings/details",
+                      params: {
+                        room: JSON.stringify(item),
+                      },
+                    });
+
+                    setTimeout(() => {
+                      setIsNavigating(false);
+                    }, 1000);
+                  }}
+                  className={`w-60 mr-3 rounded-2xl p-3 ${
+                    item.status === "available"
+                      ? "bg-green-50"
+                      : item.status === "occupied"
+                      ? "bg-blue-50"
+                      : "bg-red-50"
+                  }`}
+                >
+
+                  {/* 🖼 IMAGE */}
+                  <Image
+                    source={{
+                      uri: item.image_url || "https://picsum.photos/300",
+                    }}
+                    className="w-full h-36 rounded-xl mb-2"
+                  />
+
+                  {/* 🏨 ROOM */}
+                  <Text className="font-bold">
+                    Room {item.room_number}
+                  </Text>
+
+                  {/* 💰 PRICE */}
+                  <Text className="text-gray-500">
+                    ₱{item.room_type?.base_price}
+                  </Text>
+
+                  {/* 🎯 STATUS */}
+                  <View
+                    className={`self-start px-3 py-1 rounded-full mt-2 ${
+                      item.status === "available"
+                        ? "bg-green-100"
+                        : item.status === "occupied"
+                        ? "bg-blue-100"
+                        : "bg-red-100"
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs font-semibold capitalize ${
+                        item.status === "available"
+                          ? "text-green-600"
+                          : item.status === "occupied"
+                          ? "text-blue-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {item.status}
+                    </Text>
+                  </View>
+
+                </TouchableOpacity>
+              )}
             />
-
-            <View className="p-4">
-              <Text className="font-bold text-lg">Deluxe Room</Text>
-
-              <Text className="text-green-600 font-semibold mt-1">
-                ₱1800 / night
-              </Text>
-
-              <TouchableOpacity
-                onPress={handleBook}
-                style={{
-                  paddingVertical: height * 0.015,
-                }}
-                className="bg-green-500 mt-4 rounded-xl"
-              >
-                <Text className="text-white text-center font-semibold">
-                  Book Now
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         ))}
-      </View>
 
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

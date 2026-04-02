@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Storage;
 
 class BookingController extends Controller
 {
@@ -22,7 +23,7 @@ class BookingController extends Controller
         $query = Booking::with([
             'user',
             'walkInGuest',
-            'rooms',
+            'rooms.images', // gi add
             'addOns',
             'histories.user'
         ]);
@@ -34,7 +35,32 @@ class BookingController extends Controller
             $query->where('user_id', Auth::id());
         }
 
-        return response()->json($query->get(), 200);
+        $bookings = $query->get();
+
+        $bookings->each(function ($booking) {
+            foreach ($booking->rooms as $room) {
+
+                // ✅ 1. remove broken images
+                $validImages = $room->images->filter(function ($img) {
+                    return Storage::disk('public')->exists($img->image_path);
+                })->values();
+
+                // ✅ 2. pick BEST image (latest or main)
+                $bestImage = $validImages
+                    ->sortByDesc('id') // latest upload
+                    ->first();
+
+                // ✅ 3. attach image_url (like admin)
+                $room->image_url = $bestImage
+                    ? asset('storage/' . $bestImage->image_path)
+                    : null;
+
+                // optional: keep images
+                $room->images = $validImages;
+            }
+        });
+
+        return response()->json($bookings, 200);
     }
 
     // ===============================

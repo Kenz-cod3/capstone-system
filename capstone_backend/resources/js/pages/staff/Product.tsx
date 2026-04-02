@@ -84,7 +84,7 @@ export default function Product() {
                                         <td className="p-3">
                                             {order.items.map((item: any, i: number) => (
                                                 <div key={i}>
-                                                    {item.menu_item?.name} x {item.quantity}
+                                                    {item.menuItem?.name} x {item.quantity}
                                                 </div>
                                             ))}
                                         </td>

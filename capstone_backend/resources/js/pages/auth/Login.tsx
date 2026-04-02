@@ -32,7 +32,7 @@ export default function Login() {
         setError("");
 
         try {
-            const res = await axios.post("http://127.0.0.1:8000/api/auth/login", {
+            const res = await axios.post("http://192.168.254.188:8000/api/auth/login", {
                 email,
                 password,
             });

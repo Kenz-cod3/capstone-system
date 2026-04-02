@@ -103,23 +103,25 @@ class MessageTargetController extends Controller
 
     public function getConversation($user1, $user2)
     {
-        $messages = MessageTarget::where(function ($q) use ($user1, $user2) {
-            // messages sent by user1 to user2
-            $q->where('target_id', $user2)
-                ->where('target_type', 'App\\Models\\User')
-                ->whereHas('message', function ($q2) use ($user1) {
-                    $q2->where('sender_id', $user1);
-                });
-        })
-            ->orWhere(function ($q) use ($user1, $user2) {
-                // messages sent by user2 to user1
-                $q->where('target_id', $user1)
-                    ->where('target_type', 'App\\Models\\User')
-                    ->whereHas('message', function ($q2) use ($user2) {
-                        $q2->where('sender_id', $user2);
+        $messages = MessageTarget::with(['message.sender'])
+            ->where('target_type', 'App\\Models\\User')
+            ->where(function ($query) use ($user1, $user2) {
+
+                $query->where(function ($q) use ($user1, $user2) {
+                    // user1 → user2
+                    $q->where('target_id', $user2)
+                        ->whereHas('message', function ($q2) use ($user1) {
+                            $q2->where('sender_id', $user1);
+                        });
+                })
+                    ->orWhere(function ($q) use ($user1, $user2) {
+                        // user2 → user1
+                        $q->where('target_id', $user1)
+                            ->whereHas('message', function ($q2) use ($user2) {
+                                $q2->where('sender_id', $user2);
+                            });
                     });
             })
-            ->with(['message.sender'])
             ->join('messages', 'messages.id', '=', 'message_targets.message_id')
             ->orderBy('messages.created_at', 'asc')
             ->select('message_targets.*')
@@ -131,7 +133,10 @@ class MessageTargetController extends Controller
     public function markAsRead($user1, $user2)
     {
         MessageTarget::where('target_id', $user1)
-            ->where('target_type', 'App\\Models\\User')
+            ->whereIn('target_type', [
+                'App\\Models\\User',
+                'App\Models\\User'
+            ])
             ->whereHas('message', function ($q) use ($user2) {
                 $q->where('sender_id', $user2);
             })

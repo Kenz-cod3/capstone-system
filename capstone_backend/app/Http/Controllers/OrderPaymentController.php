@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\OrderPayment;
 use App\Models\Order;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class OrderPaymentController extends Controller
 {
@@ -17,52 +18,49 @@ class OrderPaymentController extends Controller
         );
     }
 
-    // 🔹 CREATE PAYMENT
     public function store(Request $request)
     {
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|string',
-            'status' => 'required|in:pending,paid,failed'
+            'amount' => 'required|numeric|min:0'
         ]);
 
         $order = Order::findOrFail($validated['order_id']);
 
-        // 🔥 Get total paid
-        $totalPaid = OrderPayment::where('order_id', $order->id)->sum('amount');
-
-        $newTotal = $totalPaid + $validated['amount'];
-
-        // 🔥 Prevent overpayment
-        if ($newTotal > $order->total_amount) {
+        // ❌ Prevent zero payment
+        if ($validated['amount'] <= 0) {
             return response()->json([
-                'message' => 'Overpayment not allowed'
+                'message' => 'Invalid cash amount'
             ], 400);
         }
 
-        // Create payment
-        $payment = OrderPayment::create($validated);
+        // 💵 COMPUTE CHANGE
+        $change = 0;
 
-        // 🔥 Update order status
-        if ($newTotal == $order->total_amount) {
-            $order->update(['status' => 'paid']);
-        } elseif ($newTotal > 0) {
-            $order->update(['status' => 'partial']);
+        if ($validated['amount'] > $order->total_amount) {
+            $change = $validated['amount'] - $order->total_amount;
         }
 
+        // 💰 SAVE PAYMENT (FIXED 🔥)
+        $payment = OrderPayment::create([
+            'order_id' => $order->id,
+            'amount' => $validated['amount'],
+            'payment_method' => 'cash',
+            'user_id' => Auth::id() ?? 2, // 🔥 FIX
+            'change_amount' => $change,
+            'payment_date' => now()
+        ]);
+
+        // 🔥 UPDATE ORDER STATUS (FIXED)
+        $order->update([
+            'order_status' => 'paid'
+        ]);
+
         return response()->json([
-            'message' => 'Payment recorded successfully',
-            'data' => $payment->load('order')
-        ], 201);
-    }
-
-    // 🔹 GET SINGLE PAYMENT
-    public function show($id)
-    {
-        $payment = OrderPayment::with('order')->findOrFail($id);
-
-        return response()->json($payment, 200);
+            'message' => 'Payment successful',
+            'data' => $payment,
+            'change' => $change
+        ], 200);
     }
 
     // 🔹 UPDATE PAYMENT

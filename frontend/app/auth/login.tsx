@@ -10,7 +10,8 @@ import {
   Platform,
 } from "react-native";
 import { useState } from "react";
-import { login } from "../../services/authService";
+import { login } from "../../services/authServices";
+import { setToken } from "../../services/api"; 
 import { useAuthStore } from "../../store/authStore";
 import { useRouter } from "expo-router";
 
@@ -24,9 +25,32 @@ export default function Login() {
   const router = useRouter();
 
   const handleLogin = async () => {
-    const res = await login({ email, password });
-    setAuth(res.user, res.token);
-    router.replace("/(tabs)/home");
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+
+    try {
+      const res = await login({ email, password });
+
+      console.log("LOGIN RESPONSE:", res);
+
+      // ✅ Save user + token
+      await setAuth(res.user, res.token);
+
+      // ✅ Attach token to axios
+      setToken(res.token);
+
+      // ✅ Redirect
+      router.replace("/(tabs)/home");
+
+    } catch (e: any) {
+      console.log("LOGIN ERROR:", e.response?.data);
+
+      alert(
+        e.response?.data?.message || "Login failed. Please try again."
+      );
+    }
   };
 
   return (
@@ -67,19 +91,22 @@ export default function Login() {
 
             {/* EMAIL */}
             <TextInput
+              value={email}
+              onChangeText={setEmail}
               placeholder="Email"
               placeholderTextColor="#999"
+              autoCapitalize="none"
               className="border border-gray-200 p-3 rounded-xl mb-3"
-              onChangeText={setEmail}
             />
 
             {/* PASSWORD */}
             <TextInput
+              value={password}
+              onChangeText={setPassword}
               placeholder="Password"
               placeholderTextColor="#999"
               secureTextEntry
               className="border border-gray-200 p-3 rounded-xl mb-4"
-              onChangeText={setPassword}
             />
 
             {/* LOGIN BUTTON */}
@@ -106,7 +133,6 @@ export default function Login() {
               </Text>
             </TouchableOpacity>
           </View>
-
         </View>
       </ImageBackground>
     </KeyboardAvoidingView>

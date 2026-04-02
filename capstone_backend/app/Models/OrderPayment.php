@@ -16,6 +16,8 @@ class OrderPayment extends Model
         'user_id'
     ];
 
+    public $timestamps = false; // 🔥 FIX HERE
+
     public function order()
     {
         return $this->belongsTo(Order::class);

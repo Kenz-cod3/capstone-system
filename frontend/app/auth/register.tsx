@@ -11,8 +11,7 @@ import {
 } from "react-native";
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import axios from "axios";
-import { register } from "../../services/authService"; // make sure this exists
+import { register } from "../../services/authServices";
 
 const { width, height } = Dimensions.get("window");
 
@@ -28,6 +27,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
 
   const handleRegister = async () => {
+    // ✅ FIXED CONDITION
     if (!first_name || !last_name || !email || !password) {
       alert("Please fill all required fields");
       return;
@@ -36,17 +36,25 @@ export default function Register() {
     try {
       await register({
         first_name,
-        middle_name,
+        middle_name: middle_name || null,
         last_name,
-        contact_number,
-        address,
+        contact_number: contact_number || null,
+        address: address || null,
         email,
         password,
       });
 
+      // ✅ SUCCESS ALERT (moved here)
+      alert("Registered successfully!");
+
       router.replace("/auth/login");
+
     } catch (e: any) {
       console.log("ERROR DATA:", e.response?.data);
+
+      alert(
+        e.response?.data?.message || "Registration failed. Please try again."
+      );
     }
   };
 
@@ -86,15 +94,15 @@ export default function Register() {
               Register
             </Text>
 
-            {/* NAME */}
+            {/* FIRST NAME */}
             <TextInput
-              placeholder="Fist Name"
+              placeholder="First Name"
               placeholderTextColor="#999"
               className="border border-gray-200 p-3 rounded-xl mb-3"
               onChangeText={setFirstName}
             />
 
-            {/* NAME */}
+            {/* MIDDLE NAME */}
             <TextInput
               placeholder="Middle Name"
               placeholderTextColor="#999"
@@ -102,7 +110,7 @@ export default function Register() {
               onChangeText={setMiddleName}
             />
 
-            {/* NAME */}
+            {/* LAST NAME */}
             <TextInput
               placeholder="Last Name"
               placeholderTextColor="#999"
@@ -110,15 +118,16 @@ export default function Register() {
               onChangeText={setLastName}
             />
 
-            {/* Contact */}
+            {/* CONTACT */}
             <TextInput
               placeholder="Contact Number"
               placeholderTextColor="#999"
               className="border border-gray-200 p-3 rounded-xl mb-3"
               onChangeText={setContactNumber}
+              keyboardType="phone-pad"
             />
 
-            {/* Address */}
+            {/* ADDRESS */}
             <TextInput
               placeholder="Address"
               placeholderTextColor="#999"
@@ -132,6 +141,8 @@ export default function Register() {
               placeholderTextColor="#999"
               className="border border-gray-200 p-3 rounded-xl mb-3"
               onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
             />
 
             {/* PASSWORD */}
@@ -143,7 +154,7 @@ export default function Register() {
               onChangeText={setPassword}
             />
 
-            {/* REGISTER BUTTON */}
+            {/* BUTTON */}
             <TouchableOpacity
               onPress={handleRegister}
               style={{ paddingVertical: height * 0.015 }}
