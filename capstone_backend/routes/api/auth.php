@@ -8,7 +8,9 @@ Route::prefix('auth')->group(function () {
 
     // 🔓 PUBLIC ROUTES
     Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthController::class, 'login']);
+    // Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/mobile/login', [AuthController::class, 'mobileLogin']);
+    Route::post('/login', [AuthController::class, 'adminLogin']);
 
     // 🔒 PROTECTED ROUTES (need token)
     Route::middleware('auth:sanctum')->group(function () {
@@ -27,7 +29,5 @@ Route::prefix('auth')->group(function () {
         Route::get('/me', function (Request $request) {
             return response()->json($request->user());
         });
-
     });
-
 });

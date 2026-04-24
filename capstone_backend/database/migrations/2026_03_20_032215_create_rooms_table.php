@@ -17,6 +17,8 @@ return new class extends Migration
             $table->string('room_number')->unique();
             $table->enum('status', ['available', 'occupied', 'maintenance']);
             $table->timestamps();
+
+            $table->softDeletes();
         });
     }
 

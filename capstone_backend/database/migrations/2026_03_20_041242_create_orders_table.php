@@ -14,10 +14,16 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->string('order_number')->unique();
-            $table->foreignId('staff_id')->constrained('users');
+            $table->foreignId('cashier_id')->constrained('users');
+            $table->foreignId('booking_id')
+                ->nullable()
+                ->constrained('bookings')
+                ->nullOnDelete();
             $table->date('order_date');
             $table->decimal('total_amount', 10, 2);
             $table->string('order_status');
+
+            $table->timestamps();
         });
     }
 

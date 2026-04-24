@@ -3,16 +3,20 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { useEffect } from "react";
 import "pannellum/build/pannellum.css";
 
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import AdminLayout from "./layouts/AdminLayout";
 
 // ADMIN
 import Dashboard from "./pages/admin/main/Dashboard";
 import Bookings from "./pages/admin/management/Bookings";
+import BookingTransaction  from "./pages/admin/management/Bookings";
+import BookingReceipt  from "./pages/admin/management/BookingReciept";
 import WalkIn from "./pages/admin/operations/WalkIn";
 import Rooms from "./pages/admin/management/Rooms";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
 import Guests from "./pages/admin/management/Guests";
+import Staff from "./pages/admin/management/Staff";
+import HouseKeeper from "./pages/admin/management/HouseKeeper";
 import Reports from "./pages/admin/analytics/Reports";
 import AdminMenu from "./pages/admin/restaurant/Menu";
 import AdminOrders from "./pages/admin/restaurant/OrdersReport";
@@ -20,21 +24,32 @@ import ChatPage from "./pages/admin/messages/[userId]";
 
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
-import RestaurantDashboard from "./pages/staff/RestaurantDashboard";
-import Orders from "./pages/staff/Orders";
-import Menu from "./pages/staff/Menu";
-import Product from "./pages/staff/Product";
+import BookingStaff  from "./pages/staff/Bookings";
+import Transaction  from "./pages/staff/Transaction";
+import StaffDashboard from "./pages/staff/StaffDashboard";
+import Cash from "./pages/staff/Cash";
+
+// CASHIER
+import CashierLayout from "./layouts/CashierLayout";
+import RestaurantDashboard from "./pages/cashier/RestaurantDashboard";
+import Orders from "./pages/cashier/Orders";
+import Menu from "./pages/cashier/Menu";
+import Product from "./pages/cashier/Product";
 
 // AUTH
 import Login from "./pages/auth/Login";
 
 
-
 export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
     const { loading, setLoading } = useLoadingStore();
+    const location = useLocation(); // ✅ current route
+
+    // ❗ check if login page
+    const isLoginPage = location.pathname === "/login";
 
     useEffect(() => {
+        // simulate loading
         setTimeout(() => {
             setLoading(false);
         }, 1200);
@@ -42,8 +57,11 @@ export default function App() {
 
     return (
         <>
-            {loading && <LoadingScreen />}
+            {/* ✅ hide loading on login */}
+            {loading && !isLoginPage && <LoadingScreen />}
+
             <Routes>
+
                 {/* 🔓 PUBLIC ROUTE */}
                 <Route path="/login" element={<Login />} />
 
@@ -57,9 +75,13 @@ export default function App() {
                     <Route element={<AdminLayout />}>
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/bookings" element={<Bookings />} />
-                        <Route path="/walk-in-guests" element={<WalkIn />} />
+                        <Route path="/booking-transactions" element={<BookingTransaction />} />
+                        <Route path="/booking-receipts" element={<BookingReceipt />} />
+                        {/* <Route path="/walk-in-guests" element={<WalkIn />} /> */}
                         <Route path="/rooms" element={<Rooms />} />
                         <Route path="/guests" element={<Guests />} />
+                        <Route path="/staff" element={<Staff />} />
+                        <Route path="/housekeepers" element={<HouseKeeper />} />
                         <Route path="/reports" element={<Reports />} />
                         <Route path="/panorama" element={<PanoramaViewer />} />
                         <Route path="/admin/menu" element={<AdminMenu />} />
@@ -71,10 +93,22 @@ export default function App() {
                     </Route>
                 )}
 
-                {/* 🍽️ STAFF ROUTES */}
+                {/* STAFF ROUTES */}
                 {user?.role === "staff" && (
                     <Route element={<StaffLayout />}>
+                        <Route path="/dashboard" element={<StaffDashboard />} />
+                        <Route path="/bookings" element={<BookingStaff />} />
+                        <Route path="/transactions" element={<Transaction />} />
+                        <Route path="/walk-in-guests" element={<WalkIn />} />
+                        <Route path="/cash" element={<Cash />} />
 
+                        <Route path="*" element={<Navigate to="/dashboard" />} />
+                    </Route>
+                )}
+
+                {/* CASHIER ROUTES */}
+                {user?.role === "cashier" && (
+                    <Route element={<CashierLayout />}>
                         <Route path="/restaurant" element={<RestaurantDashboard />} />
                         <Route path="/orders" element={<Orders />} />
                         <Route path="/menu" element={<Menu />} />
@@ -82,9 +116,9 @@ export default function App() {
 
                         {/* DEFAULT */}
                         <Route path="*" element={<Navigate to="/restaurant" />} />
-
                     </Route>
                 )}
+
             </Routes>
         </>
     );

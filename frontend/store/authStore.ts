@@ -7,64 +7,61 @@ type AuthState = {
   token: string | null;
   isLoaded: boolean;
 
+  inactive: boolean; // 🔥 ADD THIS
+
   setAuth: (user: any, token: string) => Promise<void>;
   loadAuth: () => Promise<void>;
   logout: () => Promise<void>;
+
+  setInactive: (value: boolean) => void; // 🔥 ADD THIS
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isLoaded: false,
+  inactive: false,
 
-  // ✅ SAVE LOGIN
   setAuth: async (user, token) => {
-    try {
-      await AsyncStorage.setItem(
-        "auth",
-        JSON.stringify({ user, token })
-      );
+    await AsyncStorage.setItem("auth", JSON.stringify({ user, token }));
+    await setToken(token);
 
-      await setToken(token); // ✅ make sure awaited
-
-      set({ user, token });
-    } catch (e) {
-      console.log("SET AUTH ERROR:", e);
-    }
+    set({
+      user,
+      token,
+      inactive: false, // reset on login
+    });
   },
 
-  // ✅ LOAD ON APP START
   loadAuth: async () => {
-    try {
-      const stored = await AsyncStorage.getItem("auth");
+    const stored = await AsyncStorage.getItem("auth");
 
-      if (stored) {
-        const { user, token } = JSON.parse(stored);
+    if (stored) {
+      const { user, token } = JSON.parse(stored);
 
-        if (token) {
-          await setToken(token); // ✅ ensure axios is ready
-        }
+      if (token) await setToken(token);
 
-        set({ user, token, isLoaded: true });
-      } else {
-        set({ isLoaded: true });
-      }
-    } catch (e) {
-      console.log("LOAD AUTH ERROR:", e);
+      set({
+        user,
+        token,
+        isLoaded: true,
+        inactive: false,
+      });
+    } else {
       set({ isLoaded: true });
     }
   },
 
-  // ✅ LOGOUT (FULL CLEAN)
   logout: async () => {
-    try {
-      await AsyncStorage.removeItem("auth");
+    await AsyncStorage.removeItem("auth");
+    await clearToken();
 
-      await clearToken(); // ✅ remove axios header
-
-      set({ user: null, token: null });
-    } catch (e) {
-      console.log("LOGOUT ERROR:", e);
-    }
+    set({
+      user: null,
+      token: null,
+      inactive: false,
+    });
   },
+
+  setInactive: (value) => set({ inactive: value }),
 }));

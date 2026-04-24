@@ -36,7 +36,7 @@ class OrderItemController extends Controller
             'order_id' => $validated['order_id'],
             'menu_item_id' => $menuItem->id,
             'quantity' => $validated['quantity'],
-            'price_at_time_of_order' => $price, // ✅ FIX
+            'price_at_time_of_order' => $price, // FIX
             'subtotal' => $subtotal
         ]);
 

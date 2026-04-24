@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
             $table->foreignId('booking_id')->constrained('bookings');
-            $table->foreignId('user_id')->nullable()->constrained('users');
             $table->integer('rating');
             $table->text('comment')->nullable();
             $table->boolean('is_anonymous')->default(false);

@@ -11,9 +11,10 @@ import {
 } from "react-native";
 import { useState } from "react";
 import { login } from "../../services/authServices";
-import { setToken } from "../../services/api"; 
+import { setToken, clearToken } from "../../services/api"; // ✅ added clearToken
 import { useAuthStore } from "../../store/authStore";
 import { useRouter } from "expo-router";
+import api from "../../services/api"; // ✅ for debug
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,17 +32,28 @@ export default function Login() {
     }
 
     try {
+      // 🔥 STEP 1: CLEAR OLD TOKEN (VERY IMPORTANT)
+      await clearToken();
+
+      // 🔥 STEP 2: LOGIN API
       const res = await login({ email, password });
 
       console.log("LOGIN RESPONSE:", res);
 
-      // ✅ Save user + token
+      // 🔥 STEP 3: SAVE USER + TOKEN
       await setAuth(res.user, res.token);
 
-      // ✅ Attach token to axios
-      setToken(res.token);
+      // 🔥 STEP 4: SET TOKEN SA AXIOS (IMPORTANT)
+      await setToken(res.token);
 
-      // ✅ Redirect
+      // 🔥 STEP 5: VERIFY CURRENT USER (DEBUG)
+      const me = await api.get("/user");
+      console.log("CURRENT USER:", me.data);
+
+      // 👉 Dapat lalabas:
+      // { id: 3, role: "guest" }
+
+      // 🔥 STEP 6: REDIRECT
       router.replace("/(tabs)/home");
 
     } catch (e: any) {

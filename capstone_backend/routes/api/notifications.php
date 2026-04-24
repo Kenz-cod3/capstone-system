@@ -10,6 +10,7 @@ Route::apiResource('notifications', NotificationController::class);
 Route::prefix('notifications')->group(function () {
 
     // per user
+    Route::get('/user', [NotificationController::class, 'getCurrentUserNotifications']);
     Route::get('/user/{id}', [NotificationController::class, 'getByUser']);
     Route::get('/user/{id}/unread-count', [NotificationController::class, 'unreadCount']);
     Route::put('/user/{id}/read-all', [NotificationController::class, 'markAllAsRead']);

@@ -7,12 +7,10 @@ import ChatBox from "@/components/AdminComponents/ChatBox";
 import {
     LogOut,
     LayoutDashboard,
-    Hotel,
     CalendarDays,
     Users,
     Key,
     ClipboardList,
-    Menu as MenuIcon,
     PanelLeft,
     PanelRight,
     ChevronDown,
@@ -23,8 +21,9 @@ import {
     ShoppingCart,
     UtensilsCrossed,
     MessageCircle,
-    CheckCheck,
-    RefreshCw
+    RefreshCw,
+    ChevronRight,
+    ChevronUp
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -34,7 +33,6 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
-import { Badge } from "@/components/ui/badge";
 import api from "@/services/api";
 import logo from "../../images/logo1.png"; // Adjust this path to your actual logo location
 
@@ -87,15 +85,33 @@ const AdminLayout = ({
     const [notificationsLoading, setNotificationsLoading] = useState(false);
     const [offset, setOffset] = useState(0);
 
+    // State for dropdown toggles
+    const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>(() => {
+        const saved = localStorage.getItem("adminDropdowns");
+
+        return saved
+            ? JSON.parse(saved)
+            : {
+                bookings: false,
+                users: false,
+            };
+    });
+
     const user = JSON.parse(localStorage.getItem("user") || "null");
     const location = useLocation();
 
     const routesMap: any = {
         "/dashboard": "Dashboard",
         "/bookings": "Bookings",
+        "/booking-transactions": "Booking Transactions",
+        "/booking-receipts": "Booking Receipts",
         "/walk-in-guests": "Walk-in Guests",
         "/rooms": "Rooms",
         "/guests": "Guests",
+        "/staff": "Staff",
+        "/housekeepers": "House Keepers",
+        "/admin/menu": "Menu",
+        "/admin/orders": "Orders",
         "/reports": "Reports",
     };
 
@@ -116,6 +132,27 @@ const AdminLayout = ({
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    useEffect(() => {
+        localStorage.setItem("adminDropdowns", JSON.stringify(openDropdowns));
+    }, [openDropdowns]);
+
+    useEffect(() => {
+        setOpenDropdowns((prev: any) => ({
+            ...prev,
+            bookings: location.pathname.includes("booking")
+                ? true
+                : prev.bookings,
+
+            users:
+                location.pathname.includes("guest") ||
+                    location.pathname.includes("staff") ||
+                    location.pathname.includes("housekeeper")
+                    ? true
+                    : prev.users,
+        }));
+    }, [location.pathname]);
+
 
     const navigate = useNavigate();
 
@@ -140,11 +177,21 @@ const AdminLayout = ({
 
     const handleNavigation = (href: string) => {
         navigate(href);
+        // Close mobile menu if open
+        setIsMobileMenuOpen(false);
     };
 
     const toggleSidebar = (e: React.MouseEvent) => {
         e.stopPropagation();
         setSidebarOpen(!isSidebarOpen);
+    };
+
+    const toggleDropdown = (dropdownName: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setOpenDropdowns(prev => ({
+            ...prev,
+            [dropdownName]: !prev[dropdownName]
+        }));
     };
 
     const getUserInitials = () => {
@@ -353,6 +400,7 @@ const AdminLayout = ({
         return () => clearInterval(interval);
 
     }, [user?.id, offset, isNotifOpen]);
+
     useEffect(() => {
         if (!user?.id) return;
 
@@ -401,34 +449,110 @@ const AdminLayout = ({
         {
             label: "MAIN",
             items: [
-                { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-                { name: "Bookings", href: "/bookings", icon: CalendarDays },
+                {
+                    name: "Dashboard",
+                    description: "Overview & Analytics",
+                    href: "/dashboard",
+                    icon: LayoutDashboard
+                },
             ],
         },
-        {
-            label: "OPERATIONS",
-            items: [
-                { name: "Walk-in", href: "/walk-in-guests", icon: UserPlus },
-            ],
-        },
+        // {
+        //     label: "OPERATIONS",
+        //     items: [
+        //         {
+        //             name: "Walk-in",
+        //             description: "Guest Registration",
+        //             href: "/walk-in-guests",
+        //             icon: UserPlus
+        //         },
+        //     ],
+        // },
         {
             label: "MANAGEMENT",
             items: [
-                { name: "Rooms", href: "/rooms", icon: Key },
-                { name: "Guests", href: "/guests", icon: Users },
+                {
+                    name: "Bookings",
+                    description: "Reservations",
+                    href: "/bookings",
+                    icon: CalendarDays,
+                    hasDropdown: true,
+                    dropdownItems: [
+                        {
+                            name: "Booking Transaction",
+                            description: "Manage booking transactions",
+                            href: "/booking-transactions",
+                            icon: CalendarDays
+                        },
+                        {
+                            name: "Booking Receipt",
+                            description: "View and print receipts",
+                            href: "/booking-receipts",
+                            icon: ClipboardList
+                        }
+                    ]
+                },
+                {
+                    name: "Rooms",
+                    description: "Room Management",
+                    href: "/rooms",
+                    icon: Key
+                },
+                {
+                    name: "User",
+                    description: "User Management",
+                    href: "/users",
+                    icon: Users,
+                    hasDropdown: true,
+                    dropdownItems: [
+                        {
+                            name: "Guest",
+                            description: "Guest profiles and history",
+                            href: "/guests",
+                            icon: Users
+                        },
+                        {
+                            name: "Staff",
+                            description: "Staff accounts and roles",
+                            href: "/staff",
+                            icon: Users
+                        },
+                        {
+                            name: "House Keeper",
+                            description: "Housekeeping assignments",
+                            href: "/housekeepers",
+                            icon: Users
+                        }
+                    ]
+                },
             ],
         },
         {
             label: "RESTAURANT",
             items: [
-                { name: "Menu", href: "/admin/menu", icon: ShoppingCart },
-                { name: "Orders", href: "/admin/orders", icon: UtensilsCrossed },
+                {
+                    name: "Menu",
+                    description: "Food & Beverage",
+                    href: "/admin/menu",
+                    icon: ShoppingCart
+                },
+                {
+                    name: "Orders",
+                    description: "Order Management",
+                    href: "/admin/orders",
+                    icon: UtensilsCrossed
+                },
             ],
         },
         {
             label: "ANALYTICS",
             items: [
-                { name: "Reports", href: "/reports", icon: ClipboardList },
+                {
+                    name: "Reports",
+                    description: "Reports & Analytics",
+                    href: "/reports",
+                    icon: ClipboardList
+                },
             ],
         },
     ];
@@ -458,6 +582,114 @@ const AdminLayout = ({
 
         const years = Math.floor(days / 365);
         return `${years} year${years > 1 ? 's' : ''} ago`;
+    };
+
+    // Render navigation item with optional dropdown
+    const renderNavItem = (item: any, isSidebarOpen: boolean) => {
+        const isActive = location.pathname === item.href ||
+            (item.dropdownItems && item.dropdownItems.some((subItem: any) => location.pathname === subItem.href));
+        const isOpen = openDropdowns[item.name.toLowerCase()];
+
+        if (item.hasDropdown) {
+            return (
+                <div key={item.name} className="space-y-1">
+                    <div
+                        onClick={(e) => toggleDropdown(item.name.toLowerCase(), e)}
+                        className={`
+                            flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
+                            cursor-pointer
+                            ${isActive
+                                ? 'bg-emerald-600 text-white shadow-lg'
+                                : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
+                            }
+                            ${!isSidebarOpen && 'justify-center'}
+                        `}
+                    >
+                        <div className="flex items-center gap-3">
+                            <item.icon className="h-5 w-5 shrink-0" />
+                            {isSidebarOpen && (
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">
+                                        {item.name}
+                                    </span>
+                                    <span className="text-[9px] text-emerald-300/70">
+                                        {item.description}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                        {isSidebarOpen && (
+                            <ChevronRight
+                                className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+                            />
+                        )}
+                    </div>
+
+                    {/* Dropdown Items */}
+                    {isSidebarOpen && isOpen && (
+                        <div className="ml-6 space-y-1">
+                            {item.dropdownItems.map((subItem: any) => {
+                                const isSubActive = location.pathname === subItem.href;
+                                return (
+                                    <div
+                                        key={subItem.name}
+                                        onClick={() => handleNavigation(subItem.href)}
+                                        className={`
+                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
+                                            cursor-pointer
+                                            ${isSubActive
+                                                ? 'bg-emerald-600/50 text-white'
+                                                : 'text-emerald-200/80 hover:bg-emerald-800/30 hover:text-white'
+                                            }
+                                        `}
+                                    >
+                                        <subItem.icon className="h-4 w-4 shrink-0" />
+                                        <div className="flex-1">
+                                            <span className="text-xs font-medium">
+                                                {subItem.name}
+                                            </span>
+                                            {subItem.description && (
+                                                <p className="text-[9px] text-emerald-300/60">
+                                                    {subItem.description}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        return (
+            <div
+                key={item.name}
+                onClick={() => handleNavigation(item.href)}
+                className={`
+                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
+                    cursor-pointer
+                    ${isActive
+                        ? 'bg-emerald-600 text-white shadow-lg'
+                        : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
+                    }
+                    ${!isSidebarOpen && 'justify-center'}
+                `}
+            >
+                <item.icon className="h-5 w-5 shrink-0" />
+                {isSidebarOpen && (
+                    <div className="flex flex-col">
+                        <span className="text-sm font-medium">
+                            {item.name}
+                        </span>
+                        <span className="text-[9px] text-emerald-300/70">
+                            {item.description}
+                        </span>
+                    </div>
+                )}
+            </div>
+        );
     };
 
     const MessageDropdownContent = () => {
@@ -508,11 +740,11 @@ const AdminLayout = ({
                     </div>
                 </div>
 
-                {/* MESSAGE LIST */}
+                {/* MESSAGE LIST - Mint green scrollbar */}
                 <div
                     ref={messageRef}
                     data-scroll-area
-                    className="max-h-96 overflow-y-auto scrollbar-hide px-2 py-2"
+                    className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2"
                 >
                     {messagesLoading ? (
                         <div className="p-8 text-center text-gray-400 text-sm">
@@ -659,7 +891,7 @@ const AdminLayout = ({
                                 isScrolling.current = false;
                             }, 800);
                         }}
-                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto px-2 py-2`}
+                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto scrollbar-mint px-2 py-2`}
                     >
                         {notificationsLoading ? (
                             <div className="p-8 text-center text-gray-400 text-sm">
@@ -742,8 +974,49 @@ const AdminLayout = ({
         );
     };
 
+    const fallback = `https://ui-avatars.com/api/?name=${user?.first_name}+${user?.last_name}&background=10b981&color=fff`;
+
     return (
         <>
+            {/* Global styles for mint green scrollbars */}
+            <style>{`
+                /* Mint green scrollbar for WebKit browsers (Chrome, Safari, Edge) */
+                .scrollbar-mint::-webkit-scrollbar {
+                    width: 6px;
+                    height: 6px;
+                }
+                
+                .scrollbar-mint::-webkit-scrollbar-track {
+                    background: #f1f1f1;
+                    border-radius: 10px;
+                }
+                
+                .scrollbar-mint::-webkit-scrollbar-thumb {
+                    background: #10b981;
+                    border-radius: 10px;
+                }
+                
+                .scrollbar-mint::-webkit-scrollbar-thumb:hover {
+                    background: #059669;
+                }
+                
+                /* Firefox scrollbar */
+                .scrollbar-mint {
+                    scrollbar-width: thin;
+                    scrollbar-color: #10b981 #f1f1f1;
+                }
+                
+                /* Hide default scrollbar for sidebar navigation */
+                .scrollbar-hide {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+                
+                .scrollbar-hide::-webkit-scrollbar {
+                    display: none;
+                }
+            `}</style>
+
             <div className="min-h-screen bg-gray-50">
                 {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
@@ -759,13 +1032,12 @@ const AdminLayout = ({
                         ${isSidebarOpen ? 'w-64' : 'w-20'} 
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
                 >
-                    {/* Logo Section - Circle matches logo size */}
-                    <div className={`h-16 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} border-b border-emerald-800/50 shrink-0`}>
+                    {/* Logo Section - Two lines matching StaffLayout */}
+                    <div className={`h-20 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} shrink-0 border-b border-emerald-800/50`}>
                         <div
                             onClick={() => handleNavigation('/dashboard')}
                             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                            {/* Logo with White Circle - Exactly matching logo size */}
                             <div className="h-12 w-12 rounded-full overflow-hidden">
                                 <img
                                     src={logo}
@@ -785,53 +1057,36 @@ const AdminLayout = ({
                                 />
                             </div>
                             {isSidebarOpen && (
-                                <span className="font-bold text-lg tracking-tight">Traveler's Inn</span>
+                                <div className="flex flex-col">
+                                    <span className="font-bold text-sm tracking-tight leading-tight">
+                                        Lynn Ennia's
+                                    </span>
+                                    <span className="text-[9px] text-emerald-300/80 tracking-wide">
+                                        Traveler's Inn
+                                    </span>
+                                </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Navigation */}
+                    {/* Navigation with descriptions - Sidebar scroll (hidden) */}
                     <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto scrollbar-hide">
                         {navigationGroups.map((group) => (
                             <div key={group.label}>
                                 {isSidebarOpen && (
-                                    <p className="text-xs text-emerald-400 uppercase px-3 mb-2">
+                                    <p className="text-[10px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2">
                                         {group.label}
                                     </p>
                                 )}
                                 <div className="space-y-1">
-                                    {group.items.map((item) => {
-                                        const isActive = location.pathname === item.href;
-                                        return (
-                                            <div
-                                                key={item.name}
-                                                onClick={() => handleNavigation(item.href)}
-                                                className={`
-                                                    flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group
-                                                    cursor-pointer
-                                                    ${isActive
-                                                        ? 'bg-emerald-600 text-white shadow-lg'
-                                                        : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
-                                                    }
-                                                    ${!isSidebarOpen && 'justify-center'}
-                                                `}
-                                            >
-                                                <item.icon className="h-5 w-5 shrink-0" />
-                                                {isSidebarOpen && (
-                                                    <span className="text-sm font-medium">
-                                                        {item.name}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                    {group.items.map((item) => renderNavItem(item, isSidebarOpen))}
                                 </div>
                             </div>
                         ))}
                     </nav>
 
                     {/* User Menu */}
-                    <div className="border-t border-emerald-800/50 p-4 shrink-0">
+                    <div className="border-t border-emerald-800/50 py-1 px-3 shrink-0 mt-auto">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
@@ -842,33 +1097,68 @@ const AdminLayout = ({
                                         cursor-pointer
                                     `}
                                 >
-                                    <Avatar className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} border-2 border-emerald-500 shadow-md`}>
-                                        <AvatarImage src={user.avatar_url} />
-                                        <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold">
-                                            {getUserInitials()}
-                                        </AvatarFallback>
-                                    </Avatar>
+
+                                    <div className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} rounded-xl overflow-hidden border border-emerald-400`}>
+
+                                        {user?.profile_image ? (
+                                            <img
+                                                src={user.profile_image}
+                                                className="w-full h-full object-cover block"
+                                                style={{
+                                                    objectPosition: "center 20%",
+                                                    transform: "scale(1.1)",
+                                                }}
+                                                onError={(e) => {
+                                                    e.currentTarget.src = fallback;
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-xs font-bold">
+                                                {user?.first_name?.[0] || "U"}
+                                            </div>
+                                        )}
+
+                                    </div>
                                     {isSidebarOpen && (
                                         <div className="flex-1 text-left">
-                                            <p className="text-sm font-semibold truncate text-white">
+                                            <p className="text-[13px] relative top-2 font-semibold text-white/90 truncate leading-none">
                                                 {getDisplayName()}
                                             </p>
-                                            <p className="text-xs text-emerald-300 truncate">
+                                            <p className="text-[9px] text-emerald-400/80 truncate">
                                                 {user.email}
                                             </p>
                                         </div>
                                     )}
                                     {isSidebarOpen && (
-                                        <ChevronDown className="h-4 w-4 text-emerald-400 group-hover:text-white transition-colors" />
+                                        <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors">
+                                            <ChevronUp className="h-4 w-4 -mb-1" />
+                                            <ChevronDown className="h-4 w-4 -mt-1" />
+                                        </div>
                                     )}
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                                 align="end"
                                 side="top"
-                                className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px]"
+                                className="
+                                            mb-2 
+                                            bg-gradient-to-b from-emerald-900 to-emerald-950 
+                                            border border-emerald-800 
+                                            shadow-lg rounded-lg min-w-[200px]
+                                            outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0
+                                        "
                             >
-                                <DropdownMenuItem asChild>
+                                <DropdownMenuItem
+                                    asChild
+                                    className="
+                                           text-emerald-200
+                                            focus:bg-transparent 
+                                            focus:outline-none 
+                                            focus:ring-0
+                                            data-[highlighted]:bg-emerald-800/50
+                                            data-[highlighted]:text-white
+                                        "
+                                >
                                     <div
                                         onClick={() => setIsSettingsOpen(true)}
                                         className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
@@ -877,7 +1167,17 @@ const AdminLayout = ({
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
+                                <DropdownMenuItem
+                                    asChild
+                                    className="
+                                        text-emerald-200
+                                            focus:bg-transparent 
+                                            focus:outline-none 
+                                            focus:ring-0
+                                            data-[highlighted]:bg-emerald-800/50
+                                            data-[highlighted]:text-white
+                                        "
+                                >
                                     <div
                                         onClick={() => handleNavigation('/help')}
                                         className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
@@ -888,7 +1188,16 @@ const AdminLayout = ({
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={handleLogout}
-                                    className="cursor-pointer hover:bg-red-900/30 px-3 py-2"
+                                    className="
+                                            text-red-400
+
+                                            focus:bg-transparent 
+                                            focus:outline-none 
+                                            focus:ring-0
+
+                                            data-[highlighted]:bg-red-900/30
+                                            data-[highlighted]:text-white
+                                        "
                                 >
                                     <LogOut className="mr-2 h-4 w-4 text-red-400" />
                                     <span className="text-red-400">Logout</span>
@@ -898,43 +1207,38 @@ const AdminLayout = ({
                     </div>
                 </aside>
 
-                {/* Main Content */}
-                <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
-                    {/* TRANSPARENT HEADER */}
-                    <header className="bg-transparent sticky top-0 z-30 backdrop-blur-md bg-white/80 border-b border-gray-200/50">
-                        <div className="px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
+                {/* Main Content - Fixed background on scroll matching StaffLayout */}
+                <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} flex flex-col h-screen overflow-hidden`}>
+                    {/* Header with grey title and separator */}
+                    <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
+                        <div className="px-6 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                {/* Toggle Button */}
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="lg:hidden"
-                                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                                >
-                                    <MenuIcon className="h-5 w-5" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="hidden lg:flex"
+                                    className="h-8 w-8 rounded-md hover:bg-gray-100"
                                     onClick={toggleSidebar}
                                 >
                                     {isSidebarOpen ? (
-                                        <PanelLeft className="h-5 w-5" />
+                                        <PanelLeft className="h-4 w-4 text-gray-500" />
                                     ) : (
-                                        <PanelRight className="h-5 w-5" />
+                                        <PanelRight className="h-4 w-4 text-gray-500" />
                                     )}
                                 </Button>
-                                <h1 className="text-xl font-semibold text-gray-900">
+
+                                {/* Separator */}
+                                <div className="w-px h-5 bg-gray-300"></div>
+
+                                {/* Title - Grey color */}
+                                <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide">
                                     {getPageTitle()}
                                 </h1>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
                                 {/* Messages Dropdown */}
                                 <div className="relative">
-
-                                    {/* CHAT BUTTON */}
-
                                     <button
                                         ref={chatButtonRef}
                                         onClick={(e) => {
@@ -942,24 +1246,17 @@ const AdminLayout = ({
                                             setIsNotifOpen(false);
                                             setIsChatOpen(prev => !prev);
                                         }}
-                                        className="relative p-2 rounded-lg hover:bg-gray-100"
+                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors"
                                     >
-                                        <MessageCircle className="h-5 w-5" />
-
+                                        <MessageCircle className="h-4 w-4 text-gray-600" />
                                         {unreadMessages > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] px-1.5 rounded-full">
-                                                {unreadMessages}
+                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] font-medium px-1.5 rounded-full">
+                                                {unreadMessages > 9 ? '9+' : unreadMessages}
                                             </span>
                                         )}
                                     </button>
-
-                                    {/* CHAT DROPDOWN */}
                                     {isChatOpen && (
-                                        <div
-                                            ref={chatDropdownRef}
-                                            className="absolute right-0 mt-2 z-50"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
+                                        <div ref={chatDropdownRef} className="absolute right-0 mt-2 z-50" onClick={(e) => e.stopPropagation()}>
                                             <MessageDropdownContent />
                                         </div>
                                     )}
@@ -967,43 +1264,31 @@ const AdminLayout = ({
 
                                 {/* Notifications Dropdown */}
                                 <div className="relative">
-
-                                    {/* NOTIF BUTTON */}
                                     <button
                                         ref={notifButtonRef}
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setIsChatOpen(false);
-
                                             setIsNotifOpen(prev => {
                                                 const next = !prev;
-
                                                 if (next) {
-                                                    setOffset(0); // 🔥 reset ONLY when opening
+                                                    setOffset(0);
                                                     setExpanded(false);
                                                 }
-
                                                 return next;
                                             });
                                         }}
-                                        className="relative p-2 rounded-lg hover:bg-gray-100"
+                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors"
                                     >
-                                        <Bell className="h-5 w-5" />
-
+                                        <Bell className="h-4 w-4 text-gray-600" />
                                         {unreadCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 rounded-full">
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full">
                                                 {unreadCount > 99 ? '99+' : unreadCount}
                                             </span>
                                         )}
                                     </button>
-
-                                    {/* NOTIF DROPDOWN */}
                                     {isNotifOpen && (
-                                        <div
-                                            ref={notifDropdownRef}
-                                            className="absolute right-0 mt-2 z-50"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
+                                        <div ref={notifDropdownRef} className="absolute right-0 mt-2 z-50" onClick={(e) => e.stopPropagation()}>
                                             <NotificationDropdownContent />
                                         </div>
                                     )}
@@ -1012,8 +1297,11 @@ const AdminLayout = ({
                         </div>
                     </header>
 
-                    <div className="px-4 sm:px-6 lg:px-8 pb-4 h-[calc(100vh-64px)] flex flex-col">
-                        <Outlet />
+                    {/* Scrollable content with fixed background - Mint green scrollbar */}
+                    <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50">
+                        <div className="px-6 py-6">
+                            <Outlet />
+                        </div>
                     </div>
                 </main>
             </div>
@@ -1055,7 +1343,6 @@ const AdminLayout = ({
                     />
                 </div>
             )}
-
 
             {isSettingsOpen && (
                 <SettingsModal onClose={() => setIsSettingsOpen(false)} />

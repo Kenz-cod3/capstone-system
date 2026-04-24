@@ -29,7 +29,9 @@ class BookingHistoryController extends Controller
             'booking_id' => 'required|exists:bookings,id',
             'old_status' => 'required|string|max:255',
             'new_status' => 'required|string|max:255',
-            'change_note' => 'nullable|string'
+            'change_note' => 'nullable|string',
+            'override_reason' => 'nullable|string',
+            'is_override' => 'nullable|boolean',
         ]);
 
         $history = BookingHistory::create([
@@ -37,6 +39,8 @@ class BookingHistoryController extends Controller
             'old_status' => $validated['old_status'],
             'new_status' => $validated['new_status'],
             'change_note' => $validated['change_note'] ?? null,
+            'override_reason' => $validated['override_reason'] ?? null,
+            'is_override' => $validated['override_reason'] ? true : false,
 
             // ✅ AUTO USER (SAFE)
             'changed_by' => Auth::check() ? Auth::id() : null,

@@ -17,6 +17,7 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->integer('max_occupancy');
             $table->decimal('base_price', 10, 2);
+            $table->decimal('short_stay_price', 10, 2)->nullable();
             $table->timestamps();
         });
     }

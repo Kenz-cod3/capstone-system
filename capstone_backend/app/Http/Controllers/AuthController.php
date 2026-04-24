@@ -37,7 +37,45 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function login(Request $request)
+    // public function login(Request $request)
+    // {
+    //     $request->validate([
+    //         'email'    => 'required',
+    //         'password' => 'required'
+    //     ]);
+
+    //     $user = User::where('email', $request->email)->first();
+
+    //     if (!$user || !Hash::check($request->password, $user->password)) {
+    //         return response()->json([
+    //             'message' => 'Invalid email or password'
+    //         ], 401);
+    //     }
+
+    //     // ✅ ALLOW ADMIN + STAFF
+    //     if (!in_array($user->role, ['admin', 'staff', 'guest'])) {
+    //         return response()->json([
+    //             'message' => 'Access denied.'
+    //         ], 403);
+    //     }
+
+    //     if (!$user->is_active) {
+    //         return response()->json([
+    //             'message' => 'Account inactive'
+    //         ], 403);
+    //     }
+
+    //     $user->tokens()->delete();
+
+    //     $token = $user->createToken('auth_token')->plainTextToken;
+
+    //     return response()->json([
+    //         'user' => $user,
+    //         'token' => $token
+    //     ]);
+    // }
+
+    public function adminLogin(Request $request)
     {
         $request->validate([
             'email'    => 'required',
@@ -52,10 +90,10 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // ✅ ALLOW ADMIN + STAFF
-        if (!in_array($user->role, ['admin', 'staff', 'guest'])) {
+        // ✅ ONLY ADMIN + STAFF
+        if (!in_array($user->role, ['admin', 'staff', 'cashier'])) {
             return response()->json([
-                'message' => 'Access denied.'
+                'message' => 'Access Denied'
             ], 403);
         }
 
@@ -65,9 +103,53 @@ class AuthController extends Controller
             ], 403);
         }
 
-        $user->tokens()->delete();
+        // $user->tokens()->delete();
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // ✅ ADD THIS
+        $user->last_login = now();
+        $user->save();
+
+        $token = $user->createToken('admin')->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token
+        ]);
+    }
+
+    public function mobileLogin(Request $request)
+    {
+        $request->validate([
+            'email' => 'required',
+            'password' => 'required'
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Invalid credentials'], 401);
+        }
+
+        if ($user->role !== 'guest') {
+            return response()->json([
+                'message' => 'Access Denied'
+            ], 403);
+        }
+
+        // 🔥 ADD THIS (CRITICAL FIX)
+        if (!$user->is_active) {
+            return response()->json([
+                'message' => 'Account inactive'
+            ], 403);
+        }
+
+        // $user->tokens()->delete();
+
+        // ✅ ADD THIS
+        $user->last_login = now();
+        $user->save();
+
+        $token = $user->createToken('mobile')->plainTextToken;
 
         return response()->json([
             'user' => $user,

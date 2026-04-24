@@ -22,6 +22,11 @@ class Order extends Model
         return $this->belongsTo(User::class, 'staff_id');
     }
 
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
+    }
+
     // 🔥 RELATION: ORDER ITEMS
     public function items()
     {

@@ -2,7 +2,7 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const api = axios.create({
-  baseURL: "http://192.168.254.188:8000/api",
+  baseURL: "http://127.0.0.1:8000/api",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -11,8 +11,8 @@ const api = axios.create({
 
 // ✅ SET TOKEN AFTER LOGIN
 export const setToken = async (token: string) => {
-  api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
   await AsyncStorage.setItem("token", token);
+  api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 };
 
 // ✅ LOAD TOKEN ON APP START
@@ -32,22 +32,51 @@ export const clearToken = async () => {
   await AsyncStorage.removeItem("token");
 };
 
+// 🔥 REQUEST INTERCEPTOR
+api.interceptors.request.use(async (config) => {
+  const token = await AsyncStorage.getItem("token");
 
-// 🔥 GLOBAL 401 HANDLER (VERY IMPORTANT)
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  return config;
+});
+
+// 🔥 RESPONSE INTERCEPTOR (FIXED + BULLETPROOF)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      console.log("❌ 401 Unauthorized - Auto Logout");
+    const status = error.response?.status;
+    const message = error.response?.data?.message;
 
-      try {
-        const { useAuthStore } = require("../store/authStore");
+    const token = await AsyncStorage.getItem("token");
 
-        // clear Zustand + storage
+    console.log("🔥 API ERROR:", status, message); // DEBUG
+
+    try {
+      const { useAuthStore } = require("../store/authStore");
+
+      // ✅ 401 → TOKEN INVALID → FORCE LOGOUT
+      if (status === 401 && token) {
+        console.log("🚪 401 → Auto logout");
+
         await useAuthStore.getState().logout();
-      } catch (e) {
-        console.log("AUTO LOGOUT ERROR:", e);
       }
+
+      // ✅ 403 → ACCOUNT INACTIVE (FIXED CONDITION)
+      if (status === 403 && message?.toLowerCase().includes("inactive")) {
+        console.log("⛔ Account inactive detected");
+
+        // 🔥 OPTION A: FORCE LOGOUT (RECOMMENDED)
+        await useAuthStore.getState().logout();
+
+        // 🔥 OPTION B (if you want screen instead)
+        // useAuthStore.getState().setInactive(true);
+      }
+
+    } catch (e) {
+      console.log("Interceptor error:", e);
     }
 
     return Promise.reject(error);

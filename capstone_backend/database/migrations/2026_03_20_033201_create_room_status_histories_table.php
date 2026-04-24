@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('room_status_histories', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('room_id')->constrained('rooms')->cascadeOnDelete();
+            $table->foreignId('room_id')->constrained('rooms');
             $table->enum('status', ['available', 'occupied', 'maintenance']);
             $table->foreignId('changed_by')->constrained('users');
             $table->timestamp('changed_at');

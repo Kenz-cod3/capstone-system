@@ -9,14 +9,16 @@ use App\Models\Room;
 class Booking extends Model
 {
     use SoftDeletes;
-    
+
     protected $fillable = [
         'user_id',
         'walk_in_guest_id',
+        'created_by',
         'booking_type',
         'stay_type',
         'check_in_date',
         'check_out_date',
+        'check_in_time',
         'booking_reference',
         'total_price',
         'booking_status'
@@ -34,6 +36,12 @@ class Booking extends Model
         return $this->belongsTo(WalkInGuest::class);
     }
 
+    // 🔹 CREATED BY USER (WHO CREATED THIS BOOKING)
+    public function createdBy()  // ✅ ADD THIS METHOD
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     // 🔹 BOOKED ROOMS (PIVOT TABLE)
     public function bookedRooms()
     {
@@ -48,7 +56,7 @@ class Booking extends Model
             'booked_rooms',
             'booking_id',
             'room_id'
-        )->withPivot('price_at_time_of_booking');
+        )->withPivot('price_at_time_of_booking', 'subtotal', 'stay_type', 'check_out_time');
     }
 
     // 🔹 ADD ONS (HAS MANY)
@@ -78,6 +86,12 @@ class Booking extends Model
     public function invoice()
     {
         return $this->hasOne(BookingInvoice::class);
+    }
+    
+    // 🔥 RELATION: ORDERS (restaurant orders)
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
     }
 
     // 🔹 HISTORY (VERY IMPORTANT)

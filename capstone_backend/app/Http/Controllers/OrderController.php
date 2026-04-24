@@ -61,9 +61,7 @@ class OrderController extends Controller
 
                     // 🔥 STOCK CHECK
                     if ($menuItem->stock_quantity < $item['quantity']) {
-                        return response()->json([
-                            'message' => "{$menuItem->name} is out of stock"
-                        ], 400);
+                        throw new \Exception("{$menuItem->name} is out of stock");
                     }
 
                     // 🔥 DEDUCT STOCK

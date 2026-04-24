@@ -10,23 +10,33 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // ADMIN
+        // 🔴 ADMIN
         User::create([
-            'first_name' => 'John',
-            'last_name' => 'Jaranilla',
+            'first_name' => 'Kenneth Carl',
+            'last_name' => 'Milarpis',
             'email' => 'admin@gmail.com',
             'password' => Hash::make('123456'),
             'role' => 'admin',
             'is_active' => true
         ]);
 
-        // STAFF
+        // 🧑‍💼 STAFF (HOTEL)
         User::create([
-            'first_name' => 'John',
-            'last_name' => 'Jaranilla',
+            'first_name' => 'Kenneth',
+            'last_name' => 'Staff',
             'email' => 'staff@gmail.com',
             'password' => Hash::make('123456'),
             'role' => 'staff',
+            'is_active' => true
+        ]);
+
+        // 🧑‍🍳 CASHIER (RESTAURANT)
+        User::create([
+            'first_name' => 'Kenneth',
+            'last_name' => 'Cashier',
+            'email' => 'cashier@gmail.com',
+            'password' => Hash::make('123456'),
+            'role' => 'cashier',
             'is_active' => true
         ]);
     }

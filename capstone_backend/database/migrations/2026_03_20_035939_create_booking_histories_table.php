@@ -20,6 +20,10 @@ return new class extends Migration
             $table->string('old_status');
             $table->string('new_status');
             $table->text('change_note')->nullable();
+
+            $table->text('override_reason')->nullable();
+            $table->boolean('is_override')->default(false);
+
             $table->foreignId('changed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('changed_at');
         });

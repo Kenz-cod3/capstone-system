@@ -10,7 +10,7 @@ class RoomController extends Controller
     public function index()
     {
         $rooms = Room::with([
-            'roomType:id,type_name,base_price',
+            'roomType:id,type_name,base_price,short_stay_price',
             'images'
         ])
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
@@ -36,6 +36,7 @@ class RoomController extends Controller
                     'id' => $room->id,
                     'room_number' => $room->room_number,
                     'status' => $room->status,
+                    'is_deleted' => $room->deleted_at !== null,
 
                     'room_type_id' => $room->room_type_id,
                     'room_type' => $room->roomType,
@@ -131,13 +132,51 @@ class RoomController extends Controller
 
     public function destroy($id)
     {
-        $room = Room::findOrFail($id);
+        $room = Room::with('bookings')->findOrFail($id);
 
-        $room->delete();
+        $hasActiveBookings = $room->bookings()
+            ->whereNotIn('booking_status', ['checked_out', 'cancelled'])
+            ->exists();
+
+        if ($hasActiveBookings) {
+            return response()->json([
+                'message' => 'Cannot delete room. It still has active bookings.'
+            ], 400);
+        }
+
+        $room->delete(); // ✅ soft delete
 
         return response()->json([
             'message' => 'Room deleted successfully'
-        ], 200);
+        ]);
+    }
+
+    public function restore($id)
+    {
+        $room = Room::withTrashed()->findOrFail($id);
+
+        if (!$room->trashed()) {
+            return response()->json([
+                'message' => 'Room is not deleted'
+            ], 400);
+        }
+
+        $room->restore();
+
+        return response()->json([
+            'message' => 'Room restored successfully'
+        ]);
+    }
+
+    public function forceDelete($id)
+    {
+        $room = Room::withTrashed()->findOrFail($id);
+
+        $room->forceDelete();
+
+        return response()->json([
+            'message' => 'Room permanently deleted'
+        ]);
     }
 
     public function occupancy()

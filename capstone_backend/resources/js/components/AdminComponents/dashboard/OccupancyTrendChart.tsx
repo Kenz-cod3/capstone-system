@@ -21,6 +21,13 @@ export default function OccupancyTrendChart({
 }: {
     data: OccupancyTrendItem[];
 }) {
+
+    // ✅ SAFETY: ensure 0–100 lang
+    const safeData = data.map(item => ({
+        ...item,
+        occupancy: Math.max(0, Math.min(item.occupancy, 100)),
+    }));
+
     return (
         <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-100 flex flex-col h-full">
 
@@ -43,9 +50,9 @@ export default function OccupancyTrendChart({
             {/* CHART */}
             <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data}>
+                    <AreaChart data={safeData}>
 
-                        {/* MINT GRADIENT */}
+                        {/* GRADIENT */}
                         <defs>
                             <linearGradient id="mintGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
@@ -71,6 +78,7 @@ export default function OccupancyTrendChart({
 
                         {/* Y AXIS */}
                         <YAxis
+                            domain={[0, 100]}
                             stroke="#9ca3af"
                             fontSize={11}
                             tickLine={false}
@@ -80,7 +88,7 @@ export default function OccupancyTrendChart({
                         {/* TOOLTIP */}
                         <Tooltip
                             formatter={(value: any) => [
-                                `${value}% occupancy`,
+                                `${value.toFixed(1)}% occupancy`,
                                 "Occupancy",
                             ]}
                             contentStyle={{
@@ -96,7 +104,7 @@ export default function OccupancyTrendChart({
                         <Area
                             type="monotoneX"
                             dataKey="occupancy"
-                            stroke="#10b981" // ✅ mint green
+                            stroke="#10b981"
                             strokeWidth={2}
                             fill="url(#mintGradient)"
                             dot={{ r: 3 }}

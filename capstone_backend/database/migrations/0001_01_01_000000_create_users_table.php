@@ -19,7 +19,8 @@ return new class extends Migration
             $table->string('password');
             $table->string('contact_number')->nullable();
             $table->string('address')->nullable();
-            $table->enum('role', ['admin', 'staff', 'guest']);
+            $table->string('profile_image')->nullable();
+            $table->enum('role', ['admin', 'staff', 'guest', 'cashier', 'housekeeper']);
             $table->boolean('is_active')->default(true);
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('last_login')->nullable();

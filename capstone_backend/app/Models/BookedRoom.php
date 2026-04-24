@@ -11,7 +11,10 @@ class BookedRoom extends Model
     protected $fillable = [
         'booking_id',
         'room_id',
-        'price_at_time_of_booking'
+        'price_at_time_of_booking',
+        'subtotal',      // ✅ ADD
+        'stay_type',
+        'check_out_time'
     ];
 
     public function booking()
@@ -21,6 +24,6 @@ class BookedRoom extends Model
 
     public function room()
     {
-        return $this->belongsTo(Room::class);
+        return $this->belongsTo(Room::class)->withTrashed();
     }
 }

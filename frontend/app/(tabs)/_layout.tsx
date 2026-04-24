@@ -1,22 +1,68 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/store/authStore";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import api from "@/services/api";
 
 export default function TabsLayout() {
-  const { user, isLoaded } = useAuthStore();
+  const { user, isLoaded, setInactive } = useAuthStore();
   const router = useRouter();
 
-  // 🔥 PROTECT TABS
+  const [checked, setChecked] = useState(false); // 🔥 prevent flicker
+
+  // 🔥 CHECK USER STATUS
+  const checkUserStatus = async () => {
+    try {
+      const res = await api.get("/user");
+
+      console.log("CHECK STATUS:", res.data.is_active);
+
+      if (!res.data.is_active) {
+        console.log("🚫 User inactive");
+
+        setInactive(true); // 🔥 trigger inactive screen
+      }
+
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setInactive(true);
+      }
+    } finally {
+      setChecked(true); // ✅ mark checked
+    }
+  };
+
+  // 🔥 RUN ON SCREEN FOCUS (INSTANT CHECK)
+  useFocusEffect(
+    useCallback(() => {
+      checkUserStatus();
+    }, [])
+  );
+
+  // 🔥 MAIN EFFECT
   useEffect(() => {
     if (!isLoaded) return;
 
     if (!user) {
       router.replace("/auth/login");
+      return;
     }
+
+    // 🔥 FIRST CHECK
+    checkUserStatus();
+
+    // 🔥 AUTO CHECK EVERY 2 SECONDS
+    const interval = setInterval(() => {
+      checkUserStatus();
+    }, 2000);
+
+    return () => clearInterval(interval);
+
   }, [user, isLoaded]);
 
-  if (!isLoaded) return null;
+  // 🔥 BLOCK UI UNTIL CHECKED (NO HOME FLASH)
+  if (!isLoaded || !checked) return null;
 
   return (
     <Tabs
@@ -25,16 +71,12 @@ export default function TabsLayout() {
         tabBarShowLabel: true,
 
         tabBarStyle: {
-          position: "absolute",
           backgroundColor: "#fff",
-          borderTopWidth: 0,
-          height: 70,
+          borderTopWidth: 1,
+          borderTopColor: "#e5e7eb",
+          height: 80,
           paddingBottom: 10,
           paddingTop: 10,
-          marginHorizontal: 12,
-          marginBottom: 10,
-          borderRadius: 20,
-          elevation: 10,
         },
 
         tabBarActiveTintColor: "#22c55e",
@@ -46,7 +88,6 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* 🏠 HOME */}
       <Tabs.Screen
         name="home"
         options={{
@@ -61,7 +102,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 📅 BOOKINGS */}
       <Tabs.Screen
         name="bookings"
         options={{
@@ -76,22 +116,6 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 💬 MESSAGES */}
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: "Messages",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "chatbubble" : "chatbubble-outline"}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
-
-      {/* 👤 PROFILE */}
       <Tabs.Screen
         name="profile"
         options={{

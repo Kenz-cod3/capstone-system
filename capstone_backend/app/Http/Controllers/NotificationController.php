@@ -104,16 +104,30 @@ class NotificationController extends Controller
     }
 
     // 🔥 GET NOTIFICATIONS PER USER (ADMIN ONLY)
-    public function getByUser(Request $request, $id)
+    public function getByUser(Request $request)
     {
+        $user = $request->user(); // current logged-in user
+
         $limit = $request->query('limit', 10);
         $offset = $request->query('offset', 0);
 
         return response()->json(
-            Notification::where('user_id', $id)
+            Notification::where('user_id', $user->id)
                 ->latest()
                 ->skip($offset)
                 ->take($limit)
+                ->get(),
+            200
+        );
+    }
+
+    public function getCurrentUserNotifications(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json(
+            Notification::where('user_id', $user->id)
+                ->latest()
                 ->get(),
             200
         );

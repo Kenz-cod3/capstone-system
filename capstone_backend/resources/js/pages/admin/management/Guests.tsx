@@ -1,79 +1,82 @@
 import { useEffect, useState } from "react";
 import api from "@/services/api";
-import { 
-    Search, 
-    User, 
-    Mail, 
-    Phone, 
-    MapPin, 
-    ChevronLeft, 
-    ChevronRight,
-    Loader2,
-    Users,
-    RefreshCw,
-    Calendar,
-    CheckCircle,
-    XCircle,
-    Filter,
-    Download,
-    MoreVertical,
-    Eye,
-    Edit,
-    Trash2,
-    UserCheck,
-    UserX,
-    MailCheck,
-    PhoneCall,
-    Home,
-    Clock,
-    TrendingUp,
-    Activity,
-    Star,
-    CreditCard,
-    Award,
-    BarChart3,
-    Zap
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
+    SearchOutlined,
+    UserOutlined,
+    MailOutlined,
+    PhoneOutlined,
+    EnvironmentOutlined,
+    LeftOutlined,
+    RightOutlined,
+    ReloadOutlined,
+    DownloadOutlined,
+    MoreOutlined,
+    EyeOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    CheckCircleOutlined,
+    CloseCircleOutlined,
+    StarOutlined,
+    ClockCircleOutlined,
+    TrophyOutlined,
+    CreditCardOutlined,
+    TeamOutlined,
+    RiseOutlined,
+    CalendarOutlined,
+    VerifiedOutlined,
+    StopOutlined,
+    CheckOutlined,
+    FilterOutlined,
+    SortAscendingOutlined,
+    PlusOutlined,
+    ExportOutlined,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
+    DashboardOutlined,
+    UserDeleteOutlined,
+    UserAddOutlined
+} from '@ant-design/icons';
+import {
+    Badge,
+    Card,
+    Input,
+    Button,
     Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
+    Tag,
+    Avatar,
+    Space,
     Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
+    Spin,
+    Empty,
+    message,
+    Modal,
+    Dropdown,
+    Statistic,
+    Row,
+    Col,
+    Typography,
+    Divider,
+    Tooltip,
+    Descriptions,
+    Tabs,
+    Segmented,
+    App,
+    theme,
+    Flex,
+    Grid,
+    Drawer,
+    Popconfirm,
+    Image
+} from 'antd';
+import type { ColumnsType } from "antd/es/table";
 import { format } from "date-fns";
+import dayjs from "dayjs";
+
+const { Title, Text, Paragraph } = Typography;
+const { Search } = Input;
+const { Option } = Select;
+const { useToken } = theme;
+const { useBreakpoint } = Grid;
 
 interface User {
     id: number;
@@ -82,6 +85,7 @@ interface User {
     email: string;
     contact_number?: string;
     address?: string;
+    profile_image?: string;
     role: string;
     is_active: boolean;
     email_verified_at?: string;
@@ -92,26 +96,6 @@ interface User {
     total_spent?: number;
 }
 
-interface PaginatedResponse {
-    current_page: number;
-    data: User[];
-    first_page_url: string;
-    from: number;
-    last_page: number;
-    last_page_url: string;
-    links: Array<{
-        url: string | null;
-        label: string;
-        active: boolean;
-    }>;
-    next_page_url: string | null;
-    path: string;
-    per_page: number;
-    prev_page_url: string | null;
-    to: number;
-    total: number;
-}
-
 interface StatsData {
     total: number;
     active: number;
@@ -120,27 +104,24 @@ interface StatsData {
     newThisMonth: number;
     averageBookings: number;
     totalRevenue: number;
-    loyaltyLevel: string;
 }
 
 export default function Guests() {
+    const { token } = useToken();
+    const screens = useBreakpoint();
+    const isMobile = !screens.md;
+
     const [users, setUsers] = useState<User[]>([]);
     const [search, setSearch] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [showUserDialog, setShowUserDialog] = useState(false);
-    const [stats, setStats] = useState<StatsData>({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        verified: 0,
-        newThisMonth: 0,
-        averageBookings: 0,
-        totalRevenue: 0,
-        loyaltyLevel: "Bronze"
-    });
+    const [viewModalVisible, setViewModalVisible] = useState(false);
+    const [statusModalVisible, setStatusModalVisible] = useState(false);
+    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+    const [newStatus, setNewStatus] = useState<boolean>(true);
+    const [filtersVisible, setFiltersVisible] = useState(false);
 
     // Filters and sorting
     const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -153,11 +134,22 @@ export default function Guests() {
     const [total, setTotal] = useState(0);
     const [perPage, setPerPage] = useState(10);
 
+    const [stats, setStats] = useState<StatsData>({
+        total: 0,
+        active: 0,
+        inactive: 0,
+        verified: 0,
+        newThisMonth: 0,
+        averageBookings: 0,
+        totalRevenue: 0
+    });
+
+    const BASE_URL = api.defaults.baseURL?.replace("/api", "") || "";
+
     const fetchUsers = async (silent = false) => {
         try {
             if (!silent) setLoading(true);
             if (silent) setRefreshing(true);
-            setError(null);
 
             const params: any = {
                 page: currentPage,
@@ -165,555 +157,791 @@ export default function Guests() {
                 role: 'guest',
             };
 
-            if (search) params.search = search;
+            if (debouncedSearch) params.search = debouncedSearch;
             if (statusFilter !== 'all') params.status = statusFilter;
             if (verificationFilter !== 'all') params.verified = verificationFilter;
             if (sortBy) params.sort = sortBy;
 
             const response = await api.get("/users", { params });
-            const paginatedData = response.data as PaginatedResponse;
+            const paginatedData = response.data;
             const usersData = paginatedData.data || [];
-            const guestUsers = usersData.filter(user => user.role === 'guest');
-            
+            const guestUsers = usersData.filter((user: User) => user.role === 'guest');
+
             setUsers(guestUsers);
             setLastPage(paginatedData.last_page);
             setTotal(paginatedData.total);
             setPerPage(paginatedData.per_page);
 
-            // Calculate stats with enhanced metrics
+            // Calculate stats
             const now = new Date();
             const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const newThisMonth = guestUsers.filter(user => 
+            const newThisMonth = guestUsers.filter((user: User) =>
                 new Date(user.created_at) >= firstDayOfMonth
             ).length;
 
-            const totalRevenue = guestUsers.reduce((sum, user) => sum + (user.total_spent || 0), 0);
-            const averageBookings = guestUsers.length > 0 
-                ? guestUsers.reduce((sum, user) => sum + (user.total_bookings || 0), 0) / guestUsers.length 
+            const totalRevenue = guestUsers.reduce(
+                (sum: number, user: User) => sum + Number(user.total_spent || 0),
+                0
+            );
+            const averageBookings = guestUsers.length > 0
+                ? guestUsers.reduce((sum: number, user: User) => sum + (user.total_bookings || 0), 0) / guestUsers.length
                 : 0;
-
-            // Determine loyalty level based on total revenue
-            let loyaltyLevel = "Bronze";
-            if (totalRevenue > 50000) loyaltyLevel = "Platinum";
-            else if (totalRevenue > 25000) loyaltyLevel = "Gold";
-            else if (totalRevenue > 10000) loyaltyLevel = "Silver";
 
             setStats({
                 total: paginatedData.total,
-                active: guestUsers.filter(u => u.is_active).length,
-                inactive: guestUsers.filter(u => !u.is_active).length,
-                verified: guestUsers.filter(u => u.email_verified_at).length,
+                active: guestUsers.filter((u: User) => u.is_active).length,
+                inactive: guestUsers.filter((u: User) => !u.is_active).length,
+                verified: guestUsers.filter((u: User) => u.email_verified_at).length,
                 newThisMonth: newThisMonth,
                 averageBookings: Math.round(averageBookings * 10) / 10,
-                totalRevenue: totalRevenue,
-                loyaltyLevel: loyaltyLevel
+                totalRevenue: totalRevenue
             });
 
-            if (!silent && !loading) {
-                toast.success("Guests loaded", {
-                    description: `Successfully loaded ${guestUsers.length} guests.`,
-                });
-            }
 
         } catch (err: any) {
             console.error("Error fetching guests:", err);
-            setError(err.response?.data?.message || "Failed to load guests");
-            
-            toast.error("Failed to load guests", {
-                description: err.response?.data?.message || "Please check your connection and try again.",
-            });
+            message.error(err.response?.data?.message || "Failed to load guests");
         } finally {
             if (!silent) setLoading(false);
             if (silent) setRefreshing(false);
         }
     };
 
-    const handleRefresh = () => {
-        fetchUsers(true);
-        toast.success("Refreshed", {
-            description: "Guest list has been updated.",
-        });
+    const handleStatusChange = async (user: User, newStatus: boolean) => {
+        try {
+            await api.patch(`/users/${user.id}/status`, { is_active: newStatus });
+            if (newStatus) {
+                message.success(`${user.first_name} ${user.last_name} has been activated`);
+            } else {
+                message.success(`${user.first_name} ${user.last_name} has been deactivated`);
+            }
+            fetchUsers();
+            setStatusModalVisible(false);
+        } catch (error: any) {
+            message.error(error.response?.data?.message || "Failed to update status");
+        }
+    };
+
+    const handleDeleteUser = async (user: User) => {
+        try {
+            await api.delete(`/users/${user.id}`);
+            message.success(`${user.first_name} ${user.last_name} has been deleted successfully`);
+            fetchUsers();
+            setDeleteModalVisible(false);
+        } catch (error: any) {
+            message.error(error.response?.data?.message || "Failed to delete user");
+        }
     };
 
     useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search);
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [search]);
+
+    useEffect(() => {
         fetchUsers();
-    }, [search, currentPage, statusFilter, verificationFilter, sortBy]);
+    }, [debouncedSearch, currentPage, statusFilter, verificationFilter, sortBy]);
 
     const getInitials = (firstName: string, lastName: string) => {
         return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
     };
 
-    const getAvatarColor = (name: string) => {
-        const colors = [
-            "from-emerald-400 to-emerald-600",
-            "from-teal-400 to-teal-600",
-            "from-green-400 to-green-600",
-            "from-cyan-400 to-cyan-600",
-            "from-blue-400 to-blue-600",
-            "from-indigo-400 to-indigo-600"
-        ];
-        
-        let hash = 0;
-        for (let i = 0; i < name.length; i++) {
-            hash = ((hash << 5) - hash) + name.charCodeAt(i);
-            hash |= 0;
-        }
-        return colors[Math.abs(hash) % colors.length];
+    const getRandomColor = () => {
+        const colors = ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6'];
+        return colors[Math.floor(Math.random() * colors.length)];
     };
 
     const formatDate = (dateString?: string) => {
         if (!dateString) return "-";
-        return format(new Date(dateString), 'MMM dd, yyyy');
+        return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
     };
 
-    const StatCard = ({ title, value, icon: Icon, trend, trendValue, color, subtitle }: any) => (
-        <Card className="border-0 bg-gradient-to-br from-white to-gray-50/50 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
-            <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                        <p className="text-sm font-medium text-gray-500">{title}</p>
-                        <p className="text-3xl font-bold text-gray-900">{value}</p>
-                        {subtitle && (
-                            <p className="text-xs text-gray-400">{subtitle}</p>
-                        )}
-                        {trend && (
-                            <div className="flex items-center gap-1 mt-1">
-                                {trend === 'up' ? (
-                                    <TrendingUp className="h-3 w-3 text-emerald-600" />
-                                ) : (
-                                    <TrendingUp className="h-3 w-3 text-red-600 rotate-180" />
-                                )}
-                                <span className={`text-xs font-medium ${trend === 'up' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                    {trendValue}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                    <div className="relative">
-                        <div className={`absolute inset-0 bg-${color}-100 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity`}></div>
-                        <div className={`relative p-3 bg-gradient-to-br from-${color}-50 to-${color}-100 rounded-2xl`}>
-                            <Icon className={`h-6 w-6 text-${color}-600`} />
-                        </div>
-                    </div>
+    // Helper function to get avatar URL
+    const getAvatarUrl = (user: User) => {
+        if (user.profile_image) {
+            if (user.profile_image.startsWith('http')) {
+                return user.profile_image;
+            }
+            return `${BASE_URL}/storage/${user.profile_image}`;
+        }
+        return undefined;
+    };
+
+    const columns: ColumnsType<User> = [
+        {
+            title: 'Guest',
+            key: 'guest',
+            width: isMobile ? 200 : 280,
+            fixed: isMobile ? false : 'left',
+            render: (_, record) => (
+                <Flex align="center" gap={12}>
+                    <Avatar
+                        size={44}
+                        src={getAvatarUrl(record)}
+                        style={{ backgroundColor: !record.profile_image ? getRandomColor() : undefined, flexShrink: 0 }}
+                        icon={!record.profile_image ? <UserOutlined /> : undefined}
+                    >
+                        {!record.profile_image && !getAvatarUrl(record) && getInitials(record.first_name, record.last_name)}
+                    </Avatar>
+                    <Flex vertical style={{ minWidth: 0 }}>
+                        <Text strong style={{ fontSize: 15 }}>
+                            {record.first_name} {record.last_name}
+                        </Text>
+                        <Flex wrap gap={4} style={{ marginTop: 4 }}>
+                            {record.email_verified_at && (
+                                <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
+                                    Verified
+                                </Tag>
+                            )}
+                            {record.total_bookings && record.total_bookings > 0 && (
+                                <Tag icon={<StarOutlined />} color="gold" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
+                                    {record.total_bookings} bookings
+                                </Tag>
+                            )}
+                        </Flex>
+                    </Flex>
+                </Flex>
+            )
+        },
+        {
+            title: 'Contact',
+            key: 'contact',
+            responsive: ['md'],
+            render: (_, record) => (
+                <Flex vertical gap={4}>
+                    <Flex align="center" gap={8}>
+                        <MailOutlined style={{ color: token.colorTextSecondary, width: 16 }} />
+                        <Text style={{ fontSize: 13 }} ellipsis={{ tooltip: true }}>
+                            {record.email}
+                        </Text>
+                    </Flex>
+                    {record.contact_number && (
+                        <Flex align="center" gap={8}>
+                            <PhoneOutlined style={{ color: token.colorTextSecondary, width: 16 }} />
+                            <Text style={{ fontSize: 13 }}>{record.contact_number}</Text>
+                        </Flex>
+                    )}
+                </Flex>
+            )
+        },
+        {
+            title: 'Address',
+            key: 'address',
+            responsive: ['lg'],
+            render: (_, record) => (
+                record.address ? (
+                    <Flex align="center" gap={8}>
+                        <EnvironmentOutlined style={{ color: token.colorTextSecondary }} />
+                        <Text
+                            style={{ fontSize: 13 }}
+                            ellipsis={{ tooltip: record.address }}
+                        >
+                            {record.address}
+                        </Text>
+                    </Flex>
+                ) : <Text type="secondary">—</Text>
+            )
+        },
+        {
+            title: 'Status',
+            key: 'status',
+            width: 100,
+            align: 'center',
+            render: (_, record) => (
+                <Badge
+                    status={record.is_active ? "success" : "default"}
+                    text={record.is_active ? "Active" : "Inactive"}
+                />
+            )
+        },
+        {
+            title: 'Joined',
+            key: 'joined',
+            width: 150,
+            responsive: ['md'],
+            render: (_, record) => (
+                <Tooltip title={formatDate(record.created_at)}>
+                    <Flex align="center" gap={8}>
+                        <ClockCircleOutlined style={{ color: token.colorTextSecondary }} />
+                        <Text style={{ fontSize: 13 }}>
+                            {dayjs(record.created_at).format('MMM DD, YYYY')}
+                        </Text>
+                    </Flex>
+                </Tooltip>
+            )
+        },
+        {
+            title: 'Actions',
+            key: 'actions',
+            width: 80,
+            align: 'center',
+            fixed: isMobile ? false : 'right',
+            render: (_, record) => (
+                <Dropdown
+                    menu={{
+                        items: [
+                            {
+                                key: 'view',
+                                label: 'View Details',
+                                icon: <EyeOutlined />,
+                                onClick: () => {
+                                    setSelectedUser(record);
+                                    setViewModalVisible(true);
+                                }
+                            },
+                            {
+                                key: 'status',
+                                label: record.is_active ? 'Deactivate' : 'Activate',
+                                icon: record.is_active ? <StopOutlined /> : <CheckOutlined />,
+                                onClick: () => {
+                                    setSelectedUser(record);
+                                    setNewStatus(!record.is_active);
+                                    setStatusModalVisible(true);
+                                }
+                            },
+                            { type: 'divider' },
+                            {
+                                key: 'delete',
+                                label: 'Delete',
+                                icon: <DeleteOutlined />,
+                                danger: true,
+                                onClick: () => {
+                                    setSelectedUser(record);
+                                    setDeleteModalVisible(true);
+                                }
+                            }
+                        ]
+                    }}
+                    trigger={['click']}
+                >
+                    <Button type="text" icon={<MoreOutlined />} />
+                </Dropdown>
+            )
+        }
+    ];
+
+    // Filter bar component
+    const FilterBar = () => (
+        <Flex vertical gap={16}>
+            <Flex gap={12} wrap="wrap">
+                <Select
+                    style={{ width: isMobile ? '100%' : 140 }}
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    suffixIcon={<FilterOutlined />}
+                >
+                    <Option value="all">All Status</Option>
+                    <Option value="active">Active</Option>
+                    <Option value="inactive">Inactive</Option>
+                </Select>
+                <Select
+                    style={{ width: isMobile ? '100%' : 160 }}
+                    value={verificationFilter}
+                    onChange={setVerificationFilter}
+                    suffixIcon={<VerifiedOutlined />}
+                >
+                    <Option value="all">All Verification</Option>
+                    <Option value="verified">Verified Only</Option>
+                    <Option value="unverified">Unverified Only</Option>
+                </Select>
+                <Select
+                    style={{ width: isMobile ? '100%' : 140 }}
+                    value={sortBy}
+                    onChange={setSortBy}
+                    suffixIcon={<SortAscendingOutlined />}
+                >
+                    <Option value="newest">Newest First</Option>
+                    <Option value="oldest">Oldest First</Option>
+                    <Option value="name_asc">Name A-Z</Option>
+                    <Option value="name_desc">Name Z-A</Option>
+                </Select>
+            </Flex>
+        </Flex>
+    );
+
+    // Stat card component
+    const StatCard = ({ title, value, icon, color, trend, prefix = '' }: any) => (
+        <Card 
+            style={{ 
+                borderRadius: 12, 
+                height: '100%',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                border: 'none'
+            }} 
+            bodyStyle={{ padding: 20 }}
+        >
+            <Flex justify="space-between" align="flex-start">
+                <Flex vertical gap={4}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>{title}</Text>
+                    <Text style={{ fontSize: 28, fontWeight: 600 }}>
+                        {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
+                    </Text>
+                    {trend && (
+                        <Tag color="green" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
+                            <RiseOutlined /> {trend}
+                        </Tag>
+                    )}
+                </Flex>
+                <div style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: `${color}15`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    {icon}
                 </div>
-            </CardContent>
+            </Flex>
         </Card>
     );
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
-            <Toaster position="top-right" richColors />
-            
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Header Section */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-                    <div>
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-emerald-100 rounded-xl">
-                                <Users className="w-6 h-6 text-emerald-600" />
-                            </div>
-                            <h1 className="text-3xl font-bold text-gray-900">Guest Management</h1>
-                        </div>
-                        <p className="text-sm text-gray-500 ml-11">
-                            Manage and monitor all registered guests, track their activity and loyalty
-                        </p>
-                    </div>
-                    <div className="flex gap-3">
+        <div style={{
+            minHeight: 'auto',
+            background: 'transparent',
+            padding: isMobile ? 16 : 24
+        }}>
+            {/* Header */}
+            <Flex vertical gap={16} style={{ marginBottom: 24 }}>
+                <Flex justify="space-between" align={isMobile ? 'flex-start' : 'center'} wrap="wrap" gap={16}>
+                    <Flex vertical gap={4}>
+                        <Title level={isMobile ? 3 : 2} style={{ margin: 0 }}>Guest Management</Title>
+                        <Text type="secondary">Manage and monitor all registered guests</Text>
+                    </Flex>
+                    <Flex gap={12} wrap="wrap">
                         <Button
-                            variant="outline"
-                            onClick={handleRefresh}
-                            disabled={refreshing}
-                            className="gap-2 border-gray-200 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 transition-all"
+                            icon={<ReloadOutlined spin={refreshing} />}
+                            onClick={() => fetchUsers(true)}
+                            loading={refreshing}
                         >
-                            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                             Refresh
                         </Button>
-                        <Button className="gap-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-md hover:shadow-lg transition-all">
-                            <Download className="h-4 w-4" />
-                            Export Data
+                        <Button type="primary" icon={<ExportOutlined />}>
+                            Export
                         </Button>
-                    </div>
-                </div>
+                        <Button icon={filtersVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />} onClick={() => setFiltersVisible(!filtersVisible)}>
+                            Filters
+                        </Button>
+                    </Flex>
+                </Flex>
+                <Divider style={{ margin: 0 }} />
+            </Flex>
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {/* Collapsible Filters */}
+            {filtersVisible && (
+                <Card 
+                    style={{ 
+                        marginBottom: 24, 
+                        borderRadius: 12,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                        border: 'none'
+                    }}
+                >
+                    <FilterBar />
+                </Card>
+            )}
+
+            {/* Statistics Grid */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} sm={12} lg={6}>
                     <StatCard
                         title="Total Guests"
                         value={stats.total}
-                        icon={Users}
-                        trend="up"
-                        trendValue="+12% vs last month"
-                        color="emerald"
+                        icon={<TeamOutlined style={{ fontSize: 24, color: '#10b981' }} />}
+                        color="#10b981"
+                        trend="+12%"
                     />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                     <StatCard
-                        title="Active Guests"
+                        title="Active"
                         value={stats.active}
-                        icon={UserCheck}
-                        trend="up"
-                        trendValue="+8% vs last month"
-                        color="teal"
+                        icon={<CheckCircleOutlined style={{ fontSize: 24, color: '#3b82f6' }} />}
+                        color="#3b82f6"
+                        trend="+8%"
                     />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                     <StatCard
-                        title="Email Verified"
+                        title="Verified"
                         value={stats.verified}
-                        icon={MailCheck}
-                        trend="up"
-                        trendValue="+15% vs last month"
-                        color="green"
+                        icon={<VerifiedOutlined style={{ fontSize: 24, color: '#14b8a6' }} />}
+                        color="#14b8a6"
+                        trend="+15%"
                     />
+                </Col>
+                <Col xs={24} sm={12} lg={6}>
                     <StatCard
                         title="New This Month"
                         value={stats.newThisMonth}
-                        icon={Calendar}
-                        trend="up"
-                        trendValue="+23% vs last month"
-                        color="cyan"
+                        icon={<RiseOutlined style={{ fontSize: 24, color: '#8b5cf6' }} />}
+                        color="#8b5cf6"
+                        trend="+23%"
                     />
-                </div>
+                </Col>
+            </Row>
 
-                {/* Additional Stats Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <Card className="border-0 bg-gradient-to-br from-purple-50 to-pink-50 shadow-lg">
-                        <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-purple-600">Total Revenue</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">
+            {/* Premium Stats Row */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={24} md={8}>
+                    <Card 
+                        style={{ 
+                            borderRadius: 12, 
+                            overflow: 'hidden',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                            border: 'none'
+                        }} 
+                        bodyStyle={{ padding: 0 }}
+                    >
+                        <div style={{
+                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                            padding: 20,
+                            color: 'white'
+                        }}>
+                            <Flex align="center" gap={12}>
+                                <CreditCardOutlined style={{ fontSize: 28 }} />
+                                <Flex vertical style={{ flex: 1 }}>
+                                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>Total Revenue</Text>
+                                    <Text style={{ fontSize: 28, fontWeight: 600, color: 'white' }}>
                                         ₱{stats.totalRevenue.toLocaleString()}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-2">From all guests</p>
-                                </div>
-                                <div className="p-3 bg-purple-100 rounded-2xl">
-                                    <CreditCard className="h-6 w-6 text-purple-600" />
-                                </div>
-                            </div>
-                        </CardContent>
+                                    </Text>
+                                </Flex>
+                            </Flex>
+                        </div>
                     </Card>
-
-                    <Card className="border-0 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-lg">
-                        <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-blue-600">Avg. Bookings/User</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">
+                </Col>
+                <Col xs={24} md={8}>
+                    <Card 
+                        style={{ 
+                            borderRadius: 12, 
+                            overflow: 'hidden',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                            border: 'none'
+                        }} 
+                        bodyStyle={{ padding: 0 }}
+                    >
+                        <div style={{
+                            background: 'linear-gradient(135deg, #4ade80 0%, #22c55e 100%)',
+                            padding: 20,
+                            color: '#064e3b'
+                        }}>
+                            <Flex align="center" gap={12}>
+                                <StarOutlined style={{ fontSize: 28 }} />
+                                <Flex vertical style={{ flex: 1 }}>
+                                    <Text style={{ color: '#064e3b', fontSize: 13, opacity: 0.8 }}>Avg. Bookings/User</Text>
+                                    <Text style={{ fontSize: 28, fontWeight: 600, color: '#064e3b' }}>
                                         {stats.averageBookings}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-2">Bookings per guest</p>
-                                </div>
-                                <div className="p-3 bg-blue-100 rounded-2xl">
-                                    <BarChart3 className="h-6 w-6 text-blue-600" />
-                                </div>
-                            </div>
-                        </CardContent>
+                                    </Text>
+                                </Flex>
+                            </Flex>
+                        </div>
                     </Card>
-
-                    <Card className="border-0 bg-gradient-to-br from-amber-50 to-orange-50 shadow-lg">
-                        <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-amber-600">Loyalty Level</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">
-                                        {stats.loyaltyLevel}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-2">Based on total spending</p>
-                                </div>
-                                <div className="p-3 bg-amber-100 rounded-2xl">
-                                    <Award className="h-6 w-6 text-amber-600" />
-                                </div>
-                            </div>
-                        </CardContent>
+                </Col>
+                <Col xs={24} md={8}>
+                    <Card 
+                        style={{ 
+                            borderRadius: 12, 
+                            overflow: 'hidden',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                            border: 'none'
+                        }} 
+                        bodyStyle={{ padding: 0 }}
+                    >
+                        <div style={{
+                            background: 'linear-gradient(135deg, #6ee7b7 0%, #34d399 100%)',
+                            padding: 20,
+                            color: '#064e3b'
+                        }}>
+                            <Flex align="center" gap={12}>
+                                <TrophyOutlined style={{ fontSize: 28 }} />
+                                <Flex vertical style={{ flex: 1 }}>
+                                    <Text style={{ color: '#064e3b', fontSize: 13, opacity: 0.8 }}>Loyalty Level</Text>
+                                    <Text style={{ fontSize: 28, fontWeight: 600, color: '#064e3b' }}>
+                                        {stats.totalRevenue > 50000 ? "Platinum" : stats.totalRevenue > 25000 ? "Gold" : stats.totalRevenue > 10000 ? "Silver" : "Bronze"}
+                                    </Text>
+                                </Flex>
+                            </Flex>
+                        </div>
                     </Card>
-                </div>
+                </Col>
+            </Row>
 
-                {/* Filters Section */}
-                <Card className="border-0 shadow-lg mb-8">
-                    <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row gap-4">
-                            <div className="flex-1 relative">
-                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input
-                                    placeholder="Search by name, email, or contact..."
-                                    className="pl-10 border-gray-200 focus:border-emerald-300 focus:ring-emerald-200"
-                                    value={search}
-                                    onChange={(e) => {
-                                        setSearch(e.target.value);
-                                        setCurrentPage(1);
-                                    }}
+            {/* Search Bar */}
+            <Card 
+                style={{ 
+                    marginBottom: 24, 
+                    borderRadius: 12,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    border: 'none'
+                }}
+            >
+                <Search
+                    placeholder="Search by name, email, or contact..."
+                    allowClear
+                    enterButton={<SearchOutlined />}
+                    size="large"
+                    value={search}
+                    onChange={(e) => {
+                        setSearch(e.target.value);
+                        setCurrentPage(1);
+                    }}
+                />
+            </Card>
+
+            {/* Table */}
+            <Card 
+                style={{ 
+                    borderRadius: 12, 
+                    overflow: 'auto',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    border: 'none'
+                }}
+            >
+                <Spin spinning={loading}>
+                    <Table
+                        columns={columns}
+                        dataSource={users}
+                        rowKey="id"
+                        {...(isMobile ? { scroll: { x: 700 } } : {})}
+                        pagination={{
+                            current: currentPage,
+                            total: total,
+                            pageSize: perPage,
+                            showSizeChanger: !isMobile,
+                            showQuickJumper: !isMobile,
+                            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} guests`,
+                            onChange: (page) => setCurrentPage(page),
+                            onShowSizeChange: (_, size) => {
+                                setPerPage(size);
+                                setCurrentPage(1);
+                            },
+                            position: ['bottomCenter']
+                        }}
+                        locale={{
+                            emptyText: <Empty description="No guests found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        }}
+                    />
+                </Spin>
+            </Card>
+
+            {/* View Details Modal */}
+            <Modal
+                title={
+                    <Flex align="center" gap={16}>
+                        <Avatar
+                            size={64}
+                            src={selectedUser ? getAvatarUrl(selectedUser) : undefined}
+                            style={{ 
+                                backgroundColor: selectedUser && !selectedUser.profile_image ? getRandomColor() : undefined,
+                                border: `3px solid ${token.colorBorderBg}`,
+                                boxShadow: token.boxShadowTertiary
+                            }}
+                            icon={selectedUser && !selectedUser.profile_image ? <UserOutlined /> : undefined}
+                        >
+                            {selectedUser && !selectedUser.profile_image && !getAvatarUrl(selectedUser) && 
+                                getInitials(selectedUser.first_name, selectedUser.last_name)
+                            }
+                        </Avatar>
+                        <Flex vertical>
+                            <Text strong style={{ fontSize: 18 }}>
+                                {selectedUser?.first_name} {selectedUser?.last_name}
+                            </Text>
+                            <Text type="secondary">Guest Details</Text>
+                        </Flex>
+                    </Flex>
+                }
+                open={viewModalVisible}
+                onCancel={() => setViewModalVisible(false)}
+                footer={[
+                    <Button key="close" onClick={() => setViewModalVisible(false)}>
+                        Close
+                    </Button>
+                ]}
+                width={650}
+                centered
+                styles={{ body: { paddingTop: 24 } }}
+            >
+                {selectedUser && (
+                    <>
+                        <Flex 
+                            justify="space-between" 
+                            align="center" 
+                            style={{ 
+                                background: `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
+                                padding: '16px 20px',
+                                borderRadius: 12,
+                                marginBottom: 24
+                            }}
+                        >
+                            <Flex vertical align="center" style={{ flex: 1 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Total Bookings</Text>
+                                <Text strong style={{ fontSize: 24, color: token.colorPrimary }}>
+                                    {selectedUser.total_bookings || 0}
+                                </Text>
+                            </Flex>
+                            <Divider type="vertical" style={{ height: 40 }} />
+                            <Flex vertical align="center" style={{ flex: 1 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Total Spent</Text>
+                                <Text strong style={{ fontSize: 24, color: '#16a34a' }}>
+                                    ₱{(selectedUser.total_spent || 0).toLocaleString()}
+                                </Text>
+                            </Flex>
+                            <Divider type="vertical" style={{ height: 40 }} />
+                            <Flex vertical align="center" style={{ flex: 1 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
+                                <Badge 
+                                    status={selectedUser.is_active ? "success" : "default"} 
+                                    text={selectedUser.is_active ? "Active" : "Inactive"}
                                 />
-                            </div>
-                            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px] border-gray-200">
-                                    <SelectValue placeholder="Status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Status</SelectItem>
-                                    <SelectItem value="active">Active</SelectItem>
-                                    <SelectItem value="inactive">Inactive</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <Select value={verificationFilter} onValueChange={setVerificationFilter}>
-                                <SelectTrigger className="w-[180px] border-gray-200">
-                                    <SelectValue placeholder="Verification" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All</SelectItem>
-                                    <SelectItem value="verified">Verified</SelectItem>
-                                    <SelectItem value="unverified">Unverified</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <Select value={sortBy} onValueChange={setSortBy}>
-                                <SelectTrigger className="w-[180px] border-gray-200">
-                                    <SelectValue placeholder="Sort by" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="newest">Newest First</SelectItem>
-                                    <SelectItem value="oldest">Oldest First</SelectItem>
-                                    <SelectItem value="name_asc">Name A-Z</SelectItem>
-                                    <SelectItem value="name_desc">Name Z-A</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </CardContent>
-                </Card>
+                            </Flex>
+                        </Flex>
 
-                {/* Loading State */}
-                {loading && (
-                    <Card className="border-0 shadow-lg">
-                        <CardContent className="p-12">
-                            <div className="flex flex-col items-center justify-center gap-3">
-                                <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-                                <p className="text-sm text-gray-500">Loading guests...</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Error State */}
-                {error && !loading && (
-                    <Card className="border-0 shadow-lg">
-                        <CardContent className="p-12">
-                            <div className="flex flex-col items-center justify-center gap-3">
-                                <div className="p-4 bg-red-50 rounded-full">
-                                    <XCircle className="h-12 w-12 text-red-500" />
-                                </div>
-                                <p className="text-gray-500 font-medium">Failed to load guests</p>
-                                <p className="text-sm text-gray-400">{error}</p>
-                                <Button onClick={handleRefresh} variant="outline" className="mt-2">
-                                    Try Again
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Guests Table */}
-                {!loading && !error && (
-                    <Card className="border-0 shadow-lg overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader className="bg-gray-50 border-b border-gray-200">
-                                    <TableRow>
-                                        <TableHead className="w-16 py-4">Avatar</TableHead>
-                                        <TableHead className="py-4">Guest Name</TableHead>
-                                        <TableHead className="py-4">Contact Details</TableHead>
-                                        <TableHead className="py-4">Address</TableHead>
-                                        <TableHead className="py-4">Status</TableHead>
-                                        <TableHead className="py-4">Joined</TableHead>
-                                        <TableHead className="py-4 text-center">Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {users.length > 0 ? (
-                                        users.map((user) => (
-                                            <TableRow key={user.id} className="hover:bg-gray-50/80 transition-colors">
-                                                <TableCell className="py-4">
-                                                    <Avatar className="h-12 w-12 ring-2 ring-white shadow-md">
-                                                        <AvatarFallback className={`bg-gradient-to-br ${getAvatarColor(`${user.first_name} ${user.last_name}`)} text-white font-medium text-sm`}>
-                                                            {getInitials(user.first_name, user.last_name)}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                </TableCell>
-                                                <TableCell className="py-4">
-                                                    <div>
-                                                        <p className="font-semibold text-gray-900">
-                                                            {user.first_name} {user.last_name}
-                                                        </p>
-                                                        {user.email_verified_at && (
-                                                            <div className="flex items-center gap-1 mt-1">
-                                                                <CheckCircle className="h-3 w-3 text-emerald-600" />
-                                                                <span className="text-xs text-emerald-600">Verified</span>
-                                                            </div>
-                                                        )}
-                                                        {user.total_bookings && user.total_bookings > 0 && (
-                                                            <div className="flex items-center gap-1 mt-1">
-                                                                <Star className="h-3 w-3 text-amber-500" />
-                                                                <span className="text-xs text-gray-500">
-                                                                    {user.total_bookings} bookings
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="py-4">
-                                                    <div className="space-y-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <Mail className="h-3.5 w-3.5 text-gray-400" />
-                                                            <span className="text-sm text-gray-600">{user.email}</span>
-                                                        </div>
-                                                        {user.contact_number && (
-                                                            <div className="flex items-center gap-2">
-                                                                <Phone className="h-3.5 w-3.5 text-gray-400" />
-                                                                <span className="text-sm text-gray-600">{user.contact_number}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="py-4">
-                                                    {user.address ? (
-                                                        <div className="flex items-start gap-2">
-                                                            <MapPin className="h-3.5 w-3.5 text-gray-400 mt-0.5" />
-                                                            <span className="text-sm text-gray-600 line-clamp-2 max-w-[200px]">
-                                                                {user.address}
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-sm text-gray-400">-</span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="py-4">
-                                                    <Badge 
-                                                        className={user.is_active ? 
-                                                            "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : 
-                                                            "bg-gray-50 text-gray-600 border-gray-200"
-                                                        }
-                                                    >
-                                                        {user.is_active ? "Active" : "Inactive"}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="py-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                                        <span className="text-sm text-gray-600">
-                                                            {formatDate(user.created_at)}
-                                                        </span>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="py-4 text-center">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" className="h-8 w-8 p-0 hover:bg-gray-100">
-                                                                <MoreVertical className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-48">
-                                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem className="gap-2 cursor-pointer">
-                                                                <Eye className="h-4 w-4" />
-                                                                View Details
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem className="gap-2 cursor-pointer">
-                                                                <Edit className="h-4 w-4" />
-                                                                Edit Guest
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem className="gap-2 text-red-600 cursor-pointer">
-                                                                <Trash2 className="h-4 w-4" />
-                                                                Delete Guest
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={7} className="text-center py-12">
-                                                <div className="flex flex-col items-center gap-3">
-                                                    <div className="p-4 bg-emerald-50 rounded-full">
-                                                        <Users className="h-12 w-12 text-emerald-600" />
-                                                    </div>
-                                                    <p className="text-gray-500 font-medium">No guests found</p>
-                                                    <p className="text-sm text-gray-400">
-                                                        {search ? "Try adjusting your search filters" : "No registered guests yet"}
-                                                    </p>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
+                        <Descriptions column={1} bordered size="middle" labelStyle={{ fontWeight: 500 }}>
+                            <Descriptions.Item label={
+                                <Space>
+                                    <MailOutlined />
+                                    Email
+                                </Space>
+                            }>
+                                <Flex align="center" gap={8} wrap="wrap">
+                                    {selectedUser.email}
+                                    {selectedUser.email_verified_at && (
+                                        <Tag color="success" icon={<CheckCircleOutlined />} style={{ borderRadius: 5 }}>Verified</Tag>
                                     )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </Card>
-                )}
+                                </Flex>
+                            </Descriptions.Item>
+                            <Descriptions.Item label={
+                                <Space>
+                                    <PhoneOutlined />
+                                    Contact Number
+                                </Space>
+                            }>
+                                {selectedUser.contact_number || <Text type="secondary">Not provided</Text>}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={
+                                <Space>
+                                    <EnvironmentOutlined />
+                                    Address
+                                </Space>
+                            }>
+                                {selectedUser.address || <Text type="secondary">Not provided</Text>}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={
+                                <Space>
+                                    <CalendarOutlined />
+                                    Member Since
+                                </Space>
+                            }>
+                                {formatDate(selectedUser.created_at)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={
+                                <Space>
+                                    <ClockCircleOutlined />
+                                    Last Login
+                                </Space>
+                            }>
+                                {selectedUser.last_login ? formatDate(selectedUser.last_login) : <Text type="secondary">Never</Text>}
+                            </Descriptions.Item>
+                        </Descriptions>
 
-                {/* Pagination */}
-                {!loading && !error && users.length > 0 && (
-                    <Card className="border-0 shadow-lg mt-6">
-                        <CardContent className="p-4">
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <div className="text-sm text-gray-500">
-                                    Showing {((currentPage - 1) * perPage) + 1} - {Math.min(currentPage * perPage, total)} of {total} guests
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={currentPage === 1}
-                                        onClick={() => setCurrentPage((prev) => prev - 1)}
-                                        className="gap-1 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50"
-                                    >
-                                        <ChevronLeft className="h-4 w-4" />
-                                        Prev
-                                    </Button>
-                                    <div className="flex items-center gap-2">
-                                        {[...Array(Math.min(5, lastPage))].map((_, i) => {
-                                            let pageNum;
-                                            if (lastPage <= 5) {
-                                                pageNum = i + 1;
-                                            } else if (currentPage <= 3) {
-                                                pageNum = i + 1;
-                                            } else if (currentPage >= lastPage - 2) {
-                                                pageNum = lastPage - 4 + i;
-                                            } else {
-                                                pageNum = currentPage - 2 + i;
-                                            }
-                                            
-                                            if (pageNum > 0 && pageNum <= lastPage) {
-                                                return (
-                                                    <Button
-                                                        key={pageNum}
-                                                        variant={currentPage === pageNum ? "default" : "outline"}
-                                                        size="sm"
-                                                        onClick={() => setCurrentPage(pageNum)}
-                                                        className={currentPage === pageNum ? 
-                                                            "bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white" : 
-                                                            "border-gray-200 hover:border-emerald-300 hover:bg-emerald-50"
-                                                        }
-                                                    >
-                                                        {pageNum}
-                                                    </Button>
-                                                );
-                                            }
-                                            return null;
-                                        })}
-                                    </div>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={currentPage === lastPage}
-                                        onClick={() => setCurrentPage((prev) => prev + 1)}
-                                        className="gap-1 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50"
-                                    >
-                                        Next
-                                        <ChevronRight className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                        {(() => {
+                            const spent = selectedUser.total_spent || 0;
+                            let level = 'Bronze';
+                            let color = '#cd7f32';
+                            if (spent > 50000) {
+                                level = 'Platinum';
+                                color = '#e5e4e2';
+                            } else if (spent > 25000) {
+                                level = 'Gold';
+                                color = '#ffd700';
+                            } else if (spent > 10000) {
+                                level = 'Silver';
+                                color = '#c0c0c0';
+                            }
+                            return (
+                                <Flex justify="center" style={{ marginTop: 24 }}>
+                                    <Tag icon={<TrophyOutlined />} style={{ background: `${color}20`, borderColor: color, color: color === '#e5e4e2' ? '#333' : color, borderRadius: 5 }}>
+                                        {level} Member
+                                    </Tag>
+                                </Flex>
+                            );
+                        })()}
+                    </>
                 )}
-            </div>
+            </Modal>
+
+            {/* Status Change Modal */}
+            <Modal
+                title={
+                    <Flex align="center" gap={8}>
+                        {newStatus ? <UserAddOutlined style={{ color: '#16a34a' }} /> : <UserDeleteOutlined style={{ color: '#ef4444' }} />}
+                        <span>{newStatus ? 'Activate' : 'Deactivate'} Guest</span>
+                    </Flex>
+                }
+                open={statusModalVisible}
+                onCancel={() => setStatusModalVisible(false)}
+                centered
+                footer={[
+                    <Button key="cancel" onClick={() => setStatusModalVisible(false)}>
+                        Cancel
+                    </Button>,
+                    <Button
+                        key="confirm"
+                        type={newStatus ? "primary" : "default"}
+                        danger={!newStatus}
+                        onClick={() => selectedUser && handleStatusChange(selectedUser, newStatus)}
+                        style={newStatus ? { background: '#16a34a' } : {}}
+                    >
+                        {newStatus ? 'Activate' : 'Deactivate'}
+                    </Button>
+                ]}
+            >
+                <Paragraph>
+                    Are you sure you want to {newStatus ? 'activate' : 'deactivate'} <strong>
+                        {selectedUser?.first_name} {selectedUser?.last_name}
+                    </strong>?
+                </Paragraph>
+                {!newStatus && (
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                        Deactivated users will not be able to log in or make bookings.
+                    </Text>
+                )}
+            </Modal>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                title="Delete Guest"
+                open={deleteModalVisible}
+                onCancel={() => setDeleteModalVisible(false)}
+                centered
+                footer={[
+                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)}>
+                        Cancel
+                    </Button>,
+                    <Button
+                        key="delete"
+                        type="primary"
+                        danger
+                        onClick={() => selectedUser && handleDeleteUser(selectedUser)}
+                    >
+                        Delete Permanently
+                    </Button>
+                ]}
+            >
+                <Paragraph>
+                    Are you sure you want to permanently delete <strong>
+                        {selectedUser?.first_name} {selectedUser?.last_name}
+                    </strong>?
+                </Paragraph>
+                <Text type="danger" style={{ fontSize: 13 }}>
+                    This action cannot be undone. All associated data will be removed.
+                </Text>
+            </Modal>
         </div>
     );
 }

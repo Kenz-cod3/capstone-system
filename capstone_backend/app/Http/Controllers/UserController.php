@@ -6,20 +6,27 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+
+use Intervention\Image\ImageManager;
+use Intervention\Image\Drivers\Gd\Driver;
 
 class UserController extends Controller
 {
     //GET ALL USERS (ADMIN ONLY via middleware)
     public function index(Request $request)
     {
-        $query = User::with(['bookings', 'reviews', 'messages']);
+        $query = User::with(['messages'])
+            ->withCount('bookings')
+            ->withSum('bookings', 'total_price');
 
-        // ✅ FILTER GUESTS ONLY
+        // FILTER
         if ($request->has('role')) {
-            $query->where('role', $request->role);
+            $roles = explode(',', $request->role);
+            $query->whereIn('role', $roles);
         }
 
-        // ✅ SEARCH
+        // SEARCH
         if ($request->has('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('first_name', 'like', '%' . $request->search . '%')
@@ -28,7 +35,16 @@ class UserController extends Controller
             });
         }
 
-        return response()->json($query->paginate(10), 200);
+        $users = $query->paginate(10);
+
+        // 🔥 IMPORTANT
+        $users->getCollection()->transform(function ($user) {
+            $user->total_bookings = $user->bookings_count;
+            $user->total_spent = $user->bookings_sum_total_price ?? 0;
+            return $user;
+        });
+
+        return response()->json($users, 200);
     }
 
     //CREATE USER (ADMIN ONLY via middleware)
@@ -39,7 +55,7 @@ class UserController extends Controller
             'last_name'  => 'required|string|max:255',
             'email'      => 'required|email|unique:users,email',
             'password'   => 'required|min:6',
-            'role'       => 'required|in:admin,staff,guest'
+            'role' => 'required|in:admin,staff,guest,cashier,housekeeper'
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
@@ -81,24 +97,68 @@ class UserController extends Controller
             'first_name' => 'sometimes|string|max:255',
             'last_name'  => 'sometimes|string|max:255',
             'email'      => 'sometimes|email|unique:users,email,' . $id,
-            'password'   => 'sometimes|min:6',
-            'role'       => 'sometimes|in:admin,staff,guest'
+            'password'   => 'nullable|min:6|confirmed',
+            'role'       => 'sometimes|in:admin,staff,guest',
+            'phone'      => 'nullable|string|max:20', // ✅ from frontend
+            'profile_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
-        // only admin can change role
+        // ✅ only admin can change role
         if ($authUser->role !== 'admin') {
             unset($validated['role']);
         }
 
-        if (isset($validated['password'])) {
+        // ✅ HANDLE PASSWORD
+        if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
+        } else {
+            unset($validated['password']);
         }
 
+        // ✅ MAP PHONE → contact_number
+        if (isset($validated['phone'])) {
+            $user->contact_number = $validated['phone'];
+        }
+
+        // ✅ HANDLE IMAGE UPLOAD
+        if ($request->hasFile('profile_image')) {
+
+            // delete old image
+            if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
+                Storage::disk('public')->delete($user->profile_image);
+            }
+
+            if ($request->hasFile('profile_image')) {
+
+                // delete old image
+                if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
+                    Storage::disk('public')->delete($user->profile_image);
+                }
+
+                $image = $request->file('profile_image');
+
+                $manager = new ImageManager(new Driver());
+                $img = $manager->read($image)->cover(300, 300);
+
+                $filename = time() . '.jpg';
+
+                Storage::disk('public')->put(
+                    "profiles/$filename",
+                    (string) $img->toJpeg(70)
+                );
+
+                // ✅ SAVE PATH ONLY
+                $user->profile_image = "profiles/$filename";
+            }
+        }
+
+        // ✅ UPDATE OTHER FIELDS
         $user->update($validated);
 
         return response()->json([
             'message' => 'User updated successfully',
-            'data' => $user
+            'data' => $user,
+            'phone' => $user->contact_number, // ✅ important for frontend
         ], 200);
     }
 
@@ -119,7 +179,40 @@ class UserController extends Controller
             'message' => 'User deleted successfully'
         ], 200);
     }
+
+    public function updateStatus(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+
+        $request->validate([
+            'is_active' => 'required|boolean',
+        ]);
+
+        $user->is_active = $request->is_active;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Status updated',
+            'user' => $user
+        ]);
+    }
+
+    public function changePassword(Request $request)
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect'], 400);
+        }
+
+        $user->password = bcrypt($request->new_password);
+        $user->save();
+
+        return response()->json(['message' => 'Password updated successfully']);
+    }
 }
+
 
 
 
@@ -176,7 +269,7 @@ class UserController extends Controller
 //     public function show($id)
 //     {
 //         $authUser = Auth::user();
-
+    
 //         if ($authUser->role !== 'admin' && $authUser->id != $id) {
 //             return response()->json(['message' => 'Forbidden'], 403);
 //         }

@@ -4,13 +4,16 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
 
@@ -28,6 +31,7 @@ export default function Chat() {
   const { user } = useAuthStore();
   const router = useRouter();
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
 
   const otherUserId = params.userId as string;
   const name = params.name as string;
@@ -36,8 +40,9 @@ export default function Chat() {
   const [text, setText] = useState("");
 
   const flatListRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
 
-  // 🔥 FETCH
+  // FETCH
   const fetchMessages = async () => {
     try {
       const res = await api.get(
@@ -60,7 +65,7 @@ export default function Chat() {
     }
   };
 
-  // 🔥 SEND
+  // SEND
   const sendMessage = async () => {
     if (!text.trim()) return;
 
@@ -112,7 +117,7 @@ export default function Chat() {
     }
   };
 
-  // 🔥 FOCUS (seen fix + auto refresh)
+  // FOCUS (seen fix + auto refresh)
   useFocusEffect(
     useCallback(() => {
       const load = async () => {
@@ -121,116 +126,159 @@ export default function Chat() {
       };
 
       load();
-      const interval = setInterval(load, 2000);
+      const interval = setInterval(load, 3000);
 
       return () => clearInterval(interval);
     }, [otherUserId])
   );
 
-  // 🔥 AUTO SCROLL
+  // AUTO SCROLL ON NEW MESSAGES
   useEffect(() => {
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
   }, [messages]);
 
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={80} // 🔥 FIX SPACE
-      className="flex-1 bg-gray-50"
-    >
-
-      {/* 🔥 HEADER */}
-      <View className="flex-row items-center p-4 bg-white border-b border-gray-200">
-        <TouchableOpacity
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace("/messages");
-            }
+    <TouchableWithoutFeedback onPress={dismissKeyboard}>
+      <View className="flex-1 bg-white">
+        {/* Gradient Background - Same as Notification */}
+        <LinearGradient
+          colors={["#d1fae5", "#a7f3d0", "#ffffff"]}
+          locations={[0, 0.3, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: insets.top + 120,
           }}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-
-        <View className="ml-3">
-          <Text className="text-lg font-bold">
-            {name || "Chat"}
-          </Text>
-          <Text className="text-xs text-green-500">
-            Online
-          </Text>
-        </View>
-      </View>
-
-      {/* 🔥 CHAT LIST */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={{
-          padding: 10,
-          paddingBottom: 140, // 🔥 EXTRA SPACE (IMPORTANT)
-        }}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item, index }) => {
-          const isMe = item.message.sender_id === user.id;
-          const isLast = index === messages.length - 1;
-
-          return (
-            <View
-              className={`mb-2 ${
-                isMe ? "items-end" : "items-start"
-              }`}
-            >
-              {/* MESSAGE */}
-              <View
-                className={`px-4 py-2 rounded-2xl max-w-[75%] ${
-                  isMe
-                    ? "bg-green-500 rounded-br-none"
-                    : "bg-white border border-gray-200 rounded-bl-none"
-                }`}
-              >
-                <Text className={isMe ? "text-white" : "text-gray-800"}>
-                  {item.message.message}
-                </Text>
-              </View>
-
-              {/* STATUS */}
-              {isMe && isLast && (
-                <Text className="text-[11px] text-gray-400 mt-1 mr-1">
-                  {item.status === "sending" && "Sending..."}
-                  {item.status === "failed" && "Failed ❌"}
-                  {item.status === "sent" &&
-                    (item.is_read ? "Seen" : "Sent")}
-                </Text>
-              )}
-            </View>
-          );
-        }}
-      />
-
-      {/* 🔥 INPUT */}
-      <View className="flex-row items-center px-3 py-3 bg-white border-t border-gray-200 mb-2">
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          placeholder="Type a message..."
-          className="flex-1 bg-gray-100 rounded-full px-4 py-2 mr-2"
         />
 
-        <TouchableOpacity
-          onPress={sendMessage}
-          className="bg-green-500 px-4 py-2 rounded-full"
+        {/* HEADER */}
+        <View
+          style={{
+            paddingTop: insets.top + 10,
+            paddingBottom: 10,
+            paddingHorizontal: 16,
+            backgroundColor: "transparent",
+          }}
         >
-          <Text className="text-white font-semibold">
-            Send
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <View className="flex-row items-center">
+            <TouchableOpacity
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                }}
+              }
+            >
+              <Ionicons name="chevron-back" size={28} color="#065f46" />
+            </TouchableOpacity>
 
-    </KeyboardAvoidingView>
+            <View className="ml-3">
+              <Text className="text-lg font-bold text-emerald-800">
+                {name || "Agent"}
+              </Text>
+              <Text className="text-xs text-green-600">
+                Online
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* CHAT LIST */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: 80,
+          }}
+          showsVerticalScrollIndicator={false}
+          onLayout={() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }}
+          renderItem={({ item, index }) => {
+            const isMe = item.message.sender_id === user.id;
+            const isLast = index === messages.length - 1;
+
+            return (
+              <View
+                className={`mb-3 ${
+                  isMe ? "items-end" : "items-start"
+                }`}
+              >
+                {/* MESSAGE BUBBLE */}
+                <View
+                  className={`px-4 py-2 rounded-2xl max-w-[80%] ${
+                    isMe
+                      ? "bg-emerald-500 rounded-br-none"
+                      : "bg-white border border-gray-200 rounded-bl-none"
+                  }`}
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1,
+                  }}
+                >
+                  <Text className={isMe ? "text-white" : "text-gray-800"}>
+                    {item.message.message}
+                  </Text>
+                </View>
+
+                {/* STATUS */}
+                {isMe && isLast && (
+                  <View className="flex-row items-center mt-1 mr-1">
+                    <Text className="text-[11px] text-gray-400">
+                      {item.status === "sending" && "Sending..."}
+                      {item.status === "failed" && "Failed ❌"}
+                      {item.status === "sent" &&
+                        (item.is_read ? "Seen" : "Sent")}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          }}
+        />
+
+        {/* INPUT - NO KEYBOARD AVOIDING */}
+        <View className="px-3 py-3 bg-white border-t border-gray-200">
+          <View className="flex-row items-center">
+            <TextInput
+              ref={inputRef}
+              value={text}
+              onChangeText={setText}
+              placeholder="Type a message..."
+              placeholderTextColor="#9ca3af"
+              className="flex-1 bg-gray-100 rounded-full px-4 py-3 mr-2 text-base"
+              multiline
+              maxLength={500}
+            />
+
+            <TouchableOpacity
+              onPress={sendMessage}
+              disabled={!text.trim()}
+              className={`px-5 py-3 rounded-full ${
+                text.trim() ? "bg-emerald-500" : "bg-gray-300"
+              }`}
+            >
+              <Text className="text-white font-semibold">
+                Send
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }

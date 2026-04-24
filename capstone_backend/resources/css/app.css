@@ -298,4 +298,27 @@
   .mint-tabs .ant-tabs-tab:hover {
     color: #34d399 !important;
   }
+
+  /* Make date picker have hand cursor */
+  .datepicker-hand-cursor .ant-picker-input input {
+    cursor: pointer !important;
+    background-color: #fafafa;
+  }
+
+  .datepicker-hand-cursor .ant-picker-input input:hover {
+    background-color: #f5f5f5;
+  }
+
+  .datepicker-hand-cursor .ant-picker-suffix {
+    cursor: pointer;
+  }
+
+  /* Also apply to the main picker container */
+  .ant-picker {
+    cursor: pointer;
+  }
+
+  .ant-picker:hover {
+    border-color: #10b981;
+  }
 }

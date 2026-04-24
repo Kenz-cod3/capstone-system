@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import CountUp from "react-countup";
 
@@ -9,24 +9,25 @@ export default function StatCard({
     trend,
 }: any) {
 
-    // ✅ Convert value to number
     const numericValue =
         label === "Total Revenue"
             ? Number(String(value).replace(/[^\d]/g, ""))
             : 0;
 
-    // ✅ Get stored value (persist across navigation)
-    const stored = sessionStorage.getItem("revenue");
+    // 🔥 store previous value in ref (NOT sessionStorage directly)
+    const prevValueRef = useRef<number>(numericValue);
 
-    // ✅ Decide if animation should run
+    const previousValue = prevValueRef.current;
+
     const shouldAnimate =
-        label === "Total Revenue" &&
-        (!stored || Number(stored) !== numericValue);
+        label === "Total Revenue" && previousValue !== numericValue;
 
-    // ✅ Save latest value
-    if (label === "Total Revenue") {
-        sessionStorage.setItem("revenue", String(numericValue));
-    }
+    // ✅ update AFTER render
+    useEffect(() => {
+        if (label === "Total Revenue") {
+            prevValueRef.current = numericValue;
+        }
+    }, [numericValue]);
 
     return (
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition flex flex-col">
@@ -53,9 +54,9 @@ export default function StatCard({
                     {label === "Total Revenue" ? (
                         shouldAnimate ? (
                             <CountUp
-                                start={0}
+                                start={previousValue}
                                 end={numericValue}
-                                duration={1.5}
+                                duration={1}
                                 separator=","
                                 prefix="₱ "
                             />

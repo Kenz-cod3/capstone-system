@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // PUBLIC
@@ -15,6 +16,13 @@ Route::middleware('auth:sanctum')->group(function () {
     require __DIR__ . '/api/notifications.php';
     require __DIR__ . '/api/restaurant.php';
     require __DIR__ . '/api/system.php';
+
+    require __DIR__ . '/api/shift.php';
+    require __DIR__ . '/api/cash.php';
+    
+    Route::get('/user', function (Request $request) {
+        return $request->user();
+    });
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import StaffLayout from "@/layouts/StaffLayout";
+import StaffLayout from "@/layouts/CashierLayout";
 import api from "@/services/api";
 
 export default function RestaurantDashboard() {

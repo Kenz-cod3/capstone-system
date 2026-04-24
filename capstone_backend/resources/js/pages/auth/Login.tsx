@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import api from "@/services/api";
 import { Button } from "@/components/ui/button";
 import login from "../../../images/login.png";
 
@@ -21,9 +21,14 @@ export default function Login() {
             window.location.replace("/dashboard");
         }
 
-        if (user.role === "staff" && currentPath !== "/restaurant") {
+        if (user.role === "staff" && currentPath !== "/staff") {
+            window.location.replace("/staff");
+        }
+
+        if (user.role === "cashier" && currentPath !== "/restaurant") {
             window.location.replace("/restaurant");
         }
+
     }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -32,7 +37,7 @@ export default function Login() {
         setError("");
 
         try {
-            const res = await axios.post("http://192.168.254.188:8000/api/auth/login", {
+            const res = await api.post("/auth/login", {
                 email,
                 password,
             });
@@ -48,9 +53,14 @@ export default function Login() {
 
             if (user.role === "admin") {
                 window.location.replace("/dashboard");
-            } else if (user.role === "staff") {
-                window.location.replace("/restaurant");
-            } else {
+            }
+            else if (user.role === "staff") {
+                window.location.replace("/staff"); // 🧑‍💼 hotel staff
+            }
+            else if (user.role === "cashier") {
+                window.location.replace("/restaurant"); // 🧑‍🍳 cashier
+            }
+            else {
                 setError("Access denied.");
                 localStorage.clear();
             }

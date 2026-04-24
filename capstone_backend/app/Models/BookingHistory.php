@@ -15,13 +15,16 @@ class BookingHistory extends Model
         'old_status',
         'new_status',
         'change_note',
+        'override_reason',
+        'is_override',
         'changed_by',
         'changed_at'
     ];
 
     // ✅ FIX: proper datetime
     protected $casts = [
-        'changed_at' => 'datetime'
+        'changed_at' => 'datetime',
+        'is_override' => 'boolean'
     ];
 
     public function booking()
