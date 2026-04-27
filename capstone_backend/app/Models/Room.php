@@ -8,11 +8,21 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Room extends Model
 {
     use SoftDeletes;
+
     protected $fillable = [
         'room_type_id',
         'room_number',
-        'status'
+        'status',
+        'completed_at', 
+        'cleaned_by'  
     ];
+
+    const STATUS_AVAILABLE = 'available';
+    const STATUS_OCCUPIED = 'occupied';
+    const STATUS_MAINTENANCE = 'maintenance';
+    const STATUS_DIRTY = 'dirty';
+    const STATUS_CLEANING = 'cleaning';
+    const STATUS_CLEAN = 'clean';
 
     public function roomType()
     {
@@ -28,9 +38,14 @@ class Room extends Model
     {
         return $this->belongsToMany(
             \App\Models\Booking::class,
-            'booked_rooms', // ⚠️ IMPORTANT (ito table mo)
+            'booked_rooms',
             'room_id',
             'booking_id'
         );
+    }
+
+    public function cleaner()
+    {
+        return $this->belongsTo(User::class, 'cleaned_by');
     }
 }

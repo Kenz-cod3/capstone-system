@@ -130,7 +130,12 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        if ($user->role !== 'guest') {
+        // if ($user->role !== 'guest') {
+        //     return response()->json([
+        //         'message' => 'Access Denied'
+        //     ], 403);
+        // }
+        if (!in_array($user->role, ['guest', 'housekeeper'])) {
             return response()->json([
                 'message' => 'Access Denied'
             ], 403);

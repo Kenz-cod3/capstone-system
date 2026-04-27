@@ -19,6 +19,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     require __DIR__ . '/api/shift.php';
     require __DIR__ . '/api/cash.php';
+
+    require __DIR__ . '/api/housekeeper.php';
     
     Route::get('/user', function (Request $request) {
         return $request->user();

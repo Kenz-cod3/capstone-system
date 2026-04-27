@@ -626,25 +626,15 @@ export default function Bookings() {
             key: "stay_type",
             width: 140,
             render: (_: any, record: Booking) => {
-                const stayTypes = new Set(
-                    record.rooms?.map(r => r.pivot?.stay_type)
-                );
-
-                const hasOvernight = stayTypes.has("overnight");
-                const hasShortStay = stayTypes.has("short_stay");
-
-                let label = "";
-                if (hasOvernight && hasShortStay) {
-                    label = "Overnight / Short Stay";
-                } else if (hasOvernight) {
-                    label = "Overnight";
-                } else if (hasShortStay) {
-                    label = "Short Stay";
-                }
+                const type =
+                    record.rooms?.[0]?.pivot?.stay_type || record.stay_type;
 
                 return (
-                    <Tag color={hasShortStay && !hasOvernight ? "purple" : "cyan"}>
-                        {label}
+                    <Tag
+                        color={type === "short_stay" ? "purple" : "cyan"}
+                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                    >
+                        {type === "short_stay" ? "Short Stay" : "Overnight"}
                     </Tag>
                 );
             }
@@ -948,25 +938,16 @@ export default function Bookings() {
                         </Descriptions.Item>
                         <Descriptions.Item label="Stay Type">
                             {(() => {
-                                const stayTypes = new Set(
-                                    selectedBooking.rooms?.map(r => r.pivot?.stay_type)
-                                );
-
-                                const hasOvernight = stayTypes.has("overnight");
-                                const hasShortStay = stayTypes.has("short_stay");
-
-                                let label = "";
-                                if (hasOvernight && hasShortStay) {
-                                    label = "Overnight / Short Stay";
-                                } else if (hasOvernight) {
-                                    label = "Overnight";
-                                } else if (hasShortStay) {
-                                    label = "Short Stay";
-                                }
+                                const type =
+                                    selectedBooking.rooms?.[0]?.pivot?.stay_type ||
+                                    selectedBooking.stay_type;
 
                                 return (
-                                    <Tag color={hasShortStay && !hasOvernight ? "purple" : "cyan"}>
-                                        {label}
+                                    <Tag
+                                        color={type === "short_stay" ? "purple" : "cyan"}
+                                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                                    >
+                                        {type === "short_stay" ? "Short Stay" : "Overnight"}
                                     </Tag>
                                 );
                             })()}

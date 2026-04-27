@@ -462,25 +462,28 @@ export default function Guests() {
         </Flex>
     );
 
-    // Stat card component
+    // Stat card component with white UI
     const StatCard = ({ title, value, icon, color, trend, prefix = '' }: any) => (
         <Card 
             style={{ 
-                borderRadius: 12, 
+                borderRadius: 16, 
                 height: '100%',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                border: 'none'
-            }} 
+                border: '1px solid #f0f0f0',
+                background: '#ffffff',
+                transition: 'all 0.3s ease'
+            }}
             bodyStyle={{ padding: 20 }}
+            hoverable
         >
             <Flex justify="space-between" align="flex-start">
-                <Flex vertical gap={4}>
-                    <Text type="secondary" style={{ fontSize: 13 }}>{title}</Text>
-                    <Text style={{ fontSize: 28, fontWeight: 600 }}>
+                <Flex vertical gap={6}>
+                    <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>{title}</Text>
+                    <Text style={{ fontSize: 30, fontWeight: 600, color: '#1a1a1a' }}>
                         {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
                     </Text>
                     {trend && (
-                        <Tag color="green" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
+                        <Tag color="green" style={{ fontSize: 11, margin: 0, borderRadius: 10, padding: '2px 8px' }}>
                             <RiseOutlined /> {trend}
                         </Tag>
                     )}
@@ -488,8 +491,8 @@ export default function Guests() {
                 <div style={{
                     width: 48,
                     height: 48,
-                    borderRadius: 12,
-                    background: `${color}15`,
+                    borderRadius: 14,
+                    background: `${color}10`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
@@ -500,36 +503,97 @@ export default function Guests() {
         </Card>
     );
 
+    // Premium white stat card with subtle mint accent
+    const PremiumStatCard = ({ title, value, icon, suffix = '' }: any) => (
+        <Card 
+            style={{ 
+                borderRadius: 16, 
+                overflow: 'hidden',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                border: '1px solid #f0f0f0',
+                background: '#ffffff',
+                transition: 'all 0.3s ease'
+            }} 
+            bodyStyle={{ padding: '20px 24px' }}
+            hoverable
+        >
+            <Flex align="center" gap={16}>
+                <div style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 16,
+                    background: '#10b98110',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    {icon}
+                </div>
+                <Flex vertical style={{ flex: 1 }}>
+                    <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
+                        {title}
+                    </Text>
+                    <Text style={{ fontSize: 28, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>
+                        {value}{suffix}
+                    </Text>
+                </Flex>
+            </Flex>
+        </Card>
+    );
+
+    // Get loyalty level based on total revenue
+    const getLoyaltyLevel = () => {
+        if (stats.totalRevenue > 50000) return "Platinum";
+        if (stats.totalRevenue > 25000) return "Gold";
+        if (stats.totalRevenue > 10000) return "Silver";
+        return "Bronze";
+    };
+
+    // Get loyalty level color
+    const getLoyaltyColor = () => {
+        const level = getLoyaltyLevel();
+        switch (level) {
+            case "Platinum": return '#3b82f6';
+            case "Gold": return '#d97706';
+            case "Silver": return '#6b7280';
+            default: return '#cd7f32';
+        }
+    };
+
     return (
         <div style={{
             minHeight: 'auto',
-            background: 'transparent',
             padding: isMobile ? 16 : 24
         }}>
             {/* Header */}
             <Flex vertical gap={16} style={{ marginBottom: 24 }}>
                 <Flex justify="space-between" align={isMobile ? 'flex-start' : 'center'} wrap="wrap" gap={16}>
                     <Flex vertical gap={4}>
-                        <Title level={isMobile ? 3 : 2} style={{ margin: 0 }}>Guest Management</Title>
-                        <Text type="secondary">Manage and monitor all registered guests</Text>
+                        <Title level={isMobile ? 3 : 2} style={{ margin: 0, color: '#1a1a1a' }}>Guest Management</Title>
+                        <Text type="secondary" style={{ fontSize: 14 }}>Manage and monitor all registered guests</Text>
                     </Flex>
                     <Flex gap={12} wrap="wrap">
                         <Button
                             icon={<ReloadOutlined spin={refreshing} />}
                             onClick={() => fetchUsers(true)}
                             loading={refreshing}
+                            style={{ borderRadius: 10 }}
                         >
                             Refresh
                         </Button>
-                        <Button type="primary" icon={<ExportOutlined />}>
+                        <Button type="primary" icon={<ExportOutlined />} style={{ borderRadius: 10, background: '#10b981', borderColor: '#10b981' }}>
                             Export
                         </Button>
-                        <Button icon={filtersVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />} onClick={() => setFiltersVisible(!filtersVisible)}>
+                        <Button 
+                            icon={filtersVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />} 
+                            onClick={() => setFiltersVisible(!filtersVisible)}
+                            style={{ borderRadius: 10 }}
+                        >
                             Filters
                         </Button>
                     </Flex>
                 </Flex>
-                <Divider style={{ margin: 0 }} />
+                <Divider style={{ margin: 0, borderColor: '#e8e8e8' }} />
             </Flex>
 
             {/* Collapsible Filters */}
@@ -537,16 +601,17 @@ export default function Guests() {
                 <Card 
                     style={{ 
                         marginBottom: 24, 
-                        borderRadius: 12,
+                        borderRadius: 16,
                         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                        border: 'none'
+                        border: '1px solid #f0f0f0',
+                        background: '#ffffff'
                     }}
                 >
                     <FilterBar />
                 </Card>
             )}
 
-            {/* Statistics Grid */}
+            {/* Statistics Grid - White Cards */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={12} lg={6}>
                     <StatCard
@@ -586,87 +651,61 @@ export default function Guests() {
                 </Col>
             </Row>
 
-            {/* Premium Stats Row */}
+            {/* Premium White Stats Row */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} md={8}>
-                    <Card 
-                        style={{ 
-                            borderRadius: 12, 
-                            overflow: 'hidden',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                            border: 'none'
-                        }} 
-                        bodyStyle={{ padding: 0 }}
-                    >
-                        <div style={{
-                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                            padding: 20,
-                            color: 'white'
-                        }}>
-                            <Flex align="center" gap={12}>
-                                <CreditCardOutlined style={{ fontSize: 28 }} />
-                                <Flex vertical style={{ flex: 1 }}>
-                                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>Total Revenue</Text>
-                                    <Text style={{ fontSize: 28, fontWeight: 600, color: 'white' }}>
-                                        ₱{stats.totalRevenue.toLocaleString()}
-                                    </Text>
-                                </Flex>
-                            </Flex>
-                        </div>
-                    </Card>
+                    <PremiumStatCard
+                        title="Total Revenue"
+                        value={`₱${stats.totalRevenue.toLocaleString()}`}
+                        icon={<CreditCardOutlined style={{ fontSize: 24, color: '#10b981' }} />}
+                    />
+                </Col>
+                <Col xs={24} md={8}>
+                    <PremiumStatCard
+                        title="Avg. Bookings/User"
+                        value={stats.averageBookings}
+                        icon={<StarOutlined style={{ fontSize: 24, color: '#10b981' }} />}
+                    />
                 </Col>
                 <Col xs={24} md={8}>
                     <Card 
                         style={{ 
-                            borderRadius: 12, 
+                            borderRadius: 16, 
                             overflow: 'hidden',
                             boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                            border: 'none'
+                            border: '1px solid #f0f0f0',
+                            background: '#ffffff',
+                            transition: 'all 0.3s ease'
                         }} 
-                        bodyStyle={{ padding: 0 }}
+                        bodyStyle={{ padding: '20px 24px' }}
+                        hoverable
                     >
-                        <div style={{
-                            background: 'linear-gradient(135deg, #4ade80 0%, #22c55e 100%)',
-                            padding: 20,
-                            color: '#064e3b'
-                        }}>
-                            <Flex align="center" gap={12}>
-                                <StarOutlined style={{ fontSize: 28 }} />
-                                <Flex vertical style={{ flex: 1 }}>
-                                    <Text style={{ color: '#064e3b', fontSize: 13, opacity: 0.8 }}>Avg. Bookings/User</Text>
-                                    <Text style={{ fontSize: 28, fontWeight: 600, color: '#064e3b' }}>
-                                        {stats.averageBookings}
+                        <Flex align="center" gap={16}>
+                            <div style={{
+                                width: 52,
+                                height: 52,
+                                borderRadius: 16,
+                                background: '#10b98110',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}>
+                                <TrophyOutlined style={{ fontSize: 24, color: getLoyaltyColor() }} />
+                            </div>
+                            <Flex vertical style={{ flex: 1 }}>
+                                <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
+                                    Loyalty Level
+                                </Text>
+                                <Flex align="center" gap={8}>
+                                    <Text style={{ fontSize: 28, fontWeight: 700, color: getLoyaltyColor(), lineHeight: 1.2 }}>
+                                        {getLoyaltyLevel()}
                                     </Text>
+                                    {stats.totalRevenue === 0 && (
+                                        <Tag color="default" style={{ borderRadius: 10 }}>No activity</Tag>
+                                    )}
                                 </Flex>
                             </Flex>
-                        </div>
-                    </Card>
-                </Col>
-                <Col xs={24} md={8}>
-                    <Card 
-                        style={{ 
-                            borderRadius: 12, 
-                            overflow: 'hidden',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                            border: 'none'
-                        }} 
-                        bodyStyle={{ padding: 0 }}
-                    >
-                        <div style={{
-                            background: 'linear-gradient(135deg, #6ee7b7 0%, #34d399 100%)',
-                            padding: 20,
-                            color: '#064e3b'
-                        }}>
-                            <Flex align="center" gap={12}>
-                                <TrophyOutlined style={{ fontSize: 28 }} />
-                                <Flex vertical style={{ flex: 1 }}>
-                                    <Text style={{ color: '#064e3b', fontSize: 13, opacity: 0.8 }}>Loyalty Level</Text>
-                                    <Text style={{ fontSize: 28, fontWeight: 600, color: '#064e3b' }}>
-                                        {stats.totalRevenue > 50000 ? "Platinum" : stats.totalRevenue > 25000 ? "Gold" : stats.totalRevenue > 10000 ? "Silver" : "Bronze"}
-                                    </Text>
-                                </Flex>
-                            </Flex>
-                        </div>
+                        </Flex>
                     </Card>
                 </Col>
             </Row>
@@ -675,9 +714,10 @@ export default function Guests() {
             <Card 
                 style={{ 
                     marginBottom: 24, 
-                    borderRadius: 12,
+                    borderRadius: 16,
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                    border: 'none'
+                    border: '1px solid #f0f0f0',
+                    background: '#ffffff'
                 }}
             >
                 <Search
@@ -696,10 +736,11 @@ export default function Guests() {
             {/* Table */}
             <Card 
                 style={{ 
-                    borderRadius: 12, 
+                    borderRadius: 16, 
                     overflow: 'auto',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                    border: 'none'
+                    border: '1px solid #f0f0f0',
+                    background: '#ffffff'
                 }}
             >
                 <Spin spinning={loading}>
@@ -758,7 +799,7 @@ export default function Guests() {
                 open={viewModalVisible}
                 onCancel={() => setViewModalVisible(false)}
                 footer={[
-                    <Button key="close" onClick={() => setViewModalVisible(false)}>
+                    <Button key="close" onClick={() => setViewModalVisible(false)} style={{ borderRadius: 10 }}>
                         Close
                     </Button>
                 ]}
@@ -772,26 +813,27 @@ export default function Guests() {
                             justify="space-between" 
                             align="center" 
                             style={{ 
-                                background: `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
+                                background: '#f8fafc',
                                 padding: '16px 20px',
-                                borderRadius: 12,
-                                marginBottom: 24
+                                borderRadius: 16,
+                                marginBottom: 24,
+                                border: '1px solid #f0f0f0'
                             }}
                         >
                             <Flex vertical align="center" style={{ flex: 1 }}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Total Bookings</Text>
-                                <Text strong style={{ fontSize: 24, color: token.colorPrimary }}>
+                                <Text strong style={{ fontSize: 24, color: '#10b981' }}>
                                     {selectedUser.total_bookings || 0}
                                 </Text>
                             </Flex>
-                            <Divider type="vertical" style={{ height: 40 }} />
+                            <Divider type="vertical" style={{ height: 40, borderColor: '#e8e8e8' }} />
                             <Flex vertical align="center" style={{ flex: 1 }}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Total Spent</Text>
-                                <Text strong style={{ fontSize: 24, color: '#16a34a' }}>
+                                <Text strong style={{ fontSize: 24, color: '#10b981' }}>
                                     ₱{(selectedUser.total_spent || 0).toLocaleString()}
                                 </Text>
                             </Flex>
-                            <Divider type="vertical" style={{ height: 40 }} />
+                            <Divider type="vertical" style={{ height: 40, borderColor: '#e8e8e8' }} />
                             <Flex vertical align="center" style={{ flex: 1 }}>
                                 <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
                                 <Badge 
@@ -853,19 +895,23 @@ export default function Guests() {
                             const spent = selectedUser.total_spent || 0;
                             let level = 'Bronze';
                             let color = '#cd7f32';
+                            let bgColor = '#fef3c7';
                             if (spent > 50000) {
                                 level = 'Platinum';
-                                color = '#e5e4e2';
+                                color = '#3b82f6';
+                                bgColor = '#dbeafe';
                             } else if (spent > 25000) {
                                 level = 'Gold';
-                                color = '#ffd700';
+                                color = '#d97706';
+                                bgColor = '#fef3c7';
                             } else if (spent > 10000) {
                                 level = 'Silver';
-                                color = '#c0c0c0';
+                                color = '#6b7280';
+                                bgColor = '#f3f4f6';
                             }
                             return (
                                 <Flex justify="center" style={{ marginTop: 24 }}>
-                                    <Tag icon={<TrophyOutlined />} style={{ background: `${color}20`, borderColor: color, color: color === '#e5e4e2' ? '#333' : color, borderRadius: 5 }}>
+                                    <Tag icon={<TrophyOutlined />} style={{ background: bgColor, borderColor: color, color: color, borderRadius: 12, padding: '4px 12px' }}>
                                         {level} Member
                                     </Tag>
                                 </Flex>
@@ -879,7 +925,7 @@ export default function Guests() {
             <Modal
                 title={
                     <Flex align="center" gap={8}>
-                        {newStatus ? <UserAddOutlined style={{ color: '#16a34a' }} /> : <UserDeleteOutlined style={{ color: '#ef4444' }} />}
+                        {newStatus ? <UserAddOutlined style={{ color: '#10b981' }} /> : <UserDeleteOutlined style={{ color: '#ef4444' }} />}
                         <span>{newStatus ? 'Activate' : 'Deactivate'} Guest</span>
                     </Flex>
                 }
@@ -887,7 +933,7 @@ export default function Guests() {
                 onCancel={() => setStatusModalVisible(false)}
                 centered
                 footer={[
-                    <Button key="cancel" onClick={() => setStatusModalVisible(false)}>
+                    <Button key="cancel" onClick={() => setStatusModalVisible(false)} style={{ borderRadius: 10 }}>
                         Cancel
                     </Button>,
                     <Button
@@ -895,7 +941,7 @@ export default function Guests() {
                         type={newStatus ? "primary" : "default"}
                         danger={!newStatus}
                         onClick={() => selectedUser && handleStatusChange(selectedUser, newStatus)}
-                        style={newStatus ? { background: '#16a34a' } : {}}
+                        style={newStatus ? { background: '#10b981', borderColor: '#10b981', borderRadius: 10 } : { borderRadius: 10 }}
                     >
                         {newStatus ? 'Activate' : 'Deactivate'}
                     </Button>
@@ -920,7 +966,7 @@ export default function Guests() {
                 onCancel={() => setDeleteModalVisible(false)}
                 centered
                 footer={[
-                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)}>
+                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)} style={{ borderRadius: 10 }}>
                         Cancel
                     </Button>,
                     <Button
@@ -928,6 +974,7 @@ export default function Guests() {
                         type="primary"
                         danger
                         onClick={() => selectedUser && handleDeleteUser(selectedUser)}
+                        style={{ borderRadius: 10 }}
                     >
                         Delete Permanently
                     </Button>

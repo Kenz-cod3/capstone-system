@@ -105,7 +105,7 @@ export default function EditProfile() {
         } as any);
       }
 
-      await api.post(`/users/${user.id}`, formData, {
+      await api.post(`/users/${user.id}?_method=PUT`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -116,7 +116,7 @@ export default function EditProfile() {
       if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace("/(tabs)/profile");
+        router.replace("/(guest)/(tabs)/profile");
       }
 
     } catch (error) {
@@ -145,7 +145,7 @@ export default function EditProfile() {
           onPress={() =>
             router.canGoBack()
               ? router.back()
-              : router.replace("/(tabs)/profile")
+              : router.replace("/(guest)/(tabs)/profile")
           }
           className="w-10 h-10 rounded-full bg-gray-200 justify-center items-center"
         >

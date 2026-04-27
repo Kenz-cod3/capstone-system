@@ -2,12 +2,25 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const api = axios.create({
-  baseURL: "http://127.0.0.1:8000/api",
+  baseURL: "http://10.160.66.76:8000/api",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
   },
 });
+
+// 🔥 STORAGE BASE (ADD THIS)
+const STORAGE_BASE = "http://10.160.66.76:8000/storage/";
+
+// 🔥 IMAGE HELPER (ADD THIS)
+export const getImageUrl = (path?: string | null) => {
+  if (!path) return null;
+
+  // kung full URL na (http...), return agad
+  if (path.startsWith("http")) return path;
+
+  return STORAGE_BASE + path;
+};
 
 // ✅ SET TOKEN AFTER LOGIN
 export const setToken = async (token: string) => {

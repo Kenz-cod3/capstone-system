@@ -27,7 +27,8 @@ class BookingController extends Controller
         $query = Booking::with([
             'user',
             'walkInGuest',
-            'createdBy', // ✅ Add this line
+            'createdBy',
+            'histories.user',  // ✅ Add this line
             'rooms' => function ($q) {
                 $q->withTrashed()->with('images');
             },
@@ -78,7 +79,8 @@ class BookingController extends Controller
         $bookings = Booking::with([
             'user',
             'walkInGuest',
-            'createdBy', // ✅ Add this line
+            'createdBy',
+            'histories.user',  // ✅ Add this line
             'rooms' => function ($q) {
                 $q->withTrashed()->with('roomType');
             }
@@ -99,7 +101,8 @@ class BookingController extends Controller
         $bookings = Booking::with([
             'user',
             'walkInGuest',
-            'createdBy', // ✅ Add this line
+            'createdBy',
+            'histories.user',  // ✅ Add this line
             'rooms' => function ($q) {
                 $q->withTrashed()->with('roomType');
             }
@@ -121,7 +124,8 @@ class BookingController extends Controller
             ->with([
                 'user',
                 'walkInGuest',
-                'createdBy', // ✅ Add this line
+                'createdBy',
+                'histories.user',  // ✅ Add this line
                 'rooms' => function ($q) {
                     $q->withTrashed()->with('roomType');
                 }
@@ -178,6 +182,7 @@ class BookingController extends Controller
                 'total_price' => $subtotal,
                 'booking_status' => 'pending',
                 'booking_type' => 'online',
+                'stay_type' => $request->booking_type === 'short' ? 'short_stay' : 'overnight',
                 'booking_reference' => $reference,
             ]);
 
@@ -267,6 +272,11 @@ class BookingController extends Controller
         ]);
 
         if ($newStatus === 'checked_in') {
+            $booking->update([
+                'booking_status' => $newStatus,
+
+                'check_in_time' => $booking->check_in_time ?? now()
+            ]);
             NotificationService::notifyAdmins(
                 $type . ' Check-in',
                 $type . ' booking ' . $booking->booking_reference . ' checked in'
@@ -286,6 +296,11 @@ class BookingController extends Controller
         }
 
         if ($newStatus === 'checked_out') {
+
+            $booking->update([
+                'booking_status' => $newStatus,
+                'check_out_time' => $booking->check_out_time ?? now()
+            ]);
 
             NotificationService::notifyAdmins(
                 $type . ' Check-out',
@@ -315,7 +330,9 @@ class BookingController extends Controller
 
             // set rooms available
             $roomIds = $booking->rooms->pluck('id');
-            Room::whereIn('id', $roomIds)->update(['status' => 'available']);
+            Room::whereIn('id', $roomIds)->update([
+                'status' => Room::STATUS_DIRTY
+            ]);
         }
 
         Cache::forget('dashboard_data');
@@ -332,7 +349,8 @@ class BookingController extends Controller
             'data' => Booking::with([
                 'user',
                 'walkInGuest',
-                'createdBy', // ✅ Add this line
+                'createdBy',
+                'histories.user',
                 'rooms' => function ($q) {
                     $q->withTrashed()->with('roomType');
                 }

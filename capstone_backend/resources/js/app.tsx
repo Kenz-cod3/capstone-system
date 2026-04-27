@@ -11,7 +11,7 @@ import Dashboard from "./pages/admin/main/Dashboard";
 import Bookings from "./pages/admin/management/Bookings";
 import BookingTransaction  from "./pages/admin/management/Bookings";
 import BookingReceipt  from "./pages/admin/management/BookingReciept";
-import WalkIn from "./pages/admin/operations/WalkIn";
+
 import Rooms from "./pages/admin/management/Rooms";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
 import Guests from "./pages/admin/management/Guests";
@@ -24,8 +24,10 @@ import ChatPage from "./pages/admin/messages/[userId]";
 
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
-import BookingStaff  from "./pages/staff/Bookings";
+import BookingStaff  from "./pages/admin/management/Bookings";
+import WalkIn from "./pages/admin/operations/WalkIn";
 import Transaction  from "./pages/staff/Transaction";
+import BookingExtend from "./pages/staff/BookingExtend";
 import StaffDashboard from "./pages/staff/StaffDashboard";
 import Cash from "./pages/staff/Cash";
 
@@ -38,6 +40,7 @@ import Product from "./pages/cashier/Product";
 
 // AUTH
 import Login from "./pages/auth/Login";
+
 
 
 export default function App() {
@@ -100,6 +103,7 @@ export default function App() {
                         <Route path="/bookings" element={<BookingStaff />} />
                         <Route path="/transactions" element={<Transaction />} />
                         <Route path="/walk-in-guests" element={<WalkIn />} />
+                        <Route path="/extend-stay" element={<BookingExtend />} />
                         <Route path="/cash" element={<Cash />} />
 
                         <Route path="*" element={<Navigate to="/dashboard" />} />

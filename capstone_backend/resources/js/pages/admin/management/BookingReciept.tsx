@@ -42,7 +42,7 @@ export default function TransactionsPage() {
                     base_price: Number(room.room_type?.base_price) || 0,// 🔥 NEW
 
                     type:
-                        room.pivot?.stay_type === "short_stay"
+                        (room.pivot?.stay_type || b.stay_type) === "short_stay"
                             ? "Short Stay"
                             : "Overnight",
 

@@ -89,7 +89,7 @@ interface CreatedByUser {
     id: number;
     first_name?: string;
     last_name?: string;
-    email?: string;
+    role?: string;
 }
 
 interface Booking {
@@ -327,20 +327,29 @@ export default function Bookings() {
 
     const handleCheckoutAction = async (bookingId: number) => {
         const action = async (reason?: string) => {
-            await api.post(`/walk-in-guests/${bookingId}/checkout`, {
-                override_reason: reason
-            });
 
-            const checkedOutBooking = active.find(b => b.id === bookingId);
+            const booking = active.find(b => b.id === bookingId);
 
-            if (checkedOutBooking) {
-                const updatedBooking: Booking = { ...checkedOutBooking, booking_status: "checked_out" };
-                setHistory((prev: Booking[]) => [updatedBooking, ...prev]);
-                setActive((prev: Booking[]) => prev.filter(b => b.id !== bookingId));
+            if (!booking) return;
+
+            // 🔥 USE CORRECT ENDPOINT
+            if (booking.booking_type === "walk_in") {
+                await api.post(`/walk-in-guests/${bookingId}/checkout`, {
+                    override_reason: reason
+                });
+            } else {
+                await api.put(`/bookings/${bookingId}`, {
+                    booking_status: "checked_out",
+                    override_reason: reason
+                });
             }
 
+            // 🔥 VERY IMPORTANT
+            await fetchAll();
+
+            // optional UI update
             if (selectedBooking && selectedBooking.id === bookingId) {
-                setSelectedBooking((prev: Booking | null) =>
+                setSelectedBooking((prev) =>
                     prev ? { ...prev, booking_status: "checked_out" } : null
                 );
             }
@@ -348,6 +357,31 @@ export default function Bookings() {
 
         await handleActionWithOverride(action, "Check Out", bookingId, true);
     };
+
+    // const handleCheckoutAction = async (bookingId: number) => {
+
+    //     const action = async (reason?: string) => {
+    //         await api.post(`/walk-in-guests/${bookingId}/checkout`, {
+    //             override_reason: reason
+    //         });
+
+    //         const checkedOutBooking = active.find(b => b.id === bookingId);
+
+    //         if (checkedOutBooking) {
+    //             const updatedBooking: Booking = { ...checkedOutBooking, booking_status: "checked_out" };
+    //             setHistory((prev: Booking[]) => [updatedBooking, ...prev]);
+    //             setActive((prev: Booking[]) => prev.filter(b => b.id !== bookingId));
+    //         }
+
+    //         if (selectedBooking && selectedBooking.id === bookingId) {
+    //             setSelectedBooking((prev: Booking | null) =>
+    //                 prev ? { ...prev, booking_status: "checked_out" } : null
+    //             );
+    //         }
+    //     };
+
+    //     await handleActionWithOverride(action, "Check Out", bookingId, true);
+    // };
 
     const handleExtendAction = async (booking: Booking) => {
         const action = async () => {
@@ -543,12 +577,18 @@ export default function Bookings() {
     };
 
     const getCheckoutTime = (booking: Booking): string => {
-        if (!booking.rooms || booking.rooms.length === 0) return "-";
+        // 🔥 PRIORITY: booking table (ONLINE)
+        if (booking.check_out_time) {
+            return formatTime(booking.check_out_time);
+        }
 
-        const room = booking.rooms[0];
+        // 🔥 FALLBACK: pivot (WALK-IN)
+        if (booking.rooms && booking.rooms.length > 0) {
+            const room = booking.rooms[0];
 
-        if (room?.pivot?.check_out_time) {
-            return formatTime(room.pivot.check_out_time);
+            if (room?.pivot?.check_out_time) {
+                return formatTime(room.pivot.check_out_time);
+            }
         }
 
         return "-";
@@ -709,7 +749,7 @@ export default function Bookings() {
 
     const columns = [
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Booking ID</span>,
+            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Booking Reference ID</span>,
             key: "booking_id",
             width: "15%",
             render: (_: any, record: Booking) => (
@@ -766,25 +806,15 @@ export default function Bookings() {
             key: "stay_type",
             width: "12%",
             render: (_: any, record: Booking) => {
-                const stayTypes = new Set(
-                    record.rooms?.map(r => r.pivot?.stay_type)
-                );
-
-                const hasOvernight = stayTypes.has("overnight");
-                const hasShortStay = stayTypes.has("short_stay");
-
-                let label = "";
-                if (hasOvernight && hasShortStay) {
-                    label = "Overnight / Short Stay";
-                } else if (hasOvernight) {
-                    label = "Overnight";
-                } else if (hasShortStay) {
-                    label = "Short Stay";
-                }
+                const type =
+                    record.rooms?.[0]?.pivot?.stay_type || record.stay_type;
 
                 return (
-                    <Tag color={hasShortStay && !hasOvernight ? "purple" : "cyan"} style={{ fontSize: "12px", borderRadius: "6px" }}>
-                        {label}
+                    <Tag
+                        color={type === "short_stay" ? "purple" : "cyan"}
+                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                    >
+                        {type === "short_stay" ? "Short Stay" : "Overnight"}
                     </Tag>
                 );
             }
@@ -870,7 +900,7 @@ export default function Bookings() {
             size="middle"
             bordered={false}
             pagination={false}
-            scroll={{ x: "max-content" }}
+            // scroll={{ x: "max-content" }}
             onRow={rowProps}
             rowSelection={rowSelection}
         />
@@ -1007,6 +1037,13 @@ export default function Bookings() {
         const guestName = getGuestName(selectedBooking);
         const statusColor = getStatusBadgeColor(selectedBooking.booking_status);
 
+        const histories = selectedBooking.histories || [];
+
+        const confirmedBy = histories.find(h => h.new_status === "confirmed");
+        const checkedInBy = histories.find(h => h.new_status === "checked_in");
+        const checkedOutBy = histories.find(h => h.new_status === "checked_out");
+        const override = histories.find(h => h.is_override);
+
         return (
             <Drawer
                 title={
@@ -1098,25 +1135,16 @@ export default function Bookings() {
                         </Descriptions.Item>
                         <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Stay Type</span>}>
                             {(() => {
-                                const stayTypes = new Set(
-                                    selectedBooking.rooms?.map(r => r.pivot?.stay_type)
-                                );
-
-                                const hasOvernight = stayTypes.has("overnight");
-                                const hasShortStay = stayTypes.has("short_stay");
-
-                                let label = "";
-                                if (hasOvernight && hasShortStay) {
-                                    label = "Overnight / Short Stay";
-                                } else if (hasOvernight) {
-                                    label = "Overnight";
-                                } else if (hasShortStay) {
-                                    label = "Short Stay";
-                                }
+                                const type =
+                                    selectedBooking.rooms?.[0]?.pivot?.stay_type ||
+                                    selectedBooking.stay_type;
 
                                 return (
-                                    <Tag color={hasShortStay && !hasOvernight ? "purple" : "cyan"} style={{ fontSize: "12px", borderRadius: "6px" }}>
-                                        {label}
+                                    <Tag
+                                        color={type === "short_stay" ? "purple" : "cyan"}
+                                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                                    >
+                                        {type === "short_stay" ? "Short Stay" : "Overnight"}
                                     </Tag>
                                 );
                             })()}
@@ -1125,25 +1153,73 @@ export default function Bookings() {
                             <Text code style={{ fontSize: "12px" }}>{selectedBooking.booking_reference}</Text>
                         </Descriptions.Item>
 
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Created By</span>}>
-                            <Space size={4}>
-                                <UserOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>
-                                    {selectedBooking.created_by ? (
-                                        <>
-                                            {selectedBooking.created_by.first_name} {selectedBooking.created_by.last_name}
-                                            {selectedBooking.created_by.email && (
-                                                <Text type="secondary" style={{ fontSize: "11px", marginLeft: 8 }}>
-                                                    ({selectedBooking.created_by.email})
-                                                </Text>
-                                            )}
-                                        </>
+                        {(() => {
+                            const isWalkIn = selectedBooking.booking_type === "walk_in";
+
+                            const formatUser = (user: any) => {
+                                if (!user) return "N/A";
+
+                                return (
+                                    <>
+                                        {user.first_name} {user.last_name}
+                                        {user.role && (
+                                            <Text type="secondary" style={{ marginLeft: 6 }}>
+                                                ({user.role})
+                                            </Text>
+                                        )}
+                                    </>
+                                );
+                            };
+
+                            return (
+                                <>
+                                    {/* WALK-IN */}
+                                    {isWalkIn ? (
+                                        <Descriptions.Item label="Handled By">
+                                            {formatUser(selectedBooking.created_by)}
+                                        </Descriptions.Item>
                                     ) : (
-                                        <Text type="secondary" style={{ fontSize: "13px" }}>System / N/A</Text>
+                                        <>
+                                            {/* ONLINE */}
+                                            <Descriptions.Item label="Created By">
+                                                {selectedBooking.created_by
+                                                    ? formatUser(selectedBooking.created_by)
+                                                    : "Customer"}
+                                            </Descriptions.Item>
+
+                                            <Descriptions.Item label="Confirmed By">
+                                                {confirmedBy?.user
+                                                    ? formatUser(confirmedBy.user)
+                                                    : <Text type="secondary">Not confirmed</Text>}
+                                            </Descriptions.Item>
+                                        </>
                                     )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
+
+                                    {/* CHECK-IN */}
+                                    {checkedInBy?.user && (
+                                        <Descriptions.Item label="Checked-in By">
+                                            {formatUser(checkedInBy.user)}
+                                        </Descriptions.Item>
+                                    )}
+
+                                    {/* CHECK-OUT */}
+                                    {checkedOutBy?.user && (
+                                        <Descriptions.Item label="Checked-out By">
+                                            {formatUser(checkedOutBy.user)}
+                                        </Descriptions.Item>
+                                    )}
+
+                                    {/* OVERRIDE */}
+                                    {override?.user && (
+                                        <Descriptions.Item label="Override By">
+                                            <Text type="danger">
+                                                {formatUser(override.user)}
+                                            </Text>
+                                        </Descriptions.Item>
+                                    )}
+                                </>
+                            );
+                        })()}
 
                         <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Created At</span>}>
                             <Space size={4}>
@@ -1232,7 +1308,6 @@ export default function Bookings() {
                 <Card
                     title={
                         <Space size={6}>
-                            <DollarOutlined style={{ fontSize: "13px" }} />
                             <span style={{ fontSize: "13px", fontWeight: 600 }}>Payment Summary</span>
                         </Space>
                     }
@@ -1357,7 +1432,7 @@ export default function Bookings() {
                     .premium-table .ant-table {
                         background: white;
                         border-radius: 16px;
-                        overflow: hidden;
+                        overflow: visible; /* 🔥 FIX */
                     }
                     
                     .premium-table .ant-table-thead > tr > th {

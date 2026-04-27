@@ -15,7 +15,21 @@ return new class extends Migration
             $table->id();
             $table->foreignId('room_type_id')->constrained('room_types');
             $table->string('room_number')->unique();
-            $table->enum('status', ['available', 'occupied', 'maintenance']);
+            $table->enum('status', [
+                'available',
+                'occupied',
+                'maintenance',
+                'dirty',
+                'cleaning',
+                'clean'
+            ])->default('available');
+
+            $table->foreignId('cleaned_by')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+
+            $table->timestamp('completed_at')->nullable();
             $table->timestamps();
 
             $table->softDeletes();

@@ -7,12 +7,10 @@ import ChatBox from "@/components/AdminComponents/ChatBox";
 import {
     LogOut,
     LayoutDashboard,
-    Hotel,
     CalendarDays,
     Users,
     Key,
     ClipboardList,
-    Menu as MenuIcon,
     PanelLeft,
     PanelRight,
     ChevronDown,
@@ -23,8 +21,11 @@ import {
     ShoppingCart,
     UtensilsCrossed,
     MessageCircle,
-    CheckCheck,
-    RefreshCw
+    RefreshCw,
+    ChevronRight,
+    ChevronUp,
+    BanknoteArrowDown,
+    BookUser
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -34,8 +35,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
-import { Badge } from "@/components/ui/badge";
-import api from "@/services/api";
+import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
 
 const StaffLayout = ({
@@ -46,7 +46,7 @@ const StaffLayout = ({
     pageTitle?: string;
 }) => {
     const [isSidebarOpen, setSidebarOpen] = useState(() => {
-        const savedState = localStorage.getItem('adminSidebarOpen');
+        const savedState = localStorage.getItem('staffSidebarOpen');
         return savedState !== null ? JSON.parse(savedState) : true;
     });
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -103,7 +103,7 @@ const StaffLayout = ({
     };
 
     useEffect(() => {
-        localStorage.setItem('adminSidebarOpen', JSON.stringify(isSidebarOpen));
+        localStorage.setItem('staffSidebarOpen', JSON.stringify(isSidebarOpen));
     }, [isSidebarOpen]);
 
     useEffect(() => {
@@ -139,6 +139,7 @@ const StaffLayout = ({
 
     const handleNavigation = (href: string) => {
         navigate(href);
+        setIsMobileMenuOpen(false);
     };
 
     const toggleSidebar = (e: React.MouseEvent) => {
@@ -172,7 +173,7 @@ const StaffLayout = ({
         if (user?.name) {
             return user.name;
         }
-        return user?.email?.split('@')[0] || 'Admin';
+        return user?.email?.split('@')[0] || 'Staff';
     };
 
     const isFetching = useRef(false);
@@ -189,26 +190,19 @@ const StaffLayout = ({
             setMessages(prev => {
                 if (prev.length === data.length) {
                     let same = true;
-
                     for (let i = 0; i < prev.length; i++) {
                         if (prev[i].last_message !== data[i].last_message) {
                             same = false;
                             break;
                         }
                     }
-
                     if (same) return prev;
                 }
-
                 return data;
             });
 
             const unread = data.reduce((sum, c) => sum + (c.unread || 0), 0);
-
-            setUnreadMessages(prev =>
-                prev === unread ? prev : unread
-            );
-
+            setUnreadMessages(prev => prev === unread ? prev : unread);
         } catch (err) {
             console.error(err);
         } finally {
@@ -230,10 +224,6 @@ const StaffLayout = ({
             const scrollTop = notifRef.current?.scrollTop || 0;
             const prevHeight = notifRef.current?.scrollHeight || 0;
 
-            const wasAtBottom =
-                notifRef.current &&
-                notifRef.current.scrollHeight - notifRef.current.scrollTop <= notifRef.current.clientHeight + 5;
-
             const res = await api.get(
                 `/notifications/user/${user.id}?limit=10&offset=${offset}`
             );
@@ -242,7 +232,6 @@ const StaffLayout = ({
                 if (!timeMapRef.current[n.id]) {
                     timeMapRef.current[n.id] = timeAgo(n.created_at);
                 }
-
                 return {
                     ...n,
                     display_time: timeMapRef.current[n.id]
@@ -252,7 +241,6 @@ const StaffLayout = ({
                 if (offset === 0) {
                     return prev.length === notificationsData.length ? prev : notificationsData;
                 }
-
                 const merged = [...prev, ...notificationsData];
                 return merged.slice(0, 20);
             });
@@ -260,27 +248,13 @@ const StaffLayout = ({
             setTimeout(() => {
                 if (notifRef.current && isClickingNotif.current) {
                     const newHeight = notifRef.current.scrollHeight;
-
-                    notifRef.current.scrollTop =
-                        scrollTop + (newHeight - prevHeight);
-
+                    notifRef.current.scrollTop = scrollTop + (newHeight - prevHeight);
                     isClickingNotif.current = false;
                 }
             }, 0);
 
             const unreadRes = await api.get(`/notifications/user/${user.id}/unread-count`);
             setUnreadCount(unreadRes.data.count);
-
-            let hasChanged = false;
-
-            if (hasChanged) {
-                requestAnimationFrame(() => {
-                    if (notifRef.current && !wasAtBottom && !isNotifOpen) {
-                        notifRef.current.scrollTop = scrollTop;
-                    }
-                });
-            }
-
         } catch (err) {
             console.error("Failed to fetch notifications:", err);
         } finally {
@@ -289,14 +263,12 @@ const StaffLayout = ({
                 isFirstLoad.current = false;
             }
         }
-    }, [user?.id, isNotifOpen, offset]);
+    }, [user?.id, offset]);
 
     const markNotificationAsRead = async (id: number) => {
         try {
             isClickingNotif.current = true;
-
             await api.put(`/notifications/${id}/read`);
-
             const scrollTop = notifRef.current?.scrollTop || 0;
 
             setNotifications(prev =>
@@ -313,10 +285,24 @@ const StaffLayout = ({
                 }
                 isClickingNotif.current = false;
             }, 0);
-
         } catch (err) {
             console.error("Failed to mark notification as read:", err);
         }
+    };
+
+    const getImageUrl = (img?: string | null) => {
+        if (!img) return null;
+
+        // if already full URL
+        if (img.startsWith("http")) return img;
+
+        // if may storage na sa string
+        if (img.includes("storage/")) {
+            return `${API_BASE}/${img}`;
+        }
+
+        // normal case
+        return `${API_BASE}/storage/${img}`;
     };
 
     const markAllNotificationsAsRead = async () => {
@@ -336,29 +322,23 @@ const StaffLayout = ({
 
     useEffect(() => {
         if (!user?.id) return;
-
         if (offset === 0) {
             fetchNotifications();
         }
-
         const interval = setInterval(() => {
             if (!isNotifOpen && offset === 0) {
                 fetchNotifications();
             }
         }, 5000);
-
         return () => clearInterval(interval);
-
     }, [user?.id, offset, isNotifOpen]);
+
     useEffect(() => {
         if (!user?.id) return;
-
         fetchMessages();
-
         const interval = setInterval(() => {
             fetchMessages();
         }, 3000);
-
         return () => clearInterval(interval);
     }, [user?.id]);
 
@@ -369,32 +349,22 @@ const StaffLayout = ({
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
-
             const insideChatDropdown = chatDropdownRef.current?.contains(target);
             const insideChatBox = chatBoxRef.current?.contains(target);
             const insideChatButton = chatButtonRef.current?.contains(target);
-
             const insideNotifDropdown = notifDropdownRef.current?.contains(target);
             const insideNotifButton = notifButtonRef.current?.contains(target);
 
-            if (
-                !insideChatDropdown &&
-                !insideChatBox &&
-                !insideChatButton &&
-                !insideNotifDropdown &&
-                !insideNotifButton
-            ) {
+            if (!insideChatDropdown && !insideChatBox && !insideChatButton && !insideNotifDropdown && !insideNotifButton) {
                 setIsChatOpen(false);
                 setIsNotifOpen(false);
             }
         };
-
         window.addEventListener("mousedown", handleClickOutside);
-
         return () => window.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Navigation with descriptions on each item
+    // Navigation - Simple without subfolders
     const navigationGroups = [
         {
             label: "MAIN",
@@ -417,10 +387,16 @@ const StaffLayout = ({
                     icon: UserPlus
                 },
                 {
+                    name: "Extend Booking",
+                    description: "Guest Extend Stay",
+                    href: "/extend-stay",
+                    icon: BookUser
+                },
+                {
                     name: "Cash",
                     description: "Cash Management",
                     href: "/cash",
-                    icon: UserPlus
+                    icon: BanknoteArrowDown
                 },
             ],
         },
@@ -446,26 +422,18 @@ const StaffLayout = ({
     const timeAgo = (dateString: string) => {
         const now = new Date();
         const date = new Date(dateString);
-
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
         if (seconds < 60) return "Just now";
-
         const minutes = Math.floor(seconds / 60);
         if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
-
         const hours = Math.floor(minutes / 60);
         if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
-
         const days = Math.floor(hours / 24);
         if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
-
         const weeks = Math.floor(days / 7);
         if (weeks < 4) return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-
         const months = Math.floor(days / 30);
         if (months < 12) return `${months} month${months > 1 ? 's' : ''} ago`;
-
         const years = Math.floor(days / 365);
         return `${years} year${years > 1 ? 's' : ''} ago`;
     };
@@ -498,7 +466,8 @@ const StaffLayout = ({
                         </div>
                     </div>
                 </div>
-                <div ref={messageRef} className="max-h-96 overflow-y-auto scrollbar-hide px-2 py-2">
+
+                <div ref={messageRef} data-scroll-area className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2">
                     {messagesLoading ? (
                         <div className="p-8 text-center text-gray-400 text-sm">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
@@ -545,7 +514,9 @@ const StaffLayout = ({
                                                 <div className="flex justify-between items-center">
                                                     <p className="text-sm font-semibold text-gray-800 truncate">{chatUser.first_name}</p>
                                                     {c.unread > 0 && (
-                                                        <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">{c.unread}</span>
+                                                        <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                                                            {c.unread}
+                                                        </span>
                                                     )}
                                                 </div>
                                                 <p className="text-xs text-gray-500 truncate">
@@ -559,6 +530,7 @@ const StaffLayout = ({
                             })
                     )}
                 </div>
+
                 <div className="text-center py-3 border-t border-gray-100">
                     <button onClick={() => handleNavigation('/messages')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">
                         View all messages
@@ -585,6 +557,7 @@ const StaffLayout = ({
                         <span className="text-xs text-gray-500">{unreadCount} unread</span>
                     </div>
                 </div>
+
                 <div className="relative">
                     <div
                         ref={notifRef}
@@ -592,9 +565,11 @@ const StaffLayout = ({
                             const el = e.currentTarget;
                             notifScroll.current = el.scrollTop;
                             isScrolling.current = true;
-                            setTimeout(() => { isScrolling.current = false; }, 800);
+                            setTimeout(() => {
+                                isScrolling.current = false;
+                            }, 800);
                         }}
-                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto px-2 py-2`}
+                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto scrollbar-mint px-2 py-2`}
                     >
                         {notificationsLoading ? (
                             <div className="p-8 text-center text-gray-400 text-sm">
@@ -651,10 +626,40 @@ const StaffLayout = ({
         );
     };
 
+    const fallback = `https://ui-avatars.com/api/?name=${user?.first_name}+${user?.last_name}&background=10b981&color=fff`;
+
     return (
         <>
+            <style>{`
+                .scrollbar-mint::-webkit-scrollbar {
+                    width: 6px;
+                    height: 6px;
+                }
+                .scrollbar-mint::-webkit-scrollbar-track {
+                    background: #f1f1f1;
+                    border-radius: 10px;
+                }
+                .scrollbar-mint::-webkit-scrollbar-thumb {
+                    background: #10b981;
+                    border-radius: 10px;
+                }
+                .scrollbar-mint::-webkit-scrollbar-thumb:hover {
+                    background: #059669;
+                }
+                .scrollbar-mint {
+                    scrollbar-width: thin;
+                    scrollbar-color: #10b981 #f1f1f1;
+                }
+                .scrollbar-hide {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+                .scrollbar-hide::-webkit-scrollbar {
+                    display: none;
+                }
+            `}</style>
+
             <div className="min-h-screen bg-gray-50">
-                {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
                     <div
                         className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -668,19 +673,18 @@ const StaffLayout = ({
                         ${isSidebarOpen ? 'w-64' : 'w-20'} 
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
                 >
-                    {/* Logo Section - Updated with two lines */}
+                    {/* Logo Section */}
                     <div className={`h-20 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} shrink-0 border-b border-emerald-800/50`}>
                         <div
                             onClick={() => handleNavigation('/dashboard')}
                             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                            <div className="h-12 w-12 rounded-full overflow-hidden">
+                            <div className="h-12 w-12 rounded-full overflow-hidden flex items-center justify-center">
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
                                     className="h-full w-auto object-contain scale-125"
                                     onError={(e) => {
-                                        // Fallback if logo fails to load
                                         e.currentTarget.style.display = 'none';
                                         const parent = e.currentTarget.parentElement;
                                         if (parent) {
@@ -694,18 +698,14 @@ const StaffLayout = ({
                             </div>
                             {isSidebarOpen && (
                                 <div className="flex flex-col">
-                                    <span className="font-bold text-sm tracking-tight leading-tight">
-                                        Lynn Ennia's
-                                    </span>
-                                    <span className="text-[9px] text-emerald-300/80 tracking-wide">
-                                        Traveler's Inn
-                                    </span>
+                                    <span className="font-bold text-sm tracking-tight leading-tight">Lynn Ennia's</span>
+                                    <span className="text-[9px] text-emerald-300/80 tracking-wide">Traveler's Inn</span>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Navigation with descriptions */}
+                    {/* Navigation */}
                     <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto scrollbar-hide">
                         {navigationGroups.map((group) => (
                             <div key={group.label}>
@@ -722,22 +722,22 @@ const StaffLayout = ({
                                                 key={item.name}
                                                 onClick={() => handleNavigation(item.href)}
                                                 className={`
-                                                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-                                                    cursor-pointer
+                                                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
                                                     ${isActive
                                                         ? 'bg-emerald-600 text-white shadow-lg'
                                                         : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
                                                     }
                                                     ${!isSidebarOpen && 'justify-center'}
                                                 `}
+                                                title={!isSidebarOpen ? item.name : undefined}
                                             >
-                                                <item.icon className="h-5 w-5 shrink-0" />
+                                                <item.icon className={`h-5 w-5 shrink-0 ${!isSidebarOpen ? 'mx-auto' : ''}`} />
                                                 {isSidebarOpen && (
-                                                    <div className="flex flex-col">
-                                                        <span className="text-sm font-medium">
+                                                    <div className="flex flex-col flex-1 min-w-0">
+                                                        <span className="text-sm font-medium truncate">
                                                             {item.name}
                                                         </span>
-                                                        <span className="text-[9px] text-emerald-300/70">
+                                                        <span className="text-[9px] text-emerald-300/70 truncate">
                                                             {item.description}
                                                         </span>
                                                     </div>
@@ -751,64 +751,76 @@ const StaffLayout = ({
                     </nav>
 
                     {/* User Menu */}
-                    <div className="border-t border-emerald-800/50 py-3 px-3 shrink-0 mt-auto">
+                    <div className="border-t border-emerald-800/50 py-1 px-3 shrink-0 mt-auto">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
                                     className={`
                                         w-full flex items-center gap-3 p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
-                                        focus:outline-none focus:ring-0
+                                        focus:outline-none focus:ring-0 cursor-pointer
                                         ${!isSidebarOpen && 'justify-center'}
-                                        cursor-pointer
                                     `}
                                 >
-                                    <Avatar className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} border-2 border-emerald-500 shadow-md`}>
-                                        <AvatarImage src={user.avatar_url} />
-                                        <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold">
-                                            {getUserInitials()}
-                                        </AvatarFallback>
-                                    </Avatar>
+                                    <div className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center`}>
+                                        {user?.profile_image ? (
+                                            <img
+                                                src={getImageUrl(user?.profile_image) || fallback}
+                                                className="w-full h-full object-cover block"
+                                                style={{ objectPosition: "center 20%", transform: "scale(1.1)" }}
+                                                onError={(e) => {
+                                                    e.currentTarget.src = fallback;
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-xs font-bold">
+                                                {user?.first_name?.[0] || "U"}
+                                            </div>
+                                        )}
+                                    </div>
                                     {isSidebarOpen && (
-                                        <div className="flex-1 text-left">
-                                            <p className="text-[13px] font-semibold text-white/90 truncate leading-tight">
-                                                {getDisplayName()}
-                                            </p>
-                                            <p className="text-[9px] text-emerald-400/80 truncate">
-                                                {user.email}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {isSidebarOpen && (
-                                        <ChevronDown className="h-4 w-4 text-emerald-400 group-hover:text-white transition-colors" />
+                                        <>
+                                            <div className="flex-1 text-left">
+                                                <p className="text-[13px] relative top-2 font-semibold text-white/90 truncate leading-none">
+                                                    {getDisplayName()}
+                                                </p>
+                                                <p className="text-[9px] text-emerald-400/80 truncate">
+                                                    {user.email}
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors">
+                                                <ChevronUp className="h-4 w-4 -mb-1" />
+                                                <ChevronDown className="h-4 w-4 -mt-1" />
+                                            </div>
+                                        </>
                                     )}
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                                 align="end"
                                 side="top"
-                                className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px]"
+                                className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px] outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0"
                             >
-                                <DropdownMenuItem asChild>
-                                    <div
-                                        onClick={() => setIsSettingsOpen(true)}
-                                        className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
-                                    >
+                                <DropdownMenuItem
+                                    asChild
+                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
+                                >
+                                    <div onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
                                         <Settings className="h-4 w-4 text-emerald-400" />
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                    <div
-                                        onClick={() => handleNavigation('/help')}
-                                        className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
-                                    >
+                                <DropdownMenuItem
+                                    asChild
+                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
+                                >
+                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
                                         <LifeBuoy className="h-4 w-4 text-emerald-400" />
                                         <span>Help Center</span>
                                     </div>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={handleLogout}
-                                    className="cursor-pointer hover:bg-red-900/30 px-3 py-2"
+                                    className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white"
                                 >
                                     <LogOut className="mr-2 h-4 w-4 text-red-400" />
                                     <span className="text-red-400">Logout</span>
@@ -818,13 +830,12 @@ const StaffLayout = ({
                     </div>
                 </aside>
 
-                {/* Main Content - Fixed background on scroll */}
+                {/* Main Content */}
                 <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} flex flex-col h-screen overflow-hidden`}>
-                    {/* Header with grey title and separator */}
+                    {/* Header */}
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
                         <div className="px-6 py-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                {/* Toggle Button */}
                                 <Button
                                     variant="ghost"
                                     size="icon"
@@ -837,11 +848,7 @@ const StaffLayout = ({
                                         <PanelRight className="h-4 w-4 text-gray-500" />
                                     )}
                                 </Button>
-
-                                {/* Separator */}
                                 <div className="w-px h-5 bg-gray-300"></div>
-
-                                {/* Title - Grey color */}
                                 <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide">
                                     {getPageTitle()}
                                 </h1>
@@ -908,8 +915,8 @@ const StaffLayout = ({
                         </div>
                     </header>
 
-                    {/* Scrollable content with fixed background */}
-                    <div className="flex-1 overflow-y-auto bg-gray-50">
+                    {/* Scrollable content */}
+                    <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50">
                         <div className="px-6 py-6">
                             <Outlet />
                         </div>
@@ -917,7 +924,7 @@ const StaffLayout = ({
                 </main>
             </div>
 
-            {/* CHAT BOX */}
+            {/* Chat Box */}
             {activeChatUser && (
                 <div ref={chatBoxRef}>
                     <ChatBox

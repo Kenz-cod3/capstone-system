@@ -25,8 +25,16 @@ export default function Welcome() {
   useEffect(() => {
     if (!isLoaded) return;
 
+    // if (user) {
+    //   router.replace("/(tabs)/home");
+    // }
+
     if (user) {
-      router.replace("/(tabs)/home");
+      if (user.role === "guest") {
+        router.replace("/(guest)/(tabs)/home");
+      } else if (user.role === "housekeeper") {
+        router.replace("/(housekeeper)/(tabs)/dashboard");
+      }
     }
   }, [user, isLoaded]);
 

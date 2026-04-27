@@ -169,6 +169,7 @@ class WalkInGuestController extends Controller
     }
 
     // CHECK-OUT
+
     public function checkOut($bookingId)
     {
         $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
@@ -177,7 +178,12 @@ class WalkInGuestController extends Controller
             'booking_status' => 'checked_out'
         ]);
 
+        // 🔥 ADD THIS (IMPORTANT)
         foreach ($booking->bookedRooms as $bookedRoom) {
+            $bookedRoom->update([
+                'check_out_time' => now()
+            ]);
+
             Room::where('id', $bookedRoom->room_id)
                 ->update(['status' => 'available']);
         }
@@ -193,6 +199,30 @@ class WalkInGuestController extends Controller
             'message' => 'Guest checked out successfully'
         ]);
     }
+    // public function checkOut($bookingId)
+    // {
+    //     $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
+
+    //     $booking->update([
+    //         'booking_status' => 'checked_out'
+    //     ]);
+
+    //     foreach ($booking->bookedRooms as $bookedRoom) {
+    //         Room::where('id', $bookedRoom->room_id)
+    //             ->update(['status' => 'available']);
+    //     }
+
+    //     $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';
+
+    //     NotificationService::notifyAdmins(
+    //         'Walk-in Check-Out',
+    //         $name . ' checked out (Ref: ' . $booking->booking_reference . ')'
+    //     );
+
+    //     return response()->json([
+    //         'message' => 'Guest checked out successfully'
+    //     ]);
+    // }
 }
 // namespace App\Http\Controllers;
 

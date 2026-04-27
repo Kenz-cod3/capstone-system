@@ -33,8 +33,8 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
-import api from "@/services/api";
-import logo from "../../images/logo1.png"; // Adjust this path to your actual logo location
+import api, { API_BASE } from "@/services/api";
+import logo from "../../images/logo1.png";
 
 const AdminLayout = ({
     children,
@@ -88,7 +88,6 @@ const AdminLayout = ({
     // State for dropdown toggles
     const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>(() => {
         const saved = localStorage.getItem("adminDropdowns");
-
         return saved
             ? JSON.parse(saved)
             : {
@@ -111,7 +110,7 @@ const AdminLayout = ({
         "/staff": "Staff",
         "/housekeepers": "House Keepers",
         "/admin/menu": "Menu",
-        "/admin/orders": "Orders",
+        "/admin/orders": "Orders Report",
         "/reports": "Reports",
     };
 
@@ -143,7 +142,6 @@ const AdminLayout = ({
             bookings: location.pathname.includes("booking")
                 ? true
                 : prev.bookings,
-
             users:
                 location.pathname.includes("guest") ||
                     location.pathname.includes("staff") ||
@@ -152,7 +150,6 @@ const AdminLayout = ({
                     : prev.users,
         }));
     }, [location.pathname]);
-
 
     const navigate = useNavigate();
 
@@ -177,7 +174,6 @@ const AdminLayout = ({
 
     const handleNavigation = (href: string) => {
         navigate(href);
-        // Close mobile menu if open
         setIsMobileMenuOpen(false);
     };
 
@@ -237,31 +233,39 @@ const AdminLayout = ({
             setMessages(prev => {
                 if (prev.length === data.length) {
                     let same = true;
-
                     for (let i = 0; i < prev.length; i++) {
                         if (prev[i].last_message !== data[i].last_message) {
                             same = false;
                             break;
                         }
                     }
-
                     if (same) return prev;
                 }
-
                 return data;
             });
 
             const unread = data.reduce((sum, c) => sum + (c.unread || 0), 0);
-
-            setUnreadMessages(prev =>
-                prev === unread ? prev : unread
-            );
-
+            setUnreadMessages(prev => prev === unread ? prev : unread);
         } catch (err) {
             console.error(err);
         } finally {
             isFetching.current = false;
         }
+    };
+
+    const getImageUrl = (img?: string | null) => {
+        if (!img) return null;
+
+        // if already full URL
+        if (img.startsWith("http")) return img;
+
+        // if may storage na sa string
+        if (img.includes("storage/")) {
+            return `${API_BASE}/${img}`;
+        }
+
+        // normal case
+        return `${API_BASE}/storage/${img}`;
     };
 
     const fetchNotifications = useCallback(async () => {
@@ -278,10 +282,6 @@ const AdminLayout = ({
             const scrollTop = notifRef.current?.scrollTop || 0;
             const prevHeight = notifRef.current?.scrollHeight || 0;
 
-            const wasAtBottom =
-                notifRef.current &&
-                notifRef.current.scrollHeight - notifRef.current.scrollTop <= notifRef.current.clientHeight + 5;
-
             const res = await api.get(
                 `/notifications/user/${user.id}?limit=10&offset=${offset}`
             );
@@ -290,17 +290,15 @@ const AdminLayout = ({
                 if (!timeMapRef.current[n.id]) {
                     timeMapRef.current[n.id] = timeAgo(n.created_at);
                 }
-
                 return {
                     ...n,
-                    display_time: timeMapRef.current[n.id] // 🔥 LOCK TIME
+                    display_time: timeMapRef.current[n.id]
                 };
             });
             setNotifications(prev => {
                 if (offset === 0) {
                     return prev.length === notificationsData.length ? prev : notificationsData;
                 }
-
                 const merged = [...prev, ...notificationsData];
                 return merged.slice(0, 20);
             });
@@ -308,27 +306,13 @@ const AdminLayout = ({
             setTimeout(() => {
                 if (notifRef.current && isClickingNotif.current) {
                     const newHeight = notifRef.current.scrollHeight;
-
-                    notifRef.current.scrollTop =
-                        scrollTop + (newHeight - prevHeight);
-
+                    notifRef.current.scrollTop = scrollTop + (newHeight - prevHeight);
                     isClickingNotif.current = false;
                 }
             }, 0);
 
             const unreadRes = await api.get(`/notifications/user/${user.id}/unread-count`);
             setUnreadCount(unreadRes.data.count);
-
-            let hasChanged = false;
-
-            if (hasChanged) {
-                requestAnimationFrame(() => {
-                    if (notifRef.current && !wasAtBottom && !isNotifOpen) {
-                        notifRef.current.scrollTop = scrollTop;
-                    }
-                });
-            }
-
         } catch (err) {
             console.error("Failed to fetch notifications:", err);
         } finally {
@@ -337,14 +321,12 @@ const AdminLayout = ({
                 isFirstLoad.current = false;
             }
         }
-    }, [user?.id, isNotifOpen, offset]);
+    }, [user?.id, offset]);
 
     const markNotificationAsRead = async (id: number) => {
         try {
-            isClickingNotif.current = true; // 🔥 IMPORTANT
-
+            isClickingNotif.current = true;
             await api.put(`/notifications/${id}/read`);
-
             const scrollTop = notifRef.current?.scrollTop || 0;
 
             setNotifications(prev =>
@@ -355,14 +337,12 @@ const AdminLayout = ({
 
             setUnreadCount(prev => (prev > 0 ? prev - 1 : 0));
 
-            // restore scroll
             setTimeout(() => {
                 if (notifRef.current) {
                     notifRef.current.scrollTop = scrollTop;
                 }
-                isClickingNotif.current = false; // 🔥 reset after click
+                isClickingNotif.current = false;
             }, 0);
-
         } catch (err) {
             console.error("Failed to mark notification as read:", err);
         }
@@ -385,31 +365,23 @@ const AdminLayout = ({
 
     useEffect(() => {
         if (!user?.id) return;
-
-        // 🔥 ONLY FETCH WHEN FIRST LOAD
         if (offset === 0) {
             fetchNotifications();
         }
-
         const interval = setInterval(() => {
             if (!isNotifOpen && offset === 0) {
                 fetchNotifications();
             }
         }, 5000);
-
         return () => clearInterval(interval);
-
     }, [user?.id, offset, isNotifOpen]);
 
     useEffect(() => {
         if (!user?.id) return;
-
         fetchMessages();
-
         const interval = setInterval(() => {
             fetchMessages();
         }, 3000);
-
         return () => clearInterval(interval);
     }, [user?.id]);
 
@@ -420,28 +392,18 @@ const AdminLayout = ({
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
-
             const insideChatDropdown = chatDropdownRef.current?.contains(target);
             const insideChatBox = chatBoxRef.current?.contains(target);
             const insideChatButton = chatButtonRef.current?.contains(target);
-
             const insideNotifDropdown = notifDropdownRef.current?.contains(target);
             const insideNotifButton = notifButtonRef.current?.contains(target);
 
-            if (
-                !insideChatDropdown &&
-                !insideChatBox &&
-                !insideChatButton &&
-                !insideNotifDropdown &&
-                !insideNotifButton
-            ) {
+            if (!insideChatDropdown && !insideChatBox && !insideChatButton && !insideNotifDropdown && !insideNotifButton) {
                 setIsChatOpen(false);
                 setIsNotifOpen(false);
             }
         };
-
         window.addEventListener("mousedown", handleClickOutside);
-
         return () => window.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
@@ -457,17 +419,6 @@ const AdminLayout = ({
                 },
             ],
         },
-        // {
-        //     label: "OPERATIONS",
-        //     items: [
-        //         {
-        //             name: "Walk-in",
-        //             description: "Guest Registration",
-        //             href: "/walk-in-guests",
-        //             icon: UserPlus
-        //         },
-        //     ],
-        // },
         {
             label: "MANAGEMENT",
             items: [
@@ -537,8 +488,8 @@ const AdminLayout = ({
                     icon: ShoppingCart
                 },
                 {
-                    name: "Orders",
-                    description: "Order Management",
+                    name: "Orders Report",
+                    description: "Order Sales Management",
                     href: "/admin/orders",
                     icon: UtensilsCrossed
                 },
@@ -560,130 +511,120 @@ const AdminLayout = ({
     const timeAgo = (dateString: string) => {
         const now = new Date();
         const date = new Date(dateString);
-
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
         if (seconds < 60) return "Just now";
-
         const minutes = Math.floor(seconds / 60);
         if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
-
         const hours = Math.floor(minutes / 60);
         if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
-
         const days = Math.floor(hours / 24);
         if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
-
         const weeks = Math.floor(days / 7);
         if (weeks < 4) return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-
         const months = Math.floor(days / 30);
         if (months < 12) return `${months} month${months > 1 ? 's' : ''} ago`;
-
         const years = Math.floor(days / 365);
         return `${years} year${years > 1 ? 's' : ''} ago`;
     };
 
-    // Render navigation item with optional dropdown
-    const renderNavItem = (item: any, isSidebarOpen: boolean) => {
+    // Render navigation item with nested dropdown and vertical line indicators
+    const renderNavItem = (item: any, isSidebarOpen: boolean, depth: number = 0) => {
         const isActive = location.pathname === item.href ||
             (item.dropdownItems && item.dropdownItems.some((subItem: any) => location.pathname === subItem.href));
         const isOpen = openDropdowns[item.name.toLowerCase()];
 
-        if (item.hasDropdown) {
+        if (item.hasDropdown && isSidebarOpen) {
             return (
                 <div key={item.name} className="space-y-1">
                     <div
                         onClick={(e) => toggleDropdown(item.name.toLowerCase(), e)}
                         className={`
-                            flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-                            cursor-pointer
+                            flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
                             ${isActive
                                 ? 'bg-emerald-600 text-white shadow-lg'
                                 : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
                             }
-                            ${!isSidebarOpen && 'justify-center'}
                         `}
                     >
-                        <div className="flex items-center gap-3">
-                            <item.icon className="h-5 w-5 shrink-0" />
-                            {isSidebarOpen && (
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium">
-                                        {item.name}
-                                    </span>
-                                    <span className="text-[9px] text-emerald-300/70">
-                                        {item.description}
-                                    </span>
-                                </div>
-                            )}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <item.icon className="h-4 w-4 shrink-0" />
+                            <div className="flex flex-col flex-1 min-w-0">
+                                <span className="text-xs font-medium truncate">
+                                    {item.name}
+                                </span>
+                                <span className="text-[8px] text-emerald-300/70 truncate">
+                                    {item.description}
+                                </span>
+                            </div>
                         </div>
-                        {isSidebarOpen && (
-                            <ChevronRight
-                                className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
-                            />
-                        )}
+                        <ChevronRight
+                            className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+                        />
                     </div>
 
-                    {/* Dropdown Items */}
-                    {isSidebarOpen && isOpen && (
-                        <div className="ml-6 space-y-1">
-                            {item.dropdownItems.map((subItem: any) => {
-                                const isSubActive = location.pathname === subItem.href;
-                                return (
-                                    <div
-                                        key={subItem.name}
-                                        onClick={() => handleNavigation(subItem.href)}
-                                        className={`
-                                            flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-                                            cursor-pointer
-                                            ${isSubActive
-                                                ? 'bg-emerald-600/50 text-white'
-                                                : 'text-emerald-200/80 hover:bg-emerald-800/30 hover:text-white'
-                                            }
-                                        `}
-                                    >
-                                        <subItem.icon className="h-4 w-4 shrink-0" />
-                                        <div className="flex-1">
-                                            <span className="text-xs font-medium">
-                                                {subItem.name}
-                                            </span>
-                                            {subItem.description && (
-                                                <p className="text-[9px] text-emerald-300/60">
-                                                    {subItem.description}
-                                                </p>
-                                            )}
+                    {/* Dropdown Items with Tree Structure */}
+                    {isOpen && (
+                        <div className="relative ml-2 pl-4">
+                            {/* Vertical Line Indicator */}
+                            <div className="absolute left-3 top-0 bottom-0 w-px bg-emerald-600/30"></div>
+                            <div className="space-y-1">
+                                {item.dropdownItems.map((subItem: any, idx: number) => {
+                                    const isSubActive = location.pathname === subItem.href;
+                                    return (
+                                        <div
+                                            key={subItem.name}
+                                            onClick={() => handleNavigation(subItem.href)}
+                                            className={`
+                                                relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer
+                                                ${isSubActive
+                                                    ? 'bg-emerald-600/50 text-white'
+                                                    : 'text-emerald-200/80 hover:bg-emerald-800/30 hover:text-white'
+                                                }
+                                            `}
+                                        >
+                                            <subItem.icon className="h-4 w-4 shrink-0 relative bottom-[2px]" />
+                                            <div className="flex-1 relative top-[2px] min-w-0">
+                                                <span className="text-xs font-medium truncate block">
+                                                    {subItem.name}
+                                                </span>
+                                                {subItem.description && (
+                                                    <p className="text-[8px] text-emerald-300/60 truncate">
+                                                        {subItem.description}
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
                 </div>
             );
         }
 
+        // For closed sidebar or items without dropdown
         return (
             <div
                 key={item.name}
                 onClick={() => handleNavigation(item.href)}
                 className={`
-                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-                    cursor-pointer
+                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
                     ${isActive
                         ? 'bg-emerald-600 text-white shadow-lg'
                         : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
                     }
                     ${!isSidebarOpen && 'justify-center'}
                 `}
+                title={!isSidebarOpen ? item.name : undefined}
             >
-                <item.icon className="h-5 w-5 shrink-0" />
+                <item.icon className={`h-5 w-5 shrink-0 ${!isSidebarOpen ? 'mx-auto' : ''}`} />
                 {isSidebarOpen && (
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium">
+                    <div className="flex flex-col flex-1 min-w-0">
+                        <span className="text-xs font-medium truncate">
                             {item.name}
                         </span>
-                        <span className="text-[9px] text-emerald-300/70">
+                        <span className="text-[8px] text-emerald-300/70 truncate">
                             {item.description}
                         </span>
                     </div>
@@ -695,19 +636,9 @@ const AdminLayout = ({
     const MessageDropdownContent = () => {
         return (
             <div className="chat-dropdown w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-gray-100 shadow-sm">
-
-                {/* HEADER */}
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-
-                    {/* LEFT → TITLE */}
-                    <h2 className="text-base font-bold text-gray-900">
-                        Chats
-                    </h2>
-
-                    {/* RIGHT → FILTER + ACTION */}
+                    <h2 className="text-base font-bold text-gray-900">Chats</h2>
                     <div className="flex items-center gap-4">
-
-                        {/* FILTER */}
                         <div className="flex gap-2">
                             {["all", "guest", "staff"].map((type) => (
                                 <button
@@ -722,39 +653,23 @@ const AdminLayout = ({
                                 </button>
                             ))}
                         </div>
-
-                        {/* ACTION */}
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={refreshData}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
+                            <button onClick={refreshData} className="text-gray-500 hover:text-gray-700">
                                 <RefreshCw className="h-4 w-4" />
                             </button>
-
-                            <span className="text-xs text-gray-500">
-                                {unreadMessages} unread
-                            </span>
+                            <span className="text-xs text-gray-500">{unreadMessages} unread</span>
                         </div>
-
                     </div>
                 </div>
 
-                {/* MESSAGE LIST - Mint green scrollbar */}
-                <div
-                    ref={messageRef}
-                    data-scroll-area
-                    className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2"
-                >
+                <div ref={messageRef} data-scroll-area className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2">
                     {messagesLoading ? (
                         <div className="p-8 text-center text-gray-400 text-sm">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600 mx-auto mb-2"></div>
                             Loading messages...
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
-                            No messages
-                        </div>
+                        <div className="p-8 text-center text-gray-400 text-sm">No messages</div>
                     ) : (
                         messages
                             .filter((c) => {
@@ -764,7 +679,6 @@ const AdminLayout = ({
                             .map((c) => {
                                 const chatUser = c.user;
                                 if (!chatUser) return null;
-
                                 return (
                                     <div
                                         key={chatUser.id}
@@ -773,7 +687,6 @@ const AdminLayout = ({
                                                 id: chatUser.id,
                                                 name: chatUser.first_name
                                             });
-
                                             setMessages(prev =>
                                                 prev.map(msg =>
                                                     msg.user.id === chatUser.id
@@ -781,44 +694,28 @@ const AdminLayout = ({
                                                         : msg
                                                 )
                                             );
-
                                             fetchMessages();
                                         }}
                                         className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1"
                                     >
                                         <div className="flex items-center gap-3">
-
-                                            {/* AVATAR */}
                                             <Avatar className="h-9 w-9 border-0 ring-0 shadow-none overflow-hidden">
-                                                <AvatarImage
-                                                    src={chatUser.avatar_url}
-                                                    className="h-full w-full object-cover border-0"
-                                                />
-                                                <AvatarFallback
-                                                    className="bg-emerald-500 text-white flex items-center justify-center w-full h-full border-0 ring-0 shadow-none"
-                                                >
+                                                <AvatarImage src={chatUser.avatar_url} className="h-full w-full object-cover border-0" />
+                                                <AvatarFallback className="bg-emerald-500 text-white flex items-center justify-center w-full h-full border-0 ring-0 shadow-none">
                                                     {chatUser.first_name?.[0]}
                                                 </AvatarFallback>
                                             </Avatar>
-
-                                            {/* NAME + MESSAGE */}
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-center">
-                                                    <p className="text-sm font-semibold text-gray-800 truncate">
-                                                        {chatUser.first_name}
-                                                    </p>
-
+                                                    <p className="text-sm font-semibold text-gray-800 truncate">{chatUser.first_name}</p>
                                                     {c.unread > 0 && (
                                                         <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
                                                             {c.unread}
                                                         </span>
                                                     )}
                                                 </div>
-
                                                 <p className="text-xs text-gray-500 truncate">
-                                                    {c.last_sender_id === user?.id && (
-                                                        <span className="text-gray-400">You: </span>
-                                                    )}
+                                                    {c.last_sender_id === user?.id && <span className="text-gray-400">You: </span>}
                                                     {c.last_message}
                                                 </p>
                                             </div>
@@ -829,12 +726,8 @@ const AdminLayout = ({
                     )}
                 </div>
 
-                {/* FOOTER */}
                 <div className="text-center py-3 border-t border-gray-100">
-                    <button
-                        onClick={() => handleNavigation('/messages')}
-                        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                    >
+                    <button onClick={() => handleNavigation('/messages')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">
                         View all messages
                     </button>
                 </div>
@@ -845,48 +738,28 @@ const AdminLayout = ({
     const NotificationDropdownContent = () => {
         return (
             <div className="chat-dropdown w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-gray-100 shadow-sm">
-
-                {/* HEADER */}
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-
-                    <h2 className="text-base font-bold text-gray-900">
-                        Notifications
-                    </h2>
-
+                    <h2 className="text-base font-bold text-gray-900">Notifications</h2>
                     <div className="flex items-center gap-3">
-
                         {unreadCount > 0 && (
-                            <button
-                                onClick={markAllNotificationsAsRead}
-                                className="text-xs text-emerald-600 hover:text-emerald-700"
-                            >
+                            <button onClick={markAllNotificationsAsRead} className="text-xs text-emerald-600 hover:text-emerald-700">
                                 Mark all
                             </button>
                         )}
-
-                        <button
-                            onClick={refreshData}
-                            className="text-gray-500 hover:text-gray-700"
-                        >
+                        <button onClick={refreshData} className="text-gray-500 hover:text-gray-700">
                             <RefreshCw className="h-4 w-4" />
                         </button>
-
-                        <span className="text-xs text-gray-500">
-                            {unreadCount} unread
-                        </span>
+                        <span className="text-xs text-gray-500">{unreadCount} unread</span>
                     </div>
                 </div>
 
-                {/* LIST + GRADIENT */}
                 <div className="relative">
-
                     <div
                         ref={notifRef}
                         onScroll={(e) => {
                             const el = e.currentTarget;
                             notifScroll.current = el.scrollTop;
                             isScrolling.current = true;
-
                             setTimeout(() => {
                                 isScrolling.current = false;
                             }, 800);
@@ -899,57 +772,33 @@ const AdminLayout = ({
                                 Loading notifications...
                             </div>
                         ) : notifications.length === 0 ? (
-                            <div className="p-8 text-center text-gray-400 text-sm">
-                                No notifications
-                            </div>
+                            <div className="p-8 text-center text-gray-400 text-sm">No notifications</div>
                         ) : (
                             <>
                                 {notifications.map((n) => (
                                     <div
                                         key={n.id}
                                         onClick={() => markNotificationAsRead(n.id)}
-                                        className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 ${!n.is_read ? "bg-blue-50" : ""
-                                            }`}
+                                        className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 ${!n.is_read ? "bg-blue-50" : ""}`}
                                     >
                                         <div className="flex justify-between items-center">
-
-                                            <p className="text-sm font-semibold text-gray-800 truncate">
-                                                {n.title}
-                                            </p>
-
-                                            {!n.is_read && (
-                                                <div className="h-2 w-2 bg-blue-500 rounded-full ml-2 flex-shrink-0"></div>
-                                            )}
+                                            <p className="text-sm font-semibold text-gray-800 truncate">{n.title}</p>
+                                            {!n.is_read && <div className="h-2 w-2 bg-blue-500 rounded-full ml-2 flex-shrink-0"></div>}
                                         </div>
-
-                                        <p className="text-xs text-gray-500 truncate">
-                                            {n.message}
-                                        </p>
-
-                                        <p className="text-[10px] text-gray-400 mt-1">
-                                            {timeAgo(n.created_at)}
-                                        </p>
+                                        <p className="text-xs text-gray-500 truncate">{n.message}</p>
+                                        <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.created_at)}</p>
                                     </div>
                                 ))}
-
-                                {/* SEE MORE BUTTON */}
                                 {!expanded && notifications.length >= 10 && (
                                     <div className="text-center py-3">
                                         <button
                                             onClick={async () => {
                                                 isClickingNotif.current = true;
-
                                                 const newOffset = offset + 10;
                                                 setOffset(newOffset);
                                                 setExpanded(true);
-
-                                                // 🔥 DIRECT FETCH (ETO ANG KULANG MO)
-                                                const res = await api.get(
-                                                    `/notifications/user/${user.id}?limit=10&offset=${newOffset}`
-                                                );
-
+                                                const res = await api.get(`/notifications/user/${user.id}?limit=10&offset=${newOffset}`);
                                                 const data = res.data || [];
-
                                                 setNotifications(prev => {
                                                     const merged = [...prev, ...data];
                                                     return merged.slice(0, 20);
@@ -964,8 +813,6 @@ const AdminLayout = ({
                             </>
                         )}
                     </div>
-
-                    {/* GRADIENT FADE */}
                     {!expanded && notifications.length >= 10 && (
                         <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent" />
                     )}
@@ -978,47 +825,54 @@ const AdminLayout = ({
 
     return (
         <>
-            {/* Global styles for mint green scrollbars */}
             <style>{`
-                /* Mint green scrollbar for WebKit browsers (Chrome, Safari, Edge) */
                 .scrollbar-mint::-webkit-scrollbar {
                     width: 6px;
                     height: 6px;
                 }
-                
                 .scrollbar-mint::-webkit-scrollbar-track {
                     background: #f1f1f1;
                     border-radius: 10px;
                 }
-                
                 .scrollbar-mint::-webkit-scrollbar-thumb {
                     background: #10b981;
                     border-radius: 10px;
                 }
-                
                 .scrollbar-mint::-webkit-scrollbar-thumb:hover {
                     background: #059669;
                 }
-                
-                /* Firefox scrollbar */
                 .scrollbar-mint {
                     scrollbar-width: thin;
                     scrollbar-color: #10b981 #f1f1f1;
                 }
-                
-                /* Hide default scrollbar for sidebar navigation */
+                .sidebar-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-track {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 10px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.2);
+                    border-radius: 10px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.3);
+                }
+                .sidebar-scrollbar {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+                }
                 .scrollbar-hide {
                     -ms-overflow-style: none;
                     scrollbar-width: none;
                 }
-                
                 .scrollbar-hide::-webkit-scrollbar {
                     display: none;
                 }
             `}</style>
 
             <div className="min-h-screen bg-gray-50">
-                {/* Mobile Menu Overlay */}
                 {isMobileMenuOpen && (
                     <div
                         className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -1032,19 +886,18 @@ const AdminLayout = ({
                         ${isSidebarOpen ? 'w-64' : 'w-20'} 
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
                 >
-                    {/* Logo Section - Two lines matching StaffLayout */}
+                    {/* Logo Section */}
                     <div className={`h-20 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} shrink-0 border-b border-emerald-800/50`}>
                         <div
                             onClick={() => handleNavigation('/dashboard')}
                             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                            <div className="h-12 w-12 rounded-full overflow-hidden">
+                            <div className="h-10 w-10 rounded-full overflow-hidden flex items-center justify-center">
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
                                     className="h-full w-auto object-contain scale-125"
                                     onError={(e) => {
-                                        // Fallback if logo fails to load
                                         e.currentTarget.style.display = 'none';
                                         const parent = e.currentTarget.parentElement;
                                         if (parent) {
@@ -1058,31 +911,29 @@ const AdminLayout = ({
                             </div>
                             {isSidebarOpen && (
                                 <div className="flex flex-col">
-                                    <span className="font-bold text-sm tracking-tight leading-tight">
-                                        Lynn Ennia's
-                                    </span>
-                                    <span className="text-[9px] text-emerald-300/80 tracking-wide">
-                                        Traveler's Inn
-                                    </span>
+                                    <span className="font-bold text-sm tracking-tight leading-tight">Lynn Ennia's</span>
+                                    <span className="text-[8px] text-emerald-300/80 tracking-wide">Traveler's Inn</span>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Navigation with descriptions - Sidebar scroll (hidden) */}
-                    <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto scrollbar-hide">
-                        {navigationGroups.map((group) => (
-                            <div key={group.label}>
-                                {isSidebarOpen && (
-                                    <p className="text-[10px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2">
-                                        {group.label}
-                                    </p>
-                                )}
-                                <div className="space-y-1">
-                                    {group.items.map((item) => renderNavItem(item, isSidebarOpen))}
+                    {/* Navigation with Scrollbar */}
+                    <nav className={`flex-1 py-6 px-3 overflow-y-auto ${isSidebarOpen ? 'sidebar-scrollbar' : 'scrollbar-hide'}`}>
+                        <div className="space-y-6">
+                            {navigationGroups.map((group) => (
+                                <div key={group.label}>
+                                    {isSidebarOpen && (
+                                        <p className="text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2">
+                                            {group.label}
+                                        </p>
+                                    )}
+                                    <div className="space-y-1">
+                                        {group.items.map((item) => renderNavItem(item, isSidebarOpen))}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </nav>
 
                     {/* User Menu */}
@@ -1092,22 +943,16 @@ const AdminLayout = ({
                                 <button
                                     className={`
                                         w-full flex items-center gap-3 p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
-                                        focus:outline-none focus:ring-0
+                                        focus:outline-none focus:ring-0 cursor-pointer
                                         ${!isSidebarOpen && 'justify-center'}
-                                        cursor-pointer
                                     `}
                                 >
-
-                                    <div className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} rounded-xl overflow-hidden border border-emerald-400`}>
-
+                                    <div className={`${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center`}>
                                         {user?.profile_image ? (
                                             <img
-                                                src={user.profile_image}
+                                                src={getImageUrl(user?.profile_image) || fallback}
                                                 className="w-full h-full object-cover block"
-                                                style={{
-                                                    objectPosition: "center 20%",
-                                                    transform: "scale(1.1)",
-                                                }}
+                                                style={{ objectPosition: "center 20%", transform: "scale(1.1)" }}
                                                 onError={(e) => {
                                                     e.currentTarget.src = fallback;
                                                 }}
@@ -1117,87 +962,51 @@ const AdminLayout = ({
                                                 {user?.first_name?.[0] || "U"}
                                             </div>
                                         )}
-
                                     </div>
                                     {isSidebarOpen && (
-                                        <div className="flex-1 text-left">
-                                            <p className="text-[13px] relative top-2 font-semibold text-white/90 truncate leading-none">
-                                                {getDisplayName()}
-                                            </p>
-                                            <p className="text-[9px] text-emerald-400/80 truncate">
-                                                {user.email}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {isSidebarOpen && (
-                                        <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors">
-                                            <ChevronUp className="h-4 w-4 -mb-1" />
-                                            <ChevronDown className="h-4 w-4 -mt-1" />
-                                        </div>
+                                        <>
+                                            <div className="flex-1 text-left">
+                                                <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none">
+                                                    {getDisplayName()}
+                                                </p>
+                                                <p className="text-[8px] text-emerald-400/80 truncate">
+                                                    {user.email}
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors">
+                                                <ChevronUp className="h-4 w-3 -mb-1" />
+                                                <ChevronDown className="h-4 w-3 -mt-1" />
+                                            </div>
+                                        </>
                                     )}
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                                 align="end"
                                 side="top"
-                                className="
-                                            mb-2 
-                                            bg-gradient-to-b from-emerald-900 to-emerald-950 
-                                            border border-emerald-800 
-                                            shadow-lg rounded-lg min-w-[200px]
-                                            outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0
-                                        "
+                                className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px] outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0"
                             >
                                 <DropdownMenuItem
                                     asChild
-                                    className="
-                                           text-emerald-200
-                                            focus:bg-transparent 
-                                            focus:outline-none 
-                                            focus:ring-0
-                                            data-[highlighted]:bg-emerald-800/50
-                                            data-[highlighted]:text-white
-                                        "
+                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
                                 >
-                                    <div
-                                        onClick={() => setIsSettingsOpen(true)}
-                                        className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
-                                    >
+                                    <div onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
                                         <Settings className="h-4 w-4 text-emerald-400" />
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     asChild
-                                    className="
-                                        text-emerald-200
-                                            focus:bg-transparent 
-                                            focus:outline-none 
-                                            focus:ring-0
-                                            data-[highlighted]:bg-emerald-800/50
-                                            data-[highlighted]:text-white
-                                        "
+                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
                                 >
-                                    <div
-                                        onClick={() => handleNavigation('/help')}
-                                        className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50"
-                                    >
+                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
                                         <LifeBuoy className="h-4 w-4 text-emerald-400" />
                                         <span>Help Center</span>
                                     </div>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={handleLogout}
-                                    className="
-                                            text-red-400
-
-                                            focus:bg-transparent 
-                                            focus:outline-none 
-                                            focus:ring-0
-
-                                            data-[highlighted]:bg-red-900/30
-                                            data-[highlighted]:text-white
-                                        "
+                                    className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white"
                                 >
                                     <LogOut className="mr-2 h-4 w-4 text-red-400" />
                                     <span className="text-red-400">Logout</span>
@@ -1207,13 +1016,12 @@ const AdminLayout = ({
                     </div>
                 </aside>
 
-                {/* Main Content - Fixed background on scroll matching StaffLayout */}
+                {/* Main Content */}
                 <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} flex flex-col h-screen overflow-hidden`}>
-                    {/* Header with grey title and separator */}
+                    {/* Header */}
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
                         <div className="px-6 py-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                {/* Toggle Button */}
                                 <Button
                                     variant="ghost"
                                     size="icon"
@@ -1226,11 +1034,7 @@ const AdminLayout = ({
                                         <PanelRight className="h-4 w-4 text-gray-500" />
                                     )}
                                 </Button>
-
-                                {/* Separator */}
                                 <div className="w-px h-5 bg-gray-300"></div>
-
-                                {/* Title - Grey color */}
                                 <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide">
                                     {getPageTitle()}
                                 </h1>
@@ -1297,7 +1101,7 @@ const AdminLayout = ({
                         </div>
                     </header>
 
-                    {/* Scrollable content with fixed background - Mint green scrollbar */}
+                    {/* Scrollable content */}
                     <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50">
                         <div className="px-6 py-6">
                             <Outlet />
@@ -1305,7 +1109,8 @@ const AdminLayout = ({
                     </div>
                 </main>
             </div>
-            {/* CHAT BOX HERE */}
+
+            {/* Chat Box */}
             {activeChatUser && (
                 <div ref={chatBoxRef}>
                     <ChatBox
@@ -1315,17 +1120,10 @@ const AdminLayout = ({
                         onMessageSent={(msg) => {
                             setMessages(prev => {
                                 const exists = prev.find(m => m.user.id === activeChatUser.id);
-
                                 if (exists) {
-                                    // update existing convo
                                     return prev.map(m =>
                                         m.user.id === activeChatUser.id
-                                            ? {
-                                                ...m,
-                                                last_message: msg,
-                                                last_sender_id: user.id,
-                                                unread: 0
-                                            }
+                                            ? { ...m, last_message: msg, last_sender_id: user.id, unread: 0 }
                                             : m
                                     );
                                 }
