@@ -8,6 +8,8 @@ use App\Http\Controllers\{
     RoomImageController
 };
 
+Route::get('/rooms/damaged', [RoomController::class, 'damaged']);
+
 Route::apiResource('rooms', RoomController::class);
 Route::apiResource('room-types', RoomTypeController::class);
 Route::apiResource('room-status-history', RoomStatusHistoryController::class);

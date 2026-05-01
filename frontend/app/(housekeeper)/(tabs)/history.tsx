@@ -4,22 +4,29 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  StatusBar,
 } from "react-native";
 import { useEffect, useState } from "react";
 import api from "../../../services/api";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-interface Task {
-  id?: number;
-  room_number?: string;
-  status?: string;
-  completed_at?: string;
-  cleaner?: {
-    name?: string;
+interface HistoryItem {
+  id: number;
+  changed_at?: string;
+  user?: {
+    first_name?: string;
+    last_name?: string;
+  };
+  booking?: {
+    booking_reference?: string;
+    rooms?: {
+      room_number?: string;
+    }[];
   };
 }
 
 export default function History() {
-  const [history, setHistory] = useState<Task[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -59,67 +66,88 @@ export default function History() {
   // 🔄 Loading
   if (loading && !refreshing) {
     return (
-      <View className="flex-1 justify-center items-center">
+      <SafeAreaView className="flex-1 bg-white justify-center items-center">
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <ActivityIndicator size="large" color="#22c55e" />
         <Text className="mt-2 text-gray-500">Loading history...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   // 📭 Empty
   if (history.length === 0) {
     return (
-      <View className="flex-1 justify-center items-center">
+      <SafeAreaView className="flex-1 bg-white justify-center items-center">
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <Text className="text-gray-400">
           No completed tasks yet
         </Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <FlatList
-      data={history}
-      keyExtractor={(item, index) =>
-        item?.id ? item.id.toString() : index.toString()
-      }
-      contentContainerStyle={{ padding: 16 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#22c55e"]}
-          tintColor="#22c55e"
-        />
-      }
-      renderItem={({ item }) => (
-        <View className="bg-white p-4 mb-3 rounded-xl shadow">
-          {/* ROOM */}
-          <Text className="font-bold text-lg">
-            Room {item?.room_number || "N/A"}
-          </Text>
+    <SafeAreaView className="flex-1 bg-white">
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-          {/* STATUS */}
-          <Text className="text-green-600 font-semibold">
-            ✔ Completed
-          </Text>
+      <FlatList
+        data={history}
+        keyExtractor={(item, index) =>
+          item?.id ? item.id.toString() : index.toString()
+        }
+        contentContainerStyle={{ padding: 16 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#22c55e"]}
+            tintColor="#22c55e"
+          />
+        }
+        renderItem={({ item }) => {
+          const roomNumber =
+            item?.booking?.rooms?.[0]?.room_number || "N/A";
 
-          {/* DATE */}
-          <Text className="text-gray-500">
-            {item?.completed_at
-              ? new Date(item.completed_at).toLocaleString()
-              : "No date"}
-          </Text>
+          const reference =
+            item?.booking?.booking_reference || "N/A";
 
-          {/* CLEANED BY (OPTIONAL) */}
-          {item?.cleaner?.name && (
-            <Text className="text-gray-400 mt-1">
-              Cleaned by: {item.cleaner.name}
-            </Text>
-          )}
-        </View>
-      )}
-    />
+          const cleanerName = item?.user
+            ? `${item.user.first_name ?? ""} ${item.user.last_name ?? ""}`.trim()
+            : "N/A";
+
+          return (
+            <View className="bg-white p-4 mb-3 rounded-xl shadow">
+              {/* 🏨 ROOM */}
+              <Text className="font-bold text-lg">
+                Room {roomNumber}
+              </Text>
+
+              {/* 🧾 BOOKING REF */}
+              <Text className="text-gray-500">
+                Ref: {reference}
+              </Text>
+
+              {/* STATUS */}
+              <Text className="text-green-600 font-semibold mt-1">
+                ✔ Completed
+              </Text>
+
+              {/* DATE */}
+              <Text className="text-gray-500">
+                {item?.changed_at
+                  ? new Date(item.changed_at).toLocaleString()
+                  : "No date"}
+              </Text>
+
+              {/* CLEANER */}
+              <Text className="text-gray-400 mt-1">
+                Cleaned by: {cleanerName}
+              </Text>
+            </View>
+          );
+        }}
+      />
+    </SafeAreaView>
   );
 }

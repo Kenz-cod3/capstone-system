@@ -110,7 +110,7 @@ export default function Welcome() {
 
         {loading ? (
           <Text className="text-center text-gray-400">
-            Loading rooms...
+            Loaging...
           </Text>
         ) : (
           rooms.slice(0, 3).map((room, index) => (

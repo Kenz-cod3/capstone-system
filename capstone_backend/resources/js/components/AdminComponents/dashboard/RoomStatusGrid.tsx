@@ -14,10 +14,19 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
         switch (status) {
             case "available":
                 return "bg-emerald-100 text-emerald-700";
+
             case "occupied":
                 return "bg-blue-100 text-blue-700";
+
             case "maintenance":
                 return "bg-red-100 text-red-700";
+
+            case "cleaning":
+                return "bg-yellow-100 text-yellow-700";
+
+            case "dirty":
+                return "bg-purple-100 text-purple-700";
+
             default:
                 return "bg-gray-100 text-gray-600";
         }
@@ -49,7 +58,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                         Occupied
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
-                        <span className="w-2 h-2 bg-red-500 rounded-full"></span> 
+                        <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                         Maintenance
                     </span>
                 </div>
@@ -64,27 +73,26 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                         <div
                             key={index}
                             className={`rounded-lg p-4 w-full flex flex-col justify-center items-center aspect-square
-                            ${
-                                room
+                            ${room
                                     ? getColor(room.status)
                                     : "bg-gray-100 text-gray-400"
-                            }
+                                }
                             shadow-sm 
                             transition duration-200`}
                         >
                             {room ? (
                                 <>
-                                    <p className="text-base font-semibold">
+                                    <p className="text-base relative top-2 font-semibold">
                                         {room.room_number}
                                     </p>
-                                    <p className="text-xs opacity-80 capitalize">
+                                    <p className="text-xs opacity-70 capitalize">
                                         {room.status}
                                     </p>
                                 </>
-                            ) 
-                            : (
-                                <p className="text-xs opacity-50">Empty</p>
                             )
+                                : (
+                                    <p className="text-xs opacity-50">Empty</p>
+                                )
                             }
                         </div>
                     );

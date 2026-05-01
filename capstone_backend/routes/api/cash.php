@@ -11,6 +11,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // CASH
     Route::apiResource('cash', CashTransactionController::class);
 
+    Route::get('/cash/expenses/total', [CashTransactionController::class, 'totalExpenses']);
+
     // CATEGORIES
     Route::get('/cash-categories', function () {
         return CashCategory::all();

@@ -321,6 +321,26 @@ export default function TransactionsPage() {
         },
     ];
 
+    const groupedColumns = [
+        { title: "Booking Ref", dataIndex: "booking_reference" },
+        { title: "Guest", dataIndex: "guest" },
+        { title: "Rooms", dataIndex: "room" },
+        { title: "Stay Type", dataIndex: "type" },
+        {
+            title: "Total Amount",
+            dataIndex: "amount",
+            render: (val: number) => (
+                <Text>₱{val.toLocaleString()}</Text>
+            ),
+        },
+        {
+            title: "Date",
+            dataIndex: "date",
+            render: (d: string) =>
+                new Date(d).toLocaleString(),
+        },
+    ];
+
     return (
         <div style={{ padding: 24 }}>
             <h2>Transactions</h2>
@@ -336,7 +356,7 @@ export default function TransactionsPage() {
             </div>
 
             <Table
-                columns={columns}
+                columns={grouped ? groupedColumns : columns}
                 dataSource={grouped ? groupData(data) : data}
                 pagination={{ pageSize: 10 }}
                 bordered

@@ -229,4 +229,16 @@ class RoomController extends Controller
 
         return response()->json($data);
     }
+
+    public function damaged()
+    {
+        $rooms = Room::with([
+            'cleaner'
+        ])
+            ->where('has_damage', 1)
+            ->latest('completed_at')
+            ->get();
+
+        return response()->json($rooms);
+    }
 }

@@ -9,22 +9,25 @@ export default function StatCard({
     trend,
 }: any) {
 
+    // ✅ include Profit
+    const isMoney =
+        label === "Total Revenue" ||
+        label === "Total Expenses" ||
+        label === "Total Profit";
+
     const numericValue =
-        label === "Total Revenue"
+        isMoney
             ? Number(String(value).replace(/[^\d]/g, ""))
             : 0;
 
-    // 🔥 store previous value in ref (NOT sessionStorage directly)
     const prevValueRef = useRef<number>(numericValue);
-
     const previousValue = prevValueRef.current;
 
     const shouldAnimate =
-        label === "Total Revenue" && previousValue !== numericValue;
+        isMoney && previousValue !== numericValue;
 
-    // ✅ update AFTER render
     useEffect(() => {
-        if (label === "Total Revenue") {
+        if (isMoney) {
             prevValueRef.current = numericValue;
         }
     }, [numericValue]);
@@ -36,22 +39,26 @@ export default function StatCard({
             <div className="flex justify-end">
                 <div
                     className={`flex items-center gap-1 text-xs font-medium ${
-                        trend === "up" ? "text-emerald-600" : "text-red-600"
+                        trend === "up"
+                            ? "text-emerald-600"
+                            : trend === "down"
+                            ? "text-red-600"
+                            : "text-gray-400"
                     }`}
                 >
                     {trend === "up" ? (
                         <ArrowUpRight className="h-3 w-3" />
-                    ) : (
+                    ) : trend === "down" ? (
                         <ArrowDownRight className="h-3 w-3" />
-                    )}
+                    ) : null}
                     {change}
                 </div>
             </div>
 
             {/* VALUE */}
-            <div className="mt-3">
-                <p className="text-3xl font-semibold text-gray-800">
-                    {label === "Total Revenue" ? (
+            <div className="mt-1">
+                <p className="text-2xl relative top-6 font-semibold text-gray-800">
+                    {isMoney ? (
                         shouldAnimate ? (
                             <CountUp
                                 start={previousValue}
@@ -68,7 +75,7 @@ export default function StatCard({
                     )}
                 </p>
 
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 relative top-3">
                     {label}
                 </p>
             </div>

@@ -12,6 +12,11 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     const [preview, setPreview] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const [panoramaFile, setPanoramaFile] = useState<File | null>(null);
+    const [panoramaPreview, setPanoramaPreview] = useState<string | null>(null);
+    const [isDraggingPanorama, setIsDraggingPanorama] = useState(false);
+    const panoramaInputRef = useRef<HTMLInputElement>(null);
+
     const [form, setForm] = useState({
         room_number: "",
         room_type_id: "",
@@ -35,12 +40,20 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
             if (room.image_url) {
                 setPreview(room.image_url);
             }
+
+            // Handle panorama image URL
+            if (room.panorama_url) {
+                setPanoramaPreview(room.panorama_url);
+            }
         }
 
         // Cleanup function for object URLs
         return () => {
             if (preview && preview.startsWith('blob:')) {
                 URL.revokeObjectURL(preview);
+            }
+            if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
+                URL.revokeObjectURL(panoramaPreview);
             }
         };
     }, [room]);
@@ -62,43 +75,58 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         return Object.keys(newErrors).length === 0;
     };
 
-    const validateAndSetFile = (file: File) => {
-        // Validate file type (match backend mimes)
+    const validateAndSetFile = (file: File, isPanorama: boolean = false) => {
+        // Validate file type
         const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
         if (!validTypes.includes(file.type)) {
-            setErrors({ ...errors, image: "Please upload a valid image file (JPEG, PNG only)" });
+            setErrors({ 
+                ...errors, 
+                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)" 
+            });
             return false;
         }
 
-        // Validate file size (2MB to match backend max:2048)
-        if (file.size > 2 * 1024 * 1024) {
-            setErrors({ ...errors, image: "Image size should be less than 2MB" });
+        // Validate file size (5MB for panorama, 2MB for regular images)
+        const maxSize = isPanorama ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+        if (file.size > maxSize) {
+            setErrors({ 
+                ...errors, 
+                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}` 
+            });
             return false;
         }
 
         return true;
     };
 
-    const handleFileSelect = (selectedFile: File | null) => {
+    const handleFileSelect = (selectedFile: File | null, isPanorama: boolean = false) => {
         if (!selectedFile) return;
 
-        if (validateAndSetFile(selectedFile)) {
-            setFile(selectedFile);
-            // Clean up previous blob URL if it exists
-            if (preview && preview.startsWith('blob:')) {
-                URL.revokeObjectURL(preview);
+        if (validateAndSetFile(selectedFile, isPanorama)) {
+            if (isPanorama) {
+                if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
+                    URL.revokeObjectURL(panoramaPreview);
+                }
+                setPanoramaFile(selectedFile);
+                setPanoramaPreview(URL.createObjectURL(selectedFile));
+                setErrors({ ...errors, panorama: "" });
+            } else {
+                if (preview && preview.startsWith('blob:')) {
+                    URL.revokeObjectURL(preview);
+                }
+                setFile(selectedFile);
+                setPreview(URL.createObjectURL(selectedFile));
+                setErrors({ ...errors, image: "" });
             }
-            setPreview(URL.createObjectURL(selectedFile));
-            setErrors({ ...errors, image: "" });
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isPanorama: boolean = false) => {
         const selected = e.target.files?.[0] || null;
-        handleFileSelect(selected);
+        handleFileSelect(selected, isPanorama);
     };
 
-    // Drag and drop handlers
+    // Drag and drop handlers for regular image
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -123,7 +151,36 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
 
         const droppedFile = e.dataTransfer.files[0];
         if (droppedFile) {
-            handleFileSelect(droppedFile);
+            handleFileSelect(droppedFile, false);
+        }
+    };
+
+    // Drag and drop handlers for panorama image
+    const handlePanoramaDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingPanorama(true);
+    };
+
+    const handlePanoramaDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingPanorama(false);
+    };
+
+    const handlePanoramaDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handlePanoramaDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingPanorama(false);
+
+        const droppedFile = e.dataTransfer.files[0];
+        if (droppedFile) {
+            handleFileSelect(droppedFile, true);
         }
     };
 
@@ -138,6 +195,20 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
+        }
+    };
+
+    const removePanoramaImage = () => {
+        setPanoramaFile(null);
+        if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
+            URL.revokeObjectURL(panoramaPreview);
+            setPanoramaPreview(null);
+        } else {
+            // If it's a server image, just remove preview but keep ability to upload new
+            setPanoramaPreview(null);
+        }
+        if (panoramaInputRef.current) {
+            panoramaInputRef.current.value = '';
         }
     };
 
@@ -158,14 +229,22 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 status: form.status,
             });
 
-            // If there's a new image, upload it using the dedicated endpoint
+            // If there's a new regular image, upload it
             if (file) {
                 const fd = new FormData();
                 fd.append("room_id", room.id.toString());
                 fd.append("image", file);
-                fd.append("image_type", "normal");// or whatever type you want
-
+                fd.append("image_type", "normal");
                 await uploadRoomImage(fd);
+            }
+
+            // If there's a new panorama image, upload it
+            if (panoramaFile) {
+                const fd360 = new FormData();
+                fd360.append("room_id", room.id.toString());
+                fd360.append("image", panoramaFile);
+                fd360.append("image_type", "360");
+                await uploadRoomImage(fd360);
             }
 
             refresh();
@@ -319,7 +398,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                 type="file"
                                 className="hidden"
                                 accept="image/jpeg,image/png,image/jpg"
-                                onChange={handleFileChange}
+                                onChange={(e) => handleFileChange(e, false)}
                             />
 
                             {preview ? (
@@ -370,6 +449,94 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                         {!preview && !errors.image && (
                             <p className="mt-1 text-xs text-gray-400">
                                 No image uploaded. Upload one to add a photo of the room.
+                            </p>
+                        )}
+                    </div>
+
+                    {/* 360° Panorama Image with Drag & Drop */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            360° Panorama Image <span className="text-xs text-gray-400">(Optional, Max 5MB, JPEG/PNG only)</span>
+                        </label>
+                        <div
+                            onDragEnter={handlePanoramaDragEnter}
+                            onDragLeave={handlePanoramaDragLeave}
+                            onDragOver={handlePanoramaDragOver}
+                            onDrop={handlePanoramaDrop}
+                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDraggingPanorama
+                                    ? 'border-purple-500 bg-purple-50'
+                                    : errors.panorama
+                                        ? 'border-red-500 bg-red-50'
+                                        : 'border-gray-300 hover:border-purple-500'
+                                }`}
+                            onClick={() => panoramaInputRef.current?.click()}
+                        >
+                            <input
+                                ref={panoramaInputRef}
+                                type="file"
+                                className="hidden"
+                                accept="image/jpeg,image/png,image/jpg"
+                                onChange={(e) => handleFileChange(e, true)}
+                            />
+
+                            {panoramaPreview ? (
+                                <div className="space-y-3">
+                                    <div className="relative">
+                                        <img
+                                            src={panoramaPreview}
+                                            alt="360° panorama preview"
+                                            className="w-full h-40 object-cover rounded-lg"
+                                        />
+                                        <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+                                            360°
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 justify-center">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removePanoramaImage();
+                                            }}
+                                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            {panoramaFile ? 'Remove new 360° image' : 'Remove current 360° image'}
+                                        </button>
+                                        {!panoramaFile && panoramaPreview && !panoramaPreview.startsWith('blob:') && (
+                                            <span className="text-xs text-gray-400">
+                                                Upload new 360° image to replace
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <div className="relative inline-block">
+                                        <Upload className={`w-10 h-10 mx-auto mb-2 ${isDraggingPanorama ? 'text-purple-500' : 'text-gray-400'
+                                            }`} />
+                                        <span className="absolute -top-1 -right-3 text-xs font-bold bg-purple-500 text-white rounded-full px-1.5 py-0.5">
+                                            360
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600">
+                                        {isDraggingPanorama ? 'Drop your 360° image here' : 'Click to upload 360° panorama or drag and drop'}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        Equirectangular panorama images recommended (2:1 aspect ratio)
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        {errors.panorama && (
+                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                <AlertCircle className="w-4 h-4" />
+                                {errors.panorama}
+                            </p>
+                        )}
+                        {!panoramaPreview && !errors.panorama && (
+                            <p className="mt-1 text-xs text-gray-400">
+                                Optional: Add a 360° panorama view of the room
                             </p>
                         )}
                     </div>

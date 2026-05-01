@@ -20,14 +20,18 @@ return new class extends Migration
                 'occupied',
                 'maintenance',
                 'dirty',
-                'cleaning',
-                'clean'
+                'cleaning'
             ])->default('available');
 
             $table->foreignId('cleaned_by')
                 ->nullable()
                 ->constrained('users')
                 ->nullOnDelete();
+
+            $table->boolean('has_damage')->default(false);
+            $table->text('damage_note')->nullable();
+
+            $table->string('damage_photo')->nullable();
 
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();

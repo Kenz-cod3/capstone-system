@@ -185,7 +185,9 @@ class WalkInGuestController extends Controller
             ]);
 
             Room::where('id', $bookedRoom->room_id)
-                ->update(['status' => 'available']);
+                ->update([
+                    'status' => 'dirty'
+                ]);
         }
 
         $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';

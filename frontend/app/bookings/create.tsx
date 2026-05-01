@@ -62,7 +62,7 @@ export default function CreateBooking() {
     );
   };
 
-  const getTotal = () => {
+  const getOvernightTotal = () => {
     const nights = getNights();
     return nights * (parsedRoom.room_type?.base_price || 0);
   };
@@ -75,6 +75,7 @@ export default function CreateBooking() {
     }).format(price);
 
   const handleBooking = async () => {
+    // Validate overnight booking
     if (bookingType === "overnight") {
       if (!checkInDate || !checkOutDate) {
         alert("Please select check-in and check-out dates");
@@ -87,21 +88,39 @@ export default function CreateBooking() {
       }
     }
 
+    // Validate short stay pricing exists
+    if (bookingType === "short") {
+      const shortPrice = parsedRoom.room_type?.short_stay_price;
+      if (!shortPrice || shortPrice === 0) {
+        alert("Short stay pricing is not available for this room");
+        return;
+      }
+    }
+
     try {
       setLoading(true);
-      await api.post("/bookings", {
+      
+      // Build payload dynamically - don't send null values
+      const payload: any = {
         booking_type: bookingType,
-        hours: bookingType === "short" ? hours : null,
-        check_in_date:
-          bookingType === "overnight" ? formatDate(checkInDate) : null,
-        check_out_date:
-          bookingType === "overnight" ? formatDate(checkOutDate) : null,
-        total_price: total,
         room_ids: [parsedRoom.id],
-      });
+      };
+
+      if (bookingType === "overnight") {
+        payload.check_in_date = formatDate(checkInDate);
+        payload.check_out_date = formatDate(checkOutDate);
+      } else {
+        payload.hours = hours;
+      }
+
+      // DO NOT send total_price - let backend calculate it
+      
+      const response = await api.post("/bookings", payload);
+      
       alert("Booking Successful ✅");
       router.replace("/(guest)/(tabs)/home");
     } catch (err: any) {
+      console.error("Booking error:", err.response?.data);
       alert(err.response?.data?.message || "Booking failed");
     } finally {
       setLoading(false);
@@ -109,14 +128,16 @@ export default function CreateBooking() {
   };
 
   const nights = getNights();
-  const total =
-    bookingType === "overnight"
-      ? getTotal()
-      : hours * (parsedRoom.room_type?.short_price || 0);
+  // Use correct field name: short_stay_price (not short_price)
+  const shortStayPrice = parsedRoom.room_type?.short_stay_price || 0;
+  const overnightTotal = getOvernightTotal();
+  const shortTotal = hours * shortStayPrice;
+  const total = bookingType === "overnight" ? overnightTotal : shortTotal;
+  
   const canBook =
     bookingType === "overnight"
-      ? checkInDate && checkOutDate && checkOutDate > checkInDate
-      : true;
+      ? checkInDate && checkOutDate && checkOutDate > checkInDate && overnightTotal > 0
+      : shortStayPrice > 0 && shortTotal > 0;
 
   return (
     <View className="flex-1 bg-[#faf8f3]">
@@ -207,6 +228,13 @@ export default function CreateBooking() {
                   </TouchableOpacity>
                 ))}
               </View>
+              
+              {/* Display short stay price info */}
+              {shortStayPrice > 0 && (
+                <Text className="text-xs text-[#1a4a35]/50 mt-3">
+                  Rate: {formatPrice(shortStayPrice)} per {hours} hour(s)
+                </Text>
+              )}
             </View>
           )}
 
@@ -349,18 +377,36 @@ export default function CreateBooking() {
                   Booking summary
                 </Text>
 
-                {/* Nights row */}
-                <View className="flex-row justify-between items-center mb-3">
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="moon-outline" size={14} color="#1a4a35" />
-                    <Text className="text-[#1a4a35]/60 text-sm">
-                      {nights} {nights === 1 ? "night" : "nights"}
-                    </Text>
-                  </View>
-                  <Text className="text-[#1a4a35]/60 text-sm">
-                    {formatPrice(parsedRoom.room_type?.base_price)} × {nights}
-                  </Text>
-                </View>
+                {/* Summary based on booking type */}
+                {bookingType === "overnight" ? (
+                  <>
+                    <View className="flex-row justify-between items-center mb-3">
+                      <View className="flex-row items-center gap-2">
+                        <Ionicons name="moon-outline" size={14} color="#1a4a35" />
+                        <Text className="text-[#1a4a35]/60 text-sm">
+                          {nights} {nights === 1 ? "night" : "nights"}
+                        </Text>
+                      </View>
+                      <Text className="text-[#1a4a35]/60 text-sm">
+                        {formatPrice(parsedRoom.room_type?.base_price)} × {nights}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View className="flex-row justify-between items-center mb-3">
+                      <View className="flex-row items-center gap-2">
+                        <Ionicons name="time-outline" size={14} color="#1a4a35" />
+                        <Text className="text-[#1a4a35]/60 text-sm">
+                          {hours} {hours === 1 ? "hour" : "hours"}
+                        </Text>
+                      </View>
+                      <Text className="text-[#1a4a35]/60 text-sm">
+                        {formatPrice(shortStayPrice)} × {hours}
+                      </Text>
+                    </View>
+                  </>
+                )}
 
                 <View className="h-px bg-[#1a4a35]/06 mb-3" />
 
@@ -391,7 +437,11 @@ export default function CreateBooking() {
             <View className="bg-[#1a4a35]/04 rounded-2xl border border-dashed border-[#1a4a35]/15 px-5 py-6 items-center gap-2">
               <Ionicons name="calendar-outline" size={24} color="#1a4a35" style={{ opacity: 0.3 }} />
               <Text className="text-[#1a4a35]/30 text-sm text-center leading-5">
-                Select both dates to see{"\n"}your booking summary
+                {bookingType === "overnight" 
+                  ? "Select both dates to see\n your booking summary"
+                  : !shortStayPrice 
+                    ? "Short stay pricing not available\n for this room"
+                    : "Select hours to see\n your booking summary"}
               </Text>
             </View>
           )}
@@ -448,7 +498,10 @@ export default function CreateBooking() {
                   className="text-white text-sm tracking-widest uppercase"
                   style={{ fontFamily: "Georgia" }}
                 >
-                  {canBook ? "Confirm Booking" : "Select Dates First"}
+                  {canBook ? "Confirm Booking" : 
+                    (bookingType === "short" && !shortStayPrice) 
+                      ? "Pricing Unavailable" 
+                      : "Select Dates First"}
                 </Text>
                 {canBook && (
                   <Ionicons name="checkmark" size={16} color="#c9a96e" />

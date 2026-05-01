@@ -16,8 +16,8 @@ class CashTransactionController extends Controller
             'category',
             'user:id,first_name,last_name,role'
         ])
-        ->latest()
-        ->get();
+            ->latest()
+            ->get();
     }
 
     // 💸 STORE
@@ -100,6 +100,16 @@ class CashTransactionController extends Controller
 
         return response()->json([
             'message' => 'Transaction deleted'
+        ]);
+    }
+    // 💰 TOTAL EXPENSES (FOR DASHBOARD)
+    public function totalExpenses()
+    {
+        $total = CashTransaction::where('type', 'pay_out')
+            ->sum('amount');
+
+        return response()->json([
+            'total_expenses' => $total
         ]);
     }
 }

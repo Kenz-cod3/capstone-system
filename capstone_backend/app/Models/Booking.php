@@ -24,6 +24,8 @@ class Booking extends Model
         'booking_status'
     ];
 
+    protected $appends = ['guest_name'];
+
     // 🔹 USER (ONLINE)
     public function user()
     {
@@ -87,7 +89,7 @@ class Booking extends Model
     {
         return $this->hasOne(BookingInvoice::class);
     }
-    
+
     // 🔥 RELATION: ORDERS (restaurant orders)
     public function orders()
     {
@@ -105,5 +107,20 @@ class Booking extends Model
     public function review()
     {
         return $this->hasOne(Review::class);
+    }
+
+    public function getGuestNameAttribute()
+    {
+        // 🔹 ONLINE USER
+        if ($this->user) {
+            return $this->user->first_name . ' ' . $this->user->last_name;
+        }
+
+        // 🔹 WALK-IN GUEST
+        if ($this->walkInGuest) {
+            return $this->walkInGuest->guest_name;
+        }
+
+        return null;
     }
 }

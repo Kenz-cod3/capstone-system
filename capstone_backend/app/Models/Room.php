@@ -13,8 +13,21 @@ class Room extends Model
         'room_type_id',
         'room_number',
         'status',
-        'completed_at', 
-        'cleaned_by'  
+        'completed_at',
+        'cleaned_by',
+        'has_damage',
+        'damage_note',
+        'damage_photo',
+    ];
+
+    protected $casts = [
+        'has_damage' => 'boolean',
+        'completed_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'damage_photo_url',
+        'damage_summary',
     ];
 
     const STATUS_AVAILABLE = 'available';
@@ -47,5 +60,44 @@ class Room extends Model
     public function cleaner()
     {
         return $this->belongsTo(User::class, 'cleaned_by');
+    }
+
+    public function getDamagePhotoUrlAttribute()
+    {
+        return $this->damage_photo
+            ? asset('storage/' . $this->damage_photo)
+            : null;
+    }
+
+    public function getDamageSummaryAttribute()
+    {
+        $damageHistory = \App\Models\BookingHistory::with([
+            'booking.user',
+            'booking.walkInGuest'
+        ])
+            ->whereNotNull('booking_id')
+            ->whereHas('booking.rooms', function ($q) {
+                $q->where('rooms.id', $this->id);
+            })
+            ->latest('changed_at')
+            ->first();
+
+        return [
+            'has_damage' => $this->has_damage,
+            'note' => $this->damage_note,
+            'photo' => $this->damage_photo_url,
+
+            'reported_by' => $this->cleaner
+                ? $this->cleaner->first_name . ' ' . $this->cleaner->last_name
+                : null,
+
+            'booking_reference' => $damageHistory?->booking?->booking_reference,
+            'booking_id' => $damageHistory?->booking?->id,
+
+            'guest' =>
+            $damageHistory?->booking?->user
+                ? $damageHistory->booking->user->first_name . ' ' . $damageHistory->booking->user->last_name
+                : ($damageHistory?->booking?->walkInGuest?->guest_name ?? 'N/A'),
+        ];
     }
 }

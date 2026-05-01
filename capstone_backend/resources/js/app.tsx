@@ -11,6 +11,7 @@ import Dashboard from "./pages/admin/main/Dashboard";
 import Bookings from "./pages/admin/management/Bookings";
 import BookingTransaction  from "./pages/admin/management/Bookings";
 import BookingReceipt  from "./pages/admin/management/BookingReciept";
+import DamagedRooms from "./pages/admin/management/damaged-rooms";
 
 import Rooms from "./pages/admin/management/Rooms";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
@@ -80,6 +81,7 @@ export default function App() {
                         <Route path="/bookings" element={<Bookings />} />
                         <Route path="/booking-transactions" element={<BookingTransaction />} />
                         <Route path="/booking-receipts" element={<BookingReceipt />} />
+                        <Route path="/damaged-rooms" element={<DamagedRooms />} />
                         {/* <Route path="/walk-in-guests" element={<WalkIn />} /> */}
                         <Route path="/rooms" element={<Rooms />} />
                         <Route path="/guests" element={<Guests />} />
@@ -102,6 +104,7 @@ export default function App() {
                         <Route path="/dashboard" element={<StaffDashboard />} />
                         <Route path="/bookings" element={<BookingStaff />} />
                         <Route path="/transactions" element={<Transaction />} />
+                        <Route path="/damaged-rooms" element={<DamagedRooms />} />
                         <Route path="/walk-in-guests" element={<WalkIn />} />
                         <Route path="/extend-stay" element={<BookingExtend />} />
                         <Route path="/cash" element={<Cash />} />

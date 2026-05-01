@@ -96,6 +96,7 @@ const StaffLayout = ({
         "/transactions": "Transaction",
         "/walk-in-guests": "Walk-in Guests",
         "/cash": "Cash",
+        "/extend-stay": "Extend Booking",
     };
 
     const getPageTitle = () => {
@@ -293,15 +294,12 @@ const StaffLayout = ({
     const getImageUrl = (img?: string | null) => {
         if (!img) return null;
 
-        // if already full URL
         if (img.startsWith("http")) return img;
 
-        // if may storage na sa string
         if (img.includes("storage/")) {
             return `${API_BASE}/${img}`;
         }
 
-        // normal case
         return `${API_BASE}/storage/${img}`;
     };
 
@@ -364,7 +362,6 @@ const StaffLayout = ({
         return () => window.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Navigation - Simple without subfolders
     const navigationGroups = [
         {
             label: "MAIN",
@@ -415,6 +412,12 @@ const StaffLayout = ({
                     href: "/transactions",
                     icon: ClipboardList
                 },
+                {
+                    name: "Damaged Rooms",
+                    description: "View reported damages",
+                    href: "/damaged-rooms",
+                    icon: ClipboardList
+                },
             ],
         },
     ];
@@ -452,7 +455,7 @@ const StaffLayout = ({
                                     className={`px-3 py-1 text-xs rounded-full capitalize transition ${chatFilter === type
                                         ? "bg-emerald-600 text-white"
                                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                        }`}
+                                        } select-none`}
                                 >
                                     {type}
                                 </button>
@@ -501,7 +504,7 @@ const StaffLayout = ({
                                             );
                                             fetchMessages();
                                         }}
-                                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1"
+                                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 select-none"
                                     >
                                         <div className="flex items-center gap-3">
                                             <Avatar className="h-9 w-9 border-0 ring-0 shadow-none overflow-hidden">
@@ -531,7 +534,7 @@ const StaffLayout = ({
                     )}
                 </div>
 
-                <div className="text-center py-3 border-t border-gray-100">
+                <div className="text-center py-3 border-t border-gray-100 select-none">
                     <button onClick={() => handleNavigation('/messages')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">
                         View all messages
                     </button>
@@ -547,7 +550,7 @@ const StaffLayout = ({
                     <h2 className="text-base font-bold text-gray-900">Notifications</h2>
                     <div className="flex items-center gap-3">
                         {unreadCount > 0 && (
-                            <button onClick={markAllNotificationsAsRead} className="text-xs text-emerald-600 hover:text-emerald-700">
+                            <button onClick={markAllNotificationsAsRead} className="text-xs text-emerald-600 hover:text-emerald-700 select-none">
                                 Mark all
                             </button>
                         )}
@@ -584,7 +587,7 @@ const StaffLayout = ({
                                     <div
                                         key={n.id}
                                         onClick={() => markNotificationAsRead(n.id)}
-                                        className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 ${!n.is_read ? "bg-blue-50" : ""}`}
+                                        className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 select-none ${!n.is_read ? "bg-blue-50" : ""}`}
                                     >
                                         <div className="flex justify-between items-center">
                                             <p className="text-sm font-semibold text-gray-800 truncate">{n.title}</p>
@@ -609,7 +612,7 @@ const StaffLayout = ({
                                                     return merged.slice(0, 20);
                                                 });
                                             }}
-                                            className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                            className="text-xs text-emerald-600 hover:text-emerald-700 font-medium select-none"
                                         >
                                             See previous notifications
                                         </button>
@@ -650,12 +653,36 @@ const StaffLayout = ({
                     scrollbar-width: thin;
                     scrollbar-color: #10b981 #f1f1f1;
                 }
+                .sidebar-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-track {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 10px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.2);
+                    border-radius: 10px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.3);
+                }
+                .sidebar-scrollbar {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+                }
                 .scrollbar-hide {
                     -ms-overflow-style: none;
                     scrollbar-width: none;
                 }
                 .scrollbar-hide::-webkit-scrollbar {
                     display: none;
+                }
+                .select-none {
+                    user-select: none;
+                    -webkit-user-select: none;
+                    -moz-user-select: none;
+                    -ms-user-select: none;
                 }
             `}</style>
 
@@ -667,19 +694,17 @@ const StaffLayout = ({
                     />
                 )}
 
-                {/* Sidebar */}
                 <aside
                     className={`fixed top-0 left-0 h-full bg-gradient-to-b from-emerald-900 to-emerald-950 text-white transition-all duration-300 z-50 flex flex-col
                         ${isSidebarOpen ? 'w-64' : 'w-20'} 
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
                 >
-                    {/* Logo Section */}
                     <div className={`h-20 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} shrink-0 border-b border-emerald-800/50`}>
                         <div
                             onClick={() => handleNavigation('/dashboard')}
-                            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity select-none"
                         >
-                            <div className="h-12 w-12 rounded-full overflow-hidden flex items-center justify-center">
+                            <div className="h-10 w-10 rounded-full overflow-hidden flex items-center justify-center">
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
@@ -699,65 +724,65 @@ const StaffLayout = ({
                             {isSidebarOpen && (
                                 <div className="flex flex-col">
                                     <span className="font-bold text-sm tracking-tight leading-tight">Lynn Ennia's</span>
-                                    <span className="text-[9px] text-emerald-300/80 tracking-wide">Traveler's Inn</span>
+                                    <span className="text-[8px] text-emerald-300/80 tracking-wide">Traveler's Inn</span>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Navigation */}
-                    <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto scrollbar-hide">
-                        {navigationGroups.map((group) => (
-                            <div key={group.label}>
-                                {isSidebarOpen && (
-                                    <p className="text-[10px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2">
-                                        {group.label}
-                                    </p>
-                                )}
-                                <div className="space-y-1">
-                                    {group.items.map((item) => {
-                                        const isActive = location.pathname === item.href;
-                                        return (
-                                            <div
-                                                key={item.name}
-                                                onClick={() => handleNavigation(item.href)}
-                                                className={`
-                                                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
-                                                    ${isActive
-                                                        ? 'bg-emerald-600 text-white shadow-lg'
-                                                        : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
-                                                    }
-                                                    ${!isSidebarOpen && 'justify-center'}
-                                                `}
-                                                title={!isSidebarOpen ? item.name : undefined}
-                                            >
-                                                <item.icon className={`h-5 w-5 shrink-0 ${!isSidebarOpen ? 'mx-auto' : ''}`} />
-                                                {isSidebarOpen && (
-                                                    <div className="flex flex-col flex-1 min-w-0">
-                                                        <span className="text-sm font-medium truncate">
-                                                            {item.name}
-                                                        </span>
-                                                        <span className="text-[9px] text-emerald-300/70 truncate">
-                                                            {item.description}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                    <nav className={`flex-1 py-6 px-3 overflow-y-auto ${isSidebarOpen ? 'sidebar-scrollbar' : 'scrollbar-hide'}`}>
+                        <div className="space-y-6">
+                            {navigationGroups.map((group) => (
+                                <div key={group.label}>
+                                    {isSidebarOpen && (
+                                        <p className="text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2 select-none">
+                                            {group.label}
+                                        </p>
+                                    )}
+                                    <div className="space-y-1">
+                                        {group.items.map((item) => {
+                                            const isActive = location.pathname === item.href;
+                                            return (
+                                                <div
+                                                    key={item.name}
+                                                    onClick={() => handleNavigation(item.href)}
+                                                    className={`
+                                                        flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer select-none
+                                                        ${isActive
+                                                            ? 'bg-emerald-600 text-white shadow-lg'
+                                                            : 'text-emerald-100 hover:bg-emerald-800/50 hover:text-white'
+                                                        }
+                                                        ${!isSidebarOpen && 'justify-center'}
+                                                    `}
+                                                    title={!isSidebarOpen ? item.name : undefined}
+                                                >
+                                                    <item.icon className={`h-5 w-5 shrink-0 ${!isSidebarOpen ? 'mx-auto' : ''}`} />
+                                                    {isSidebarOpen && (
+                                                        <div className="flex flex-col flex-1 min-w-0">
+                                                            <span className="text-xs font-medium truncate">
+                                                                {item.name}
+                                                            </span>
+                                                            <span className="text-[8px] text-emerald-300/70 truncate">
+                                                                {item.description}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </nav>
 
-                    {/* User Menu */}
                     <div className="border-t border-emerald-800/50 py-1 px-3 shrink-0 mt-auto">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
                                     className={`
                                         w-full flex items-center gap-3 p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
-                                        focus:outline-none focus:ring-0 cursor-pointer
+                                        focus:outline-none focus:ring-0 cursor-pointer select-none
                                         ${!isSidebarOpen && 'justify-center'}
                                     `}
                                 >
@@ -780,16 +805,16 @@ const StaffLayout = ({
                                     {isSidebarOpen && (
                                         <>
                                             <div className="flex-1 text-left">
-                                                <p className="text-[13px] relative top-2 font-semibold text-white/90 truncate leading-none">
+                                                <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none select-none">
                                                     {getDisplayName()}
                                                 </p>
-                                                <p className="text-[9px] text-emerald-400/80 truncate">
+                                                <p className="text-[8px] text-emerald-400/80 truncate select-none">
                                                     {user.email}
                                                 </p>
                                             </div>
-                                            <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors">
-                                                <ChevronUp className="h-4 w-4 -mb-1" />
-                                                <ChevronDown className="h-4 w-4 -mt-1" />
+                                            <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors select-none">
+                                                <ChevronUp className="h-4 w-3 -mb-1" />
+                                                <ChevronDown className="h-4 w-3 -mt-1" />
                                             </div>
                                         </>
                                     )}
@@ -804,7 +829,7 @@ const StaffLayout = ({
                                     asChild
                                     className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
                                 >
-                                    <div onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
+                                    <div onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50 select-none">
                                         <Settings className="h-4 w-4 text-emerald-400" />
                                         <span>Settings</span>
                                     </div>
@@ -813,14 +838,14 @@ const StaffLayout = ({
                                     asChild
                                     className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
                                 >
-                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50">
+                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50 select-none">
                                         <LifeBuoy className="h-4 w-4 text-emerald-400" />
                                         <span>Help Center</span>
                                     </div>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={handleLogout}
-                                    className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white"
+                                    className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white select-none"
                                 >
                                     <LogOut className="mr-2 h-4 w-4 text-red-400" />
                                     <span className="text-red-400">Logout</span>
@@ -830,9 +855,7 @@ const StaffLayout = ({
                     </div>
                 </aside>
 
-                {/* Main Content */}
                 <main className={`transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} flex flex-col h-screen overflow-hidden`}>
-                    {/* Header */}
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
                         <div className="px-6 py-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -849,13 +872,12 @@ const StaffLayout = ({
                                     )}
                                 </Button>
                                 <div className="w-px h-5 bg-gray-300"></div>
-                                <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide">
+                                <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide select-none">
                                     {getPageTitle()}
                                 </h1>
                             </div>
 
                             <div className="flex items-center gap-1">
-                                {/* Messages Dropdown */}
                                 <div className="relative">
                                     <button
                                         ref={chatButtonRef}
@@ -864,11 +886,11 @@ const StaffLayout = ({
                                             setIsNotifOpen(false);
                                             setIsChatOpen(prev => !prev);
                                         }}
-                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
                                     >
                                         <MessageCircle className="h-4 w-4 text-gray-600" />
                                         {unreadMessages > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] font-medium px-1.5 rounded-full">
+                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
                                                 {unreadMessages > 9 ? '9+' : unreadMessages}
                                             </span>
                                         )}
@@ -880,7 +902,6 @@ const StaffLayout = ({
                                     )}
                                 </div>
 
-                                {/* Notifications Dropdown */}
                                 <div className="relative">
                                     <button
                                         ref={notifButtonRef}
@@ -896,11 +917,11 @@ const StaffLayout = ({
                                                 return next;
                                             });
                                         }}
-                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
                                     >
                                         <Bell className="h-4 w-4 text-gray-600" />
                                         {unreadCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full">
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
                                                 {unreadCount > 99 ? '99+' : unreadCount}
                                             </span>
                                         )}
@@ -915,7 +936,6 @@ const StaffLayout = ({
                         </div>
                     </header>
 
-                    {/* Scrollable content */}
                     <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50">
                         <div className="px-6 py-6">
                             <Outlet />
@@ -924,7 +944,6 @@ const StaffLayout = ({
                 </main>
             </div>
 
-            {/* Chat Box */}
             {activeChatUser && (
                 <div ref={chatBoxRef}>
                     <ChatBox

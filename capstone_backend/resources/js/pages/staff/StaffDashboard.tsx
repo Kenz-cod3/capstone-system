@@ -45,6 +45,12 @@ interface DashboardStats {
     rooms: number;
     bookings: number;
     revenue: number;
+    expenses: number;
+    profit: number;
+
+    revenue_change: number;
+    expenses_change: number;
+    profit_change: number;
 }
 
 interface Booking {

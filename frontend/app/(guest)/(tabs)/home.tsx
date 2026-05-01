@@ -17,26 +17,15 @@ import { getRooms } from "@/services/roomService";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import api from "@/services/api";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 56;
 
 const STATUS_CONFIG: Record<string, { bg: string; dot: string; label: string }> = {
-  available: {
-    bg: "rgba(22,163,74,0.85)",   // green
-    dot: "#fff",
-    label: "Available",
-  },
-  occupied: {
-    bg: "rgba(37,99,235,0.85)",   // blue
-    dot: "#fff",
-    label: "Occupied",
-  },
-  maintenance: {
-    bg: "rgba(220,38,38,0.85)",   // red
-    dot: "#fff",
-    label: "Maintenance",
-  },
+  available: { bg: "rgba(22,163,74,0.85)", dot: "#fff", label: "Available" },
+  occupied: { bg: "rgba(37,99,235,0.85)", dot: "#fff", label: "Occupied" },
+  maintenance: { bg: "rgba(220,38,38,0.85)", dot: "#fff", label: "Maintenance" },
 };
 
 export default function Home() {
@@ -50,6 +39,8 @@ export default function Home() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false); // 👈 new
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -60,7 +51,53 @@ export default function Home() {
   useEffect(() => {
     if (!isLoaded || !token) return;
     fetchRooms();
-  }, [isLoaded, token]);
+    if (user) {
+      checkUnreadNotifications();
+      checkUnreadMessages(); // 👈 new
+    }
+  }, [isLoaded, token, user]);
+
+  const checkUnreadNotifications = async () => {
+    try {
+      const res = await api.get(`/notifications/user/${user?.id}`);
+      const result = res.data?.data || res.data;
+      const notifications = Array.isArray(result) ? result : [];
+      setHasUnreadNotifications(notifications.some((n: any) => !n.is_read));
+    } catch (e) {
+      console.log("Error checking notifications:", e);
+    }
+  };
+
+  // 👇 Check for unread messages sent TO this user
+  const checkUnreadMessages = async () => {
+    try {
+      const res = await api.get(`/messages/user/${user?.id}`);
+
+      const messages = res.data?.data ?? res.data ?? [];
+
+      const hasUnread = messages.some(
+        (m: any) =>
+          !m.is_read &&
+          m.message?.sender_id !== user?.id
+      );
+
+      setHasUnreadMessages(hasUnread);
+    } catch (e) {
+      console.log("Unread check error:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    checkUnreadMessages(); // initial
+
+    const interval = setInterval(() => {
+      checkUnreadMessages();
+    }, 3000); // every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   const fetchRooms = async () => {
     try {
@@ -166,6 +203,7 @@ export default function Home() {
           <View style={{ paddingTop: insets.top + 16, paddingHorizontal: 24 }}>
             {/* Top row */}
             <View className="flex-row justify-between items-center mb-8">
+              {/* Monogram */}
               <View className="flex-row items-center gap-2">
                 <View className="w-8 h-8 rounded-full bg-[#c9a96e]/20 border border-[#c9a96e]/40 justify-center items-center">
                   <Text
@@ -180,21 +218,50 @@ export default function Home() {
                 </Text>
               </View>
 
+              {/* Action icons */}
               <View className="flex-row gap-3">
+
+                {/* 💬 Chat icon with red dot if unread */}
                 <TouchableOpacity
-                  onPress={() => router.push("/chat/1")}
+                  onPress={() => {
+                    setHasUnreadMessages(false);
+                    router.push("/chat/1");
+                  }}
                   activeOpacity={0.7}
                   className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
                 >
                   <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+                  {hasUnreadMessages && (
+                    <View className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-[#1a4a35]" />
+                  )}
                 </TouchableOpacity>
+
+                {/* 🔔 Notification icon with gold dot if unread */}
                 <TouchableOpacity
-                  onPress={() => router.push("/notifications/notification")}
+                  onPress={async () => {
+                    try {
+                      await api.put(`/notifications/user/${user?.id}/read-all`);
+                      setHasUnreadNotifications(false);
+                      router.push("/notifications/notification");
+                    } catch (e) {
+                      console.log("Error marking notifications as read:", e);
+                    }
+                  }}
                   activeOpacity={0.7}
                   className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
                 >
                   <Ionicons name="notifications-outline" size={16} color="#fff" />
-                  <View className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#c9a96e] rounded-full" />
+                  {hasUnreadNotifications && (
+                    <View className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => router.push("/bookings/multiple")}
+                  activeOpacity={0.7}
+                  className="w-9 h-9 rounded-full bg-[#c9a96e] justify-center items-center"
+                >
+                  <Ionicons name="calendar-outline" size={18} color="#1a4a35" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -308,7 +375,6 @@ export default function Home() {
                         width: CARD_WIDTH,
                         marginRight: idx === groupedRooms[type].length - 1 ? 0 : 16,
                         marginBottom: 10,
-
                         shadowColor: "#000",
                         shadowOpacity: 0.06,
                         shadowRadius: 12,
@@ -326,21 +392,17 @@ export default function Home() {
                           style={{ width: "100%", height: 210 }}
                           className="bg-[#e8e4d9]"
                         />
-
                         <LinearGradient
                           colors={["transparent", "rgba(13,46,31,0.85)"]}
                           className="absolute bottom-0 left-0 right-0 h-28"
                         />
 
-                        {/* Status pill — green / blue / red */}
+                        {/* Status pill */}
                         <View
                           className="absolute top-4 left-4 flex-row items-center gap-1.5 px-3 py-1 rounded-full"
                           style={{ backgroundColor: s.bg }}
                         >
-                          <View
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: s.dot }}
-                          />
+                          <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.dot }} />
                           <Text className="text-white text-[10px] tracking-widest uppercase font-medium">
                             {s.label}
                           </Text>
@@ -396,7 +458,6 @@ export default function Home() {
                           </View>
                         </View>
 
-                        {/* Book CTA */}
                         <TouchableOpacity
                           activeOpacity={0.85}
                           onPress={() => navigateToRoom(item)}

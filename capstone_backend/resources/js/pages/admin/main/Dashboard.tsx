@@ -35,6 +35,7 @@ import RoomStatusGrid from "@/components/AdminComponents/dashboard/RoomStatusGri
 import StatCardsGrid from "@/components/AdminComponents/dashboard/StatCardsGrid";
 import OccupancyTrendChart from "@/components/AdminComponents/dashboard/OccupancyTrendChart";
 import RoomStatusChart from "@/components/AdminComponents/dashboard/RoomStatusChart";
+import RevenueChart from "@/components/AdminComponents/dashboard/RevenueChart";
 
 // ============================================
 // TYPES
@@ -45,6 +46,12 @@ interface DashboardStats {
     rooms: number;
     bookings: number;
     revenue: number;
+    expenses: number;
+    profit: number;
+
+    revenue_change: number;
+    expenses_change: number;
+    profit_change: number;
 }
 
 interface Booking {
@@ -75,6 +82,13 @@ interface DashboardData {
     occupancy: number;
     roomStatus: RoomStatusItem[];
     trend: OccupancyTrendItem[];
+
+    financialTrend: {
+        name: string;
+        revenue: number;
+        expenses: number;
+        profit: number;
+    }[];
 }
 
 // ============================================
@@ -542,18 +556,23 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="space-y-6 pt-4 pb-6">
+        <div className="space-y-3 pt-4">
             {/* <PageHeader user={user} /> */}
 
             <StatCardsGrid stats={stats} occupancy={occupancy} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch">
                 <div className="lg:col-span-2">
                     <RoomStatusGrid rooms={roomsData || []} />
                 </div>
                 <div className="lg:col-span-1">
                     <RoomStatusChart data={roomStatus} />
                 </div>
+            </div>
+
+            {/*---------REVENUE CHART---->*/}
+            <div className="mt-6">
+                <RevenueChart data={data?.financialTrend ?? []} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
