@@ -35,8 +35,7 @@ export default function TransactionsPage() {
                     guest:
                         b.booking_type === "online"
                             ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`
-                            : b.walk_in_guest?.guest_name,
-
+                            : b.walk_in_guest?.full_name,
                     room: room.room_number,
                     room_type: room.room_type?.type_name || "N/A",
                     base_price: Number(room.room_type?.base_price) || 0,// 🔥 NEW
@@ -149,6 +148,7 @@ export default function TransactionsPage() {
         // =========================
         // 🔥 HEADER
         // =========================
+
         const headerRow = worksheet.getRow(2);
 
         headerRow.values = [
@@ -372,7 +372,7 @@ export default function TransactionsPage() {
                 title="Transaction Details"
                 open={open}
                 onClose={() => setOpen(false)}
-                width={400}
+                width={300}
             >
                 {selected && (
                     <div>

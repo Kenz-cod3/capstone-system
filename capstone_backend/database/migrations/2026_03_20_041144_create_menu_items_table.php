@@ -21,6 +21,7 @@ return new class extends Migration
             $table->integer('low_stock_threshold');
             $table->boolean('is_active')->default(true);
             $table->string('image_path')->nullable();
+            $table->timestamps();
         });
     }
 

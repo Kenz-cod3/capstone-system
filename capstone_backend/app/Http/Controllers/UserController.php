@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\UserStatusChanged;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -97,10 +98,17 @@ class UserController extends Controller
             'first_name' => 'sometimes|string|max:255',
             'last_name'  => 'sometimes|string|max:255',
             'email'      => 'sometimes|email|unique:users,email,' . $id,
-            'password'   => 'nullable|min:6|confirmed',
+            'password'   => 'nullable|min:8|confirmed',
             'role'       => 'sometimes|in:admin,staff,guest',
-            'phone'      => 'nullable|string|max:20', // ✅ from frontend
+
+            'contact_number' => [
+                'nullable',
+                'regex:/^09\d{9}$/'
+            ],
+
             'profile_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+        ], [
+            'contact_number.regex' => 'Phone number must be 11 digits and start with 09.',
         ]);
 
         // ✅ only admin can change role
@@ -113,11 +121,6 @@ class UserController extends Controller
             $validated['password'] = Hash::make($validated['password']);
         } else {
             unset($validated['password']);
-        }
-
-        // ✅ MAP PHONE → contact_number
-        if (isset($validated['phone'])) {
-            $user->contact_number = $validated['phone'];
         }
 
         // ✅ HANDLE IMAGE UPLOAD
@@ -190,6 +193,8 @@ class UserController extends Controller
 
         $user->is_active = $request->is_active;
         $user->save();
+
+        event(new UserStatusChanged($user));
 
         return response()->json([
             'message' => 'Status updated',

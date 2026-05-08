@@ -21,6 +21,9 @@ export default function PanoramaViewer() {
   const parsedRoom = room ? JSON.parse(room as string) : null;
 
   useEffect(() => {
+    // ✅ kung walang panorama URL — not available agad
+    if (!panorama) return;
+
     const fetchImage = async () => {
       try {
         const response = await fetch(panorama as string);
@@ -36,7 +39,7 @@ export default function PanoramaViewer() {
       }
     };
 
-    if (panorama) fetchImage();
+    fetchImage();
   }, [panorama]);
 
   const html = `
@@ -70,12 +73,43 @@ export default function PanoramaViewer() {
   </html>
   `;
 
+  // ✅ Not Available State — walang panorama URL
+  const NotAvailable = () => (
+    <View className="flex-1 justify-center items-center bg-[#0a0a0a] gap-4 px-8">
+      <View className="w-24 h-24 rounded-full border border-[#c9a96e]/20 bg-[#c9a96e]/5 justify-center items-center mb-2">
+        <Ionicons name="image-outline" size={40} color="#c9a96e" />
+      </View>
+      <Text
+        className="text-white text-xl tracking-widest text-center"
+        style={{ fontFamily: "Georgia" }}
+      >
+        Not Available
+      </Text>
+      <Text className="text-white/40 text-sm text-center leading-6 tracking-wide">
+        No 360° panorama view is available for this room yet.
+      </Text>
+      <TouchableOpacity
+        onPress={() => router.back()}
+        activeOpacity={0.8}
+        className="mt-4 px-8 py-3 rounded-full border border-white/20 bg-white/5"
+      >
+        <Text className="text-white text-sm tracking-widest uppercase">
+          Go Back
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View className="flex-1 bg-[#0a0a0a]">
       <StatusBar hidden />
 
-      {/* Error State */}
-      {error ? (
+      {/* ✅ Not Available — walang panorama */}
+      {!panorama ? (
+        <NotAvailable />
+
+      ) : error ? (
+        /* Error State */
         <View className="flex-1 justify-center items-center bg-[#0a0a0a] gap-3">
           <Ionicons name="alert-circle-outline" size={40} color="#ff6b6b" />
           <Text className="text-white text-lg font-semibold tracking-wide">
@@ -122,20 +156,24 @@ export default function PanoramaViewer() {
       )}
 
       {/* Top Gradient Overlay */}
-      <LinearGradient
-        colors={["rgba(0,0,0,0.75)", "transparent"]}
-        className="absolute top-0 left-0 right-0 h-32"
-        pointerEvents="none"
-      />
+      {panorama && (
+        <LinearGradient
+          colors={["rgba(0,0,0,0.75)", "transparent"]}
+          className="absolute top-0 left-0 right-0 h-32"
+          pointerEvents="none"
+        />
+      )}
 
       {/* Bottom Gradient Overlay */}
-      <LinearGradient
-        colors={["transparent", "rgba(0,0,0,0.5)"]}
-        className="absolute bottom-0 left-0 right-0 h-24"
-        pointerEvents="none"
-      />
+      {panorama && (
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.5)"]}
+          className="absolute bottom-0 left-0 right-0 h-24"
+          pointerEvents="none"
+        />
+      )}
 
-      {/* Back Button */}
+      {/* Back Button — laging visible */}
       <TouchableOpacity
         onPress={() => router.back()}
         activeOpacity={0.8}
@@ -151,7 +189,7 @@ export default function PanoramaViewer() {
       </TouchableOpacity>
 
       {/* Room Info Badge */}
-      {parsedRoom && (
+      {parsedRoom && panorama && (
         <BlurView
           intensity={60}
           tint="dark"

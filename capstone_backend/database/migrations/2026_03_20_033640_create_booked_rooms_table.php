@@ -20,6 +20,8 @@ return new class extends Migration
             $table->decimal('subtotal', 10, 2)->nullable();
             $table->string('stay_type')->nullable();
             $table->dateTime('check_out_time')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
         });
     }
 

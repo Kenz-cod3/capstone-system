@@ -81,6 +81,7 @@ class BookingController extends Controller
             'walkInGuest',
             'createdBy',
             'histories.user',
+            'addOns',
             'rooms' => function ($q) {
                 $q->withTrashed()->with('roomType');
             }

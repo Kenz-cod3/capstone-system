@@ -38,6 +38,17 @@ import api from "@/services/api";
 const { Title, Text } = Typography;
 const { Search } = Input;
 
+interface AddOn {
+    id: number;
+    add_on_name: string;
+    price: number;
+
+    pivot?: {
+        quantity: number;
+        subtotal: number;
+    };
+}
+
 interface Room {
     id: number;
     room_number: string;
@@ -80,7 +91,10 @@ interface User {
 
 interface WalkInGuest {
     id: number;
-    guest_name: string;
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    full_name?: string;
     contact_number?: string;
     address?: string;
 }
@@ -94,6 +108,7 @@ interface CreatedByUser {
 
 interface Booking {
     id: number;
+    add_ons?: AddOn[];
     booking_reference: string;
     booking_type: "online" | "walk_in";
     booking_status: "pending" | "confirmed" | "checked_in" | "checked_out" | "cancelled";
@@ -209,7 +224,7 @@ export default function Bookings() {
         return data.filter((b) => {
             const name = b.booking_type === "online"
                 ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`.trim()
-                : b.walk_in_guest?.guest_name ?? "";
+                : b.walk_in_guest?.full_name ?? "";
 
             return (
                 name.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -622,7 +637,7 @@ export default function Bookings() {
             const lastName = booking.user?.last_name ?? "";
             return `${firstName} ${lastName}`.trim() || "N/A";
         } else {
-            return booking.walk_in_guest?.guest_name || "Guest";
+            return booking.walk_in_guest?.full_name || "Guest";
         }
     };
 
@@ -637,7 +652,7 @@ export default function Bookings() {
             return result;
         } else {
             const result: GuestDetails = {
-                name: booking.walk_in_guest?.guest_name || "Guest"
+                name: booking.walk_in_guest?.full_name || "Guest"
             };
             if (booking.walk_in_guest?.contact_number !== undefined) result.phone = booking.walk_in_guest.contact_number;
             if (booking.walk_in_guest?.address !== undefined) result.address = booking.walk_in_guest.address;
@@ -1302,6 +1317,85 @@ export default function Bookings() {
                         })
                     ) : (
                         <Text type="secondary" style={{ fontSize: "13px" }}>No rooms assigned</Text>
+                    )}
+                </Card>
+
+                <Card
+                    title={
+                        <Space size={6}>
+                            <TagOutlined style={{ fontSize: "13px" }} />
+                            <span style={{
+                                fontSize: "13px",
+                                fontWeight: 600
+                            }}>
+                                Add-ons
+                            </span>
+                        </Space>
+                    }
+                    size="small"
+                    style={{
+                        marginBottom: 16,
+                        borderRadius: "12px",
+                        border: "1px solid #f0f0f0"
+                    }}
+                >
+                    {selectedBooking.add_ons &&
+                        selectedBooking.add_ons.length > 0 ? (
+
+                        selectedBooking.add_ons.map((addon) => (
+
+                            <div
+                                key={addon.id}
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "10px 14px",
+                                    background: "#f8fafc",
+                                    borderRadius: "10px",
+                                    border: "1px solid #e2e8f0",
+                                    marginBottom: 10
+                                }}
+                            >
+                                <div>
+                                    <div
+                                        style={{
+                                            fontWeight: 600,
+                                            fontSize: "13px"
+                                        }}
+                                    >
+                                        {addon.add_on_name}
+                                    </div>
+
+                                    <div
+                                        style={{
+                                            color: "#64748b",
+                                            fontSize: "12px"
+                                        }}
+                                    >
+                                        ₱{addon.price} × {addon.pivot?.quantity}
+                                    </div>
+                                </div>
+
+                                <div
+                                    style={{
+                                        color: "#52c41a",
+                                        fontWeight: 700,
+                                        fontSize: "13px"
+                                    }}
+                                >
+                                    ₱{addon.pivot?.subtotal}
+                                </div>
+                            </div>
+
+                        ))
+
+                    ) : (
+
+                        <Text type="secondary">
+                            No add-ons purchased
+                        </Text>
+
                     )}
                 </Card>
 

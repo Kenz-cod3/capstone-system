@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\RoomDamageReport;
 
 class Room extends Model
 {
@@ -16,8 +17,6 @@ class Room extends Model
         'completed_at',
         'cleaned_by',
         'has_damage',
-        'damage_note',
-        'damage_photo',
     ];
 
     protected $casts = [
@@ -26,10 +25,10 @@ class Room extends Model
     ];
 
     protected $appends = [
-        'damage_photo_url',
         'damage_summary',
     ];
 
+    // ROOM STATUS
     const STATUS_AVAILABLE = 'available';
     const STATUS_OCCUPIED = 'occupied';
     const STATUS_MAINTENANCE = 'maintenance';
@@ -37,67 +36,115 @@ class Room extends Model
     const STATUS_CLEANING = 'cleaning';
     const STATUS_CLEAN = 'clean';
 
+    /*
+    |--------------------------------------------------------------------------
+    | RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
+    // ROOM TYPE
     public function roomType()
     {
         return $this->belongsTo(RoomType::class, 'room_type_id', 'id');
     }
 
+    // ROOM IMAGES
     public function images()
     {
         return $this->hasMany(RoomImage::class, 'room_id');
     }
 
+    // BOOKINGS
     public function bookings()
     {
         return $this->belongsToMany(
-            \App\Models\Booking::class,
+            Booking::class,
             'booked_rooms',
             'room_id',
             'booking_id'
+        )->withPivot(
+            'price_at_time_of_booking',
+            'subtotal',
+            'stay_type',
+            'check_out_time'
         );
     }
 
+    // CLEANER
     public function cleaner()
     {
         return $this->belongsTo(User::class, 'cleaned_by');
     }
 
-    public function getDamagePhotoUrlAttribute()
+    // DAMAGE REPORTS
+    public function damageReports()
     {
-        return $this->damage_photo
-            ? asset('storage/' . $this->damage_photo)
-            : null;
+        return $this->hasMany(RoomDamageReport::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | ACCESSORS
+    |--------------------------------------------------------------------------
+    */
+
+    // LATEST DAMAGE SUMMARY
     public function getDamageSummaryAttribute()
     {
-        $damageHistory = \App\Models\BookingHistory::with([
-            'booking.user',
-            'booking.walkInGuest'
-        ])
-            ->whereNotNull('booking_id')
-            ->whereHas('booking.rooms', function ($q) {
-                $q->where('rooms.id', $this->id);
-            })
-            ->latest('changed_at')
+        $latestReport = $this->damageReports()
+            ->with([
+                'cleaner',
+                'booking.user',
+                'booking.walkInGuest'
+            ])
+            ->latest()
             ->first();
 
-        return [
-            'has_damage' => $this->has_damage,
-            'note' => $this->damage_note,
-            'photo' => $this->damage_photo_url,
+        if (!$latestReport) {
+            return null;
+        }
 
-            'reported_by' => $this->cleaner
-                ? $this->cleaner->first_name . ' ' . $this->cleaner->last_name
+        $guestName = null;
+
+        if ($latestReport->booking?->user) {
+
+            $guestName =
+                $latestReport->booking->user->first_name . ' ' .
+                $latestReport->booking->user->last_name;
+
+        } elseif ($latestReport->booking?->walkInGuest) {
+
+            $guestName =
+                $latestReport->booking->walkInGuest->guest_name;
+        }
+
+        return [
+
+            'id' => $latestReport->id,
+
+            'report_type' => $latestReport->report_type,
+
+            'status' => $latestReport->status,
+
+            'note' => $latestReport->note,
+
+            'photos' => $latestReport->photos,
+
+            'reported_at' => $latestReport->reported_at,
+
+            'resolved_at' => $latestReport->resolved_at,
+
+            'reported_by' => $latestReport->cleaner
+                ? $latestReport->cleaner->first_name . ' ' .
+                  $latestReport->cleaner->last_name
                 : null,
 
-            'booking_reference' => $damageHistory?->booking?->booking_reference,
-            'booking_id' => $damageHistory?->booking?->id,
+            'booking_id' => $latestReport->booking_id,
 
-            'guest' =>
-            $damageHistory?->booking?->user
-                ? $damageHistory->booking->user->first_name . ' ' . $damageHistory->booking->user->last_name
-                : ($damageHistory?->booking?->walkInGuest?->guest_name ?? 'N/A'),
+            'booking_reference' =>
+                $latestReport->booking?->booking_reference,
+
+            'guest' => $guestName,
         ];
     }
 }

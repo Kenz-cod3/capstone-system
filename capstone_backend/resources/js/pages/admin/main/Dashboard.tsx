@@ -57,8 +57,17 @@ interface DashboardStats {
 interface Booking {
     id: number;
     booking_reference?: string;
-    walk_in_guest?: { guest_name: string };
-    user?: { name: string; email: string };
+    walk_in_guest?: {
+        first_name: string;
+        middle_name?: string;
+        last_name: string;
+        full_name?: string;
+    };
+    user?: {
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+    };
     rooms?: Array<{ room_number: string }>;
     created_at: string;
     booking_status: string;
@@ -85,6 +94,22 @@ interface DashboardData {
 
     financialTrend: {
         name: string;
+        date: string;
+        revenue: number;
+        expenses: number;
+        profit: number;
+    }[];
+
+    yearlyTrend: {
+        name: string;
+        date: string;
+        revenue: number;
+        expenses: number;
+        profit: number;
+    }[];
+    lastYearTrend?: {
+        name: string;
+        date: string;
         revenue: number;
         expenses: number;
         profit: number;
@@ -306,7 +331,7 @@ const RecentBookingsTable = ({
     isLoading: boolean;
     navigateTo: (path: string) => void;
 }) => (
-    <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-100 flex flex-col mb-6">
+    <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col mb-6">
 
         {/* HEADER */}
         <div className="flex justify-between items-center mb-3">
@@ -367,12 +392,9 @@ const RecentBookingsTable = ({
                                 {/* GUEST */}
                                 <td className="py-3 px-3">
                                     <p className="font-medium text-gray-800">
-                                        {booking.walk_in_guest?.guest_name ||
-                                            booking.user?.name ||
-                                            "Guest"}
-                                    </p>
-                                    <p className="text-xs text-gray-400">
-                                        {booking.user?.email || ""}
+                                        {booking.walk_in_guest?.full_name ||
+                                            `${booking.user?.first_name || ""} ${booking.user?.last_name || ""}`.trim() ||
+                                            "Unnamed Guest"}
                                     </p>
                                 </td>
 
@@ -528,26 +550,26 @@ export default function Dashboard() {
                 {/* <PageHeader user={user} /> */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                     {[1, 2, 3, 4].map((i) => (
-                        <Card key={i} className="border border-gray-100 shadow-sm">
+                        <Card key={i} className="border-0 shadow-sm bg-white">
                             <CardContent className="p-5">
                                 <div className="animate-pulse">
-                                    <div className="h-10 w-10 bg-gray-200 rounded-lg mb-4"></div>
-                                    <div className="h-8 w-24 bg-gray-200 rounded mb-2"></div>
-                                    <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                                    <div className="h-10 w-10 bg-gray-100 rounded-lg mb-4"></div>
+                                    <div className="h-8 w-24 bg-gray-100 rounded mb-2"></div>
+                                    <div className="h-4 w-20 bg-gray-100 rounded"></div>
                                 </div>
                             </CardContent>
                         </Card>
                     ))}
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card className="border border-gray-100 shadow-sm">
+                    <Card className="border border-gray-300 shadow-sm">
                         <CardContent className="p-5">
-                            <div className="animate-pulse h-80 bg-gray-100 rounded"></div>
+                            <div className="animate-pulse h-80 bg-gray-200 rounded"></div>
                         </CardContent>
                     </Card>
-                    <Card className="border border-gray-100 shadow-sm">
+                    <Card className="border border-gray-300 shadow-sm">
                         <CardContent className="p-5">
-                            <div className="animate-pulse h-80 bg-gray-100 rounded"></div>
+                            <div className="animate-pulse h-80 bg-gray-200 rounded"></div>
                         </CardContent>
                     </Card>
                 </div>
@@ -556,10 +578,10 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="space-y-3 pt-4">
+        <div className="space-y-3 -mt-1">
             {/* <PageHeader user={user} /> */}
 
-            <StatCardsGrid stats={stats} occupancy={occupancy} />
+            <StatCardsGrid stats={stats} occupancy={occupancy} role={user?.role ?? "staff"} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch">
                 <div className="lg:col-span-2">
@@ -571,14 +593,17 @@ export default function Dashboard() {
             </div>
 
             {/*---------REVENUE CHART---->*/}
-            <div className="mt-6">
-                <RevenueChart data={data?.financialTrend ?? []} />
+            <div className="mt-8">
+                <RevenueChart
+                    data={data?.financialTrend ?? []}
+                    yearlyData={data?.yearlyTrend ?? []}
+                    lastYearData={data?.lastYearTrend ?? []}
+                    role={user?.role ?? "staff"}
+                />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="lg:col-span-2">
-                    <OccupancyTrendChart data={occupancyTrend} />
-                </div>
+            <div className="mt-8">
+                <OccupancyTrendChart data={occupancyTrend} />
             </div>
 
             <RecentBookingsTable

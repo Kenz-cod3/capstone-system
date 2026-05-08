@@ -118,7 +118,7 @@ class Booking extends Model
 
         // 🔹 WALK-IN GUEST
         if ($this->walkInGuest) {
-            return $this->walkInGuest->guest_name;
+            return $this->walkInGuest->full_name;
         }
 
         return null;

@@ -1,108 +1,78 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/store/authStore";
-import { useEffect, useState, useCallback } from "react";
-import { useFocusEffect } from "@react-navigation/native";
-import api from "@/services/api";
-import { View, Text, ActivityIndicator } from "react-native";
+import { useEffect, useRef } from "react";
+import { View, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
+import { connectRealtime } from "@/services/realtime";
 
 export default function TabsLayout() {
   const { user, isLoaded, setInactive } = useAuthStore();
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
-
-  const checkUserStatus = async () => {
-    try {
-      const res = await api.get("/user");
-
-      console.log("CHECK STATUS:", res.data.is_active);
-
-      if (!res.data.is_active) {
-        console.log("🚫 User inactive");
-        setInactive(true);
-      }
-    } catch (err: any) {
-      if (err.response?.status === 403) {
-        setInactive(true);
-      }
-    } finally {
-      setChecked(true);
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      checkUserStatus();
-    }, [])
-  );
+  const disconnectRef = useRef<(() => void) | null>(null);
+  const hasNavigated = useRef(false); // 👈 Add this flag
 
   useEffect(() => {
+    if (!isLoaded || !user) return;
+
+    disconnectRef.current?.();
+    disconnectRef.current = null;
+
+    console.log("📡 Connecting via WebSocket...");
+
+    disconnectRef.current = connectRealtime(
+      user.id,
+      async () => {
+        await setInactive(true);
+      },
+      async () => {
+        await setInactive(false);
+      }
+    );
+
+    return () => {
+      disconnectRef.current?.();
+      disconnectRef.current = null;
+    };
+  }, [isLoaded, user]);
+
+  // 👇 Fix: Only navigate once and only after isLoaded is complete
+  useEffect(() => {
     if (!isLoaded) return;
-
-    if (!user) {
+    
+    // Only navigate if there's no user and we haven't navigated yet
+    if (!user && !hasNavigated.current) {
+      hasNavigated.current = true;
       router.replace("/auth/login");
-      return;
     }
+    
+    // Reset flag if user becomes available again
+    if (user) {
+      hasNavigated.current = false;
+    }
+  }, [user, isLoaded, router]);
 
-    checkUserStatus();
-
-    const interval = setInterval(() => {
-      checkUserStatus();
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [user, isLoaded]);
-
-  // Elegant loading screen matching home theme
-  if (!isLoaded || !checked) {
+  if (!isLoaded) {
     return (
-      <View className="flex-1 justify-center items-center bg-[#faf8f3]">
+      <View className="flex-1 justify-center items-center bg-[#0d2e1f]">
         <LinearGradient
           colors={["#0d2e1f", "#1a4a35", "#0d2e1f"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-          }}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
         />
-        
-        {/* Decorative elements */}
-        <View
-          className="absolute rounded-full border border-white/5"
-          style={{ width: 320, height: 320, top: -80, right: -80 }}
-        />
-        <View
-          className="absolute rounded-full border border-white/5"
-          style={{ width: 200, height: 200, bottom: -60, left: -60 }}
-        />
-        <View
-          className="absolute rounded-full border border-white/5"
-          style={{ width: 150, height: 150, top: "40%", right: -30 }}
-        />
+        <ActivityIndicator size="large" color="#c9a96e" />
+      </View>
+    );
+  }
 
-        <View className="items-center">
-          <View className="w-20 h-20 rounded-full border border-[#c9a96e]/30 justify-center items-center mb-6 bg-white/5">
-            <ActivityIndicator size="large" color="#c9a96e" />
-          </View>
-          <Text
-            className="text-[#c9a96e] text-lg tracking-[4px] uppercase mb-2"
-            style={{ fontFamily: "Georgia" }}
-          >
-            Lyn Enia's
-          </Text>
-          <Text
-            className="text-white/60 text-sm tracking-widest"
-            style={{ fontFamily: "Georgia", fontStyle: "italic" }}
-          >
-            Travelers' Inn
-          </Text>
-        </View>
+  // Optional: Show loading if user is null but we shouldn't navigate yet
+  if (!user) {
+    return (
+      <View className="flex-1 justify-center items-center bg-[#0d2e1f]">
+        <LinearGradient
+          colors={["#0d2e1f", "#1a4a35", "#0d2e1f"]}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+        <ActivityIndicator size="large" color="#c9a96e" />
       </View>
     );
   }
@@ -111,30 +81,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarShowLabel: true,
-        tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopWidth: 1,
-          borderTopColor: "#e8e4d9",
-          height: 80,
-          paddingBottom: 12,
-          paddingTop: 10,
-          shadowColor: "#000",
-          shadowOpacity: 0.05,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: -2 },
-          elevation: 6,
-        },
+        tabBarStyle: { backgroundColor: "#fff", height: 70 },
         tabBarActiveTintColor: "#c9a96e",
         tabBarInactiveTintColor: "#9ca3af",
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-          letterSpacing: 0.5,
-        },
-        tabBarItemStyle: {
-          gap: 4,
-        },
       }}
     >
       <Tabs.Screen
@@ -142,77 +91,40 @@ export default function TabsLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, focused }) => (
-            <View className="items-center">
-              {focused && (
-                <View className="absolute -top-2 w-1 h-1 rounded-full bg-[#c9a96e]" />
-              )}
-              <Ionicons
-                name={focused ? "home" : "home-outline"}
-                size={22}
-                color={color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
-
       <Tabs.Screen
         name="bookings"
         options={{
           title: "Bookings",
           tabBarIcon: ({ color, focused }) => (
-            <View className="items-center">
-              {focused && (
-                <View className="absolute -top-2 w-1 h-1 rounded-full bg-[#c9a96e]" />
-              )}
-              <Ionicons
-                name={focused ? "calendar" : "calendar-outline"}
-                size={22}
-                color={color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? "calendar" : "calendar-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
-
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
           tabBarIcon: ({ color, focused }) => (
-            <View className="items-center">
-              {focused && (
-                <View className="absolute -top-2 w-1 h-1 rounded-full bg-[#c9a96e]" />
-              )}
-              <Ionicons
-                name={focused ? "person" : "person-outline"}
-                size={22}
-                color={color}
-              />
-            </View>
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={22}
+              color={color}
+            />
           ),
         }}
       />
-
-      {/* Optional: Add a Chat tab if needed */}
-      {/* <Tabs.Screen
-        name="chat"
-        options={{
-          title: "Messages",
-          tabBarIcon: ({ color, focused }) => (
-            <View className="items-center">
-              {focused && (
-                <View className="absolute -top-2 w-1 h-1 rounded-full bg-[#c9a96e]" />
-              )}
-              <Ionicons
-                name={focused ? "chatbubble" : "chatbubble-outline"}
-                size={22}
-                color={color}
-              />
-            </View>
-          ),
-        }}
-      /> */}
     </Tabs>
   );
 }

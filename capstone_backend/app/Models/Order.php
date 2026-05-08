@@ -6,20 +6,31 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
-    public $timestamps = false;
+    // Enable timestamps if your table has created_at and updated_at
+    // public $timestamps = true; // This is default, remove the false line
+    
+    // If your migration has timestamps(), keep this as true or remove the line
+    public $timestamps = true;
 
     protected $fillable = [
         'order_number',
-        'staff_id',
+        'cashier_id',    
+        'booking_id',
         'order_date',
         'total_amount',
         'order_status'
     ];
 
-    // 🔥 RELATION: STAFF (cashier)
-    public function staff()
+    protected $casts = [
+        'order_date' => 'date',
+        'total_amount' => 'decimal:2',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    public function cashier()
     {
-        return $this->belongsTo(User::class, 'staff_id');
+        return $this->belongsTo(User::class, 'cashier_id');
     }
 
     public function booking()
@@ -27,19 +38,19 @@ class Order extends Model
         return $this->belongsTo(Booking::class);
     }
 
-    // 🔥 RELATION: ORDER ITEMS
+    // Relationship: Order Items
     public function items()
     {
         return $this->hasMany(OrderItem::class);
     }
 
-    // 🔥 RELATION: PAYMENTS
+    // Relationship: Payments
     public function payments()
     {
         return $this->hasMany(OrderPayment::class);
     }
 
-    // 🔥 RELATION: INVOICE
+    // Relationship: Invoice
     public function invoice()
     {
         return $this->hasOne(OrderInvoice::class);

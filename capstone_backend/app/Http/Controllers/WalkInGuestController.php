@@ -5,520 +5,311 @@ namespace App\Http\Controllers;
 use App\Models\WalkInGuest;
 use App\Models\Booking;
 use App\Models\Room;
+use App\Models\BookingAddOn;
+use App\Models\AddOn;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
 
 class WalkInGuestController extends Controller
 {
-    // GET ALL
+    // GET ALL WALK-IN GUESTS WITH THEIR BOOKINGS AND ADD-ONS
     public function index()
     {
         return response()->json(
-            WalkInGuest::with('bookings.bookedRooms.room.roomType')->get(),
+            WalkInGuest::with([
+                'bookings' => function ($query) {
+                    $query->with([
+                        'bookedRooms.room.roomType',
+                        'addOns'  // This uses your many-to-many relationship
+                    ])->orderBy('created_at', 'desc');
+                }
+            ])->get(),
             200
         );
     }
 
-    // WALK-IN CHECK-IN
-    public function store(Request $request)
+    // SEARCH EXISTING GUESTS
+    public function search(Request $request)
     {
-        $validated = $request->validate([
-            'guest_name' => 'required|string|max:255',
-            'contact_number' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:255',
+        $query = $request->get('q');
 
-            'room_ids' => 'required|array|min:1',
-            'room_ids.*' => 'exists:rooms,id',
-            'check_in_date' => 'required|date',
-            'check_out_date' => 'nullable|date|after_or_equal:check_in_date',
-
-            'stay_types' => 'required|array',
-            'stay_types.*' => 'in:short_stay,overnight',
-
-            'subtotals' => 'required|array',
-            'subtotals.*' => 'numeric|min:0',
-        ]);
-
-        // 1. CREATE GUEST
-        $guest = WalkInGuest::create([
-            'created_by' => Auth::id(),
-            'guest_name' => $validated['guest_name'],
-            'contact_number' => $validated['contact_number'] ?? null,
-            'address' => $validated['address'] ?? null,
-        ]);
-
-        $checkIn = Carbon::parse($validated['check_in_date']);
-        $checkOut = $validated['check_out_date']
-            ? Carbon::parse($validated['check_out_date'])
-            : $checkIn->copy()->addDay();
-
-        $reference = 'BOOK-' . strtoupper(Str::random(8));
-
-        $createdBookings = [];
-        $roomNumbers = [];
-
-        foreach ($validated['room_ids'] as $index => $roomId) {
-
-            $room = Room::with('roomType')->findOrFail($roomId);
-            $roomNumbers[] = $room->room_number;
-
-            $stayType = $validated['stay_types'][$index];
-
-            $overnightPrice = $room->roomType->base_price ?? 0;
-            $shortStayPrice = $room->roomType->short_stay_price ?? $overnightPrice;
-
-            if ($stayType === 'short_stay') {
-                $subtotal = $shortStayPrice;
-            } else {
-                $subtotal = $overnightPrice;
-            }
-
-            // ✅ CREATE BOOKING PER ROOM
-            $booking = Booking::create([
-                'walk_in_guest_id' => $guest->id,
-                'created_by' => Auth::id(),
-                'booking_type' => 'walk_in',
-                'stay_type' => $stayType,
-                'check_in_date' => $validated['check_in_date'],
-                'check_out_date' => $validated['check_out_date'],
-                'check_in_time' => now(),
-                'booking_reference' => $reference,
-                'total_price' => $subtotal,
-                'booking_status' => 'checked_in',
-            ]);
-
-            $booking->bookedRooms()->create([
-                'room_id' => $room->id,
-                'price_at_time_of_booking' => $overnightPrice,
-                'subtotal' => $subtotal,
-                'stay_type' => $stayType
-            ]);
-
-            $room->update([
-                'status' => 'occupied'
-            ]);
-
-            $createdBookings[] = $booking;
+        if (!$query || strlen(trim($query)) < 2) {
+            return response()->json([]);
         }
 
-        // 2. CREATE BOOKING WITH created_by
-        // $booking = Booking::create([
-        //     'walk_in_guest_id' => $guest->id,
-        //     'created_by' => Auth::id(), // ✅ ADD THIS - CRITICAL
-        //     'booking_type' => 'walk_in',
-        //     'stay_type' => 'overnight',
-        //     'check_in_date' => $validated['check_in_date'],
-        //     'check_out_date' => $validated['check_out_date'],
-        //     'check_in_time' => now(),
-        //     'booking_reference' => 'BOOK-' . strtoupper(Str::random(8)),
-        //     'total_price' => 0,
-        //     'booking_status' => 'checked_in',
-        // ]);
+        $guests = WalkInGuest::whereRaw("
+        CONCAT(first_name, ' ', COALESCE(middle_name,''), ' ', last_name)
+        LIKE ?
+        ", ["%{$query}%"])
+            ->orWhere('contact_number', 'LIKE', "%{$query}%")
+            ->orderBy('first_name')
+            ->limit(10)
+            ->get();
 
-        // $total = 0;
-        // $roomNumbers = []; // Store room numbers for notification
+        return response()->json($guests);
+    }
 
-        // foreach ($validated['room_ids'] as $index => $roomId) {
-        //     $room = Room::with('roomType')->findOrFail($roomId);
-        //     $roomNumbers[] = $room->room_number;
+    // CREATE NEW GUEST ONLY (NO BOOKING)
+    public function storeGuest(Request $request)
+    {
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'contact_number' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:255',
+        ]);
 
-        //     $stayType = $validated['stay_types'][$index];
+        $validated['created_by'] = Auth::id();
 
-        //     $overnightPrice = $room->roomType->base_price ?? 0;
-        //     $shortStayPrice = $room->roomType->short_stay_price ?? $overnightPrice;
+        $guest = WalkInGuest::create($validated);
 
-        //     if ($stayType === 'short_stay') {
-        //         $subtotal = $shortStayPrice;
-        //     } else {
-        //         $subtotal = $overnightPrice;
-        //     }
+        return response()->json($guest, 201);
+    }
 
-        //     $booking->bookedRooms()->create([
-        //         'room_id' => $room->id,
-        //         'price_at_time_of_booking' => $overnightPrice,
-        //         'subtotal' => $subtotal,
-        //         'stay_type' => $stayType
-        //     ]);
+    // GET ALL ADD-ONS (for frontend to display)
+    public function getAddOns()
+    {
+        $addOns = AddOn::orderBy('add_on_name')->get();
+        return response()->json($addOns);
+    }
 
-        //     $room->update([
-        //         'status' => 'occupied'
-        //     ]);
+    // WALK-IN CHECK-IN WITH ADD-ONS SUPPORT
+    public function checkin(Request $request)
+    {
+        $validated = $request->validate([
+            'guest_id' => 'required|exists:walk_in_guests,id',
+            'bookings' => 'required|array|min:1',
+            'bookings.*.room_id' => 'required|exists:rooms,id',
+            'bookings.*.stay_type' => 'required|in:short_stay,overnight',
+            'bookings.*.room_subtotal' => 'required|numeric|min:0',
+            'bookings.*.check_in_date' => 'required|date',
+            'bookings.*.check_out_date' => 'required|date|after_or_equal:bookings.*.check_in_date',
+            'bookings.*.addons' => 'nullable|array',
+            'bookings.*.addons.*.id' => 'exists:add_ons,id',
+            'bookings.*.addons.*.quantity' => 'integer|min:1',
+            'bookings.*.addons.*.price' => 'numeric|min:0',
+            'bookings.*.addons.*.subtotal' => 'numeric|min:0',
+            'total_amount' => 'required|numeric|min:0',
+        ]);
 
-        //     $total += $subtotal;
-        // }
+        DB::beginTransaction();
 
-        // $booking->update([
-        //     'total_price' => $total
-        // ]);
+        try {
+            // Get the guest
+            $guest = WalkInGuest::findOrFail($validated['guest_id']);
+            $reference = 'BOOK-' . strtoupper(Str::random(8));
+            $createdBookings = [];
+            $roomNumbers = [];
 
-        // 🔥 NOTIFICATION
-        NotificationService::notifyAdmins(
-            'Walk-in Check-In',
-            'Walk-in: ' . $validated['guest_name'] . ' checked in (Rooms: ' . implode(', ', $roomNumbers) . ')'
-        );
+            // Check room availability first
+            $roomIds = collect($validated['bookings'])->pluck('room_id')->toArray();
+            $roomsToBook = Room::whereIn('id', $roomIds)
+                ->where('status', 'available')
+                ->get();
 
-        return response()->json([
-            'message' => 'Walk-in guest checked in successfully',
-            'guest' => $guest,
-            'bookings' => $createdBookings
-        ], 201);
+            if ($roomsToBook->count() != count($roomIds)) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Some rooms are no longer available'
+                ], 409);
+            }
+
+            foreach ($validated['bookings'] as $bookingData) {
+                $room = Room::with('roomType')->findOrFail($bookingData['room_id']);
+                $roomNumbers[] = $room->room_number;
+
+                $stayType = $bookingData['stay_type'];
+                $roomSubtotal = $bookingData['room_subtotal'];
+                $overnightPrice = $room->roomType->base_price ?? 0;
+
+                // Calculate total with add-ons
+                $addOnsTotal = 0;
+                if (!empty($bookingData['addons'])) {
+                    $addOnsTotal = collect($bookingData['addons'])->sum('subtotal');
+                }
+                $bookingTotal = $roomSubtotal + $addOnsTotal;
+
+                // CREATE BOOKING PER ROOM
+                $booking = Booking::create([
+                    'walk_in_guest_id' => $guest->id,
+                    'created_by' => Auth::id(),
+                    'booking_type' => 'walk_in',
+                    'stay_type' => $stayType,
+                    'check_in_date' => $bookingData['check_in_date'],
+                    'check_out_date' => $bookingData['check_out_date'],
+                    'check_in_time' => now(),
+                    'booking_reference' => $reference,
+                    'total_price' => $bookingTotal,
+                    'booking_status' => 'checked_in',
+                ]);
+
+                // Create booked room record
+                $booking->bookedRooms()->create([
+                    'room_id' => $room->id,
+                    'price_at_time_of_booking' => $overnightPrice,
+                    'subtotal' => $roomSubtotal,
+                    'stay_type' => $stayType
+                ]);
+
+                // Save add-ons using the many-to-many relationship
+                if (!empty($bookingData['addons'])) {
+                    foreach ($bookingData['addons'] as $addonData) {
+                        // Use attach() method for many-to-many relationship
+                        $booking->addOns()->attach($addonData['id'], [
+                            'quantity' => $addonData['quantity'],
+                            'subtotal' => $addonData['subtotal']
+                        ]);
+                    }
+                }
+
+                // Update room status to occupied
+                $room->update([
+                    'status' => 'occupied'
+                ]);
+
+                // Load relationships for response
+                $booking->load(['addOns', 'bookedRooms.room.roomType']);
+                $createdBookings[] = $booking;
+            }
+
+            DB::commit();
+
+            // Prepare add-ons message for notification
+            $addOnsMessage = '';
+            $allAddOns = [];
+            foreach ($validated['bookings'] as $bookingData) {
+                if (!empty($bookingData['addons'])) {
+                    foreach ($bookingData['addons'] as $addon) {
+                        $addonName = AddOn::find($addon['id'])->add_on_name ?? 'Unknown';
+                        $allAddOns[] = $addonName . ' x' . $addon['quantity'];
+                    }
+                }
+            }
+            if (!empty($allAddOns)) {
+                $addOnsMessage = ' | Add-ons: ' . implode(', ', array_unique($allAddOns));
+            }
+
+            // NOTIFICATION
+            NotificationService::notifyAdmins(
+                'Walk-in Check-In',
+                'Walk-in: ' .
+                    $guest->first_name . ' ' .
+                    $guest->last_name .
+                    ' checked in (Rooms: ' . implode(', ', $roomNumbers) . ')' . $addOnsMessage
+            );
+
+            return response()->json([
+                'message' => 'Walk-in guest checked in successfully',
+                'guest' => $guest,
+                'bookings' => $createdBookings,
+                'booking_reference' => $reference,
+                'total_amount' => $validated['total_amount']
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Walk-in check-in error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return response()->json([
+                'message' => 'Failed to check in guest: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // CHECK-OUT
-
     public function checkOut($bookingId)
     {
-        $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
+        DB::beginTransaction();
 
-        $booking->update([
-            'booking_status' => 'checked_out'
-        ]);
+        try {
+            $booking = Booking::with(['bookedRooms', 'walkInGuest', 'addOns'])->findOrFail($bookingId);
 
-        // 🔥 ADD THIS (IMPORTANT)
-        foreach ($booking->bookedRooms as $bookedRoom) {
-            $bookedRoom->update([
+            // Prevent double check-out
+            if ($booking->booking_status === 'checked_out') {
+                return response()->json([
+                    'message' => 'Booking is already checked out'
+                ], 400);
+            }
+
+            $booking->update([
+                'booking_status' => 'checked_out',
                 'check_out_time' => now()
             ]);
 
-            Room::where('id', $bookedRoom->room_id)
-                ->update([
-                    'status' => 'dirty'
+            foreach ($booking->bookedRooms as $bookedRoom) {
+                $bookedRoom->update([
+                    'check_out_time' => now()
                 ]);
+
+                Room::where('id', $bookedRoom->room_id)
+                    ->update([
+                        'status' => 'dirty'
+                    ]);
+            }
+
+            DB::commit();
+
+            $name = $booking->walkInGuest
+                ? $booking->walkInGuest->first_name . ' ' . $booking->walkInGuest->last_name
+                : 'Walk-in Guest';
+
+            // Prepare add-ons info for notification
+            $addOnsInfo = '';
+            if ($booking->addOns->count() > 0) {
+                $addOnsList = $booking->addOns->map(function ($addon) {
+                    return $addon->add_on_name . ' x' . $addon->pivot->quantity;
+                })->implode(', ');
+                $addOnsInfo = ' | Add-ons: ' . $addOnsList;
+            }
+
+            NotificationService::notifyAdmins(
+                'Walk-in Check-Out',
+                $name . ' checked out (Ref: ' . $booking->booking_reference . ')' . $addOnsInfo
+            );
+
+            return response()->json([
+                'message' => 'Guest checked out successfully',
+                'booking' => $booking
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Check-out error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to check out guest: ' . $e->getMessage()
+            ], 500);
         }
+    }
 
-        $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';
+    // GET BOOKING DETAILS WITH ADD-ONS
+    public function getBookingDetails($bookingId)
+    {
+        $booking = Booking::with([
+            'walkInGuest',
+            'bookedRooms.room.roomType',
+            'addOns'  // This uses the many-to-many relationship
+        ])->findOrFail($bookingId);
 
-        NotificationService::notifyAdmins(
-            'Walk-in Check-Out',
-            $name . ' checked out (Ref: ' . $booking->booking_reference . ')'
-        );
+        // Calculate additional info
+        $roomSubtotal = $booking->bookedRooms->sum('subtotal');
+        $addOnsTotal = $booking->addOns->sum(function ($addon) {
+            return $addon->pivot->subtotal;
+        });
 
         return response()->json([
-            'message' => 'Guest checked out successfully'
+            'booking' => $booking,
+            'breakdown' => [
+                'room_subtotal' => $roomSubtotal,
+                'add_ons_total' => $addOnsTotal,
+                'total' => $booking->total_price
+            ]
         ]);
     }
-    // public function checkOut($bookingId)
-    // {
-    //     $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
-
-    //     $booking->update([
-    //         'booking_status' => 'checked_out'
-    //     ]);
-
-    //     foreach ($booking->bookedRooms as $bookedRoom) {
-    //         Room::where('id', $bookedRoom->room_id)
-    //             ->update(['status' => 'available']);
-    //     }
-
-    //     $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';
-
-    //     NotificationService::notifyAdmins(
-    //         'Walk-in Check-Out',
-    //         $name . ' checked out (Ref: ' . $booking->booking_reference . ')'
-    //     );
-
-    //     return response()->json([
-    //         'message' => 'Guest checked out successfully'
-    //     ]);
-    // }
 }
-// namespace App\Http\Controllers;
-
-// use App\Models\WalkInGuest;
-// use App\Models\Booking;
-// use App\Models\Room;
-// use Illuminate\Http\Request;
-// use Illuminate\Support\Facades\Auth;
-// use Illuminate\Support\Str;
-// use Carbon\Carbon;
-
-// use App\Services\NotificationService;
-
-// class WalkInGuestController extends Controller
-// {
-//     // GET ALL
-//     public function index()
-//     {
-//         return response()->json(
-//             WalkInGuest::with('bookings.bookedRooms.room.roomType')->get(),
-//             200
-//         );
-//     }
-
-//     // WALK-IN CHECK-IN
-//     public function store(Request $request)
-//     {
-//         $validated = $request->validate([
-//             'guest_name' => 'required|string|max:255',
-//             'contact_number' => 'nullable|string|max:20',
-//             'address' => 'nullable|string|max:255',
-
-//             'room_ids' => 'required|array|min:1',
-//             'room_ids.*' => 'exists:rooms,id',
-//             'check_in_date' => 'required|date',
-//             'check_out_date' => 'nullable|date|after_or_equal:check_in_date',
-
-//             'stay_types' => 'required|array',
-//             'stay_types.*' => 'in:short_stay,overnight',
-
-//             'subtotals' => 'required|array',
-//             'subtotals.*' => 'numeric|min:0',
-//         ]);
-
-//         // 1. CREATE GUEST
-//         $guest = WalkInGuest::create([
-//             'created_by' => Auth::id(),
-//             'guest_name' => $validated['guest_name'],
-//             'contact_number' => $validated['contact_number'] ?? null,
-//             'address' => $validated['address'] ?? null,
-//         ]);
-
-//         // 2. GET ROOM + PRICE
-//         // $room = Room::with('roomType')->findOrFail($validated['room_id']);
-
-//         // $overnightPrice = $room->roomType->base_price ?? 0;
-//         // $shortStayPrice = $room->roomType->short_stay_price ?? $overnightPrice;
-
-//         $checkIn = Carbon::parse($validated['check_in_date']);
-//         $checkOut = $validated['check_out_date']
-//             ? Carbon::parse($validated['check_out_date'])
-//             : $checkIn->copy()->addDay();
-
-//         // ✅ LOGIC BASED SA TYPE
-//         // if ($validated['stay_type'] === 'short_stay') {
-//         //     $total = $shortStayPrice;
-
-//         //     // force same day
-//         //     $validated['check_out_date'] = $validated['check_in_date'];
-//         // } else {
-//         //     $nights = $checkIn->diffInDays($checkOut);
-//         //     $nights = $nights > 0 ? $nights : 1;
-
-//         //     $total = $overnightPrice * $nights;
-//         // }
-
-//         // 5. CREATE BOOKING (UPDATED)
-//         $booking = Booking::create([
-//             'walk_in_guest_id' => $guest->id,
-//             'booking_type' => 'walk_in',
-//             'stay_type' => 'overnight',
-//             'check_in_date' => $validated['check_in_date'],
-//             'check_out_date' => $validated['check_out_date'],
-//             'check_in_time' => now(),
-//             'booking_reference' => 'BOOK-' . strtoupper(Str::random(8)),
-//             'total_price' => 0, // ✅ FIXED
-//             'booking_status' => 'checked_in',
-//         ]);
-
-//         $total = 0;
-
-//         foreach ($validated['room_ids'] as $index => $roomId) {
-
-//     $room = Room::with('roomType')->findOrFail($roomId);
-
-//     $stayType = $validated['stay_types'][$index];
-
-//     $overnightPrice = $room->roomType->base_price ?? 0;
-//     $shortStayPrice = $room->roomType->short_stay_price ?? $overnightPrice;
-
-//     if ($stayType === 'short_stay') {
-//         $subtotal = $shortStayPrice;
-//     } else {
-//         $subtotal = $overnightPrice;
-//     }
-
-//     $booking->bookedRooms()->create([
-//         'room_id' => $room->id,
-//         'price_at_time_of_booking' => $overnightPrice,
-//         'subtotal' => $subtotal,
-//         'stay_type' => $stayType
-//     ]);
-
-//     $room->update([
-//         'status' => 'occupied'
-//     ]);
-
-//     $total += $subtotal;
-// }
-
-//         $booking->update([
-//             'total_price' => $total
-//         ]);
-//         // 6. ATTACH ROOM WITH PRICE
-//         // $booking->bookedRooms()->create([
-//         //     'room_id' => $validated['room_id'],
-//         //     'price_at_time_of_booking' => $total
-//         // ]);
-
-//         // ❌ REMOVED WRONG UPDATE (no need anymore)
-//         // $booking->update(['total_price' => $price]);
-
-//         // 7. UPDATE ROOM STATUS → OCCUPIED
-//         // $room->update([
-//         //     'status' => 'occupied'
-//         // ]);
-
-//         // 🔥 NOTIFICATION
-//         NotificationService::notifyAdmins(
-//             'Walk-in Check-In',
-//             'Walk-in: ' . $validated['guest_name'] . ' checked in (Room ID ' . $room->id . ')'
-//         );
-
-//         return response()->json([
-//             'message' => 'Walk-in guest checked in successfully',
-//             'guest' => $guest,
-//             'booking' => $booking
-//         ], 201);
-//     }
-
-//     // CHECK-OUT
-//     public function checkOut($bookingId)
-//     {
-//         $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
-
-//         $booking->update([
-//             'booking_status' => 'checked_out'
-//         ]);
-
-//         foreach ($booking->bookedRooms as $room) {
-//             Room::where('id', $room->room_id)
-//                 ->update(['status' => 'available']);
-//         }
-
-//         $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';
-
-//         NotificationService::notifyAdmins(
-//             'Walk-in Check-Out',
-//             $name . ' checked out (Ref: ' . $booking->booking_reference . ')'
-//         );
-
-//         return response()->json([
-//             'message' => 'Guest checked out successfully'
-//         ]);
-//     }
-// }
-
-
-
-// namespace App\Http\Controllers;
-
-// use App\Models\WalkInGuest;
-// use App\Models\Booking;
-// use App\Models\Room;
-// use Illuminate\Http\Request;
-// use Illuminate\Support\Facades\Auth;
-// use Illuminate\Support\Str;
-
-// use App\Services\NotificationService;
-
-// class WalkInGuestController extends Controller
-// {
-//     // GET ALL
-//     public function index()
-//     {
-//         return response()->json(
-//             WalkInGuest::with('bookings.bookedRooms.room.roomType')->get(),
-//             200
-//         );
-//     }
-
-//     // WALK-IN CHECK-IN
-//     public function store(Request $request)
-//     {
-//         $validated = $request->validate([
-//             'guest_name' => 'required|string|max:255',
-//             'contact_number' => 'nullable|string|max:20',
-//             'address' => 'nullable|string|max:255',
-
-//             'room_id' => 'required|exists:rooms,id',
-//             'check_in_date' => 'required|date',
-//             'check_out_date' => 'nullable|date|after:check_in_date',
-//         ]);
-
-//         // 1. CREATE GUEST
-//         $guest = WalkInGuest::create([
-//             'created_by' => Auth::id(),
-//             'guest_name' => $validated['guest_name'],
-//             'contact_number' => $validated['contact_number'] ?? null,
-//             'address' => $validated['address'] ?? null,
-//         ]);
-
-//         // 2. CREATE BOOKING
-//         $booking = Booking::create([
-//             'walk_in_guest_id' => $guest->id,
-//             'booking_type' => 'walk_in',
-//             'stay_type' => 'short_stay',
-//             'check_in_date' => $validated['check_in_date'],
-//             'check_out_date' => $validated['check_out_date'],
-//             'booking_reference' => 'BOOK-' . strtoupper(Str::random(8)),
-//             'total_price' => 0,
-//             'booking_status' => 'checked_in',
-//         ]);
-
-//         // 3. GET ROOM + PRICE
-//         $room = Room::with('roomType')->findOrFail($validated['room_id']);
-
-//         $price = $room->roomType->base_price ?? 0;
-
-//         // 4. ATTACH ROOM WITH PRICE
-//         $booking->bookedRooms()->create([
-//             'room_id' => $validated['room_id'],
-//             'price_at_time_of_booking' => $price
-//         ]);
-
-//         // 5. UPDATE TOTAL PRICE
-//         $booking->update([
-//             'total_price' => $price
-//         ]);
-
-//         // 6. UPDATE ROOM STATUS → OCCUPIED
-//         // 6. UPDATE ROOM STATUS → OCCUPIED
-//         $room->update([
-//             'status' => 'occupied'
-//         ]);
-
-//         // 🔥 ADD THIS (IMPORTANT)
-//         NotificationService::notifyAdmins(
-//             'Walk-in Check-In',
-//             'Walk-in: ' . $validated['guest_name'] . ' checked in (Room ID ' . $room->id . ')'
-//         );
-
-
-//         return response()->json([
-//             'message' => 'Walk-in guest checked in successfully',
-//             'guest' => $guest,
-//             'booking' => $booking
-//         ], 201);
-//     }
-
-//     // CHECK-OUT
-//     public function checkOut($bookingId)
-//     {
-//         $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
-
-//         $booking->update([
-//             'booking_status' => 'checked_out'
-//         ]);
-
-//         foreach ($booking->bookedRooms as $room) {
-//             Room::where('id', $room->room_id)
-//                 ->update(['status' => 'available']);
-//         }
-
-//         // ✅ SAFE VERSION
-//         $name = optional($booking->walkInGuest)->guest_name ?? 'Walk-in Guest';
-
-//         NotificationService::notifyAdmins(
-//             'Walk-in Check-Out',
-//             $name . ' checked out (Ref: ' . $booking->booking_reference . ')'
-//         );
-
-//         return response()->json([
-//             'message' => 'Guest checked out successfully'
-//         ]);
-//     }
-// }

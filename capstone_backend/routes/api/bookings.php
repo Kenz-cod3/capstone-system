@@ -36,6 +36,21 @@ Route::apiResource('booking-payments', BookingPaymentController::class);
 Route::apiResource('booking-invoices', BookingInvoiceController::class);
 Route::apiResource('booking-histories', BookingHistoryController::class);
 
-// WALK-IN
-Route::apiResource('walk-in-guests', WalkInGuestController::class);
-Route::post('walk-in-guests/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);
+// WALK-IN GUESTS
+Route::prefix('walk-in-guests')->group(function () {
+    // Existing routes
+    Route::get('/', [WalkInGuestController::class, 'index']);
+    Route::post('/', [WalkInGuestController::class, 'store']); // Keep original for backward compatibility if needed
+    
+    // New routes for guest search and management
+    Route::get('/search', [WalkInGuestController::class, 'search']);           // Search existing guests
+    Route::post('/guest', [WalkInGuestController::class, 'storeGuest']);      // Create guest only (no booking)
+    Route::post('/checkin', [WalkInGuestController::class, 'checkin']);       // Check-in with existing or new guest
+    
+    // Checkout route
+    Route::post('/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);
+});
+
+// Alternative: If you want to keep RESTful structure but with custom methods
+// Route::apiResource('walk-in-guests', WalkInGuestController::class);
+// Route::post('walk-in-guests/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);

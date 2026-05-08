@@ -7,9 +7,10 @@ export default function StatCard({
     value,
     change,
     trend,
+    rounded = "xl", // rounded: 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
 }: any) {
 
-    // ✅ include Profit
+    // include Profit
     const isMoney =
         label === "Total Revenue" ||
         label === "Total Expenses" ||
@@ -32,9 +33,19 @@ export default function StatCard({
         }
     }, [numericValue]);
 
-    return (
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition flex flex-col">
+    // Rounded classes mapping
+    const roundedClasses = {
+        none: "rounded-none",
+        sm: "rounded-sm",
+        md: "rounded-md",
+        lg: "rounded-lg",
+        xl: "rounded-xl",
+        "2xl": "rounded-2xl",
+        "3xl": "rounded-3xl",
+    };
 
+    return (
+        <div className={`bg-white ${roundedClasses[rounded as keyof typeof roundedClasses] || roundedClasses.xl} p-4 border border-gray-200 shadow-sm hover:shadow-md transition flex flex-col`}>
             {/* TOP */}
             <div className="flex justify-end">
                 <div

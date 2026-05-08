@@ -6,13 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class BookedRoom extends Model
 {
-    public $timestamps = false; // ✅ ADD THIS LINE
+    public $timestamps = false;
 
     protected $fillable = [
         'booking_id',
         'room_id',
         'price_at_time_of_booking',
-        'subtotal',      // ✅ ADD
+        'subtotal',      
         'stay_type',
         'check_out_time'
     ];

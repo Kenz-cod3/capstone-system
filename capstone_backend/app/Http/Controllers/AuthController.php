@@ -6,6 +6,10 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 class AuthController extends Controller
 {
@@ -15,10 +19,13 @@ class AuthController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name'  => 'required|string|max:255',
-            'email'      => 'required|email|unique:users,email',
-            'password'   => 'required|min:6',
+            'email'      => 'required|email',
+            'password'   => 'required|string|min:8|confirmed',
             'contact_number' => 'nullable|string',
             'address' => 'nullable|string',
+        ], [
+            'password.confirmed' => 'Passwords do not match.',
+            'password.min' => 'Password must be at least 8 characters.',
         ]);
 
         //FORCE ROLE AS GUEST
@@ -26,15 +33,132 @@ class AuthController extends Controller
         $validated['password'] = Hash::make($validated['password']);
         $validated['is_active'] = true;
 
+        $existingUser = User::where('email', $request->email)->first();
+
+        if ($existingUser) {
+
+            // 🔴 IF VERIFIED → BLOCK
+            if ($existingUser->is_verified) {
+                return response()->json([
+                    'message' => 'Email already registered'
+                ], 400);
+            }
+
+            // 🟡 IF NOT VERIFIED → RESEND OTP
+            $otp = rand(100000, 999999);
+
+            $existingUser->otp = $otp;
+            $existingUser->save();
+
+            $mail = new PHPMailer(true);
+
+            try {
+                $mail->isSMTP();
+                $mail->Host = 'smtp.gmail.com';
+                $mail->SMTPAuth = true;
+
+                $mail->Username = 'sipralim105@gmail.com';
+                $mail->Password = 'cvaw bwzw emjm bzif';
+
+                $mail->SMTPSecure = 'tls';
+                $mail->Port = 587;
+
+                $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers Inn");
+                $mail->addAddress($existingUser->email);
+
+                $mail->isHTML(true);
+                $mail->Subject = 'Your OTP Code';
+                $mail->Body = "<h1>$otp</h1>";
+
+                $mail->send();
+            } catch (\Exception $e) {
+                Log::error("Mail Error: " . $mail->ErrorInfo);
+            }
+
+            return response()->json([
+                'message' => 'Account not verified. OTP resent.',
+                'email' => $existingUser->email
+            ], 200);
+        }
+
         $user = User::create($validated);
 
-        $token = $user->createToken('api')->plainTextToken;
+        $otp = rand(100000, 999999);
+
+        $user->otp = $otp;
+        $user->save();
+
+        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+
+        try {
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com';
+            $mail->SMTPAuth = true;
+
+            $mail->Username = 'sipralim105@gmail.com';
+            $mail->Password = 'cvaw bwzw emjm bzif';
+
+            $mail->SMTPSecure = 'tls';
+            $mail->Port = 587;
+
+            $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers' Inn");
+            $mail->addAddress($user->email);
+
+            $mail->isHTML(true);
+            $mail->Subject = 'Welcome!';
+            $mail->Body = "
+                        <h2>Your OTP Code</h2>
+                        <p>Your verification code is:</p>
+                        <h1>$otp</h1>
+                        <p>Do not share this code.</p>
+                    ";
+
+            $mail->send();
+        } catch (\Exception $e) {
+            Log::error("Mail Error: " . $mail->ErrorInfo);
+        }
+
 
         return response()->json([
-            'message' => 'User registered successfully',
-            'user'    => $user,
-            'token'   => $token
+            'message' => 'OTP sent to email',
+            'email'   => $user->email
         ], 201);
+    }
+
+    public function verifyOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required'
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        if ($user->otp != $request->otp) {
+            return response()->json([
+                'message' => 'Invalid OTP'
+            ], 400);
+        }
+
+        // ✅ SUCCESS
+        $user->otp = null;
+        $user->is_verified = true;
+        $user->email_verified_at = now();
+        $user->save();
+
+        $token = $user->createToken('mobile')->plainTextToken;
+
+        return response()->json([
+            'message' => 'OTP Verified successfully',
+            'user' => $user,
+            'token' => $token
+        ]);
     }
 
     // public function login(Request $request)
@@ -154,7 +278,47 @@ class AuthController extends Controller
         $user->last_login = now();
         $user->save();
 
+
+        if (!$user->is_verified && $user->role === 'guest') {
+
+            $otp = rand(100000, 999999);
+            $user->otp = $otp;
+            $user->save();
+
+            // 🔥 SEND EMAIL
+            $mail = new PHPMailer(true);
+
+            try {
+                $mail->isSMTP();
+                $mail->Host = 'smtp.gmail.com';
+                $mail->SMTPAuth = true;
+
+                $mail->Username = 'sipralim105@gmail.com';
+                $mail->Password = 'cvaw bwzw emjm bzif';
+
+                $mail->SMTPSecure = 'tls';
+                $mail->Port = 587;
+
+                $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers Inn");
+                $mail->addAddress($user->email);
+
+                $mail->isHTML(true);
+                $mail->Subject = 'Your OTP Code';
+                $mail->Body = "<h1>$otp</h1>";
+
+                $mail->send();
+            } catch (\Exception $e) {
+                Log::error("Mail Error: " . $mail->ErrorInfo);
+            }
+
+            return response()->json([
+                'message' => 'OTP sent. Please verify your account',
+                'email' => $user->email
+            ], 403);
+        }
+
         $token = $user->createToken('mobile')->plainTextToken;
+
 
         return response()->json([
             'user' => $user,

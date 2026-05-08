@@ -13,14 +13,19 @@ return new class extends Migration
     {
         Schema::create('rooms', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('room_type_id')->constrained('room_types');
+
+            $table->foreignId('room_type_id')
+                ->constrained('room_types')
+                ->cascadeOnDelete();
+
             $table->string('room_number')->unique();
+
             $table->enum('status', [
                 'available',
                 'occupied',
                 'maintenance',
                 'dirty',
-                'cleaning'
+                'cleaning',
             ])->default('available');
 
             $table->foreignId('cleaned_by')
@@ -28,14 +33,12 @@ return new class extends Migration
                 ->constrained('users')
                 ->nullOnDelete();
 
+            // Quick flag lang — details nasa room_damage_reports table
             $table->boolean('has_damage')->default(false);
-            $table->text('damage_note')->nullable();
-
-            $table->string('damage_photo')->nullable();
 
             $table->timestamp('completed_at')->nullable();
-            $table->timestamps();
 
+            $table->timestamps();
             $table->softDeletes();
         });
     }

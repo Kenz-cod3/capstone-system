@@ -8,9 +8,10 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "expo-router";
 import { getRooms } from "@/services/roomService";
@@ -38,9 +39,10 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
-  const [hasUnreadMessages, setHasUnreadMessages] = useState(false); // 👈 new
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function Home() {
     fetchRooms();
     if (user) {
       checkUnreadNotifications();
-      checkUnreadMessages(); // 👈 new
+      checkUnreadMessages();
     }
   }, [isLoaded, token, user]);
 
@@ -68,19 +70,15 @@ export default function Home() {
     }
   };
 
-  // 👇 Check for unread messages sent TO this user
   const checkUnreadMessages = async () => {
     try {
       const res = await api.get(`/messages/user/${user?.id}`);
-
       const messages = res.data?.data ?? res.data ?? [];
-
       const hasUnread = messages.some(
         (m: any) =>
           !m.is_read &&
           m.message?.sender_id !== user?.id
       );
-
       setHasUnreadMessages(hasUnread);
     } catch (e) {
       console.log("Unread check error:", e);
@@ -89,13 +87,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-
-    checkUnreadMessages(); // initial
-
+    checkUnreadMessages();
     const interval = setInterval(() => {
       checkUnreadMessages();
-    }, 3000); // every 3 seconds
-
+    }, 3000);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -112,6 +107,21 @@ export default function Home() {
       setLoading(false);
     }
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchRooms(),
+        user && checkUnreadNotifications(),
+        user && checkUnreadMessages(),
+      ]);
+    } catch (error) {
+      console.log("Refresh error:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -159,6 +169,7 @@ export default function Home() {
   if (!isLoaded || loading) {
     return (
       <View className="flex-1 justify-center items-center bg-[#faf8f3]">
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
         <View className="w-16 h-16 rounded-full border border-[#1a4a35]/20 justify-center items-center mb-5">
           <ActivityIndicator size="large" color="#1a4a35" />
         </View>
@@ -174,12 +185,21 @@ export default function Home() {
 
   return (
     <View className="flex-1 bg-[#faf8f3]">
-      <StatusBar barStyle="light-content" translucent />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       <ScrollView
         ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#c9a96e"
+            colors={["#c9a96e"]}
+            progressBackgroundColor="#ffffff"
+          />
+        }
       >
         {/* ── HERO ── */}
         <View style={{ height: 280 }}>
@@ -218,9 +238,8 @@ export default function Home() {
                 </Text>
               </View>
 
-              {/* Action icons */}
+              {/* Action icons - REMOVED calendar icon from here */}
               <View className="flex-row gap-3">
-
                 {/* 💬 Chat icon with red dot if unread */}
                 <TouchableOpacity
                   onPress={() => {
@@ -254,14 +273,6 @@ export default function Home() {
                   {hasUnreadNotifications && (
                     <View className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
                   )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => router.push("/bookings/multiple")}
-                  activeOpacity={0.7}
-                  className="w-9 h-9 rounded-full bg-[#c9a96e] justify-center items-center"
-                >
-                  <Ionicons name="calendar-outline" size={18} color="#1a4a35" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -487,6 +498,56 @@ export default function Home() {
           ))}
         </View>
       </ScrollView>
+
+      {/* ── FLOATING BUTTON FOR MULTIPLE BOOKINGS ── */}
+      <TouchableOpacity
+        onPress={() => router.push("/bookings/multiple")}
+        activeOpacity={0.85}
+        style={{
+          position: "absolute",
+          bottom: insets.bottom + 20,
+          right: 20,
+          shadowColor: "#000",
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 6,
+        }}
+      >
+        <LinearGradient
+          colors={["#1a4a35", "#0d2e1f"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <Ionicons name="layers-outline" size={28} color="#c9a96e" />
+        </LinearGradient>
+        {/* Optional: Add a badge for multiple bookings count */}
+        <View
+          style={{
+            position: "absolute",
+            top: -4,
+            right: -4,
+            backgroundColor: "#c9a96e",
+            borderRadius: 10,
+            minWidth: 20,
+            height: 20,
+            justifyContent: "center",
+            alignItems: "center",
+            paddingHorizontal: 4,
+          }}
+        >
+          <Text style={{ color: "#1a4a35", fontSize: 10, fontWeight: "bold" }}>
+            2+
+          </Text>
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }

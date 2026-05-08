@@ -10,10 +10,13 @@ import {
   ScrollView,
   Dimensions,
   Modal,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api from "@/services/api";
 
 const { width, height } = Dimensions.get("window");
@@ -22,7 +25,7 @@ const BASE_URL = api.defaults.baseURL?.replace("/api", "") || "";
 interface EditProfileModalProps {
   visible: boolean;
   onClose: () => void;
-  onUpdate: () => void;
+  onUpdate: (user?: any) => void;
   user: any;
 }
 
@@ -47,6 +50,7 @@ const Input = ({ label, value, onChange, secure = false, icon, editable = true }
 );
 
 export default function EditProfileModal({ visible, onClose, onUpdate, user }: EditProfileModalProps) {
+  const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
 
   const [firstName, setFirstName] = useState("");
@@ -110,8 +114,8 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
       return;
     }
 
-    if (newPassword && newPassword.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+    if (newPassword && newPassword.length < 8) {
+      Alert.alert("Error", "Password must be at least 8 characters");
       return;
     }
 
@@ -119,6 +123,8 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
 
     try {
       const formData = new FormData();
+
+      formData.append("_method", "PUT");
 
       formData.append("first_name", firstName);
       formData.append("last_name", lastName);
@@ -138,18 +144,26 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
         } as any);
       }
 
-      await api.post(`/users/${user.id}?_method=PUT`, formData, {
+      const res = await api.post(`/users/${user.id}`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
 
+      console.log("UPDATED:", res.data);
+
       Alert.alert("Success", "Profile updated successfully!");
-      onUpdate();
+
+      onUpdate(res.data.data);
       onClose();
+
     } catch (error: any) {
-      console.log("SAVE ERROR:", error);
-      Alert.alert("Error", error.response?.data?.message || "Something went wrong");
+      console.log("SAVE ERROR:", error.response?.data || error);
+
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Something went wrong"
+      );
     } finally {
       setSaving(false);
     }
@@ -161,9 +175,27 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
       animationType="slide"
       transparent={true}
       onRequestClose={onClose}
+      statusBarTranslucent={true}
     >
-      <View className="flex-1 bg-black/50 justify-end">
-        <View className="bg-[#faf8f3] rounded-t-3xl" style={{ maxHeight: height * 0.8 }}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      
+      {/* Full screen blur background */}
+      <BlurView
+        intensity={90}
+        tint="dark"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100%",
+          height: "100%",
+        }}
+      />
+
+      <View className="flex-1 justify-end">
+        <View className="bg-[#faf8f3] rounded-t-3xl" style={{ maxHeight: height * 0.85 }}>
           {/* Header */}
           <View className="px-6 pt-6 pb-4 border-b border-[#1a4a35]/10">
             <View className="flex-row justify-between items-center">
@@ -179,7 +211,11 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
             </View>
           </View>
 
-          <ScrollView className="p-6" showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            className="p-6" 
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+          >
             {/* Avatar Section */}
             <View className="items-center mb-8">
               <TouchableOpacity onPress={pickImage} className="relative">
@@ -273,10 +309,10 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
                   secure={true}
                   icon="checkmark-circle-outline"
                 />
-              </View> 
+              </View>
             )}
 
-            {/* Action Buttons - FIXED: Removed ScrollView wrapper */}
+            {/* Action Buttons */}
             <View className="flex-row gap-3 mt-8 mb-10">
               <TouchableOpacity
                 onPress={onClose}

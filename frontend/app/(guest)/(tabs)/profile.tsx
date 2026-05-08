@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   StatusBar,
   ScrollView,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,35 +17,65 @@ import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
-import EditProfileModal from "../../profile/edit"; // Import the modal
+import EditProfileModal from "../../profile/edit";
 
 const BASE_URL = api.defaults.baseURL?.replace("/api", "") || "";
 
 export default function Profile() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
   const { logout } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const isFirstLoad = useRef(true);
 
   useFocusEffect(
     useCallback(() => {
-      fetchUser();
-    }, [refreshKey])
+      // Only fetch on first load or when explicitly refreshed
+      if (isFirstLoad.current) {
+        fetchUser(false);
+        isFirstLoad.current = false;
+      }
+    }, [])
   );
 
-  const fetchUser = async () => {
+  // Separate refresh function for pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchUser(true);
+    setRefreshing(false);
+  }, []);
+
+  const fetchUser = async (showLoading: boolean = false) => {
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       const res = await api.get("/user");
       setUser(res.data);
     } catch (err) {
       console.log("PROFILE ERROR:", err);
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
+  };
+
+  const formatPHNumber = (num?: string) => {
+    if (!num) return "N/A";
+    const clean = num.replace(/\D/g, "");
+    if (clean.length !== 11 || !clean.startsWith("09")) {
+      return num;
+    }
+    const formatted = clean.replace(/^0/, "+63");
+    return formatted.replace(
+      /(\+63)(\d{3})(\d{3})(\d{4})/,
+      "$1 $2 $3 $4"
+    );
   };
 
   const handleLogout = () => {
@@ -63,9 +94,11 @@ export default function Profile() {
 
   const handleProfileUpdate = () => {
     setRefreshKey(prev => prev + 1);
+    fetchUser(true); // Refresh data when profile is updated
   };
 
-  if (loading) {
+  // Only show loading on first load
+  if (loading && !user) {
     return (
       <View className="flex-1 justify-center items-center bg-[#faf8f3]">
         <View className="w-16 h-16 rounded-full border border-[#1a4a35]/20 justify-center items-center mb-5">
@@ -106,6 +139,14 @@ export default function Profile() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 48 + insets.bottom }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#c9a96e"
+              colors={["#c9a96e"]}
+            />
+          }
         >
           {/* ── HERO HEADER ── */}
           <LinearGradient
@@ -141,7 +182,7 @@ export default function Profile() {
               </View>
 
               <TouchableOpacity
-                onPress={() => setShowEditModal(true)} // Open modal instead of navigation
+                onPress={() => setShowEditModal(true)}
                 activeOpacity={0.7}
                 className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
               >
@@ -210,7 +251,7 @@ export default function Profile() {
               <InfoRow
                 icon="call-outline"
                 label="Contact"
-                value={user.contact_number || "N/A"}
+                value={formatPHNumber(user.contact_number)}
                 isLast={false}
               />
               <InfoRow
@@ -316,9 +357,8 @@ const InfoRow = ({
   isLast: boolean;
 }) => (
   <View
-    className={`flex-row items-center px-5 py-4 ${
-      !isLast ? "border-b border-[#1a4a35]/06" : ""
-    }`}
+    className={`flex-row items-center px-5 py-4 ${!isLast ? "border-b border-[#1a4a35]/06" : ""
+      }`}
   >
     <View className="w-8 h-8 rounded-full bg-[#1a4a35]/06 justify-center items-center mr-4">
       <Ionicons name={icon as any} size={15} color="#1a4a35" />

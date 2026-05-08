@@ -40,7 +40,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
     const slots = Array.from({ length: itemsPerPage });
 
     return (
-        <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-100 flex flex-col h-full">
+        <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col h-full">
 
             {/* HEADER */}
             <div className="flex justify-between items-center mb-3">

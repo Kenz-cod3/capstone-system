@@ -27,7 +27,7 @@
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
+    --border: oklch(0.90 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
     --chart-1: oklch(0.87 0 0);
@@ -180,9 +180,12 @@
     --sidebar-ring: oklch(0.556 0 0)
   }
 
-  * {
-    @apply border-border;
-    outline-color: rgb(100 116 139 / 0.5);
+
+  *,
+  *::before,
+  *::after {
+    border-color: #e5e7eb;
+    outline-color: transparent;
   }
 
   body {
@@ -320,5 +323,16 @@
 
   .ant-picker:hover {
     border-color: #10b981;
+  }
+
+  .recharts-wrapper:focus,
+  .recharts-surface:focus,
+  .recharts-layer:focus {
+    outline: none !important;
+  }
+
+  .recharts-wrapper,
+  .recharts-surface {
+    outline: none !important;
   }
 }

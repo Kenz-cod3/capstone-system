@@ -1,3 +1,8 @@
+import { configureEcho } from '@laravel/echo-react';
+
+configureEcho({
+    broadcaster: 'reverb',
+});
 import { useLoadingStore } from "@/stores/useLoadingStore";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useEffect } from "react";
@@ -14,6 +19,7 @@ import BookingReceipt  from "./pages/admin/management/BookingReciept";
 import DamagedRooms from "./pages/admin/management/damaged-rooms";
 
 import Rooms from "./pages/admin/management/Rooms";
+import AddOnsPage from "./pages/admin/management/AddOnsPage";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
 import Guests from "./pages/admin/management/Guests";
 import Staff from "./pages/admin/management/Staff";
@@ -82,6 +88,7 @@ export default function App() {
                         <Route path="/booking-transactions" element={<BookingTransaction />} />
                         <Route path="/booking-receipts" element={<BookingReceipt />} />
                         <Route path="/damaged-rooms" element={<DamagedRooms />} />
+                        <Route path="/add-ons" element={<AddOnsPage />} />
                         {/* <Route path="/walk-in-guests" element={<WalkIn />} /> */}
                         <Route path="/rooms" element={<Rooms />} />
                         <Route path="/guests" element={<Guests />} />
@@ -101,7 +108,7 @@ export default function App() {
                 {/* STAFF ROUTES */}
                 {user?.role === "staff" && (
                     <Route element={<StaffLayout />}>
-                        <Route path="/dashboard" element={<StaffDashboard />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/bookings" element={<BookingStaff />} />
                         <Route path="/transactions" element={<Transaction />} />
                         <Route path="/damaged-rooms" element={<DamagedRooms />} />

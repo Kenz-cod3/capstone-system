@@ -16,8 +16,17 @@ class MenuItem extends Model
         'stock_quantity',
         'low_stock_threshold',
         'is_active',
-        'image_path'
+        'image_path',
     ];
+
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->image_path
+            ? asset('storage/' . $this->image_path)
+            : null;
+    }
 
     public function orderItems()
     {

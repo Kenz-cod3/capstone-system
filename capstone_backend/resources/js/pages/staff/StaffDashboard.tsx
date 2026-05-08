@@ -57,7 +57,11 @@ interface Booking {
     id: number;
     booking_reference?: string;
     walk_in_guest?: { guest_name: string };
-    user?: { name: string; email: string };
+    user?: {
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+    };
     rooms?: Array<{ room_number: string }>;
     created_at: string;
     booking_status: string;
@@ -360,11 +364,8 @@ const RecentBookingsTable = ({
                                 <td className="py-3 px-3">
                                     <p className="font-medium text-gray-800">
                                         {booking.walk_in_guest?.guest_name ||
-                                            booking.user?.name ||
-                                            "Guest"}
-                                    </p>
-                                    <p className="text-xs text-gray-400">
-                                        {booking.user?.email || ""}
+                                            `${booking.user?.first_name || ""} ${booking.user?.last_name || ""}`.trim() ||
+                                            "Unnamed Guest"}
                                     </p>
                                 </td>
 
@@ -551,7 +552,7 @@ export default function Dashboard() {
         <div className="space-y-6 pt-4 pb-6">
             {/* <PageHeader user={user} /> */}
 
-            <StatCardsGrid stats={stats} occupancy={occupancy} />
+            <StatCardsGrid stats={stats} occupancy={occupancy} role={user?.role ?? "staff"} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 items-stretch">
                 <div className="lg:col-span-2">

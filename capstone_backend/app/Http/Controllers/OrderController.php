@@ -16,7 +16,7 @@ class OrderController extends Controller
     public function index()
     {
         return response()->json(
-            Order::with(['items.menuItem', 'staff'])
+            Order::with(['items.menuItem', 'cashier'])
                 ->orderBy('id', 'desc')
                 ->get(),
             200
@@ -40,15 +40,14 @@ class OrderController extends Controller
 
         try {
             return DB::transaction(function () use ($validated) {
+                // Get cashier ID
+                $cashierId = Auth::id() ?? 2;
 
-                // 🔥 STAFF (fallback habang dev)
-                $staffId = Auth::id() ?? 2;
-
-                // 🔥 CREATE ORDER
+                // Create order with proper date
                 $order = Order::create([
                     'order_number' => 'ORD-' . strtoupper(uniqid()),
-                    'staff_id' => $staffId,
-                    'order_date' => now(),
+                    'cashier_id' => $cashierId,
+                    'order_date' => now()->toDateString(), // Use date only
                     'order_status' => 'pending',
                     'total_amount' => 0
                 ]);
@@ -56,15 +55,14 @@ class OrderController extends Controller
                 $total = 0;
 
                 foreach ($validated['items'] as $item) {
-
                     $menuItem = MenuItem::findOrFail($item['menu_item_id']);
 
-                    // 🔥 STOCK CHECK
+                    // Stock check
                     if ($menuItem->stock_quantity < $item['quantity']) {
                         throw new \Exception("{$menuItem->name} is out of stock");
                     }
 
-                    // 🔥 DEDUCT STOCK
+                    // Deduct stock
                     $menuItem->decrement('stock_quantity', $item['quantity']);
                     $newStock = $menuItem->fresh()->stock_quantity;
 
@@ -72,18 +70,18 @@ class OrderController extends Controller
                         $menuItem->update(['is_active' => false]);
                     }
 
-                    // 🔥 INVENTORY LOG
+                    // Inventory log
                     InventoryLog::create([
                         'menu_item_id' => $menuItem->id,
-                        'user_id' => $staffId,
+                        'user_id' => $cashierId,
                         'change_type' => 'OUT',
                         'quantity' => $item['quantity'],
                         'quantity_change' => -$item['quantity'],
-                        'new_stock_level' => $newStock, // ✅ FINAL FIX
+                        'new_stock_level' => $newStock,
                         'remarks' => 'Order #' . $order->order_number
                     ]);
 
-                    // 🔥 SUBTOTAL
+                    // Subtotal
                     $subtotal = $menuItem->price * $item['quantity'];
 
                     OrderItem::create([
@@ -97,12 +95,13 @@ class OrderController extends Controller
                     $total += $subtotal;
                 }
 
-                // 🔥 UPDATE TOTAL
+                // Update total
                 $order->update(['total_amount' => $total]);
 
+                // Load relationships
                 return response()->json([
                     'message' => 'Order created successfully',
-                    'data' => $order->load(['items.menuItem', 'staff'])
+                    'data' => $order->load(['items.menuItem', 'cashier'])
                 ], 201);
             });
         } catch (\Throwable $e) {
@@ -116,7 +115,8 @@ class OrderController extends Controller
     // 🔹 GET SINGLE ORDER
     public function show($id)
     {
-        $order = Order::with(['items.menuItem', 'staff'])->findOrFail($id);
+        $order = Order::with(['items.menuItem', 'cashier']) // ✅ FIXED: Changed from 'staff' to 'cashier'
+            ->findOrFail($id);
 
         return response()->json($order, 200);
     }
@@ -145,14 +145,11 @@ class OrderController extends Controller
             $order = Order::with('items.menuItem')->findOrFail($id);
 
             DB::transaction(function () use ($order) {
-
                 foreach ($order->items as $item) {
-
                     $menuItem = $item->menuItem;
 
                     if ($menuItem) {
-
-                        // 🔥 RESTORE STOCK
+                        // Restore stock
                         $menuItem->increment('stock_quantity', $item->quantity);
                         $newStock = $menuItem->fresh()->stock_quantity;
 
@@ -160,16 +157,16 @@ class OrderController extends Controller
                             $menuItem->update(['is_active' => true]);
                         }
 
-                        $staffId = Auth::id() ?? 2;
+                        $cashierId = Auth::id() ?? 2;
 
-                        // 🔥 INVENTORY LOG
+                        // Inventory log
                         InventoryLog::create([
                             'menu_item_id' => $menuItem->id,
-                            'user_id' => $staffId,
+                            'user_id' => $cashierId,
                             'change_type' => 'IN',
                             'quantity' => $item->quantity,
                             'quantity_change' => $item->quantity,
-                            'new_stock_level' => $newStock, // ✅ FINAL FIX
+                            'new_stock_level' => $newStock,
                             'remarks' => 'Order cancelled #' . $order->order_number
                         ]);
                     }
@@ -183,21 +180,25 @@ class OrderController extends Controller
                 'message' => 'Order cancelled and stock restored'
             ], 200);
         } catch (\Throwable $e) {
-            dd($e->getMessage());
+            return response()->json([
+                'message' => 'Failed to cancel order',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
+    // 🔹 GET STATS
     public function stats()
     {
-        // 💰 TOTAL REVENUE (PAID ONLY)
+        // Total revenue (paid only)
         $totalRevenue = Order::where('order_status', 'paid')
             ->sum('total_amount');
 
-        // 📦 TOTAL PAID ORDERS
+        // Total paid orders
         $totalOrders = Order::where('order_status', 'paid')
             ->count();
 
-        // 🍔 TOP PRODUCTS
+        // Top products
         $topProducts = OrderItem::select('menu_item_id', DB::raw('SUM(quantity) as total_sold'))
             ->with('menuItem')
             ->groupBy('menu_item_id')
@@ -209,6 +210,6 @@ class OrderController extends Controller
             'total_revenue' => $totalRevenue,
             'total_orders' => $totalOrders,
             'top_products' => $topProducts
-        ]);
+        ], 200);
     }
 }

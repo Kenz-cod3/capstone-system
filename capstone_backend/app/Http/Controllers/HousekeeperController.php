@@ -3,261 +3,143 @@
 namespace App\Http\Controllers;
 
 use App\Models\BookingHistory;
-use Illuminate\Http\Request;
 use App\Models\Room;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class HousekeeperController extends Controller
 {
-    // ✅ GET TASKS
+    /*
+    |--------------------------------------------------------------------------
+    | GET TASKS (dirty + cleaning + maintenance rooms)
+    |--------------------------------------------------------------------------
+    */
     public function tasks()
     {
-        $rooms = Room::whereIn('status', ['dirty', 'cleaning', 'maintenance'])
+        $rooms = Room::with(['roomType', 'cleaner'])
+            ->whereNull('deleted_at')
+            ->whereIn('status', ['dirty', 'cleaning', 'maintenance'])
             ->latest()
-            ->get();
+            ->get()
+            ->map(function ($room) {
+                return [
+                    'id'             => $room->id,
+                    'room_number'    => $room->room_number,
+                    'status'         => $room->status,
+                    'has_damage'     => $room->has_damage,
+                    'room_type'      => $room->roomType?->type_name,
+                    'damage_summary' => $room->damage_summary,
+                    'completed_at'   => $room->completed_at,
+                    'cleaned_by'     => $room->cleaner
+                        ? $room->cleaner->first_name . ' ' . $room->cleaner->last_name
+                        : null,
+                ];
+            });
 
         return response()->json($rooms);
     }
 
-    // ✅ START CLEANING
+    /*
+    |--------------------------------------------------------------------------
+    | START CLEANING (dirty → cleaning)
+    |--------------------------------------------------------------------------
+    */
     public function start($id)
     {
-        $room = Room::findOrFail($id);
+        $room = Room::whereNull('deleted_at')->findOrFail($id);
 
         if ($room->status !== 'dirty') {
             return response()->json([
-                'message' => 'Room is not available for cleaning'
-            ], 400);
+                'message' => 'Room is not dirty.'
+            ], 422);
         }
 
-        // 🔥 RESET DAMAGE STATE HERE
-        $room->status = 'cleaning';
-        $room->has_damage = false;
-        $room->damage_note = null;
-        $room->damage_photo = null;
-
-        $room->save();
+        $room->update([
+            'status'     => 'cleaning',
+            'cleaned_by' => Auth::id(),
+            'has_damage' => false,
+        ]);
 
         return response()->json([
-            'message' => 'Cleaning started',
-            'room' => $room
+            'message' => 'Cleaning started.',
+            'data'    => $room,
         ]);
     }
 
-    // ✅ COMPLETE CLEANING
+    /*
+    |--------------------------------------------------------------------------
+    | COMPLETE CLEANING (cleaning/dirty → available or maintenance)
+    | NOTE: Damage report details handled by RoomDamageReportController
+    |--------------------------------------------------------------------------
+    */
     public function complete(Request $request, $id)
     {
-        $room = Room::findOrFail($id);
+        $room = Room::whereNull('deleted_at')->findOrFail($id);
 
-        // ✅ VALIDATION (RELAXED BOOLEAN)
-        $request->validate([
-            'has_damage' => 'nullable',
-            'damage_note' => 'nullable|string|max:1000',
-            'photo' => 'nullable|image|max:2048',
-        ]);
-
-        if (!in_array($room->status, ['cleaning', 'dirty'])) {
+        if (!in_array($room->status, ['dirty', 'cleaning', 'maintenance'])) {
             return response()->json([
-                'message' => 'Room cannot be completed'
-            ], 400);
+                'message' => 'Room is not in a cleanable state.'
+            ], 422);
         }
 
-        // 🔥 HANDLE BOOLEAN SAFELY (ACCEPT ALL FORMATS)
         $hasDamage = filter_var(
-            $request->input('has_damage'),
+            $request->input('has_damage', false),
             FILTER_VALIDATE_BOOLEAN
         );
 
-        // 🔥 STATUS LOGIC
-        $room->status = 'available';
+        $room->update([
+            'status'       => $hasDamage ? 'maintenance' : 'available',
+            'has_damage'   => $hasDamage,
+            'cleaned_by'   => Auth::id(),
+            'completed_at' => Carbon::now(),
+        ]);
 
-        $room->completed_at = Carbon::now();
-        $room->cleaned_by = Auth::id();
-
-        // 🔥 DAMAGE
-        $room->has_damage = $hasDamage;
-        $room->damage_note = $hasDamage ? $request->damage_note : null;
-
-        // 🔥 GET LATEST BOOKING FROM PIVOT TABLE
-        // $currentBooking = $room->bookings()
-        //     ->orderBy('booked_rooms.id', 'desc')
-        //     ->first();
-
-        // // 🔥 SAVE BOOKING ID
-        // $room->damage_booking_id = $hasDamage && $currentBooking
-        //     ? $currentBooking->id
-        //     : null;
-        // 🔥 DO NOT CHANGE booking here
-
-        // 🔥 PHOTO
-        if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('damages', 'public');
-            $room->damage_photo = $path;
-        }
-
-        $room->save();
-
-        $currentBooking = $room->bookings()
-            ->orderByDesc('booked_rooms.id')
-            ->first();
-
+        // LOG HISTORY
         BookingHistory::create([
-            'booking_id' => $hasDamage ? $currentBooking?->id : null, // 🔥 NEW
-            'old_status' => 'cleaning',
-            'new_status' => 'cleaned',
-            'changed_by' => Auth::id(),
+            'booking_id'  => null,
+            'old_status'  => 'cleaning',
+            'new_status'  => $hasDamage ? 'maintenance' : 'cleaned',
             'change_note' => $hasDamage
                 ? 'Room cleaned with damage'
                 : 'Room cleaned successfully',
-            'changed_at' => now()
+            'changed_by'  => Auth::id(),
+            'changed_at'  => Carbon::now(),
         ]);
-
 
         return response()->json([
             'message' => $hasDamage
-                ? 'Room cleaned but has damage'
-                : 'Room cleaned successfully',
-            'room' => $room
+                ? 'Room marked as maintenance due to damage.'
+                : 'Room marked as available.',
+            'data' => $room,
         ]);
     }
 
-    // ✅ HISTORY
+    /*
+    |--------------------------------------------------------------------------
+    | HISTORY (completed rooms by this housekeeper)
+    |--------------------------------------------------------------------------
+    */
     public function history()
     {
-        $history = BookingHistory::with([
-            'booking.rooms',
-            'user'
-        ])
-            ->where('changed_by', Auth::id())
-            ->where('change_note', 'LIKE', '%clean%')
-            ->latest('changed_at')
-            ->get();
+        $rooms = Room::with(['roomType'])
+            ->whereNull('deleted_at')
+            ->where('cleaned_by', Auth::id())
+            ->whereNotNull('completed_at')
+            ->latest('completed_at')
+            ->get()
+            ->map(function ($room) {
+                return [
+                    'id'             => $room->id,
+                    'room_number'    => $room->room_number,
+                    'status'         => $room->status,
+                    'has_damage'     => $room->has_damage,
+                    'room_type'      => $room->roomType?->type_name,
+                    'damage_summary' => $room->damage_summary,
+                    'completed_at'   => $room->completed_at,
+                ];
+            });
 
-        return response()->json($history);
+        return response()->json($rooms);
     }
 }
-
-// namespace App\Http\Controllers;
-
-// use Illuminate\Http\Request;
-// use App\Models\Room;
-// use Carbon\Carbon;
-// use Illuminate\Support\Facades\Auth;
-
-// class HousekeeperController extends Controller
-// {
-//     public function tasks(Request $request)
-//     {
-//         $rooms = Room::whereIn('status', ['dirty', 'cleaning'])
-//             ->get();
-
-//         return response()->json($rooms);
-//     }
-
-//     public function start($id)
-//     {
-//         $room = Room::findOrFail($id);
-
-//         $room->status = 'cleaning';
-//         $room->save();
-
-//         return response()->json([
-//             'message' => 'Cleaning started',
-//             'room' => $room
-//         ]);
-//     }
-
-//     public function complete(Request $request, $id)
-//     {
-//         $room = Room::findOrFail($id);
-
-//         $room->status = 'available';
-//         $room->completed_at = Carbon::now();
-//         $room->cleaned_by = Auth::id();
-
-//         // 🔥 NEW DAMAGE HANDLING
-//         $room->has_damage = $request->has_damage ?? false;
-//         $room->damage_note = $request->damage_note;
-
-//         $room->save();
-
-//         return response()->json([
-//             'message' => 'Room updated',
-//             'room' => $room
-//         ]);
-//     }
-
-//     public function history()
-//     {
-//         $rooms = Room::with('cleaner')
-//             ->whereNotNull('completed_at')
-//             ->where('cleaned_by', Auth::id())
-//             ->latest('completed_at')
-//             ->get();
-
-//         return response()->json($rooms);
-//     }
-// }
-
-// namespace App\Http\Controllers;
-
-// use Illuminate\Http\Request;
-// use App\Models\Room;
-// use Carbon\Carbon;
-// use Illuminate\Support\Facades\Auth;
-
-// class HousekeeperController extends Controller
-// {
-//     public function tasks(Request $request)
-//     {
-//         $rooms = Room::whereIn('status', ['dirty', 'cleaning'])
-//             ->get();
-
-//         return response()->json($rooms);
-//     }
-
-//     public function start($id)
-//     {
-//         $room = Room::findOrFail($id);
-
-//         $room->status = 'cleaning';
-//         $room->save();
-
-//         return response()->json([
-//             'message' => 'Cleaning started',
-//             'room' => $room
-//         ]);
-//     }
-
-//     public function complete(Request $request, $id)
-//     {
-//         $room = Room::findOrFail($id);
-
-//         $room->status = 'available';
-//         $room->completed_at = Carbon::now();
-//         $room->cleaned_by = Auth::id();
-
-//         // 🔥 NEW DAMAGE HANDLING
-//         $room->has_damage = $request->has_damage ?? false;
-//         $room->damage_note = $request->damage_note;
-
-//         $room->save();
-
-//         return response()->json([
-//             'message' => 'Room updated',
-//             'room' => $room
-//         ]);
-//     }
-
-//     public function history()
-//     {
-//         $rooms = Room::with('cleaner')
-//             ->whereNotNull('completed_at')
-//             ->where('cleaned_by', Auth::id())
-//             ->latest('completed_at')
-//             ->get();
-
-//         return response()->json($rooms);
-//     }
-// }

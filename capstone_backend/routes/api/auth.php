@@ -12,7 +12,9 @@ Route::prefix('auth')->group(function () {
     Route::post('/mobile/login', [AuthController::class, 'mobileLogin']);
     Route::post('/login', [AuthController::class, 'adminLogin']);
 
-    // 🔒 PROTECTED ROUTES (need token)
+    Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+
+    // PROTECTED ROUTES (need token)
     Route::middleware('auth:sanctum')->group(function () {
 
         // ✅ LOGOUT

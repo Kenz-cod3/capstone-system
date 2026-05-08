@@ -12,6 +12,7 @@ Route::middleware('auth:sanctum')->group(function () {
     require __DIR__ . '/api/users.php';
     require __DIR__ . '/api/bookings.php';
     require __DIR__ . '/api/rooms.php';
+    require __DIR__ . '/api/addons.php';
     require __DIR__ . '/api/messages.php';
     require __DIR__ . '/api/notifications.php';
     require __DIR__ . '/api/restaurant.php';

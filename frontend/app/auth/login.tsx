@@ -12,6 +12,8 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   ScrollView,
+  Alert,
+  Modal,
 } from "react-native";
 import { useState } from "react";
 import { login } from "../../services/authServices";
@@ -27,13 +29,15 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
 
   const { setAuth } = useAuthStore();
   const router = useRouter();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      alert("Please enter email and password");
+      Alert.alert("Validation Error", "Please enter email and password");
       return;
     }
 
@@ -50,7 +54,7 @@ export default function Login() {
       await setAuth(res.user, res.token);
       await setToken(res.token);
 
-      // ROLE BASED REDIRECT
+      // ✅ ROLE BASED REDIRECT
       if (res.user.role === "guest") {
         router.replace("/(guest)/(tabs)/home");
       } else if (res.user.role === "housekeeper") {
@@ -59,7 +63,42 @@ export default function Login() {
 
     } catch (e: any) {
       console.log("LOGIN ERROR:", e.response?.data);
-      alert(e.response?.data?.message || "Login failed. Please try again.");
+
+      const message = e.response?.data?.message;
+      const userEmail = e.response?.data?.email || email;
+
+      // 🔥 FIX: handle ANY verify message
+      if (message?.toLowerCase().includes("verify")) {
+
+        Alert.alert(
+          "Account Not Verified",
+          "OTP sent to your email. Continue verification?",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "OK",
+              onPress: () => {
+                router.replace({
+                  pathname: "/auth/otp",
+                  params: { email: userEmail, from: "login" },
+                });
+              },
+            },
+          ]
+        );
+
+        return;
+      }
+
+      // ❌ NORMAL ERROR
+      Alert.alert(
+        "Login Failed",
+        message || "Invalid email or password"
+      );
+
     } finally {
       setLoading(false);
     }
@@ -135,6 +174,7 @@ export default function Login() {
                           autoCapitalize="none"
                           keyboardType="email-address"
                           className="flex-1 py-3 text-gray-800"
+                          editable={!loading}
                         />
                       </View>
                     </View>
@@ -152,6 +192,7 @@ export default function Login() {
                           placeholderTextColor="#999"
                           secureTextEntry={!showPassword}
                           className="flex-1 py-3 text-gray-800"
+                          editable={!loading}
                         />
                         <TouchableOpacity
                           onPress={() => setShowPassword(!showPassword)}
@@ -252,6 +293,45 @@ export default function Login() {
             </ScrollView>
           </LinearGradient>
         </ImageBackground>
+
+        {/* 🔥 LOADING MODAL SPINNER */}
+        <Modal
+          transparent={true}
+          visible={showModal}
+          animationType="fade"
+          statusBarTranslucent={true}
+          onRequestClose={() => {
+            if (!loading) {
+              setShowModal(false);
+            }
+          }}
+        >
+          <View className="flex-1 justify-center items-center bg-black/60">
+            <View
+              className="bg-white rounded-3xl items-center shadow-2xl"
+              style={{
+                width: width * 0.75,
+                padding: 30,
+                elevation: 10,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 5,
+              }}
+            >
+              <ActivityIndicator size="large" color="#10b981" />
+              <Text className="text-xl font-bold mt-5 text-gray-800">
+                {loading ? "Signing In" : "Please Wait"}
+              </Text>
+              <Text className="text-base text-gray-500 mt-2 text-center">
+                {loading ? "Verifying your credentials" : ""}
+              </Text>
+              <Text className="text-xs text-gray-400 mt-4 text-center">
+                Please don't close the app
+              </Text>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );

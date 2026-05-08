@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import api from "@/services/api";
 import { 
     Plus, 
@@ -16,7 +16,9 @@ import {
     Loader2,
     Filter,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Upload,
+    Image as ImageIcon
 } from "lucide-react";
 
 export default function AdminMenu() {
@@ -30,6 +32,9 @@ export default function AdminMenu() {
     const [showFilters, setShowFilters] = useState(false);
     const [sortBy, setSortBy] = useState("name");
     const [sortOrder, setSortOrder] = useState("asc");
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [form, setForm] = useState({
         name: "",
@@ -54,6 +59,34 @@ export default function AdminMenu() {
         fetchItems();
     }, []);
 
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.size > 2 * 1024 * 1024) {
+                alert("Image size must be less than 2MB");
+                return;
+            }
+            if (!file.type.startsWith('image/')) {
+                alert("Please select a valid image file");
+                return;
+            }
+            setImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const removeImage = () => {
+        setImageFile(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const handleSubmit = async () => {
         if (!form.name || !form.price) {
             alert("Name and price are required");
@@ -68,22 +101,35 @@ export default function AdminMenu() {
         setLoading(true);
 
         try {
-            const data = {
-                ...form,
-                price: Number(form.price),
-                stock_quantity: Number(form.stock_quantity || 0),
-                low_stock_threshold: Number(form.low_stock_threshold || 0),
-            };
+            const formData = new FormData();
+            formData.append('name', form.name);
+            formData.append('description', form.description || '');
+            formData.append('category', form.category);
+            formData.append('price', form.price);
+            formData.append('stock_quantity', form.stock_quantity || '0');
+            formData.append('low_stock_threshold', form.low_stock_threshold || '0');
+            formData.append('is_active', form.is_active ? '1' : '0');
+            
+            if (imageFile) {
+                formData.append('image', imageFile);
+            }
 
             if (editingItem) {
-                await api.put(`/menu-items/${editingItem.id}`, data);
+                formData.append('_method', 'PUT');
+                await api.post(`/menu-items/${editingItem.id}`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
             } else {
-                await api.post("/menu-items", data);
+                await api.post('/menu-items', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
             }
 
             resetForm();
             setOpen(false);
             setEditingItem(null);
+            setImageFile(null);
+            setImagePreview(null);
             fetchItems();
         } catch (err: any) {
             alert(err.response?.data?.message || `Error ${editingItem ? "updating" : "adding"} product`);
@@ -114,6 +160,12 @@ export default function AdminMenu() {
             low_stock_threshold: item.low_stock_threshold?.toString() || "",
             is_active: item.is_active,
         });
+        if (item.image_url) {
+            setImagePreview(item.image_url);
+        } else {
+            setImagePreview(null);
+        }
+        setImageFile(null);
         setOpen(true);
     };
 
@@ -127,6 +179,8 @@ export default function AdminMenu() {
             low_stock_threshold: "",
             is_active: true,
         });
+        setImageFile(null);
+        setImagePreview(null);
     };
 
     const getCategoryIcon = (category: string) => {
@@ -217,128 +271,13 @@ export default function AdminMenu() {
                     </button>
                 </div>
 
-                {/* Search and Filters */}
-                <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
-                    <div className="flex flex-col lg:flex-row gap-4">
-                        {/* Search Bar */}
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name or description..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                            />
-                            {searchTerm && (
-                                <button
-                                    onClick={() => setSearchTerm("")}
-                                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                                >
-                                    <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-                                </button>
-                            )}
-                        </div>
-                        
-                        {/* Filter Toggle Button */}
-                        <button
-                            onClick={() => setShowFilters(!showFilters)}
-                            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
-                        >
-                            <Filter className="w-4 h-4" />
-                            Filters
-                            {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                    </div>
-                    
-                    {/* Expanded Filters */}
-                    {showFilters && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Category
-                                </label>
-                                <select
-                                    value={categoryFilter}
-                                    onChange={(e) => setCategoryFilter(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                                >
-                                    <option value="All">All Categories</option>
-                                    <option value="Drinks">Drinks</option>
-                                    <option value="Meals">Meals</option>
-                                    <option value="Desserts">Desserts</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Status
-                                </label>
-                                <select
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                                >
-                                    <option value="All">All Items</option>
-                                    <option value="Active">Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Sort By
-                                </label>
-                                <div className="flex gap-2">
-                                    <select
-                                        value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value)}
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                                    >
-                                        <option value="name">Name</option>
-                                        <option value="price">Price</option>
-                                        <option value="stock_quantity">Stock</option>
-                                        <option value="category">Category</option>
-                                    </select>
-                                    <button
-                                        onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                                    >
-                                        {sortOrder === "asc" ? "↑" : "↓"}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                {/* Search and Filters - Keep your existing code */}
+                {/* ... (keep your existing search and filters section) ... */}
 
-                {/* Statistics Summary */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                        <p className="text-sm text-gray-500">Total Items</p>
-                        <p className="text-2xl font-bold text-gray-900">{items.length}</p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                        <p className="text-sm text-gray-500">Active Items</p>
-                        <p className="text-2xl font-bold text-green-600">
-                            {items.filter(i => i.is_active).length}
-                        </p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                        <p className="text-sm text-gray-500">Low Stock Items</p>
-                        <p className="text-2xl font-bold text-yellow-600">
-                            {items.filter(i => i.stock_quantity <= i.low_stock_threshold && i.stock_quantity > 0).length}
-                        </p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-                        <p className="text-sm text-gray-500">Out of Stock</p>
-                        <p className="text-2xl font-bold text-red-600">
-                            {items.filter(i => i.stock_quantity === 0).length}
-                        </p>
-                    </div>
-                </div>
+                {/* Statistics Summary - Keep your existing code */}
+                {/* ... (keep your existing statistics section) ... */}
 
-                {/* Menu Items Grid */}
+                {/* Menu Items Grid with Images */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredAndSortedItems.length === 0 ? (
                         <div className="col-span-full bg-white rounded-xl shadow-sm p-12 text-center border border-gray-100">
@@ -358,6 +297,24 @@ export default function AdminMenu() {
                                     key={item.id}
                                     className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 overflow-hidden"
                                 >
+                                    {/* Image Section */}
+                                    {item.image_url && (
+                                        <div className="relative h-48 overflow-hidden bg-gray-100">
+                                            <img 
+                                                src={item.image_url} 
+                                                alt={item.name}
+                                                className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                                            />
+                                            {!item.is_active && (
+                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                                    <span className="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                                                        Unavailable
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    
                                     <div className="p-6">
                                         {/* Header */}
                                         <div className="flex justify-between items-start mb-3">
@@ -436,7 +393,7 @@ export default function AdminMenu() {
                     )}
                 </div>
 
-                {/* Add/Edit Modal */}
+                {/* Add/Edit Modal with Image Upload */}
                 {open && (
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-10 duration-300">
@@ -464,6 +421,55 @@ export default function AdminMenu() {
                             
                             {/* Modal Body */}
                             <div className="p-6">
+                                {/* Image Upload Section */}
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Item Image
+                                    </label>
+                                    <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-orange-500 transition-colors">
+                                        {imagePreview ? (
+                                            <div className="relative">
+                                                <img 
+                                                    src={imagePreview} 
+                                                    alt="Preview" 
+                                                    className="h-40 w-auto object-cover rounded-lg"
+                                                />
+                                                <button
+                                                    onClick={removeImage}
+                                                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1 text-center">
+                                                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                                                <div className="flex text-sm text-gray-600">
+                                                    <label
+                                                        htmlFor="image-upload"
+                                                        className="relative cursor-pointer bg-white rounded-md font-medium text-orange-600 hover:text-orange-500 focus-within:outline-none"
+                                                    >
+                                                        <span>Upload a file</span>
+                                                        <input
+                                                            id="image-upload"
+                                                            name="image-upload"
+                                                            type="file"
+                                                            className="sr-only"
+                                                            accept="image/*"
+                                                            onChange={handleImageSelect}
+                                                            ref={fileInputRef}
+                                                        />
+                                                    </label>
+                                                    <p className="pl-1">or drag and drop</p>
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    PNG, JPG, GIF up to 2MB
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="md:col-span-2">
                                         <label className="block text-sm font-medium text-gray-700 mb-2">

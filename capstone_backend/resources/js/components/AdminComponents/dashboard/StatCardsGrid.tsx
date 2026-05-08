@@ -19,10 +19,16 @@ interface DashboardStats {
 //---------COMPONENT---->
 export default function StatCardsGrid({
     stats,
-    occupancy
+    occupancy,
+    role,
+    cardRounded = "xl", // rounded: 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
+    gap = 2 // gap size in Tailwind units (1-8)
 }: {
     stats: DashboardStats | undefined;
     occupancy: number;
+    role: string;
+    cardRounded?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+    gap?: number;
 }) {
 
     //---------FORMAT CURRENCY---->
@@ -84,7 +90,7 @@ export default function StatCardsGrid({
             trend: "up",
         },
         {
-            label: "Active Bookings",
+            label: role === "staff" ? "Active Bookings" : "Total Bookings",
             value: (stats?.bookings ?? 0).toString(),
             change: "+23",
             trend: "up",
@@ -97,11 +103,24 @@ export default function StatCardsGrid({
         }
     ];
 
+    // Gap classes mapping
+    const gapClasses = {
+        0: "gap-0",
+        1: "gap-1",
+        2: "gap-2",
+        3: "gap-3",
+        4: "gap-4",
+        5: "gap-5",
+        6: "gap-6",
+        7: "gap-7",
+        8: "gap-8",
+    };
+
     //---------RENDER---->
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 ${gapClasses[gap as keyof typeof gapClasses] || gapClasses[2]}`}>
             {statCards.map((stat, index) => (
-                <StatCard key={index} {...stat} />
+                <StatCard key={index} {...stat} rounded={cardRounded} />
             ))}
         </div>
     );
