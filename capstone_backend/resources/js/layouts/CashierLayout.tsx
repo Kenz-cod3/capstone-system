@@ -57,8 +57,8 @@ export default function StaffLayout() {
             icon: UtensilsCrossed 
         },
         { 
-            name: "Pending Orders", 
-            description: "Track Pending",
+            name: "Order Management", 
+            description: "Track Order Sales",
             href: "/product", 
             icon: ClipboardList 
         },
@@ -192,7 +192,7 @@ export default function StaffLayout() {
                                 <div className={`absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-30 ${
                                     !isSidebarOpen && "left-1/2 -translate-x-1/2 w-48"
                                 }`}>
-                                    <button
+                                    {/* <button
                                         onClick={() => {
                                             setDropdownOpen(false);
                                             navigate("/profile");
@@ -201,7 +201,7 @@ export default function StaffLayout() {
                                     >
                                         <User className="h-4 w-4 text-gray-500" />
                                         <span className="text-sm text-gray-700">Profile</span>
-                                    </button>
+                                    </button> */}
                                     <button
                                         onClick={() => {
                                             setDropdownOpen(false);

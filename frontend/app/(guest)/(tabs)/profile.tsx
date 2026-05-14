@@ -78,18 +78,52 @@ export default function Profile() {
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await logout();
-          router.replace("/auth/login");
+  // const handleLogout = () => {
+  //   Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+  //     { text: "Cancel", style: "cancel" },
+  //     {
+  //       text: "Sign Out",
+  //       style: "destructive",
+  //       onPress: async () => {
+  //         await logout();
+  //         router.replace("/auth/login");
+  //       },
+  //     },
+  //   ]);
+  // };
+
+  const handleLogout = async () => {
+
+    // WEB
+    if (typeof window !== "undefined") {
+
+      const confirmed = window.confirm(
+        "Are you sure you want to sign out?"
+      );
+
+      if (!confirmed) return;
+
+      await logout();
+      router.replace("/auth/login");
+      return;
+    }
+
+    // MOBILE
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await logout();
+            router.replace("/auth/login");
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleProfileUpdate = () => {

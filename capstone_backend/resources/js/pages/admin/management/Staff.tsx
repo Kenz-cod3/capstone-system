@@ -1,4 +1,4 @@
-// Staff.tsx
+// Users.tsx - Enhanced design with Tailwind CSS
 import { useEffect, useState } from "react";
 import api from "@/services/api";
 import {
@@ -13,7 +13,6 @@ import {
     StopOutlined,
     PlusOutlined,
     ReloadOutlined,
-    ExportOutlined,
     FilterOutlined,
     SortAscendingOutlined,
     SearchOutlined,
@@ -21,10 +20,10 @@ import {
     ClockCircleOutlined,
     CalendarOutlined,
     TeamOutlined,
-    IdcardOutlined,
     ShopOutlined,
     DollarOutlined,
-    RiseOutlined
+    CrownOutlined,
+    CloseOutlined,
 } from '@ant-design/icons';
 import {
     Badge,
@@ -41,7 +40,6 @@ import {
     message,
     Modal,
     Dropdown,
-    Statistic,
     Row,
     Col,
     Typography,
@@ -50,11 +48,8 @@ import {
     Descriptions,
     Flex,
     Grid,
-    Drawer,
     Form,
     Input as AntInput,
-    Switch,
-    Tabs
 } from 'antd';
 import type { ColumnsType } from "antd/es/table";
 import { format } from "date-fns";
@@ -65,7 +60,7 @@ const { Search } = Input;
 const { Option } = Select;
 const { useBreakpoint } = Grid;
 
-interface Staff {
+interface User {
     id: number;
     first_name: string;
     last_name: string;
@@ -79,171 +74,275 @@ interface Staff {
     created_at: string;
     updated_at: string;
     last_login?: string;
-    // Stats
-    total_bookings_handled?: number;
-    total_orders_handled?: number;
-    total_cash_handled?: number;
 }
 
-interface StatsData {
-    total: number;
-    active: number;
-    inactive: number;
-    admin: number;
-    staff: number;
-    cashier: number;
-    housekeeper: number;
+interface DashboardStats {
+    totalUsers: number;
+    activeUsers: number;
+    inactiveUsers: number;
+    administrators: number;
+    staffMembers: number;
+    cashiers: number;
+    housekeepers: number;
 }
 
-const roleColors: Record<string, string> = {
-    admin: '#ef4444',
-    staff: '#3b82f6',
-    cashier: '#10b981',
-    housekeeper: '#f59e0b'
+const roleConfig = {
+    admin: {
+        color: '#ef4444',
+        tailwindBg: 'bg-red-50',
+        tailwindText: 'text-red-600',
+        tailwindBorder: 'border-red-200',
+        tailwindDot: 'bg-red-500',
+        icon: <CrownOutlined />,
+        label: 'Administrator',
+        description: 'Full system access',
+        badgeColor: 'red',
+        order: 1
+    },
+    staff: {
+        color: '#3b82f6',
+        tailwindBg: 'bg-blue-50',
+        tailwindText: 'text-blue-600',
+        tailwindBorder: 'border-blue-200',
+        tailwindDot: 'bg-blue-500',
+        icon: <TeamOutlined />,
+        label: 'Staff',
+        description: 'Manage bookings and operations',
+        badgeColor: 'blue',
+        order: 2
+    },
+    cashier: {
+        color: '#10b981',
+        tailwindBg: 'bg-emerald-50',
+        tailwindText: 'text-emerald-600',
+        tailwindBorder: 'border-emerald-200',
+        tailwindDot: 'bg-emerald-500',
+        icon: <DollarOutlined />,
+        label: 'Cashier',
+        description: 'Handle payments and transactions',
+        badgeColor: 'green',
+        order: 3
+    },
+    housekeeper: {
+        color: '#f59e0b',
+        tailwindBg: 'bg-amber-50',
+        tailwindText: 'text-amber-600',
+        tailwindBorder: 'border-amber-200',
+        tailwindDot: 'bg-amber-500',
+        icon: <ShopOutlined />,
+        label: 'Housekeeper',
+        description: 'Manage room cleaning and maintenance',
+        badgeColor: 'orange',
+        order: 4
+    }
 };
 
-const roleIcons: Record<string, React.ReactNode> = {
-    admin: <IdcardOutlined />,
-    staff: <TeamOutlined />,
-    cashier: <DollarOutlined />,
-    housekeeper: <ShopOutlined />
+const roleOptions = [
+    { value: 'admin', label: 'Administrator', icon: <CrownOutlined style={{ color: '#ef4444' }} />, description: 'Full system access' },
+    { value: 'staff', label: 'Staff', icon: <TeamOutlined style={{ color: '#3b82f6' }} />, description: 'Manage bookings and operations' },
+    { value: 'cashier', label: 'Cashier', icon: <DollarOutlined style={{ color: '#10b981' }} />, description: 'Handle payments and transactions' },
+    { value: 'housekeeper', label: 'Housekeeper', icon: <ShopOutlined style={{ color: '#f59e0b' }} />, description: 'Manage room cleaning and maintenance' }
+];
+
+// Stat Card Component
+const StatCard = ({
+    title,
+    value,
+    subtitle,
+    icon,
+    gradient,
+    iconBg,
+}: {
+    title: string;
+    value: number;
+    subtitle?: string;
+    icon: React.ReactNode;
+    gradient: string;
+    iconBg: string;
+}) => (
+    <div className={`relative overflow-hidden rounded-2xl p-5 shadow-sm border border-white/60 bg-white transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group`}>
+        {/* Decorative gradient blob */}
+        <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full opacity-10 ${gradient}`} />
+        <div className="relative flex items-start justify-between">
+            <div className="flex-1">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">{title}</p>
+                <p className="text-3xl font-bold text-slate-800 leading-tight">{value.toLocaleString()}</p>
+                {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+            </div>
+            <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${iconBg} transition-transform duration-200 group-hover:scale-110`}>
+                {icon}
+            </div>
+        </div>
+    </div>
+);
+
+// Role Badge Component
+const RoleBadge = ({ role }: { role: keyof typeof roleConfig }) => {
+    const config = roleConfig[role];
+    if (!config) return <span className="text-slate-400 text-xs">Unknown</span>;
+    return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${config.tailwindBg} ${config.tailwindText} ${config.tailwindBorder}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${config.tailwindDot}`} />
+            {config.label}
+        </span>
+    );
 };
 
-const roleLabels: Record<string, string> = {
-    admin: 'Administrator',
-    staff: 'Staff',
-    cashier: 'Cashier',
-    housekeeper: 'House Keeper'
-};
+// Status Badge Component
+const StatusBadge = ({ active }: { active: boolean }) => (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${active
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-slate-50 text-slate-500 border-slate-200'
+        }`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+        {active ? 'Active' : 'Inactive'}
+    </span>
+);
 
-export default function Staff() {
+export default function Users() {
     const screens = useBreakpoint();
     const isMobile = !screens.md;
 
-    const [staff, setStaff] = useState<Staff[]>([]);
-    const [search, setSearch] = useState("");
+    const [allUsers, setAllUsers] = useState<User[]>([]);   // ALL users from API, never paginated
+    const [searchQuery, setSearchQuery] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
-    const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-    const [viewModalVisible, setViewModalVisible] = useState(false);
-    const [editModalVisible, setEditModalVisible] = useState(false);
-    const [statusModalVisible, setStatusModalVisible] = useState(false);
-    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-    const [addModalVisible, setAddModalVisible] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [statusModalOpen, setStatusModalOpen] = useState(false);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [addModalOpen, setAddModalOpen] = useState(false);
     const [newStatus, setNewStatus] = useState<boolean>(true);
-    const [filtersVisible, setFiltersVisible] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
 
-    // Form
     const [form] = Form.useForm();
-    const [submitting, setSubmitting] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Filters and sorting
     const [roleFilter, setRoleFilter] = useState<string>("all");
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [sortBy, setSortBy] = useState<string>("newest");
 
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
-    const [total, setTotal] = useState(0);
-    const [perPage, setPerPage] = useState(10);
-
-    const [stats, setStats] = useState<StatsData>({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        admin: 0,
-        staff: 0,
-        cashier: 0,
-        housekeeper: 0
+    const [stats, setStats] = useState<DashboardStats>({
+        totalUsers: 0,
+        activeUsers: 0,
+        inactiveUsers: 0,
+        administrators: 0,
+        staffMembers: 0,
+        cashiers: 0,
+        housekeepers: 0
     });
 
     const BASE_URL = api.defaults.baseURL?.replace("/api", "") || "";
 
-    const fetchStaff = async (silent = false) => {
+    // Single fetch — grabs ALL users, no server-side pagination
+    const fetchUsers = async (silent = false) => {
         try {
-            if (!silent) setLoading(true);
-            if (silent) setRefreshing(true);
+            if (!silent) setIsLoading(true);
+            else setIsRefreshing(true);
 
-            const params: any = {
-                page: currentPage,
-                per_page: perPage,
-            };
+            // API ignores large per_page — loop through every page to collect all users
+            let page = 1;
+            let collected: User[] = [];
+            let lastPage = 1;
 
-            if (debouncedSearch) params.search = debouncedSearch;
-            if (roleFilter !== 'all') params.role_type = roleFilter;
-            if (statusFilter !== 'all') params.status = statusFilter;
-            if (sortBy) params.sort = sortBy;
+            do {
+                const resp = await api.get("/users", { params: { page, per_page: 100 } });
+                const raw = resp.data;
+                const pageItems: User[] = Array.isArray(raw.data) ? raw.data : Array.isArray(raw) ? raw : [];
+                collected = [...collected, ...pageItems];
+                lastPage = raw.last_page ?? raw.meta?.last_page ?? 1;
+                page++;
+            } while (page <= lastPage);
 
-            const response = await api.get("/users", { params });
-
-            const paginatedData = response.data;
-
-            // 🔥 SAFE ACCESS (important)
-            const usersData = Array.isArray(paginatedData.data)
-                ? paginatedData.data
-                : [];
-
-            console.log("USERS FROM API:", usersData);
-
-            // 🔥 FIX: normalize role to lowercase
-            const staffUsers = usersData.filter((user: Staff) =>
-                ['staff', 'cashier', 'housekeeper'].includes(
-                    user.role?.toLowerCase()
-                )
+            const all: User[] = collected.filter((u: User) =>
+                ['admin', 'staff', 'cashier', 'housekeeper'].includes(u.role?.toLowerCase())
             );
 
-            setStaff(staffUsers);
-
-            setLastPage(paginatedData.last_page || 1);
-            setTotal(paginatedData.total || staffUsers.length);
-            setPerPage(paginatedData.per_page || perPage);
-
-            // 🔥 FIX: normalize in stats too
+            setAllUsers(all);
             setStats({
-                total: staffUsers.length,
-                active: staffUsers.filter((u: Staff) => u.is_active).length,
-                inactive: staffUsers.filter((u: Staff) => !u.is_active).length,
-
-                admin: staffUsers.filter((u: Staff) => u.role?.toLowerCase() === 'admin').length,
-                staff: staffUsers.filter((u: Staff) => u.role?.toLowerCase() === 'staff').length,
-                cashier: staffUsers.filter((u: Staff) => u.role?.toLowerCase() === 'cashier').length,
-                housekeeper: staffUsers.filter((u: Staff) => u.role?.toLowerCase() === 'housekeeper').length,
+                totalUsers: all.length,
+                activeUsers: all.filter((u) => u.is_active).length,
+                inactiveUsers: all.filter((u) => !u.is_active).length,
+                administrators: all.filter((u) => u.role?.toLowerCase() === 'admin').length,
+                staffMembers: all.filter((u) => u.role?.toLowerCase() === 'staff').length,
+                cashiers: all.filter((u) => u.role?.toLowerCase() === 'cashier').length,
+                housekeepers: all.filter((u) => u.role?.toLowerCase() === 'housekeeper').length,
             });
-
-        } catch (err: any) {
-            console.error("Error fetching staff:", err);
-            message.error(err.response?.data?.message || "Failed to load staff");
-        } finally {
-            if (!silent) setLoading(false);
-            if (silent) setRefreshing(false);
-        }
-    };
-
-    const handleAddStaff = async (values: any) => {
-        setSubmitting(true);
-        try {
-            await api.post("/users", {
-                ...values,
-                role: values.role?.toLowerCase().replace(/\s/g, ""),
-                password: values.password,
-                password_confirmation: values.password_confirmation,
-            });
-            message.success("Staff member added successfully");
-            setAddModalVisible(false);
-            form.resetFields();
-            fetchStaff();
         } catch (error: any) {
-            message.error(error.response?.data?.message || "Failed to add staff");
+            console.error("Error fetching users:", error);
+            message.error(error.response?.data?.message || "Failed to load users");
         } finally {
-            setSubmitting(false);
+            if (!silent) setIsLoading(false);
+            else setIsRefreshing(false);
         }
     };
 
-    const handleEditStaff = async (values: any) => {
-        if (!selectedStaff) return;
-        setSubmitting(true);
+    useEffect(() => { fetchUsers(); }, []);
+
+    // Client-side filtered + sorted view derived from allUsers
+    const displayUsers = (() => {
+        let list = [...allUsers];
+
+        // role filter
+        if (roleFilter !== 'all') list = list.filter(u => u.role?.toLowerCase() === roleFilter);
+
+        // status filter
+        if (statusFilter === 'active') list = list.filter(u => u.is_active);
+        else if (statusFilter === 'inactive') list = list.filter(u => !u.is_active);
+
+        // search
+        if (debouncedSearch) {
+            const q = debouncedSearch.toLowerCase();
+            list = list.filter(u =>
+                `${u.first_name} ${u.last_name}`.toLowerCase().includes(q) ||
+                u.email.toLowerCase().includes(q) ||
+                (u.contact_number || '').toLowerCase().includes(q)
+            );
+        }
+
+        // PRIMARY sort: always group by role order → admin, staff, cashier, housekeeper
+        const roleOrder: Record<string, number> = { admin: 1, staff: 2, cashier: 3, housekeeper: 4 };
+        list.sort((a, b) => {
+            const roleDiff = (roleOrder[a.role?.toLowerCase()] ?? 99) - (roleOrder[b.role?.toLowerCase()] ?? 99);
+            if (roleDiff !== 0) return roleDiff;
+
+            // SECONDARY sort: user-chosen sort within each role group
+            if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            if (sortBy === 'name_asc') return `${a.first_name}${a.last_name}`.localeCompare(`${b.first_name}${b.last_name}`);
+            if (sortBy === 'name_desc') return `${b.first_name}${b.last_name}`.localeCompare(`${a.first_name}${a.last_name}`);
+            return 0;
+        });
+
+        return list;
+    })();
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const handleCreateUser = async (values: any) => {
+        setIsSubmitting(true);
+        try {
+            await api.post("/users", { ...values, role: values.role?.toLowerCase() });
+            message.success("User created successfully");
+            setAddModalOpen(false);
+            form.resetFields();
+            await fetchUsers();
+        } catch (error: any) {
+            message.error(error.response?.data?.message || "Failed to create user");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleUpdateUser = async (values: any) => {
+        if (!selectedUser) return;
+        setIsSubmitting(true);
         try {
             const updateData: any = {
                 first_name: values.first_name,
@@ -257,111 +356,99 @@ export default function Staff() {
                 updateData.password = values.password;
                 updateData.password_confirmation = values.password_confirmation;
             }
-            await api.put(`/users/${selectedStaff.id}`, updateData);
-            message.success("Staff member updated successfully");
-            setEditModalVisible(false);
+            await api.put(`/users/${selectedUser.id}`, updateData);
+            message.success("User updated successfully");
+            setEditModalOpen(false);
             form.resetFields();
-            fetchStaff();
+            await fetchUsers();
         } catch (error: any) {
-            message.error(error.response?.data?.message || "Failed to update staff");
+            message.error(error.response?.data?.message || "Failed to update user");
         } finally {
-            setSubmitting(false);
+            setIsSubmitting(false);
         }
     };
 
-    const handleStatusChange = async (staff: Staff, newStatus: boolean) => {
+    const handleToggleStatus = async (user: User, status: boolean) => {
         try {
-            await api.patch(`/users/${staff.id}/status`, { is_active: newStatus });
-            message.success(`${staff.first_name} ${staff.last_name} has been ${newStatus ? 'activated' : 'deactivated'}`);
-            fetchStaff();
-            setStatusModalVisible(false);
+            await api.patch(`/users/${user.id}/status`, { is_active: status });
+            message.success(`${user.first_name} ${user.last_name} has been ${status ? 'activated' : 'deactivated'}`);
+            await fetchUsers();
+            setStatusModalOpen(false);
         } catch (error: any) {
             message.error(error.response?.data?.message || "Failed to update status");
         }
     };
 
-    const handleDeleteStaff = async (staff: Staff) => {
+    const handleDeleteUser = async (user: User) => {
         try {
-            await api.delete(`/users/${staff.id}`);
-            message.success(`${staff.first_name} ${staff.last_name} has been deleted`);
-            fetchStaff();
-            setDeleteModalVisible(false);
+            await api.delete(`/users/${user.id}`);
+            message.success(`${user.first_name} ${user.last_name} has been deleted`);
+            await fetchUsers();
+            setDeleteModalOpen(false);
         } catch (error: any) {
-            message.error(error.response?.data?.message || "Failed to delete staff");
+            message.error(error.response?.data?.message || "Failed to delete user");
         }
     };
 
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearch(search);
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [search]);
+    const getInitials = (firstName: string, lastName: string) =>
+        `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
 
-    useEffect(() => {
-        fetchStaff();
-    }, [debouncedSearch, currentPage, roleFilter, statusFilter, sortBy]);
-
-    const getInitials = (firstName: string, lastName: string) => {
-        return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
-    };
-
-    const getRandomColor = () => {
-        const colors = ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6'];
-        return colors[Math.floor(Math.random() * colors.length)];
-    };
+    const avatarColors = ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6'];
+    const getAvatarColor = (name: string) => avatarColors[name.charCodeAt(0) % avatarColors.length];
 
     const formatDate = (dateString?: string) => {
         if (!dateString) return "-";
         return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
     };
 
-    const getAvatarUrl = (staff: Staff) => {
-        if (staff.profile_image) {
-            if (staff.profile_image.startsWith('http')) {
-                return staff.profile_image;
-            }
-            return `${BASE_URL}/storage/${staff.profile_image}`;
+    const getAvatarUrl = (user: User) => {
+        if (user.profile_image) {
+            if (user.profile_image.startsWith('http')) return user.profile_image;
+            return `${BASE_URL}/storage/${user.profile_image}`;
         }
         return undefined;
     };
 
-    const columns: ColumnsType<Staff> = [
+    const columns: ColumnsType<User> = [
         {
-            title: 'Staff Member',
-            key: 'staff',
-            width: isMobile ? 200 : 280,
+            title: 'User',
+            key: 'user',
+            width: isMobile ? 200 : 300,
             fixed: isMobile ? false : 'left',
             render: (_, record) => (
-                <Flex align="center" gap={12}>
-                    <Avatar
-                        size={44}
-                        src={getAvatarUrl(record)}
-                        style={{ backgroundColor: !record.profile_image ? getRandomColor() : undefined, flexShrink: 0 }}
-                        icon={!record.profile_image ? <UserOutlined /> : undefined}
-                    >
-                        {!record.profile_image && !getAvatarUrl(record) && getInitials(record.first_name, record.last_name)}
-                    </Avatar>
-                    <Flex vertical style={{ minWidth: 0 }}>
-                        <Text strong style={{ fontSize: 15 }}>
-                            {record.first_name} {record.last_name}
-                        </Text>
-                        <Flex wrap gap={4} style={{ marginTop: 4 }}>
-                            <Tag
-                                color={roleColors[record.role] || "default"}
-                                icon={roleIcons[record.role]}
-                                style={{ fontSize: 11, margin: 0, borderRadius: 5 }}
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-shrink-0">
+                        {getAvatarUrl(record) ? (
+                            <img
+                                src={getAvatarUrl(record)}
+                                alt={record.first_name}
+                                className="w-11 h-11 rounded-xl object-cover ring-2 ring-white shadow-sm"
+                            />
+                        ) : (
+                            <div
+                                className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm"
+                                style={{ backgroundColor: getAvatarColor(record.first_name) }}
                             >
-                                {roleLabels[record.role]}
-                            </Tag>
+                                {getInitials(record.first_name, record.last_name)}
+                            </div>
+                        )}
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${record.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="font-semibold text-slate-800 text-sm truncate">
+                            {record.first_name} {record.last_name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <RoleBadge role={record.role} />
                             {record.email_verified_at && (
-                                <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                                    <CheckCircleOutlined className="text-xs" />
                                     Verified
-                                </Tag>
+                                </span>
                             )}
-                        </Flex>
-                    </Flex>
-                </Flex>
+                        </div>
+                    </div>
+                </div>
             )
         },
         {
@@ -369,54 +456,54 @@ export default function Staff() {
             key: 'contact',
             responsive: ['md'],
             render: (_, record) => (
-                <Flex vertical gap={4}>
-                    <Flex align="center" gap={8}>
-                        <MailOutlined style={{ color: '#666', width: 16 }} />
-                        <Text style={{ fontSize: 13 }} ellipsis={{ tooltip: true }}>
-                            {record.email}
-                        </Text>
-                    </Flex>
+                <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center flex-shrink-0">
+                            <MailOutlined className="text-slate-400 text-xs" />
+                        </div>
+                        <span className="text-sm text-slate-600 truncate max-w-[200px]">{record.email}</span>
+                    </div>
                     {record.contact_number && (
-                        <Flex align="center" gap={8}>
-                            <PhoneOutlined style={{ color: '#666', width: 16 }} />
-                            <Text style={{ fontSize: 13 }}>{record.contact_number}</Text>
-                        </Flex>
+                        <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center flex-shrink-0">
+                                <PhoneOutlined className="text-slate-400 text-xs" />
+                            </div>
+                            <span className="text-sm text-slate-600">{record.contact_number}</span>
+                        </div>
                     )}
-                </Flex>
+                </div>
             )
         },
         {
             title: 'Status',
             key: 'status',
-            width: 100,
+            width: 110,
             align: 'center',
-            render: (_, record) => (
-                <Badge
-                    status={record.is_active ? "success" : "default"}
-                    text={record.is_active ? "Active" : "Inactive"}
-                />
-            )
+            render: (_, record) => <StatusBadge active={record.is_active} />
         },
         {
             title: 'Joined',
             key: 'joined',
-            width: 150,
+            width: 160,
+            align: 'center',
             responsive: ['md'],
             render: (_, record) => (
                 <Tooltip title={formatDate(record.created_at)}>
-                    <Flex align="center" gap={8}>
-                        <ClockCircleOutlined style={{ color: '#666' }} />
-                        <Text style={{ fontSize: 13 }}>
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center flex-shrink-0">
+                            <CalendarOutlined className="text-slate-400 text-xs" />
+                        </div>
+                        <span className="text-sm text-slate-600">
                             {dayjs(record.created_at).format('MMM DD, YYYY')}
-                        </Text>
-                    </Flex>
+                        </span>
+                    </div>
                 </Tooltip>
             )
         },
         {
-            title: 'Actions',
+            title: '',
             key: 'actions',
-            width: 80,
+            width: 60,
             align: 'center',
             fixed: isMobile ? false : 'right',
             render: (_, record) => (
@@ -425,19 +512,16 @@ export default function Staff() {
                         items: [
                             {
                                 key: 'view',
-                                label: 'View Details',
+                                label: <span className="text-sm">View Details</span>,
                                 icon: <EyeOutlined />,
-                                onClick: () => {
-                                    setSelectedStaff(record);
-                                    setViewModalVisible(true);
-                                }
+                                onClick: () => { setSelectedUser(record); setViewModalOpen(true); }
                             },
                             {
                                 key: 'edit',
-                                label: 'Edit',
+                                label: <span className="text-sm">Edit User</span>,
                                 icon: <EditOutlined />,
                                 onClick: () => {
-                                    setSelectedStaff(record);
+                                    setSelectedUser(record);
                                     form.setFieldsValue({
                                         first_name: record.first_name,
                                         last_name: record.last_name,
@@ -446,620 +530,650 @@ export default function Staff() {
                                         address: record.address,
                                         role: record.role,
                                     });
-                                    setEditModalVisible(true);
+                                    setEditModalOpen(true);
                                 }
                             },
                             {
                                 key: 'status',
-                                label: record.is_active ? 'Deactivate' : 'Activate',
+                                label: <span className="text-sm">{record.is_active ? 'Deactivate' : 'Activate'}</span>,
                                 icon: record.is_active ? <StopOutlined /> : <CheckCircleOutlined />,
                                 onClick: () => {
-                                    setSelectedStaff(record);
+                                    setSelectedUser(record);
                                     setNewStatus(!record.is_active);
-                                    setStatusModalVisible(true);
+                                    setStatusModalOpen(true);
                                 }
                             },
                             { type: 'divider' },
                             {
                                 key: 'delete',
-                                label: 'Delete',
+                                label: <span className="text-sm">Delete User</span>,
                                 icon: <DeleteOutlined />,
                                 danger: true,
-                                onClick: () => {
-                                    setSelectedStaff(record);
-                                    setDeleteModalVisible(true);
-                                }
+                                onClick: () => { setSelectedUser(record); setDeleteModalOpen(true); }
                             }
                         ]
                     }}
                     trigger={['click']}
                 >
-                    <Button type="text" icon={<MoreOutlined />} />
+                    <button className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors">
+                        <MoreOutlined />
+                    </button>
                 </Dropdown>
             )
         }
     ];
 
-    const StatCard = ({ title, value, icon, color, trend }: any) => (
-        <Card
-            style={{
-                borderRadius: 12,
-                height: '100%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                border: 'none'
-            }}
-            bodyStyle={{ padding: 20 }}
-        >
-            <Flex justify="space-between" align="flex-start">
-                <Flex vertical gap={4}>
-                    <Text type="secondary" style={{ fontSize: 13 }}>{title}</Text>
-                    <Text style={{ fontSize: 28, fontWeight: 600 }}>
-                        {typeof value === 'number' ? value.toLocaleString() : value}
-                    </Text>
-                    {trend && (
-                        <Tag color="green" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
-                            <RiseOutlined /> {trend}
-                        </Tag>
-                    )}
-                </Flex>
-                <div style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 12,
-                    background: `${color}15`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    {icon}
-                </div>
-            </Flex>
-        </Card>
-    );
-
     return (
-        <div style={{
-            minHeight: 'auto',
-            background: 'transparent',
-            padding: isMobile ? 16 : 24
-        }}>
-            {/* Header */}
-            <Flex vertical gap={16} style={{ marginBottom: 24 }}>
-                <Flex justify="space-between" align={isMobile ? 'flex-start' : 'center'} wrap="wrap" gap={16}>
-                    <Flex vertical gap={4}>
-                        <Title level={isMobile ? 3 : 2} style={{ margin: 0 }}>Staff Management</Title>
-                        <Text type="secondary">Manage hotel staff, cashiers, and housekeepers</Text>
-                    </Flex>
-                    <Flex gap={12} wrap="wrap">
-                        <Button
-                            icon={<ReloadOutlined spin={refreshing} />}
-                            onClick={() => fetchStaff(true)}
-                            loading={refreshing}
-                        >
-                            Refresh
-                        </Button>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalVisible(true)}>
-                            Add Staff
-                        </Button>
-                        <Button icon={filtersVisible ? <FilterOutlined /> : <FilterOutlined />} onClick={() => setFiltersVisible(!filtersVisible)}>
-                            Filters
-                        </Button>
-                    </Flex>
-                </Flex>
-                <Divider style={{ margin: 0 }} />
-            </Flex>
+        <div className="min-h-screen bg-slate-50/50 p-4 md:p-6">
 
-            {/* Filters */}
-            {filtersVisible && (
-                <Card style={{ marginBottom: 24, borderRadius: 12 }}>
-                    <Flex gap={12} wrap="wrap">
+            {/* ── Header ─────────────────────────────────────── */}
+            <div className="mb-6">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                    <div>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200">
+                                <TeamOutlined className="text-white text-lg" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">User Management</h1>
+                        </div>
+                        <p className="text-sm text-slate-500 ml-13">
+                            Manage system users: Administrators, Staff, Cashiers, and Housekeepers
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                            onClick={() => fetchUsers(true)}
+                            disabled={isRefreshing}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm disabled:opacity-50"
+                        >
+                            <ReloadOutlined className={isRefreshing ? 'animate-spin' : ''} />
+                            Refresh
+                        </button>
+                        <button
+                            onClick={() => setShowFilters(!showFilters)}
+                            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium transition-all shadow-sm ${showFilters
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-200'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                                }`}
+                        >
+                            <FilterOutlined />
+                            Filters
+                        </button>
+                        <button
+                            onClick={() => setAddModalOpen(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+                        >
+                            <PlusOutlined />
+                            Add New User
+                        </button>
+                    </div>
+                </div>
+                <div className="h-px bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
+            </div>
+
+            {/* ── Filters Panel ───────────────────────────────── */}
+            {showFilters && (
+                <div className="mb-5 p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex flex-wrap gap-3">
+
                         <Select
-                            style={{ width: isMobile ? '100%' : 140 }}
+                            className="min-w-[150px]"
                             value={roleFilter}
-                            onChange={setRoleFilter}
+                            onChange={(v) => setRoleFilter(v)}
                             placeholder="Filter by Role"
                         >
                             <Option value="all">All Roles</Option>
-                            <Option value="admin">Admin</Option>
+                            <Option value="admin">Administrators</Option>
                             <Option value="staff">Staff</Option>
-                            <Option value="cashier">Cashier</Option>
-                            <Option value="housekeeper">House Keeper</Option>
+                            <Option value="cashier">Cashiers</Option>
+                            <Option value="housekeeper">Housekeepers</Option>
                         </Select>
+
                         <Select
-                            style={{ width: isMobile ? '100%' : 140 }}
+                            className="min-w-[150px]"
                             value={statusFilter}
-                            onChange={setStatusFilter}
+                            onChange={(v) => setStatusFilter(v)}
                             placeholder="Filter by Status"
                         >
                             <Option value="all">All Status</Option>
-                            <Option value="active">Active</Option>
-                            <Option value="inactive">Inactive</Option>
+                            <Option value="active">Active Users</Option>
+                            <Option value="inactive">Inactive Users</Option>
                         </Select>
+
                         <Select
-                            style={{ width: isMobile ? '100%' : 140 }}
+                            className="min-w-[170px]"
                             value={sortBy}
                             onChange={setSortBy}
                             suffixIcon={<SortAscendingOutlined />}
                         >
                             <Option value="newest">Newest First</Option>
                             <Option value="oldest">Oldest First</Option>
-                            <Option value="name_asc">Name A-Z</Option>
-                            <Option value="name_desc">Name Z-A</Option>
+                            <Option value="name_asc">Name (A–Z)</Option>
+                            <Option value="name_desc">Name (Z–A)</Option>
                         </Select>
-                    </Flex>
-                </Card>
+
+                    </div>
+                </div>
             )}
 
-            {/* Statistics Grid */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Total Staff"
-                        value={stats.total}
-                        icon={<TeamOutlined style={{ fontSize: 24, color: '#10b981' }} />}
-                        color="#10b981"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Active"
-                        value={stats.active}
-                        icon={<CheckCircleOutlined style={{ fontSize: 24, color: '#3b82f6' }} />}
-                        color="#3b82f6"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Cashiers"
-                        value={stats.cashier}
-                        icon={<DollarOutlined style={{ fontSize: 24, color: '#10b981' }} />}
-                        color="#10b981"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="House Keepers"
-                        value={stats.housekeeper}
-                        icon={<ShopOutlined style={{ fontSize: 24, color: '#f59e0b' }} />}
-                        color="#f59e0b"
-                    />
-                </Col>
-            </Row>
-
-            {/* Search Bar */}
-            <Card style={{ marginBottom: 24, borderRadius: 12 }}>
-                <Search
-                    placeholder="Search by name, email, or contact..."
-                    allowClear
-                    enterButton={<SearchOutlined />}
-                    size="large"
-                    value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        setCurrentPage(1);
-                    }}
+            {/* ── Stats Grid ──────────────────────────────────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                <StatCard
+                    title="Total Users"
+                    value={stats.totalUsers}
+                    subtitle="All system users"
+                    icon={<TeamOutlined className="text-xl text-indigo-600" />}
+                    gradient="bg-indigo-500"
+                    iconBg="bg-indigo-50"
                 />
-            </Card>
+                <StatCard
+                    title="Active"
+                    value={stats.activeUsers}
+                    subtitle={`${stats.inactiveUsers} inactive`}
+                    icon={<CheckCircleOutlined className="text-xl text-emerald-600" />}
+                    gradient="bg-emerald-500"
+                    iconBg="bg-emerald-50"
+                />
+                <StatCard
+                    title="Admins"
+                    value={stats.administrators}
+                    subtitle="Full system access"
+                    icon={<CrownOutlined className="text-xl text-red-500" />}
+                    gradient="bg-red-500"
+                    iconBg="bg-red-50"
+                />
+                <StatCard
+                    title="Staff"
+                    value={stats.staffMembers}
+                    subtitle="Manage bookings"
+                    icon={<TeamOutlined className="text-xl text-blue-600" />}
+                    gradient="bg-blue-500"
+                    iconBg="bg-blue-50"
+                />
+                <StatCard
+                    title="Cashiers"
+                    value={stats.cashiers}
+                    subtitle="Handle payments"
+                    icon={<DollarOutlined className="text-xl text-emerald-600" />}
+                    gradient="bg-emerald-500"
+                    iconBg="bg-emerald-50"
+                />
+                <StatCard
+                    title="Housekeeping"
+                    value={stats.housekeepers}
+                    subtitle="Room maintenance"
+                    icon={<ShopOutlined className="text-xl text-amber-600" />}
+                    gradient="bg-amber-500"
+                    iconBg="bg-amber-50"
+                />
+            </div>
 
-            {/* Table */}
-            <Card style={{ borderRadius: 12, overflow: 'auto' }}>
-                <Spin spinning={loading}>
+            {/* ── Search ──────────────────────────────────────── */}
+            <div className="mb-5 relative">
+                <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none">
+                    <SearchOutlined className="text-slate-400 text-base" />
+                </div>
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); }}
+                    placeholder="Search users by name, email, or phone number..."
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
+                />
+                {searchQuery && (
+                    <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute inset-y-0 right-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                    >
+                        <CloseOutlined className="text-xs" />
+                    </button>
+                )}
+            </div>
+
+            {/* ── Table Card ──────────────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <Spin spinning={isLoading}>
                     <Table
                         columns={columns}
-                        dataSource={staff}
+                        dataSource={displayUsers}
                         rowKey="id"
+                        className="users-table"
                         {...(isMobile ? { scroll: { x: 700 } } : {})}
-                        pagination={{
-                            current: currentPage,
-                            total: total,
-                            pageSize: perPage,
-                            showSizeChanger: !isMobile,
-                            showQuickJumper: !isMobile,
-                            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} staff`,
-                            onChange: (page) => setCurrentPage(page),
-                            onShowSizeChange: (_, size) => {
-                                setPerPage(size);
-                                setCurrentPage(1);
-                            },
-                        }}
+                        pagination={false}
                         locale={{
-                            emptyText: <Empty description="No staff found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                            emptyText: (
+                                <div className="py-16 flex flex-col items-center gap-3 text-slate-400">
+                                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-1">
+                                        <UserOutlined className="text-2xl text-slate-300" />
+                                    </div>
+                                    <p className="font-medium text-slate-500">No users found</p>
+                                    <p className="text-sm">Try adjusting your search or filters</p>
+                                </div>
+                            )
                         }}
                     />
                 </Spin>
-            </Card>
+                {/* Row count footer */}
+                <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">
+                    <p className="text-xs text-slate-400">
+                        Showing <span className="font-semibold text-slate-600">{displayUsers.length}</span> of{' '}
+                        <span className="font-semibold text-slate-600">{allUsers.length}</span> total users
+                    </p>
+                    {debouncedSearch || roleFilter !== 'all' || statusFilter !== 'all' ? (
+                        <button
+                            onClick={() => { setSearchQuery(''); setRoleFilter('all'); setStatusFilter('all'); }}
+                            className="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors"
+                        >
+                            Clear filters
+                        </button>
+                    ) : null}
+                </div>
+            </div>
 
-            {/* Add Staff Modal */}
-            <Modal
-                title="Add New Staff Member"
-                open={addModalVisible}
-                onCancel={() => {
-                    setAddModalVisible(false);
-                    form.resetFields();
-                }}
-                footer={null}
-                width={550}
-                centered
-            >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    onFinish={handleAddStaff}
-                    style={{ marginTop: 16 }}
-                >
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="first_name"
-                                label="First Name"
-                                rules={[{ required: true, message: 'Please enter first name' }]}
-                            >
-                                <AntInput placeholder="Enter first name" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="last_name"
-                                label="Last Name"
-                                rules={[{ required: true, message: 'Please enter last name' }]}
-                            >
-                                <AntInput placeholder="Enter last name" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item
-                        name="email"
-                        label="Email"
-                        rules={[
-                            { required: true, message: 'Please enter email' },
-                            { type: 'email', message: 'Please enter a valid email' }
-                        ]}
-                    >
-                        <AntInput placeholder="Enter email address" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="contact_number"
-                        label="Contact Number"
-                    >
-                        <AntInput placeholder="Enter contact number" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="address"
-                        label="Address"
-                    >
-                        <AntInput.TextArea rows={2} placeholder="Enter address" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="role"
-                        label="Role"
-                        rules={[{ required: true, message: 'Please select a role' }]}
-                    >
-                        <Select placeholder="Select role">
-                            <Option value="staff">Staff</Option>
-                            <Option value="cashier">Cashier</Option>
-                            <Option value="housekeeper">House Keeper</Option>
-                            <Option value="admin">Administrator</Option>
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item
-                        name="password"
-                        label="Password"
-                        rules={[
-                            { required: true, message: 'Please enter password' },
-                            { min: 6, message: 'Password must be at least 6 characters' }
-                        ]}
-                    >
-                        <AntInput.Password placeholder="Enter password" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="password_confirmation"
-                        label="Confirm Password"
-                        dependencies={['password']}
-                        rules={[
-                            { required: true, message: 'Please confirm password' },
-                            ({ getFieldValue }) => ({
-                                validator(_, value) {
-                                    if (!value || getFieldValue('password') === value) {
-                                        return Promise.resolve();
-                                    }
-                                    return Promise.reject(new Error('Passwords do not match'));
-                                },
-                            }),
-                        ]}
-                    >
-                        <AntInput.Password placeholder="Confirm password" />
-                    </Form.Item>
-
-                    <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-                        <Button onClick={() => setAddModalVisible(false)} style={{ marginRight: 8 }}>
-                            Cancel
-                        </Button>
-                        <Button type="primary" htmlType="submit" loading={submitting}>
-                            Add Staff
-                        </Button>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* Edit Staff Modal */}
-            <Modal
-                title="Edit Staff Member"
-                open={editModalVisible}
-                onCancel={() => {
-                    setEditModalVisible(false);
-                    form.resetFields();
-                }}
-                footer={null}
-                width={550}
-                centered
-            >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    onFinish={handleEditStaff}
-                    style={{ marginTop: 16 }}
-                >
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="first_name"
-                                label="First Name"
-                                rules={[{ required: true, message: 'Please enter first name' }]}
-                            >
-                                <AntInput placeholder="Enter first name" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="last_name"
-                                label="Last Name"
-                                rules={[{ required: true, message: 'Please enter last name' }]}
-                            >
-                                <AntInput placeholder="Enter last name" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item
-                        name="email"
-                        label="Email"
-                        rules={[
-                            { required: true, message: 'Please enter email' },
-                            { type: 'email', message: 'Please enter a valid email' }
-                        ]}
-                    >
-                        <AntInput placeholder="Enter email address" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="contact_number"
-                        label="Contact Number"
-                    >
-                        <AntInput placeholder="Enter contact number" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="address"
-                        label="Address"
-                    >
-                        <AntInput.TextArea rows={2} placeholder="Enter address" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="role"
-                        label="Role"
-                        rules={[{ required: true, message: 'Please select a role' }]}
-                    >
-                        <Select placeholder="Select role">
-                            <Option value="staff">Staff</Option>
-                            <Option value="cashier">Cashier</Option>
-                            <Option value="housekeeper">House Keeper</Option>
-                            <Option value="admin">Administrator</Option>
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item
-                        name="password"
-                        label="New Password (leave blank to keep current)"
-                    >
-                        <AntInput.Password placeholder="Enter new password" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="password_confirmation"
-                        label="Confirm New Password"
-                        dependencies={['password']}
-                        rules={[
-                            ({ getFieldValue }) => ({
-                                validator(_, value) {
-                                    if (!getFieldValue('password') || !value || getFieldValue('password') === value) {
-                                        return Promise.resolve();
-                                    }
-                                    return Promise.reject(new Error('Passwords do not match'));
-                                },
-                            }),
-                        ]}
-                    >
-                        <AntInput.Password placeholder="Confirm new password" />
-                    </Form.Item>
-
-                    <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-                        <Button onClick={() => setEditModalVisible(false)} style={{ marginRight: 8 }}>
-                            Cancel
-                        </Button>
-                        <Button type="primary" htmlType="submit" loading={submitting}>
-                            Save Changes
-                        </Button>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* View Details Modal */}
+            {/* ── Create User Modal ────────────────────────────── */}
             <Modal
                 title={
-                    <Flex align="center" gap={16}>
-                        <Avatar
-                            size={64}
-                            src={selectedStaff ? getAvatarUrl(selectedStaff) : undefined}
-                            style={{
-                                backgroundColor: selectedStaff && !selectedStaff.profile_image ? getRandomColor() : undefined,
-                            }}
-                            icon={selectedStaff && !selectedStaff.profile_image ? <UserOutlined /> : undefined}
-                        >
-                            {selectedStaff && !selectedStaff.profile_image && !getAvatarUrl(selectedStaff) &&
-                                getInitials(selectedStaff.first_name, selectedStaff.last_name)
-                            }
-                        </Avatar>
-                        <Flex vertical>
-                            <Text strong style={{ fontSize: 18 }}>
-                                {selectedStaff?.first_name} {selectedStaff?.last_name}
-                            </Text>
-                            <Text type="secondary">Staff Details</Text>
-                        </Flex>
-                    </Flex>
+                    <div className="flex items-center gap-3 pb-1">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center">
+                            <PlusOutlined className="text-white" />
+                        </div>
+                        <div>
+                            <p className="font-bold text-slate-800">Add New User</p>
+                            <p className="text-xs text-slate-400 font-normal">Fill in the details below</p>
+                        </div>
+                    </div>
                 }
-                open={viewModalVisible}
-                onCancel={() => setViewModalVisible(false)}
-                footer={[
-                    <Button key="close" onClick={() => setViewModalVisible(false)}>
-                        Close
-                    </Button>
-                ]}
-                width={600}
+                open={addModalOpen}
+                onCancel={() => { setAddModalOpen(false); form.resetFields(); }}
+                footer={null}
+                width={560}
                 centered
+                className="custom-modal"
             >
-                {selectedStaff && (
-                    <>
-                        <Flex
-                            justify="space-between"
-                            align="center"
-                            style={{
-                                background: '#f5f5f5',
-                                padding: '16px 20px',
-                                borderRadius: 12,
-                                marginBottom: 24
-                            }}
+                <Form form={form} layout="vertical" onFinish={handleCreateUser} className="mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <Form.Item name="first_name" label="First Name" rules={[{ required: true, message: 'Required' }]}>
+                            <AntInput placeholder="First name" className="rounded-xl" />
+                        </Form.Item>
+                        <Form.Item name="last_name" label="Last Name" rules={[{ required: true, message: 'Required' }]}>
+                            <AntInput placeholder="Last name" className="rounded-xl" />
+                        </Form.Item>
+                    </div>
+                    <Form.Item name="email" label="Email Address" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+                        <AntInput placeholder="email@example.com" className="rounded-xl" prefix={<MailOutlined className="text-slate-300" />} />
+                    </Form.Item>
+                    <Form.Item name="contact_number" label="Phone Number">
+                        <AntInput placeholder="+63 900 000 0000" className="rounded-xl" prefix={<PhoneOutlined className="text-slate-300" />} />
+                    </Form.Item>
+                    <Form.Item name="address" label="Address">
+                        <AntInput.TextArea rows={2} placeholder="Enter full address" className="rounded-xl" />
+                    </Form.Item>
+                    <Form.Item name="role" label="User Role" rules={[{ required: true, message: 'Please select a role' }]} tooltip="Role determines system access">
+                        <Select placeholder="Select user role" className="rounded-xl">
+                            {roleOptions.map(role => (
+                                <Option key={role.value} value={role.value}>
+                                    <div className="flex items-center gap-2">
+                                        {role.icon}
+                                        <span className="font-medium">{role.label}</span>
+                                        <span className="text-slate-400 text-xs">· {role.description}</span>
+                                    </div>
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Form.Item name="password" label="Password" rules={[{ required: true, min: 6, message: 'Min 6 chars' }]}>
+                            <AntInput.Password placeholder="••••••••" className="rounded-xl" />
+                        </Form.Item>
+                        <Form.Item
+                            name="password_confirmation"
+                            label="Confirm Password"
+                            dependencies={['password']}
+                            rules={[
+                                { required: true, message: 'Required' },
+                                ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                        if (!value || getFieldValue('password') === value) return Promise.resolve();
+                                        return Promise.reject(new Error('Passwords do not match'));
+                                    },
+                                }),
+                            ]}
                         >
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Role</Text>
-                                <Tag
-                                    color={roleColors[selectedStaff.role] ?? "default"}
-                                    icon={roleIcons[selectedStaff.role]}
-                                    style={{ marginTop: 4, borderRadius: 5 }}
-                                >
-                                    {roleLabels[selectedStaff.role]}
-                                </Tag>
-                            </Flex>
-                            <Divider type="vertical" style={{ height: 40 }} />
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
-                                <Badge
-                                    status={selectedStaff.is_active ? "success" : "default"}
-                                    text={selectedStaff.is_active ? "Active" : "Inactive"}
-                                    style={{ marginTop: 4 }}
-                                />
-                            </Flex>
-                            <Divider type="vertical" style={{ height: 40 }} />
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Verification</Text>
-                                {selectedStaff.email_verified_at ? (
-                                    <Tag icon={<CheckCircleOutlined />} color="success" style={{ marginTop: 4, borderRadius: 5 }}>
-                                        Verified
-                                    </Tag>
+                            <AntInput.Password placeholder="••••••••" className="rounded-xl" />
+                        </Form.Item>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={() => { setAddModalOpen(false); form.resetFields(); }}
+                            className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={isSubmitting}
+                            className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-60 flex items-center gap-2">
+                            {isSubmitting ? <ReloadOutlined className="animate-spin" /> : <PlusOutlined />}
+                            Create User
+                        </button>
+                    </div>
+                </Form>
+            </Modal>
+
+            {/* ── Edit User Modal ──────────────────────────────── */}
+            <Modal
+                title={
+                    <div className="flex items-center gap-3 pb-1">
+                        <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
+                            <EditOutlined className="text-white" />
+                        </div>
+                        <div>
+                            <p className="font-bold text-slate-800">Edit User</p>
+                            <p className="text-xs text-slate-400 font-normal">Update user information</p>
+                        </div>
+                    </div>
+                }
+                open={editModalOpen}
+                onCancel={() => { setEditModalOpen(false); form.resetFields(); }}
+                footer={null}
+                width={560}
+                centered
+            >
+                <Form form={form} layout="vertical" onFinish={handleUpdateUser} className="mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <Form.Item name="first_name" label="First Name" rules={[{ required: true, message: 'Required' }]}>
+                            <AntInput placeholder="First name" className="rounded-xl" />
+                        </Form.Item>
+                        <Form.Item name="last_name" label="Last Name" rules={[{ required: true, message: 'Required' }]}>
+                            <AntInput placeholder="Last name" className="rounded-xl" />
+                        </Form.Item>
+                    </div>
+                    <Form.Item name="email" label="Email Address" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+                        <AntInput placeholder="email@example.com" className="rounded-xl" prefix={<MailOutlined className="text-slate-300" />} />
+                    </Form.Item>
+                    <Form.Item name="contact_number" label="Phone Number">
+                        <AntInput placeholder="+63 900 000 0000" className="rounded-xl" prefix={<PhoneOutlined className="text-slate-300" />} />
+                    </Form.Item>
+                    <Form.Item name="address" label="Address">
+                        <AntInput.TextArea rows={2} placeholder="Enter full address" className="rounded-xl" />
+                    </Form.Item>
+                    <Form.Item name="role" label="User Role" rules={[{ required: true, message: 'Please select a role' }]}>
+                        <Select placeholder="Select user role">
+                            {roleOptions.map(role => (
+                                <Option key={role.value} value={role.value}>{role.label}</Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 mb-4">
+                        <p className="text-xs text-slate-500 font-medium mb-3">🔒 Password Change (optional)</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <Form.Item name="password" label="New Password" style={{ marginBottom: 0 }} tooltip="Leave blank to keep current password">
+                                <AntInput.Password placeholder="New password" className="rounded-xl" />
+                            </Form.Item>
+                            <Form.Item
+                                name="password_confirmation"
+                                label="Confirm New Password"
+                                style={{ marginBottom: 0 }}
+                                dependencies={['password']}
+                                rules={[
+                                    ({ getFieldValue }) => ({
+                                        validator(_, value) {
+                                            if (!getFieldValue('password') || !value || getFieldValue('password') === value) return Promise.resolve();
+                                            return Promise.reject(new Error('Passwords do not match'));
+                                        },
+                                    }),
+                                ]}
+                            >
+                                <AntInput.Password placeholder="Confirm password" className="rounded-xl" />
+                            </Form.Item>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => { setEditModalOpen(false); form.resetFields(); }}
+                            className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={isSubmitting}
+                            className="px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-60 flex items-center gap-2">
+                            {isSubmitting ? <ReloadOutlined className="animate-spin" /> : <CheckCircleOutlined />}
+                            Save Changes
+                        </button>
+                    </div>
+                </Form>
+            </Modal>
+
+            {/* ── View User Modal ──────────────────────────────── */}
+            <Modal
+                title={
+                    selectedUser && (
+                        <div className="flex items-center gap-4">
+                            <div className="relative">
+                                {getAvatarUrl(selectedUser) ? (
+                                    <img src={getAvatarUrl(selectedUser)} alt={selectedUser.first_name}
+                                        className="w-14 h-14 rounded-2xl object-cover ring-2 ring-slate-100" />
                                 ) : (
-                                    <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>Unverified</Text>
+                                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg"
+                                        style={{ backgroundColor: getAvatarColor(selectedUser.first_name) }}>
+                                        {getInitials(selectedUser.first_name, selectedUser.last_name)}
+                                    </div>
                                 )}
-                            </Flex>
-                        </Flex>
+                                <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${selectedUser.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            </div>
+                            <div>
+                                <p className="font-bold text-slate-800 text-lg leading-tight">
+                                    {selectedUser.first_name} {selectedUser.last_name}
+                                </p>
+                                <RoleBadge role={selectedUser.role} />
+                            </div>
+                        </div>
+                    )
+                }
+                open={viewModalOpen}
+                onCancel={() => setViewModalOpen(false)}
+                footer={[
+                    <button key="close" onClick={() => setViewModalOpen(false)}
+                        className="px-5 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                        Close
+                    </button>
+                ]}
+                width={580}
+                centered
+            >
+                {selectedUser && (
+                    <div className="mt-4 space-y-4">
+                        {/* Summary Pills */}
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="text-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                <p className="text-xs text-slate-400 mb-2">Role</p>
+                                <RoleBadge role={selectedUser.role} />
+                                <p className="text-xs text-slate-400 mt-1">{roleConfig[selectedUser.role]?.description}</p>
+                            </div>
+                            <div className="text-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                <p className="text-xs text-slate-400 mb-2">Status</p>
+                                <StatusBadge active={selectedUser.is_active} />
+                            </div>
+                            <div className="text-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                <p className="text-xs text-slate-400 mb-2">Verification</p>
+                                {selectedUser.email_verified_at ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
+                                        <CheckCircleOutlined /> Verified
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                                        Unverified
+                                    </span>
+                                )}
+                            </div>
+                        </div>
 
-                        <Descriptions column={1} bordered size="middle" labelStyle={{ fontWeight: 500 }}>
-                            <Descriptions.Item label={<Space><MailOutlined /> Email</Space>}>
-                                {selectedStaff.email}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={<Space><PhoneOutlined /> Contact Number</Space>}>
-                                {selectedStaff.contact_number || <Text type="secondary">Not provided</Text>}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={<Space><EnvironmentOutlined /> Address</Space>}>
-                                {selectedStaff.address || <Text type="secondary">Not provided</Text>}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={<Space><CalendarOutlined /> Member Since</Space>}>
-                                {formatDate(selectedStaff.created_at)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={<Space><ClockCircleOutlined /> Last Login</Space>}>
-                                {selectedStaff.last_login ? formatDate(selectedStaff.last_login) : <Text type="secondary">Never</Text>}
-                            </Descriptions.Item>
-                        </Descriptions>
-                    </>
+                        {/* Details */}
+                        <div className="rounded-xl border border-slate-200 overflow-hidden">
+                            {[
+                                { icon: <MailOutlined />, label: 'Email', value: selectedUser.email },
+                                { icon: <PhoneOutlined />, label: 'Phone', value: selectedUser.contact_number || '—' },
+                                { icon: <EnvironmentOutlined />, label: 'Address', value: selectedUser.address || '—' },
+                                { icon: <CalendarOutlined />, label: 'Member Since', value: formatDate(selectedUser.created_at) },
+                                { icon: <ClockCircleOutlined />, label: 'Last Login', value: selectedUser.last_login ? formatDate(selectedUser.last_login) : 'Never' },
+                            ].map((item, i, arr) => (
+                                <div key={item.label} className={`flex items-start gap-3 px-4 py-3 ${i < arr.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-slate-400 text-sm">
+                                        {item.icon}
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-400 font-medium">{item.label}</p>
+                                        <p className="text-sm text-slate-700 mt-0.5">{item.value}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 )}
             </Modal>
 
-            {/* Status Change Modal */}
+            {/* ── Status Toggle Modal ──────────────────────────── */}
             <Modal
-                title={newStatus ? 'Activate Staff' : 'Deactivate Staff'}
-                open={statusModalVisible}
-                onCancel={() => setStatusModalVisible(false)}
+                title={null}
+                open={statusModalOpen}
+                onCancel={() => setStatusModalOpen(false)}
+                footer={null}
+                width={420}
                 centered
-                footer={[
-                    <Button key="cancel" onClick={() => setStatusModalVisible(false)}>
-                        Cancel
-                    </Button>,
-                    <Button
-                        key="confirm"
-                        type={newStatus ? "primary" : "default"}
-                        danger={!newStatus}
-                        onClick={() => selectedStaff && handleStatusChange(selectedStaff, newStatus)}
-                    >
-                        {newStatus ? 'Activate' : 'Deactivate'}
-                    </Button>
-                ]}
             >
-                <Paragraph>
-                    Are you sure you want to {newStatus ? 'activate' : 'deactivate'} <strong>
-                        {selectedStaff?.first_name} {selectedStaff?.last_name}
-                    </strong>?
-                </Paragraph>
-                {!newStatus && (
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                        Deactivated staff will not be able to log in or perform their duties.
-                    </Text>
-                )}
+                <div className="text-center py-4">
+                    <div className={`w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center ${newStatus ? 'bg-emerald-100' : 'bg-orange-100'
+                        }`}>
+                        {newStatus
+                            ? <CheckCircleOutlined className="text-3xl text-emerald-600" />
+                            : <StopOutlined className="text-3xl text-orange-600" />
+                        }
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-1">
+                        {newStatus ? 'Activate User' : 'Deactivate User'}
+                    </h3>
+                    <p className="text-slate-500 text-sm mb-1">
+                        Are you sure you want to {newStatus ? 'activate' : 'deactivate'}{' '}
+                        <span className="font-semibold text-slate-700">
+                            {selectedUser?.first_name} {selectedUser?.last_name}
+                        </span>?
+                    </p>
+                    {!newStatus && (
+                        <p className="text-xs text-orange-500 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 mt-3 mx-auto max-w-sm">
+                            Deactivated users will not be able to log in or access the system.
+                        </p>
+                    )}
+                    <div className="flex justify-center gap-3 mt-6">
+                        <button onClick={() => setStatusModalOpen(false)}
+                            className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => selectedUser && handleToggleStatus(selectedUser, newStatus)}
+                            className={`px-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all shadow-lg ${newStatus
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                    : 'bg-orange-500 hover:bg-orange-600 shadow-orange-200'
+                                }`}>
+                            {newStatus ? 'Activate' : 'Deactivate'}
+                        </button>
+                    </div>
+                </div>
             </Modal>
 
-            {/* Delete Confirmation Modal */}
+            {/* ── Delete Modal ─────────────────────────────────── */}
             <Modal
-                title="Delete Staff Member"
-                open={deleteModalVisible}
-                onCancel={() => setDeleteModalVisible(false)}
+                title={null}
+                open={deleteModalOpen}
+                onCancel={() => setDeleteModalOpen(false)}
+                footer={null}
+                width={420}
                 centered
-                footer={[
-                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)}>
-                        Cancel
-                    </Button>,
-                    <Button
-                        key="delete"
-                        type="primary"
-                        danger
-                        onClick={() => selectedStaff && handleDeleteStaff(selectedStaff)}
-                    >
-                        Delete Permanently
-                    </Button>
-                ]}
             >
-                <Paragraph>
-                    Are you sure you want to permanently delete <strong>
-                        {selectedStaff?.first_name} {selectedStaff?.last_name}
-                    </strong>?
-                </Paragraph>
-                <Text type="danger" style={{ fontSize: 13 }}>
-                    This action cannot be undone. All associated data will be removed.
-                </Text>
+                <div className="text-center py-4">
+                    <div className="w-16 h-16 rounded-2xl bg-red-100 mx-auto mb-4 flex items-center justify-center">
+                        <DeleteOutlined className="text-3xl text-red-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-1">Delete User</h3>
+                    <p className="text-slate-500 text-sm mb-2">
+                        Are you sure you want to permanently delete{' '}
+                        <span className="font-semibold text-slate-700">
+                            {selectedUser?.first_name} {selectedUser?.last_name}
+                        </span>?
+                    </p>
+                    <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mx-auto max-w-sm">
+                        ⚠️ This action cannot be undone. All associated data will be permanently removed.
+                    </p>
+                    <div className="flex justify-center gap-3 mt-6">
+                        <button onClick={() => setDeleteModalOpen(false)}
+                            className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all">
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => selectedUser && handleDeleteUser(selectedUser)}
+                            className="px-5 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-all shadow-lg shadow-red-200 flex items-center gap-2">
+                            <DeleteOutlined />
+                            Delete Permanently
+                        </button>
+                    </div>
+                </div>
             </Modal>
+
+            {/* ── Table style overrides ─────────────────────────── */}
+            <style>{`
+                .users-table .ant-table {
+                    font-size: 14px;
+                }
+                .users-table .ant-table-thead > tr > th {
+                    background: #f8fafc !important;
+                    color: #64748b !important;
+                    font-weight: 600 !important;
+                    font-size: 12px !important;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    border-bottom: 1px solid #e2e8f0 !important;
+                    padding: 12px 16px !important;
+                }
+                .users-table .ant-table-tbody > tr > td {
+                    border-bottom: 1px solid #f1f5f9 !important;
+                    padding: 14px 16px !important;
+                    vertical-align: middle;
+                }
+                .users-table .ant-table-tbody > tr:hover > td {
+                    background: #f8fafc !important;
+                }
+                .users-table .ant-table-tbody > tr:last-child > td {
+                    border-bottom: none !important;
+                }
+                .users-table .ant-pagination {
+                    padding: 16px 20px !important;
+                    margin: 0 !important;
+                    border-top: 1px solid #f1f5f9;
+                }
+                .ant-modal-content {
+                    border-radius: 20px !important;
+                    overflow: hidden;
+                    padding: 28px !important;
+                }
+                .ant-modal-header {
+                    border-bottom: 1px solid #f1f5f9 !important;
+                    padding-bottom: 16px !important;
+                    margin-bottom: 0 !important;
+                }
+                .ant-form-item-label > label {
+                    font-size: 13px !important;
+                    font-weight: 600 !important;
+                    color: #475569 !important;
+                }
+                .ant-input, .ant-input-password, .ant-select-selector {
+                    border-radius: 10px !important;
+                    border-color: #e2e8f0 !important;
+                }
+                .ant-input:focus, .ant-input-focused, 
+                .ant-input-password:focus-within,
+                .ant-select-focused .ant-select-selector {
+                    border-color: #6366f1 !important;
+                    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+                }
+                .ant-btn-primary {
+                    border-radius: 10px !important;
+                    background: #4f46e5 !important;
+                    border-color: #4f46e5 !important;
+                }
+            `}</style>
         </div>
     );
 }

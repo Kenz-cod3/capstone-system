@@ -7,6 +7,7 @@ use App\Models\Room;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Events\DashboardUpdated;
 
 class HousekeeperController extends Controller
 {
@@ -61,6 +62,8 @@ class HousekeeperController extends Controller
             'has_damage' => false,
         ]);
 
+        broadcast(new DashboardUpdated());
+
         return response()->json([
             'message' => 'Cleaning started.',
             'data'    => $room,
@@ -70,7 +73,7 @@ class HousekeeperController extends Controller
     /*
     |--------------------------------------------------------------------------
     | COMPLETE CLEANING (cleaning/dirty → available or maintenance)
-    | NOTE: Damage report details handled by RoomDamageReportController
+    | NOTE: Damage report details handled by RoomIncidentController
     |--------------------------------------------------------------------------
     */
     public function complete(Request $request, $id)
@@ -94,6 +97,8 @@ class HousekeeperController extends Controller
             'cleaned_by'   => Auth::id(),
             'completed_at' => Carbon::now(),
         ]);
+
+        broadcast(new DashboardUpdated());
 
         // LOG HISTORY
         BookingHistory::create([

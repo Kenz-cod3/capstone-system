@@ -158,7 +158,7 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                             className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${
                                 errors.add_on_name ? "border-red-400 bg-red-50" : "border-gray-200"
                             }`}
-                            placeholder="e.g., Extra Towel, Breakfast, Minibar"
+                            placeholder="e.g., Extra Towel, Foam, Transportation"
                             value={form.add_on_name}
                             onChange={(e) => {
                                 setForm((p) => ({ ...p, add_on_name: e.target.value }));

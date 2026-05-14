@@ -6,95 +6,57 @@ import {
     MailOutlined,
     PhoneOutlined,
     EnvironmentOutlined,
-    LeftOutlined,
-    RightOutlined,
     ReloadOutlined,
-    DownloadOutlined,
     MoreOutlined,
     EyeOutlined,
-    EditOutlined,
     DeleteOutlined,
     CheckCircleOutlined,
-    CloseCircleOutlined,
     StarOutlined,
     ClockCircleOutlined,
     TrophyOutlined,
     CreditCardOutlined,
     TeamOutlined,
     RiseOutlined,
-    CalendarOutlined,
     VerifiedOutlined,
     StopOutlined,
     CheckOutlined,
     FilterOutlined,
     SortAscendingOutlined,
-    PlusOutlined,
     ExportOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    DashboardOutlined,
     UserDeleteOutlined,
-    UserAddOutlined
-} from '@ant-design/icons';
+    UserAddOutlined,
+} from "@ant-design/icons";
 import {
     Badge,
-    Card,
     Input,
     Button,
     Table,
-    Tag,
     Avatar,
-    Space,
     Select,
     Spin,
     Empty,
     message,
     Modal,
     Dropdown,
-    Statistic,
-    Row,
-    Col,
     Typography,
     Divider,
     Tooltip,
-    Descriptions,
-    Tabs,
-    Segmented,
-    App,
-    theme,
-    Flex,
-    Grid,
-    Drawer,
-    Popconfirm,
-    Image
-} from 'antd';
+} from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { format } from "date-fns";
 import dayjs from "dayjs";
 
-const { Title, Text, Paragraph } = Typography;
+// ✅ Import the extracted full-screen modal + shared types
+import {
+    type User,
+} from "@/components/AdminComponents/users/Guestdetailmodal";
+import { useNavigate } from "react-router-dom";
+
+const { Text, Paragraph } = Typography;
 const { Search } = Input;
 const { Option } = Select;
-const { useToken } = theme;
-const { useBreakpoint } = Grid;
-
-interface User {
-    id: number;
-    first_name: string;
-    last_name: string;
-    email: string;
-    contact_number?: string;
-    address?: string;
-    profile_image?: string;
-    role: string;
-    is_active: boolean;
-    email_verified_at?: string;
-    created_at: string;
-    updated_at: string;
-    last_login?: string;
-    total_bookings?: number;
-    total_spent?: number;
-}
 
 interface StatsData {
     total: number;
@@ -106,85 +68,80 @@ interface StatsData {
     totalRevenue: number;
 }
 
-export default function Guests() {
-    const { token } = useToken();
-    const screens = useBreakpoint();
-    const isMobile = !screens.md;
+const AVATAR_COLORS = ["#10b981", "#14b8a6", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6"];
+const getAvatarColor = (id: number) => AVATAR_COLORS[id % AVATAR_COLORS.length];
+const getInitials = (first: string, last: string) =>
+    `${first?.charAt(0) || ""}${last?.charAt(0) || ""}`.toUpperCase();
+const formatDate = (d?: string) => d ? format(new Date(d), "MMM dd, yyyy hh:mm a") : "—";
 
+const getLoyaltyLevel = (totalSpent = 0) => {
+    if (totalSpent > 50000) return { level: "Platinum", color: "#3b82f6", bg: "#dbeafe" };
+    if (totalSpent > 25000) return { level: "Gold", color: "#d97706", bg: "#fef3c7" };
+    if (totalSpent > 10000) return { level: "Silver", color: "#6b7280", bg: "#f3f4f6" };
+    return { level: "Bronze", color: "#cd7f32", bg: "#fef3c7" };
+};
+
+export default function Guests() {
     const [users, setUsers] = useState<User[]>([]);
+    const navigate = useNavigate();
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [viewModalVisible, setViewModalVisible] = useState(false);
     const [statusModalVisible, setStatusModalVisible] = useState(false);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [newStatus, setNewStatus] = useState<boolean>(true);
     const [filtersVisible, setFiltersVisible] = useState(false);
 
-    // Filters and sorting
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [verificationFilter, setVerificationFilter] = useState<string>("all");
     const [sortBy, setSortBy] = useState<string>("newest");
 
-    // Pagination
     const [currentPage, setCurrentPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [perPage, setPerPage] = useState(10);
 
     const [stats, setStats] = useState<StatsData>({
-        total: 0,
-        active: 0,
-        inactive: 0,
-        verified: 0,
-        newThisMonth: 0,
-        averageBookings: 0,
-        totalRevenue: 0
+        total: 0, active: 0, inactive: 0, verified: 0,
+        newThisMonth: 0, averageBookings: 0, totalRevenue: 0,
     });
 
     const BASE_URL = api.defaults.baseURL?.replace("/api", "") || "";
 
+    const getAvatarUrl = (user: User) => {
+        if (!user?.profile_image) return undefined;
+        return user.profile_image.startsWith("http")
+            ? user.profile_image
+            : `${BASE_URL}/storage/${user.profile_image}`;
+    };
+
     const fetchUsers = async (silent = false) => {
         try {
             if (!silent) setLoading(true);
-            if (silent) setRefreshing(true);
+            else setRefreshing(true);
 
-            const params: any = {
-                page: currentPage,
-                per_page: perPage,
-                role: 'guest',
-            };
-
+            const params: any = { page: currentPage, per_page: perPage, role: "guest" };
             if (debouncedSearch) params.search = debouncedSearch;
-            if (statusFilter !== 'all') params.status = statusFilter;
-            if (verificationFilter !== 'all') params.verified = verificationFilter;
+            if (statusFilter !== "all") params.status = statusFilter;
+            if (verificationFilter !== "all") params.verified = verificationFilter;
             if (sortBy) params.sort = sortBy;
 
             const response = await api.get("/users", { params });
             const paginatedData = response.data;
             const usersData = paginatedData.data || [];
-            const guestUsers = usersData.filter((user: User) => user.role === 'guest');
+            const guestUsers = usersData.filter((u: User) => u.role === "guest");
 
             setUsers(guestUsers);
-            setLastPage(paginatedData.last_page);
             setTotal(paginatedData.total);
             setPerPage(paginatedData.per_page);
 
-            // Calculate stats
             const now = new Date();
             const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const newThisMonth = guestUsers.filter((user: User) =>
-                new Date(user.created_at) >= firstDayOfMonth
-            ).length;
-
-            const totalRevenue = guestUsers.reduce(
-                (sum: number, user: User) => sum + Number(user.total_spent || 0),
-                0
-            );
+            const newThisMonth = guestUsers.filter((u: User) => new Date(u.created_at) >= firstDayOfMonth).length;
+            const totalRevenue = guestUsers.reduce((s: number, u: User) => s + Number(u.total_spent || 0), 0);
             const averageBookings = guestUsers.length > 0
-                ? guestUsers.reduce((sum: number, user: User) => sum + (user.total_bookings || 0), 0) / guestUsers.length
+                ? guestUsers.reduce((s: number, u: User) => s + (u.total_bookings || 0), 0) / guestUsers.length
                 : 0;
 
             setStats({
@@ -192,29 +149,28 @@ export default function Guests() {
                 active: guestUsers.filter((u: User) => u.is_active).length,
                 inactive: guestUsers.filter((u: User) => !u.is_active).length,
                 verified: guestUsers.filter((u: User) => u.email_verified_at).length,
-                newThisMonth: newThisMonth,
+                newThisMonth,
                 averageBookings: Math.round(averageBookings * 10) / 10,
-                totalRevenue: totalRevenue
+                totalRevenue,
             });
-
-
         } catch (err: any) {
-            console.error("Error fetching guests:", err);
             message.error(err.response?.data?.message || "Failed to load guests");
         } finally {
             if (!silent) setLoading(false);
-            if (silent) setRefreshing(false);
+            else setRefreshing(false);
         }
     };
 
-    const handleStatusChange = async (user: User, newStatus: boolean) => {
+    const handleViewGuest = (user: User) => {
+        navigate(`/guests/${user.id}`, {
+            state: { user },
+        });
+    };
+
+    const handleStatusChange = async (user: User, status: boolean) => {
         try {
-            await api.patch(`/users/${user.id}/status`, { is_active: newStatus });
-            if (newStatus) {
-                message.success(`${user.first_name} ${user.last_name} has been activated`);
-            } else {
-                message.success(`${user.first_name} ${user.last_name} has been deactivated`);
-            }
+            await api.patch(`/users/${user.id}/status`, { is_active: status });
+            message.success(`${user.first_name} ${user.last_name} ${status ? "activated" : "deactivated"}`);
             fetchUsers();
             setStatusModalVisible(false);
         } catch (error: any) {
@@ -225,7 +181,7 @@ export default function Guests() {
     const handleDeleteUser = async (user: User) => {
         try {
             await api.delete(`/users/${user.id}`);
-            message.success(`${user.first_name} ${user.last_name} has been deleted successfully`);
+            message.success(`${user.first_name} ${user.last_name} has been deleted`);
             fetchUsers();
             setDeleteModalVisible(false);
         } catch (error: any) {
@@ -234,760 +190,349 @@ export default function Guests() {
     };
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearch(search);
-        }, 500);
-
-        return () => clearTimeout(timer);
+        const t = setTimeout(() => setDebouncedSearch(search), 500);
+        return () => clearTimeout(t);
     }, [search]);
 
-    useEffect(() => {
-        fetchUsers();
-    }, [debouncedSearch, currentPage, statusFilter, verificationFilter, sortBy]);
+    useEffect(() => { fetchUsers(); }, [debouncedSearch, currentPage, statusFilter, verificationFilter, sortBy]);
 
-    const getInitials = (firstName: string, lastName: string) => {
-        return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
-    };
+    const loyalty = getLoyaltyLevel(stats.totalRevenue);
 
-    const getRandomColor = () => {
-        const colors = ['#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6'];
-        return colors[Math.floor(Math.random() * colors.length)];
-    };
+    // ── Sub-components ────────────────────────────────────────────────────────
 
-    const formatDate = (dateString?: string) => {
-        if (!dateString) return "-";
-        return format(new Date(dateString), 'MMM dd, yyyy hh:mm a');
-    };
-
-    // Helper function to get avatar URL
-    const getAvatarUrl = (user: User) => {
-        if (user.profile_image) {
-            if (user.profile_image.startsWith('http')) {
-                return user.profile_image;
-            }
-            return `${BASE_URL}/storage/${user.profile_image}`;
-        }
-        return undefined;
-    };
+    const StatCard = ({ title, value, icon, color, trend }: any) => (
+        <div className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm p-5 hover:shadow-md transition-all h-full">
+            <div className="flex justify-between items-start">
+                <div className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-semibold text-[#8a8878] uppercase tracking-wider">{title}</span>
+                    <span className="text-3xl font-bold text-[#1a1a18]">{typeof value === "number" ? value.toLocaleString() : value}</span>
+                    {trend && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-50 text-green-700 w-fit">
+                            <RiseOutlined className="mr-1" /> {trend}
+                        </span>
+                    )}
+                </div>
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: `${color}15` }}>
+                    {icon}
+                </div>
+            </div>
+        </div>
+    );
 
     const columns: ColumnsType<User> = [
         {
-            title: 'Guest',
-            key: 'guest',
-            width: isMobile ? 200 : 280,
-            fixed: isMobile ? false : 'left',
+            title: "Guest",
+            key: "guest",
+            width: 280,
+            fixed: "left",
             render: (_, record) => (
-                <Flex align="center" gap={12}>
+                <div className="flex items-center gap-3">
                     <Avatar
                         size={44}
                         src={getAvatarUrl(record)}
-                        style={{ backgroundColor: !record.profile_image ? getRandomColor() : undefined, flexShrink: 0 }}
+                        style={{ backgroundColor: !record.profile_image ? getAvatarColor(record.id) : undefined, flexShrink: 0 }}
                         icon={!record.profile_image ? <UserOutlined /> : undefined}
                     >
                         {!record.profile_image && !getAvatarUrl(record) && getInitials(record.first_name, record.last_name)}
                     </Avatar>
-                    <Flex vertical style={{ minWidth: 0 }}>
-                        <Text strong style={{ fontSize: 15 }}>
-                            {record.first_name} {record.last_name}
-                        </Text>
-                        <Flex wrap gap={4} style={{ marginTop: 4 }}>
+                    <div className="flex flex-col min-w-0">
+                        <Text strong style={{ fontSize: 15 }}>{record.first_name} {record.last_name}</Text>
+                        <div className="flex flex-wrap gap-1 mt-1">
                             {record.email_verified_at && (
-                                <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
-                                    Verified
-                                </Tag>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-green-50 text-green-700">
+                                    <CheckCircleOutlined className="text-[10px]" /> Verified
+                                </span>
                             )}
-                            {record.total_bookings && record.total_bookings > 0 && (
-                                <Tag icon={<StarOutlined />} color="gold" style={{ fontSize: 11, margin: 0, borderRadius: 5 }}>
-                                    {record.total_bookings} bookings
-                                </Tag>
+                            {!!record.total_bookings && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700">
+                                    <StarOutlined className="text-[10px]" /> {record.total_bookings} bookings
+                                </span>
                             )}
-                        </Flex>
-                    </Flex>
-                </Flex>
-            )
+                        </div>
+                    </div>
+                </div>
+            ),
         },
         {
-            title: 'Contact',
-            key: 'contact',
-            responsive: ['md'],
+            title: "Contact",
+            key: "contact",
+            responsive: ["md"],
             render: (_, record) => (
-                <Flex vertical gap={4}>
-                    <Flex align="center" gap={8}>
-                        <MailOutlined style={{ color: token.colorTextSecondary, width: 16 }} />
-                        <Text style={{ fontSize: 13 }} ellipsis={{ tooltip: true }}>
-                            {record.email}
-                        </Text>
-                    </Flex>
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                        <MailOutlined className="text-[#b0ae9f] w-4" />
+                        <Tooltip title={record.email}>
+                            <span className="text-[13px] text-[#4a4a42] truncate max-w-[180px]">{record.email}</span>
+                        </Tooltip>
+                    </div>
                     {record.contact_number && (
-                        <Flex align="center" gap={8}>
-                            <PhoneOutlined style={{ color: token.colorTextSecondary, width: 16 }} />
-                            <Text style={{ fontSize: 13 }}>{record.contact_number}</Text>
-                        </Flex>
+                        <div className="flex items-center gap-2">
+                            <PhoneOutlined className="text-[#b0ae9f] w-4" />
+                            <span className="text-[13px] text-[#4a4a42]">{record.contact_number}</span>
+                        </div>
                     )}
-                </Flex>
-            )
+                </div>
+            ),
         },
         {
-            title: 'Address',
-            key: 'address',
-            responsive: ['lg'],
-            render: (_, record) => (
+            title: "Address",
+            key: "address",
+            responsive: ["lg"],
+            render: (_, record) =>
                 record.address ? (
-                    <Flex align="center" gap={8}>
-                        <EnvironmentOutlined style={{ color: token.colorTextSecondary }} />
-                        <Text
-                            style={{ fontSize: 13 }}
-                            ellipsis={{ tooltip: record.address }}
-                        >
-                            {record.address}
-                        </Text>
-                    </Flex>
-                ) : <Text type="secondary">—</Text>
-            )
+                    <div className="flex items-center gap-2">
+                        <EnvironmentOutlined className="text-[#b0ae9f]" />
+                        <Tooltip title={record.address}>
+                            <span className="text-[13px] text-[#4a4a42] truncate max-w-[200px]">{record.address}</span>
+                        </Tooltip>
+                    </div>
+                ) : <span className="text-[#b0ae9f]">—</span>,
         },
         {
-            title: 'Status',
-            key: 'status',
+            title: "Status",
+            key: "status",
             width: 100,
-            align: 'center',
+            align: "center",
             render: (_, record) => (
-                <Badge
-                    status={record.is_active ? "success" : "default"}
-                    text={record.is_active ? "Active" : "Inactive"}
-                />
-            )
+                <Badge status={record.is_active ? "success" : "default"} text={record.is_active ? "Active" : "Inactive"} />
+            ),
         },
         {
-            title: 'Joined',
-            key: 'joined',
+            title: "Joined",
+            key: "joined",
             width: 150,
-            responsive: ['md'],
+            responsive: ["md"],
             render: (_, record) => (
                 <Tooltip title={formatDate(record.created_at)}>
-                    <Flex align="center" gap={8}>
-                        <ClockCircleOutlined style={{ color: token.colorTextSecondary }} />
-                        <Text style={{ fontSize: 13 }}>
-                            {dayjs(record.created_at).format('MMM DD, YYYY')}
-                        </Text>
-                    </Flex>
+                    <div className="flex items-center gap-2">
+                        <ClockCircleOutlined className="text-[#b0ae9f]" />
+                        <span className="text-[13px] text-[#4a4a42]">{dayjs(record.created_at).format("MMM DD, YYYY")}</span>
+                    </div>
                 </Tooltip>
-            )
+            ),
         },
         {
-            title: 'Actions',
-            key: 'actions',
+            title: "Actions",
+            key: "actions",
             width: 80,
-            align: 'center',
-            fixed: isMobile ? false : 'right',
+            align: "center",
+            fixed: "right",
             render: (_, record) => (
                 <Dropdown
                     menu={{
                         items: [
+                            { key: "view", label: "View Details", icon: <EyeOutlined />, onClick: () => handleViewGuest(record) },
                             {
-                                key: 'view',
-                                label: 'View Details',
-                                icon: <EyeOutlined />,
-                                onClick: () => {
-                                    setSelectedUser(record);
-                                    setViewModalVisible(true);
-                                }
-                            },
-                            {
-                                key: 'status',
-                                label: record.is_active ? 'Deactivate' : 'Activate',
+                                key: "status",
+                                label: record.is_active ? "Deactivate" : "Activate",
                                 icon: record.is_active ? <StopOutlined /> : <CheckOutlined />,
-                                onClick: () => {
-                                    setSelectedUser(record);
-                                    setNewStatus(!record.is_active);
-                                    setStatusModalVisible(true);
-                                }
+                                onClick: () => { setSelectedUser(record); setNewStatus(!record.is_active); setStatusModalVisible(true); },
                             },
-                            { type: 'divider' },
-                            {
-                                key: 'delete',
-                                label: 'Delete',
-                                icon: <DeleteOutlined />,
-                                danger: true,
-                                onClick: () => {
-                                    setSelectedUser(record);
-                                    setDeleteModalVisible(true);
-                                }
-                            }
-                        ]
+                            { type: "divider" },
+                            { key: "delete", label: "Delete", icon: <DeleteOutlined />, danger: true, onClick: () => { setSelectedUser(record); setDeleteModalVisible(true); } },
+                        ],
                     }}
-                    trigger={['click']}
+                    trigger={["click"]}
                 >
                     <Button type="text" icon={<MoreOutlined />} />
                 </Dropdown>
-            )
-        }
+            ),
+        },
     ];
 
-    // Filter bar component
-    const FilterBar = () => (
-        <Flex vertical gap={16}>
-            <Flex gap={12} wrap="wrap">
-                <Select
-                    style={{ width: isMobile ? '100%' : 140 }}
-                    value={statusFilter}
-                    onChange={setStatusFilter}
-                    suffixIcon={<FilterOutlined />}
-                >
-                    <Option value="all">All Status</Option>
-                    <Option value="active">Active</Option>
-                    <Option value="inactive">Inactive</Option>
-                </Select>
-                <Select
-                    style={{ width: isMobile ? '100%' : 160 }}
-                    value={verificationFilter}
-                    onChange={setVerificationFilter}
-                    suffixIcon={<VerifiedOutlined />}
-                >
-                    <Option value="all">All Verification</Option>
-                    <Option value="verified">Verified Only</Option>
-                    <Option value="unverified">Unverified Only</Option>
-                </Select>
-                <Select
-                    style={{ width: isMobile ? '100%' : 140 }}
-                    value={sortBy}
-                    onChange={setSortBy}
-                    suffixIcon={<SortAscendingOutlined />}
-                >
-                    <Option value="newest">Newest First</Option>
-                    <Option value="oldest">Oldest First</Option>
-                    <Option value="name_asc">Name A-Z</Option>
-                    <Option value="name_desc">Name Z-A</Option>
-                </Select>
-            </Flex>
-        </Flex>
-    );
-
-    // Stat card component with white UI
-    const StatCard = ({ title, value, icon, color, trend, prefix = '' }: any) => (
-        <Card 
-            style={{ 
-                borderRadius: 16, 
-                height: '100%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                border: '1px solid #f0f0f0',
-                background: '#ffffff',
-                transition: 'all 0.3s ease'
-            }}
-            bodyStyle={{ padding: 20 }}
-            hoverable
-        >
-            <Flex justify="space-between" align="flex-start">
-                <Flex vertical gap={6}>
-                    <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>{title}</Text>
-                    <Text style={{ fontSize: 30, fontWeight: 600, color: '#1a1a1a' }}>
-                        {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
-                    </Text>
-                    {trend && (
-                        <Tag color="green" style={{ fontSize: 11, margin: 0, borderRadius: 10, padding: '2px 8px' }}>
-                            <RiseOutlined /> {trend}
-                        </Tag>
-                    )}
-                </Flex>
-                <div style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    background: `${color}10`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    {icon}
-                </div>
-            </Flex>
-        </Card>
-    );
-
-    // Premium white stat card with subtle mint accent
-    const PremiumStatCard = ({ title, value, icon, suffix = '' }: any) => (
-        <Card 
-            style={{ 
-                borderRadius: 16, 
-                overflow: 'hidden',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                border: '1px solid #f0f0f0',
-                background: '#ffffff',
-                transition: 'all 0.3s ease'
-            }} 
-            bodyStyle={{ padding: '20px 24px' }}
-            hoverable
-        >
-            <Flex align="center" gap={16}>
-                <div style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: 16,
-                    background: '#10b98110',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    {icon}
-                </div>
-                <Flex vertical style={{ flex: 1 }}>
-                    <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
-                        {title}
-                    </Text>
-                    <Text style={{ fontSize: 28, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>
-                        {value}{suffix}
-                    </Text>
-                </Flex>
-            </Flex>
-        </Card>
-    );
-
-    // Get loyalty level based on total revenue
-    const getLoyaltyLevel = () => {
-        if (stats.totalRevenue > 50000) return "Platinum";
-        if (stats.totalRevenue > 25000) return "Gold";
-        if (stats.totalRevenue > 10000) return "Silver";
-        return "Bronze";
-    };
-
-    // Get loyalty level color
-    const getLoyaltyColor = () => {
-        const level = getLoyaltyLevel();
-        switch (level) {
-            case "Platinum": return '#3b82f6';
-            case "Gold": return '#d97706';
-            case "Silver": return '#6b7280';
-            default: return '#cd7f32';
-        }
-    };
-
     return (
-        <div style={{
-            minHeight: 'auto',
-            padding: isMobile ? 16 : 24
-        }}>
+        <div className="min-h-screen p-4 md:p-6 bg-white font-['DM_Sans',sans-serif]">
+
             {/* Header */}
-            <Flex vertical gap={16} style={{ marginBottom: 24 }}>
-                <Flex justify="space-between" align={isMobile ? 'flex-start' : 'center'} wrap="wrap" gap={16}>
-                    <Flex vertical gap={4}>
-                        <Title level={isMobile ? 3 : 2} style={{ margin: 0, color: '#1a1a1a' }}>Guest Management</Title>
-                        <Text type="secondary" style={{ fontSize: 14 }}>Manage and monitor all registered guests</Text>
-                    </Flex>
-                    <Flex gap={12} wrap="wrap">
+            <div className="mb-8">
+                <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
+                    <div>
+                        <h1 className="font-['Playfair_Display',serif] text-2xl md:text-3xl font-bold text-[#1a1a18] tracking-tight mb-1">
+                            Guest Management
+                        </h1>
+                        <p className="text-[13px] text-[#8a8878]">Manage and monitor all registered guests</p>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
                         <Button
                             icon={<ReloadOutlined spin={refreshing} />}
                             onClick={() => fetchUsers(true)}
                             loading={refreshing}
-                            style={{ borderRadius: 10 }}
+                            className="border-[#e0ddd6] text-[#6b6960] rounded-xl"
                         >
                             Refresh
                         </Button>
-                        <Button type="primary" icon={<ExportOutlined />} style={{ borderRadius: 10, background: '#10b981', borderColor: '#10b981' }}>
+                        <Button
+                            type="primary"
+                            icon={<ExportOutlined />}
+                            className="bg-[#3eb489] border-[#3eb489] hover:bg-[#31a07a] rounded-xl shadow-sm"
+                        >
                             Export
                         </Button>
-                        <Button 
-                            icon={filtersVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />} 
+                        <Button
+                            icon={filtersVisible ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
                             onClick={() => setFiltersVisible(!filtersVisible)}
-                            style={{ borderRadius: 10 }}
+                            className="border-[#e0ddd6] text-[#6b6960] rounded-xl"
                         >
                             Filters
                         </Button>
-                    </Flex>
-                </Flex>
-                <Divider style={{ margin: 0, borderColor: '#e8e8e8' }} />
-            </Flex>
+                    </div>
+                </div>
+                <Divider className="border-[#e8e6df] my-0" />
+            </div>
 
-            {/* Collapsible Filters */}
+            {/* Filters */}
             {filtersVisible && (
-                <Card 
-                    style={{ 
-                        marginBottom: 24, 
-                        borderRadius: 16,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                        border: '1px solid #f0f0f0',
-                        background: '#ffffff'
-                    }}
-                >
-                    <FilterBar />
-                </Card>
+                <div className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm mb-6 p-5">
+                    <div className="flex flex-wrap gap-3">
+                        {[
+                            {
+                                value: statusFilter, onChange: setStatusFilter, icon: <FilterOutlined />, width: 140,
+                                options: [["all", "All Status"], ["active", "Active"], ["inactive", "Inactive"]]
+                            },
+                            {
+                                value: verificationFilter, onChange: setVerificationFilter, icon: <VerifiedOutlined />, width: 170,
+                                options: [["all", "All Verification"], ["verified", "Verified Only"], ["unverified", "Unverified Only"]]
+                            },
+                            {
+                                value: sortBy, onChange: setSortBy, icon: <SortAscendingOutlined />, width: 150,
+                                options: [["newest", "Newest First"], ["oldest", "Oldest First"], ["name_asc", "Name A–Z"], ["name_desc", "Name Z–A"]]
+                            },
+                        ].map(({ value, onChange, icon, width, options }, i) => (
+                            <Select key={i} style={{ width }} value={value} onChange={onChange} suffixIcon={icon}
+                                className="[&_.ant-select-selector]:rounded-xl [&_.ant-select-selector]:border-[#e0ddd6]">
+                                {options.map(([v, l]) => <Option key={v} value={v}>{l}</Option>)}
+                            </Select>
+                        ))}
+                    </div>
+                </div>
             )}
 
-            {/* Statistics Grid - White Cards */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Total Guests"
-                        value={stats.total}
-                        icon={<TeamOutlined style={{ fontSize: 24, color: '#10b981' }} />}
-                        color="#10b981"
-                        trend="+12%"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Active"
-                        value={stats.active}
-                        icon={<CheckCircleOutlined style={{ fontSize: 24, color: '#3b82f6' }} />}
-                        color="#3b82f6"
-                        trend="+8%"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="Verified"
-                        value={stats.verified}
-                        icon={<VerifiedOutlined style={{ fontSize: 24, color: '#14b8a6' }} />}
-                        color="#14b8a6"
-                        trend="+15%"
-                    />
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <StatCard
-                        title="New This Month"
-                        value={stats.newThisMonth}
-                        icon={<RiseOutlined style={{ fontSize: 24, color: '#8b5cf6' }} />}
-                        color="#8b5cf6"
-                        trend="+23%"
-                    />
-                </Col>
-            </Row>
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <StatCard title="Total Guests" value={stats.total} color="#10b981" trend="+12%" icon={<TeamOutlined style={{ fontSize: 24, color: "#10b981" }} />} />
+                <StatCard title="Active" value={stats.active} color="#3b82f6" trend="+8%" icon={<CheckCircleOutlined style={{ fontSize: 24, color: "#3b82f6" }} />} />
+                <StatCard title="Verified" value={stats.verified} color="#14b8a6" trend="+15%" icon={<VerifiedOutlined style={{ fontSize: 24, color: "#14b8a6" }} />} />
+                <StatCard title="New This Month" value={stats.newThisMonth} color="#8b5cf6" trend="+23%" icon={<RiseOutlined style={{ fontSize: 24, color: "#8b5cf6" }} />} />
+            </div>
 
-            {/* Premium White Stats Row */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} md={8}>
-                    <PremiumStatCard
-                        title="Total Revenue"
-                        value={`₱${stats.totalRevenue.toLocaleString()}`}
-                        icon={<CreditCardOutlined style={{ fontSize: 24, color: '#10b981' }} />}
-                    />
-                </Col>
-                <Col xs={24} md={8}>
-                    <PremiumStatCard
-                        title="Avg. Bookings/User"
-                        value={stats.averageBookings}
-                        icon={<StarOutlined style={{ fontSize: 24, color: '#10b981' }} />}
-                    />
-                </Col>
-                <Col xs={24} md={8}>
-                    <Card 
-                        style={{ 
-                            borderRadius: 16, 
-                            overflow: 'hidden',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                            border: '1px solid #f0f0f0',
-                            background: '#ffffff',
-                            transition: 'all 0.3s ease'
-                        }} 
-                        bodyStyle={{ padding: '20px 24px' }}
-                        hoverable
-                    >
-                        <Flex align="center" gap={16}>
-                            <div style={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 16,
-                                background: '#10b98110',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}>
-                                <TrophyOutlined style={{ fontSize: 24, color: getLoyaltyColor() }} />
-                            </div>
-                            <Flex vertical style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
-                                    Loyalty Level
-                                </Text>
-                                <Flex align="center" gap={8}>
-                                    <Text style={{ fontSize: 28, fontWeight: 700, color: getLoyaltyColor(), lineHeight: 1.2 }}>
-                                        {getLoyaltyLevel()}
-                                    </Text>
-                                    {stats.totalRevenue === 0 && (
-                                        <Tag color="default" style={{ borderRadius: 10 }}>No activity</Tag>
-                                    )}
-                                </Flex>
-                            </Flex>
-                        </Flex>
-                    </Card>
-                </Col>
-            </Row>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {[
+                    { title: "Total Revenue", value: `₱${stats.totalRevenue.toLocaleString()}`, icon: <CreditCardOutlined style={{ fontSize: 24, color: "#10b981" }} /> },
+                    { title: "Avg. Bookings/User", value: stats.averageBookings, icon: <StarOutlined style={{ fontSize: 24, color: "#10b981" }} /> },
+                ].map(({ title, value, icon }) => (
+                    <div key={title} className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm p-5 hover:shadow-md transition-all flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-50">{icon}</div>
+                        <div>
+                            <span className="text-[11px] font-semibold text-[#8a8878] uppercase tracking-wider block">{title}</span>
+                            <span className="text-2xl font-bold text-[#1a1a18]">{value}</span>
+                        </div>
+                    </div>
+                ))}
+                <div className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm p-5 hover:shadow-md transition-all flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: `${loyalty.color}15` }}>
+                        <TrophyOutlined style={{ fontSize: 24, color: loyalty.color }} />
+                    </div>
+                    <div>
+                        <span className="text-[11px] font-semibold text-[#8a8878] uppercase tracking-wider block">Loyalty Level</span>
+                        <span className="text-2xl font-bold" style={{ color: loyalty.color }}>{loyalty.level}</span>
+                    </div>
+                </div>
+            </div>
 
-            {/* Search Bar */}
-            <Card 
-                style={{ 
-                    marginBottom: 24, 
-                    borderRadius: 16,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                    border: '1px solid #f0f0f0',
-                    background: '#ffffff'
-                }}
-            >
+            {/* Search */}
+            <div className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm mb-6 p-5">
                 <Search
                     placeholder="Search by name, email, or contact..."
                     allowClear
                     enterButton={<SearchOutlined />}
                     size="large"
                     value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        setCurrentPage(1);
-                    }}
+                    onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                    className="[&_.ant-input-group-addon_.ant-btn]:bg-[#3eb489] [&_.ant-input-group-addon_.ant-btn]:border-[#3eb489] [&_.ant-input-group-addon_.ant-btn]:hover:bg-[#31a07a] [&_.ant-input-group-addon_.ant-btn]:rounded-r-xl [&_.ant-input]:rounded-l-xl"
                 />
-            </Card>
+            </div>
 
             {/* Table */}
-            <Card 
-                style={{ 
-                    borderRadius: 16, 
-                    overflow: 'auto',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                    border: '1px solid #f0f0f0',
-                    background: '#ffffff'
-                }}
-            >
+            <div className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-[#eeece6] flex items-center justify-between">
+                    <h2 className="font-['Playfair_Display',serif] text-base font-semibold text-[#1a1a18] m-0">Guest List</h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e8f5ee] text-[#1e7a45]">
+                        {total} records
+                    </span>
+                </div>
                 <Spin spinning={loading}>
                     <Table
                         columns={columns}
                         dataSource={users}
                         rowKey="id"
-                        {...(isMobile ? { scroll: { x: 700 } } : {})}
+                        scroll={{ x: 1000 }}
                         pagination={{
                             current: currentPage,
-                            total: total,
+                            total,
                             pageSize: perPage,
-                            showSizeChanger: !isMobile,
-                            showQuickJumper: !isMobile,
-                            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} guests`,
+                            showSizeChanger: true,
+                            showQuickJumper: true,
+                            showTotal: (t, r) => `${r[0]}–${r[1]} of ${t} guests`,
                             onChange: (page) => setCurrentPage(page),
-                            onShowSizeChange: (_, size) => {
-                                setPerPage(size);
-                                setCurrentPage(1);
-                            },
-                            position: ['bottomCenter']
+                            onShowSizeChange: (_, size) => { setPerPage(size); setCurrentPage(1); },
                         }}
-                        locale={{
-                            emptyText: <Empty description="No guests found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                        }}
+                        locale={{ emptyText: <Empty description="No guests found" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                        className="[&_.ant-table-thead_.ant-table-cell]:bg-[#f8f7f4] [&_.ant-table-thead_.ant-table-cell]:text-[10.5px] [&_.ant-table-thead_.ant-table-cell]:font-bold [&_.ant-table-thead_.ant-table-cell]:text-[#8a8878] [&_.ant-table-thead_.ant-table-cell]:uppercase [&_.ant-table-thead_.ant-table-cell]:tracking-wider [&_.ant-table-tbody_.ant-table-row:hover_.ant-table-cell]:bg-[#f9f8f5]"
                     />
                 </Spin>
-            </Card>
+            </div>
 
-            {/* View Details Modal */}
+            {/* Status Modal */}
             <Modal
                 title={
-                    <Flex align="center" gap={16}>
-                        <Avatar
-                            size={64}
-                            src={selectedUser ? getAvatarUrl(selectedUser) : undefined}
-                            style={{ 
-                                backgroundColor: selectedUser && !selectedUser.profile_image ? getRandomColor() : undefined,
-                                border: `3px solid ${token.colorBorderBg}`,
-                                boxShadow: token.boxShadowTertiary
-                            }}
-                            icon={selectedUser && !selectedUser.profile_image ? <UserOutlined /> : undefined}
-                        >
-                            {selectedUser && !selectedUser.profile_image && !getAvatarUrl(selectedUser) && 
-                                getInitials(selectedUser.first_name, selectedUser.last_name)
-                            }
-                        </Avatar>
-                        <Flex vertical>
-                            <Text strong style={{ fontSize: 18 }}>
-                                {selectedUser?.first_name} {selectedUser?.last_name}
-                            </Text>
-                            <Text type="secondary">Guest Details</Text>
-                        </Flex>
-                    </Flex>
-                }
-                open={viewModalVisible}
-                onCancel={() => setViewModalVisible(false)}
-                footer={[
-                    <Button key="close" onClick={() => setViewModalVisible(false)} style={{ borderRadius: 10 }}>
-                        Close
-                    </Button>
-                ]}
-                width={650}
-                centered
-                styles={{ body: { paddingTop: 24 } }}
-            >
-                {selectedUser && (
-                    <>
-                        <Flex 
-                            justify="space-between" 
-                            align="center" 
-                            style={{ 
-                                background: '#f8fafc',
-                                padding: '16px 20px',
-                                borderRadius: 16,
-                                marginBottom: 24,
-                                border: '1px solid #f0f0f0'
-                            }}
-                        >
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Total Bookings</Text>
-                                <Text strong style={{ fontSize: 24, color: '#10b981' }}>
-                                    {selectedUser.total_bookings || 0}
-                                </Text>
-                            </Flex>
-                            <Divider type="vertical" style={{ height: 40, borderColor: '#e8e8e8' }} />
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Total Spent</Text>
-                                <Text strong style={{ fontSize: 24, color: '#10b981' }}>
-                                    ₱{(selectedUser.total_spent || 0).toLocaleString()}
-                                </Text>
-                            </Flex>
-                            <Divider type="vertical" style={{ height: 40, borderColor: '#e8e8e8' }} />
-                            <Flex vertical align="center" style={{ flex: 1 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Status</Text>
-                                <Badge 
-                                    status={selectedUser.is_active ? "success" : "default"} 
-                                    text={selectedUser.is_active ? "Active" : "Inactive"}
-                                />
-                            </Flex>
-                        </Flex>
-
-                        <Descriptions column={1} bordered size="middle" labelStyle={{ fontWeight: 500 }}>
-                            <Descriptions.Item label={
-                                <Space>
-                                    <MailOutlined />
-                                    Email
-                                </Space>
-                            }>
-                                <Flex align="center" gap={8} wrap="wrap">
-                                    {selectedUser.email}
-                                    {selectedUser.email_verified_at && (
-                                        <Tag color="success" icon={<CheckCircleOutlined />} style={{ borderRadius: 5 }}>Verified</Tag>
-                                    )}
-                                </Flex>
-                            </Descriptions.Item>
-                            <Descriptions.Item label={
-                                <Space>
-                                    <PhoneOutlined />
-                                    Contact Number
-                                </Space>
-                            }>
-                                {selectedUser.contact_number || <Text type="secondary">Not provided</Text>}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={
-                                <Space>
-                                    <EnvironmentOutlined />
-                                    Address
-                                </Space>
-                            }>
-                                {selectedUser.address || <Text type="secondary">Not provided</Text>}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={
-                                <Space>
-                                    <CalendarOutlined />
-                                    Member Since
-                                </Space>
-                            }>
-                                {formatDate(selectedUser.created_at)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={
-                                <Space>
-                                    <ClockCircleOutlined />
-                                    Last Login
-                                </Space>
-                            }>
-                                {selectedUser.last_login ? formatDate(selectedUser.last_login) : <Text type="secondary">Never</Text>}
-                            </Descriptions.Item>
-                        </Descriptions>
-
-                        {(() => {
-                            const spent = selectedUser.total_spent || 0;
-                            let level = 'Bronze';
-                            let color = '#cd7f32';
-                            let bgColor = '#fef3c7';
-                            if (spent > 50000) {
-                                level = 'Platinum';
-                                color = '#3b82f6';
-                                bgColor = '#dbeafe';
-                            } else if (spent > 25000) {
-                                level = 'Gold';
-                                color = '#d97706';
-                                bgColor = '#fef3c7';
-                            } else if (spent > 10000) {
-                                level = 'Silver';
-                                color = '#6b7280';
-                                bgColor = '#f3f4f6';
-                            }
-                            return (
-                                <Flex justify="center" style={{ marginTop: 24 }}>
-                                    <Tag icon={<TrophyOutlined />} style={{ background: bgColor, borderColor: color, color: color, borderRadius: 12, padding: '4px 12px' }}>
-                                        {level} Member
-                                    </Tag>
-                                </Flex>
-                            );
-                        })()}
-                    </>
-                )}
-            </Modal>
-
-            {/* Status Change Modal */}
-            <Modal
-                title={
-                    <Flex align="center" gap={8}>
-                        {newStatus ? <UserAddOutlined style={{ color: '#10b981' }} /> : <UserDeleteOutlined style={{ color: '#ef4444' }} />}
-                        <span>{newStatus ? 'Activate' : 'Deactivate'} Guest</span>
-                    </Flex>
+                    <div className="flex items-center gap-2">
+                        {newStatus ? <UserAddOutlined className="text-emerald-500" /> : <UserDeleteOutlined className="text-red-500" />}
+                        <span>{newStatus ? "Activate" : "Deactivate"} Guest</span>
+                    </div>
                 }
                 open={statusModalVisible}
                 onCancel={() => setStatusModalVisible(false)}
                 centered
                 footer={[
-                    <Button key="cancel" onClick={() => setStatusModalVisible(false)} style={{ borderRadius: 10 }}>
-                        Cancel
-                    </Button>,
+                    <Button key="cancel" onClick={() => setStatusModalVisible(false)} className="rounded-xl border-[#e0ddd6]">Cancel</Button>,
                     <Button
                         key="confirm"
                         type={newStatus ? "primary" : "default"}
                         danger={!newStatus}
                         onClick={() => selectedUser && handleStatusChange(selectedUser, newStatus)}
-                        style={newStatus ? { background: '#10b981', borderColor: '#10b981', borderRadius: 10 } : { borderRadius: 10 }}
+                        className={newStatus ? "bg-[#3eb489] border-[#3eb489] hover:bg-[#31a07a] rounded-xl" : "rounded-xl"}
                     >
-                        {newStatus ? 'Activate' : 'Deactivate'}
-                    </Button>
+                        {newStatus ? "Activate" : "Deactivate"}
+                    </Button>,
                 ]}
+                className="[&_.ant-modal-content]:rounded-2xl"
             >
                 <Paragraph>
-                    Are you sure you want to {newStatus ? 'activate' : 'deactivate'} <strong>
-                        {selectedUser?.first_name} {selectedUser?.last_name}
-                    </strong>?
+                    Are you sure you want to {newStatus ? "activate" : "deactivate"}{" "}
+                    <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>?
                 </Paragraph>
-                {!newStatus && (
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                        Deactivated users will not be able to log in or make bookings.
-                    </Text>
-                )}
+                {!newStatus && <p className="text-xs text-[#8a8878] mt-2">Deactivated users cannot log in or make bookings.</p>}
             </Modal>
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete Modal */}
             <Modal
                 title="Delete Guest"
                 open={deleteModalVisible}
                 onCancel={() => setDeleteModalVisible(false)}
                 centered
                 footer={[
-                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)} style={{ borderRadius: 10 }}>
-                        Cancel
-                    </Button>,
-                    <Button
-                        key="delete"
-                        type="primary"
-                        danger
-                        onClick={() => selectedUser && handleDeleteUser(selectedUser)}
-                        style={{ borderRadius: 10 }}
-                    >
+                    <Button key="cancel" onClick={() => setDeleteModalVisible(false)} className="rounded-xl border-[#e0ddd6]">Cancel</Button>,
+                    <Button key="delete" type="primary" danger onClick={() => selectedUser && handleDeleteUser(selectedUser)} className="rounded-xl">
                         Delete Permanently
-                    </Button>
+                    </Button>,
                 ]}
+                className="[&_.ant-modal-content]:rounded-2xl"
             >
                 <Paragraph>
-                    Are you sure you want to permanently delete <strong>
-                        {selectedUser?.first_name} {selectedUser?.last_name}
-                    </strong>?
+                    Are you sure you want to permanently delete{" "}
+                    <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>?
                 </Paragraph>
-                <Text type="danger" style={{ fontSize: 13 }}>
-                    This action cannot be undone. All associated data will be removed.
-                </Text>
+                <p className="text-xs text-red-500 mt-2">This action cannot be undone. All associated data will be removed.</p>
             </Modal>
         </div>
     );

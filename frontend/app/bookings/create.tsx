@@ -74,9 +74,11 @@ export default function CreateBooking() {
       minimumFractionDigits: 0,
     }).format(price);
 
-  const handleBooking = async () => {
-    // Validate overnight booking
+  const handleBooking = () => {
+
+    // Overnight validation
     if (bookingType === "overnight") {
+
       if (!checkInDate || !checkOutDate) {
         alert("Please select check-in and check-out dates");
         return;
@@ -88,43 +90,35 @@ export default function CreateBooking() {
       }
     }
 
-    // Validate short stay pricing exists
+    // Short stay validation
     if (bookingType === "short") {
-      const shortPrice = parsedRoom.room_type?.short_stay_price;
+
+      const shortPrice =
+        parsedRoom.room_type?.short_stay_price;
+
       if (!shortPrice || shortPrice === 0) {
         alert("Short stay pricing is not available for this room");
         return;
       }
     }
 
-    try {
-      setLoading(true);
-      
-      // Build payload dynamically - don't send null values
-      const payload: any = {
+    router.push({
+      pathname: "/bookings/payment",
+
+      params: {
+        room_id: parsedRoom.id,
+
         booking_type: bookingType,
-        room_ids: [parsedRoom.id],
-      };
 
-      if (bookingType === "overnight") {
-        payload.check_in_date = formatDate(checkInDate);
-        payload.check_out_date = formatDate(checkOutDate);
-      } else {
-        payload.hours = hours;
-      }
+        check_in_date:
+          formatDate(checkInDate) || "",
 
-      // DO NOT send total_price - let backend calculate it
-      
-      const response = await api.post("/bookings", payload);
-      
-      alert("Booking Successful ✅");
-      router.replace("/(guest)/(tabs)/home");
-    } catch (err: any) {
-      console.error("Booking error:", err.response?.data);
-      alert(err.response?.data?.message || "Booking failed");
-    } finally {
-      setLoading(false);
-    }
+        check_out_date:
+          formatDate(checkOutDate) || "",
+
+        hours: hours.toString(),
+      },
+    });
   };
 
   const nights = getNights();
@@ -133,7 +127,7 @@ export default function CreateBooking() {
   const overnightTotal = getOvernightTotal();
   const shortTotal = hours * shortStayPrice;
   const total = bookingType === "overnight" ? overnightTotal : shortTotal;
-  
+
   const canBook =
     bookingType === "overnight"
       ? checkInDate && checkOutDate && checkOutDate > checkInDate && overnightTotal > 0
@@ -228,7 +222,7 @@ export default function CreateBooking() {
                   </TouchableOpacity>
                 ))}
               </View>
-              
+
               {/* Display short stay price info */}
               {shortStayPrice > 0 && (
                 <Text className="text-xs text-[#1a4a35]/50 mt-3">
@@ -437,9 +431,9 @@ export default function CreateBooking() {
             <View className="bg-[#1a4a35]/04 rounded-2xl border border-dashed border-[#1a4a35]/15 px-5 py-6 items-center gap-2">
               <Ionicons name="calendar-outline" size={24} color="#1a4a35" style={{ opacity: 0.3 }} />
               <Text className="text-[#1a4a35]/30 text-sm text-center leading-5">
-                {bookingType === "overnight" 
+                {bookingType === "overnight"
                   ? "Select both dates to see\n your booking summary"
-                  : !shortStayPrice 
+                  : !shortStayPrice
                     ? "Short stay pricing not available\n for this room"
                     : "Select hours to see\n your booking summary"}
               </Text>
@@ -498,9 +492,9 @@ export default function CreateBooking() {
                   className="text-white text-sm tracking-widest uppercase"
                   style={{ fontFamily: "Georgia" }}
                 >
-                  {canBook ? "Confirm Booking" : 
-                    (bookingType === "short" && !shortStayPrice) 
-                      ? "Pricing Unavailable" 
+                  {canBook ? "Confirm Booking" :
+                    (bookingType === "short" && !shortStayPrice)
+                      ? "Pricing Unavailable"
                       : "Select Dates First"}
                 </Text>
                 {canBook && (

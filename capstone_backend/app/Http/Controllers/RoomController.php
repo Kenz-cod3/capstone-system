@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
 use App\Models\Room;
 use Illuminate\Http\Request;
 
@@ -19,12 +20,11 @@ class RoomController extends Controller
         return response()->json(
             $rooms->map(function ($room) {
 
-                // 📷 NORMAL IMAGE (may fallback)
+                // 📷 NORMAL IMAGE
                 $normalImage = $room->images
                     ->where('image_type', 'normal')
                     ->sortByDesc('created_at')
-                    ->first()
-                    ?? $room->images->sortByDesc('created_at')->first();
+                    ->first();
 
                 // 👁️ 360 IMAGE
                 $panoramaImage = $room->images
@@ -37,6 +37,8 @@ class RoomController extends Controller
                     'room_number' => $room->room_number,
                     'status' => $room->status,
                     'is_deleted' => $room->deleted_at !== null,
+
+                    'images' => $room->images,
 
                     'room_type_id' => $room->room_type_id,
                     'room_type' => $room->roomType,
@@ -55,44 +57,33 @@ class RoomController extends Controller
         );
     }
 
-    // public function index()
-    // {
-    //     $rooms = Room::with([
-    //         'roomType:id,type_name,base_price',
-    //         'images' => function ($q) {
-    //             $q->latest()->limit(1);
-    //         }
-    //     ])
-    //         ->orderByRaw('CAST(room_number AS UNSIGNED) ASC') // 🔥 SORT FIX
-    //         ->get();
+    // 🔥 LIGHTWEIGHT REALTIME ROOM GRID
+    public function statusGrid()
+    {
+        $rooms = Room::select(
+            'id',
+            'room_number',
+            'status'
+        )
+            ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
+            ->get();
 
-    //     return response()->json(
-    //         $rooms->map(function ($room) {
-    //             return [
-    //                 'id' => $room->id,
-    //                 'room_number' => $room->room_number,
-    //                 'status' => $room->status,
+        return response()->json($rooms);
+    }
 
-    //                 'room_type_id' => $room->room_type_id,
-    //                 'room_type' => $room->roomType,
-
-    //                 'image_url' => $room->images->first()
-    //                     ? asset('storage/' . $room->images->first()->image_path)
-    //                     : null
-    //             ];
-    //         })
-    //     );
-    // }
-
+    // CREATE ROOM
     public function store(Request $request)
     {
         $validated = $request->validate([
             'room_type_id' => 'required|exists:room_types,id',
             'room_number' => 'required|string|unique:rooms,room_number',
-            'status' => 'required|in:available,occupied,maintenance'
+            'status' => 'required|in:available,occupied,maintenance,dirty,cleaning'
         ]);
 
         $room = Room::create($validated);
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated());
 
         return response()->json([
             'message' => 'Room created successfully',
@@ -100,9 +91,9 @@ class RoomController extends Controller
         ], 201);
     }
 
+    // SHOW ROOM
     public function show($id)
     {
-        // $room = Room::with('roomType')->findOrFail($id);
         $room = Room::with(['roomType', 'images'])->findOrFail($id);
 
         $room->image_url = $room->images->count()
@@ -112,6 +103,7 @@ class RoomController extends Controller
         return response()->json($room, 200);
     }
 
+    // UPDATE ROOM
     public function update(Request $request, $id)
     {
         $room = Room::findOrFail($id);
@@ -119,10 +111,13 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_type_id' => 'sometimes|exists:room_types,id',
             'room_number' => 'sometimes|string|unique:rooms,room_number,' . $id,
-            'status' => 'sometimes|in:available,occupied,maintenance'
+            'status' => 'sometimes|in:available,occupied,maintenance,dirty,cleaning'
         ]);
 
         $room->update($validated);
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated());
 
         return response()->json([
             'message' => 'Room updated successfully',
@@ -130,9 +125,18 @@ class RoomController extends Controller
         ], 200);
     }
 
+    // SOFT DELETE ROOM
     public function destroy($id)
     {
         $room = Room::with('bookings')->findOrFail($id);
+
+        // DO NOT DELETE OCCUPIED ROOM
+        if ($room->status === 'occupied') {
+
+            return response()->json([
+                'message' => 'The room is occupied and cannot be deleted.'
+            ], 400);
+        }
 
         $hasActiveBookings = $room->bookings()
             ->whereNotIn('booking_status', ['checked_out', 'cancelled'])
@@ -144,13 +148,17 @@ class RoomController extends Controller
             ], 400);
         }
 
-        $room->delete(); // ✅ soft delete
+        $room->delete();
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated());
 
         return response()->json([
             'message' => 'Room deleted successfully'
         ]);
     }
 
+    // RESTORE ROOM
     public function restore($id)
     {
         $room = Room::withTrashed()->findOrFail($id);
@@ -163,29 +171,39 @@ class RoomController extends Controller
 
         $room->restore();
 
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated());
+
         return response()->json([
             'message' => 'Room restored successfully'
         ]);
     }
 
+    // PERMANENT DELETE
     public function forceDelete($id)
     {
         $room = Room::withTrashed()->findOrFail($id);
 
         $room->forceDelete();
 
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated());
+
         return response()->json([
             'message' => 'Room permanently deleted'
         ]);
     }
 
+    // ROOM OCCUPANCY SUMMARY
     public function occupancy()
     {
-        $totalRooms = \App\Models\Room::count();
+        $totalRooms = Room::count();
 
-        $occupiedRooms = \App\Models\Room::where('status', 'occupied')->count();
-        $availableRooms = \App\Models\Room::where('status', 'available')->count();
-        $maintenanceRooms = \App\Models\Room::where('status', 'maintenance')->count();
+        $occupiedRooms = Room::where('status', 'occupied')->count();
+        $availableRooms = Room::where('status', 'available')->count();
+        $maintenanceRooms = Room::where('status', 'maintenance')->count();
+        $dirtyRooms = Room::where('status', 'dirty')->count();
+        $cleaningRooms = Room::where('status', 'cleaning')->count();
 
         $occupancyRate = $totalRooms > 0
             ? round(($occupiedRooms / $totalRooms) * 100, 2)
@@ -196,21 +214,29 @@ class RoomController extends Controller
             'occupied_rooms' => $occupiedRooms,
             'available_rooms' => $availableRooms,
             'maintenance_rooms' => $maintenanceRooms,
+            'dirty_rooms' => $dirtyRooms,
+            'cleaning_rooms' => $cleaningRooms,
             'occupancy_rate' => $occupancyRate
         ]);
     }
 
+    // OCCUPANCY TREND
     public function occupancyTrend()
     {
         $data = [];
 
         for ($i = 6; $i >= 0; $i--) {
+
             $date = now()->subDays($i)->format('Y-m-d');
 
-            $totalRooms = \App\Models\Room::count();
+            $totalRooms = Room::count();
 
             $occupiedRooms = \App\Models\Booking::whereDate('created_at', $date)
-                ->whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])
+                ->whereIn('booking_status', [
+                    'confirmed',
+                    'checked_in',
+                    'checked_out'
+                ])
                 ->with('rooms')
                 ->get()
                 ->pluck('rooms')
@@ -230,6 +256,7 @@ class RoomController extends Controller
         return response()->json($data);
     }
 
+    // DAMAGED ROOMS
     public function damaged()
     {
         $rooms = Room::with([

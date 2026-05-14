@@ -6,6 +6,7 @@ use App\Models\Message;
 use App\Models\MessageTarget;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Events\MessageSent;
 
 class MessageController extends Controller
 {
@@ -31,23 +32,32 @@ class MessageController extends Controller
 
         // 🔥 VALIDATE ROLE RULES
         foreach ($validated['targets'] as $target) {
-            $receiver = \App\Models\User::findOrFail($target['target_id']);
+
+            $receiver = \App\Models\User::findOrFail(
+                $target['target_id']
+            );
 
             // ❌ guest → staff NOT allowed
-            if ($sender->role === 'guest' && $receiver->role === 'staff') {
+            if (
+                $sender->role === 'guest' &&
+                $receiver->role === 'staff'
+            ) {
                 return response()->json([
                     'error' => 'Guest can only message admin'
                 ], 403);
             }
 
             // ❌ staff → guest NOT allowed
-            if ($sender->role === 'staff' && $receiver->role === 'guest') {
+            if (
+                $sender->role === 'staff' &&
+                $receiver->role === 'guest'
+            ) {
                 return response()->json([
                     'error' => 'Staff cannot message guest'
                 ], 403);
             }
 
-            // ❌ optional: prevent self messaging
+            // ❌ prevent self messaging
             if ($sender->id === $receiver->id) {
                 return response()->json([
                     'error' => 'You cannot message yourself'
@@ -63,22 +73,34 @@ class MessageController extends Controller
 
         // ✅ CREATE TARGETS
         foreach ($validated['targets'] as $target) {
+
             MessageTarget::create([
                 'message_id' => $message->id,
                 'target_id' => $target['target_id'],
                 'target_type' => $target['target_type'],
                 'is_read' => false
             ]);
+
+            // 🔥 REALTIME RECEIVER
+            $message->receiver_id = $target['target_id'];
+
+            // 🔥 BROADCAST
+            broadcast(new MessageSent($message));
         }
 
         return response()->json([
             'message' => 'Message sent successfully',
-            'data' => $message->load(['targets.target', 'sender'])
+            'data' => $message->load([
+                'targets.target',
+                'sender'
+            ])
         ], 201);
     }
+
     public function show($id)
     {
-        $message = Message::with(['targets.target'])->findOrFail($id);
+        $message = Message::with(['targets.target'])
+            ->findOrFail($id);
 
         return response()->json($message, 200);
     }
@@ -102,61 +124,13 @@ class MessageController extends Controller
     public function destroy($id)
     {
         $message = Message::findOrFail($id);
+
         $message->delete();
 
         return response()->json([
             'message' => 'Message deleted'
         ], 200);
     }
-
-    // public function conversations()
-    // {
-    //     $currentUserId = Auth::id();
-
-    //     $messages = MessageTarget::with(['message.sender', 'target'])
-    //         ->where(function ($q) use ($currentUserId) {
-    //             $q->where('target_id', $currentUserId)
-    //                 ->where('target_type', 'App\\Models\\User');
-    //         })
-    //         ->orWhereHas('message', function ($q) use ($currentUserId) {
-    //             $q->where('sender_id', $currentUserId);
-    //         })
-    //         ->get();
-
-    //     $conversations = $messages->groupBy(function ($item) use ($currentUserId) {
-
-    //         // 🔥 identify OTHER user (important)
-    //         if ($item->message->sender_id == $currentUserId) {
-    //             return $item->target_id;
-    //         }
-
-    //         return $item->message->sender_id;
-    //     })->map(function ($group) use ($currentUserId) {
-
-    //         // sort latest
-    //         $sorted = $group->sortByDesc('message.created_at');
-    //         $lastMessage = $sorted->first();
-
-    //         // get other user
-    //         $otherUser = $lastMessage->message->sender_id == $currentUserId
-    //             ? $lastMessage->target
-    //             : $lastMessage->message->sender;
-
-    //         return [
-    //             'user' => $otherUser,
-    //             'last_message' => $lastMessage->message->message,
-    //             'unread' => $group
-    //                 ->where('target_id', $currentUserId)
-    //                 ->where('is_read', false)
-    //                 ->count(),
-    //             'created_at' => $lastMessage->message->created_at
-    //         ];
-    //     })
-    //         ->sortByDesc('created_at') // 🔥 VERY IMPORTANT (FB STYLE ORDER)
-    //         ->values();
-
-    //     return response()->json($conversations);
-    // }
 
     public function markAllAsRead()
     {
@@ -169,7 +143,9 @@ class MessageController extends Controller
                 'read_at' => now()
             ]);
 
-        return response()->json(['message' => 'All messages marked as read']);
+        return response()->json([
+            'message' => 'All messages marked as read'
+        ]);
     }
 
     public function chatUsers()
@@ -177,14 +153,29 @@ class MessageController extends Controller
         $currentUser = Auth::user();
 
         if ($currentUser->role === 'guest') {
+
             // guest → admin only
-            $users = \App\Models\User::where('role', 'admin')->get();
+            $users = \App\Models\User::where(
+                'role',
+                'admin'
+            )->get();
+
         } elseif ($currentUser->role === 'admin') {
+
             // admin → guest + staff
-            $users = \App\Models\User::whereIn('role', ['guest', 'staff'])->get();
+            $users = \App\Models\User::whereIn(
+                'role',
+                ['guest', 'staff']
+            )->get();
+
         } elseif ($currentUser->role === 'staff') {
+
             // staff → admin only
-            $users = \App\Models\User::where('role', 'admin')->get();
+            $users = \App\Models\User::where(
+                'role',
+                'admin'
+            )->get();
+
         } else {
             $users = [];
         }
@@ -197,10 +188,15 @@ class MessageController extends Controller
         $currentUserId = Auth::id();
 
         if (!$currentUserId) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return response()->json([
+                'error' => 'Unauthorized'
+            ], 401);
         }
 
-        $messages = MessageTarget::with(['message.sender', 'target'])
+        $messages = MessageTarget::with([
+            'message.sender',
+            'target'
+        ])
             ->where('target_type', 'App\\Models\\User')
             ->where(function ($q) use ($currentUserId) {
 
@@ -208,35 +204,55 @@ class MessageController extends Controller
                 $q->where('target_id', $currentUserId)
 
                     // SENT
-                    ->orWhereHas('message', function ($q2) use ($currentUserId) {
-                        $q2->where('sender_id', $currentUserId);
-                    });
+                    ->orWhereHas(
+                        'message',
+                        function ($q2) use ($currentUserId) {
+                            $q2->where(
+                                'sender_id',
+                                $currentUserId
+                            );
+                        }
+                    );
             })
             ->get();
 
-        $conversations = $messages->groupBy(function ($item) use ($currentUserId) {
+        $conversations = $messages->groupBy(
+            function ($item) use ($currentUserId) {
 
-            return $item->message->sender_id == $currentUserId
-                ? $item->target_id
-                : $item->message->sender_id;
-        })->map(function ($group) use ($currentUserId) {
+                return $item->message->sender_id
+                    == $currentUserId
+                    ? $item->target_id
+                    : $item->message->sender_id;
+            }
+        )->map(function ($group) use ($currentUserId) {
 
-            $sorted = $group->sortByDesc('message.created_at');
+            $sorted = $group->sortByDesc(
+                'message.created_at'
+            );
+
             $lastMessage = $sorted->first();
 
-            $otherUser = $lastMessage->message->sender_id == $currentUserId
-                ? $lastMessage->target
-                : $lastMessage->message->sender;
+            $otherUser =
+                $lastMessage->message->sender_id
+                == $currentUserId
+                    ? $lastMessage->target
+                    : $lastMessage->message->sender;
 
             return [
                 'user' => $otherUser,
-                'last_message' => $lastMessage->message->message,
-                'last_sender_id' => $lastMessage->message->sender_id,
+                'last_message' =>
+                    $lastMessage->message->message,
+                'last_sender_id' =>
+                    $lastMessage->message->sender_id,
                 'unread' => $group
-                    ->where('target_id', $currentUserId)
+                    ->where(
+                        'target_id',
+                        $currentUserId
+                    )
                     ->where('is_read', false)
                     ->count(),
-                'created_at' => $lastMessage->message->created_at
+                'created_at' =>
+                    $lastMessage->message->created_at
             ];
         })
             ->sortByDesc('created_at')

@@ -3,20 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\Room;
-use App\Models\RoomDamageReport;
+use App\Models\RoomIncident;
 use Illuminate\Http\Request;
 
-class RoomDamageReportController extends Controller
+class RoomIncidentController extends Controller
 {
     /*
     |--------------------------------------------------------------------------
-    | GET ALL REPORTS
+    | GET ALL INCIDENTS
     |--------------------------------------------------------------------------
     */
 
     public function index()
     {
-        $reports = RoomDamageReport::with([
+        $reports = RoomIncident::with([
             'room',
             'cleaner',
             'resolvedBy',
@@ -37,7 +37,7 @@ class RoomDamageReportController extends Controller
 
     public function show($id)
     {
-        $report = RoomDamageReport::with([
+        $report = RoomIncident::with([
             'room',
             'cleaner',
             'resolvedBy',
@@ -57,66 +57,60 @@ class RoomDamageReportController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-
-            'room_id' => 'required|exists:rooms,id',
-
+            'room_id'    => 'required|exists:rooms,id',
             'booking_id' => 'nullable|exists:bookings,id',
-
             'report_type' => 'required|in:damaged,lost,found',
-
-            'note' => 'required|string',
-
-            'photos.*' => 'nullable|image|max:2048'
+            'note'       => 'required|string',
+            'photos.*'   => 'nullable|image|max:2048'
         ]);
 
         $photos = [];
 
         // MULTIPLE IMAGE UPLOAD
         if ($request->hasFile('photos')) {
-
             foreach ($request->file('photos') as $photo) {
-
-                $path = $photo->store(
-                    'damage_reports',
-                    'public'
-                );
-
+                $path = $photo->store('damage_reports', 'public');
                 $photos[] = $path;
             }
         }
 
-        $report = RoomDamageReport::create([
+        $activeBooking = \App\Models\Booking::whereHas(
+            'rooms',
+            function ($q) use ($validated) {
+                $q->where('rooms.id', $validated['room_id']);
+            }
+        )
+            ->latest()
+            ->first();
 
-            'room_id' => $validated['room_id'],
-
-            'cleaner_id' => $request->user()?->id,
-
-            'booking_id' => $validated['booking_id'] ?? null,
-
+        $report = RoomIncident::create([
+            'room_id'     => $validated['room_id'],
+            'cleaner_id'  => $request->user()?->id,
+            'booking_id'  => $validated['booking_id'] ?? $activeBooking?->id,
             'report_type' => $validated['report_type'],
-
-            'status' => 'pending',
-
-            'note' => $validated['note'],
-
-            'photos' => $photos,
-
+            'status'      => 'pending',
+            'note'        => $validated['note'],
+            'photos'      => $photos,
             'reported_at' => now(),
         ]);
 
-        // IF DAMAGED -> ROOM TO MAINTENANCE
+        /*
+        |----------------------------------------------------------------------
+        | ONLY "damaged" puts the room into maintenance.
+        | "lost" and "found" are informational reports — room stays as-is.
+        |----------------------------------------------------------------------
+        */
         if ($validated['report_type'] === 'damaged') {
-
             Room::where('id', $validated['room_id'])
                 ->update([
-                    'status' => 'maintenance',
-                    'has_damage' => true
+                    'status'     => 'maintenance',
+                    'has_damage' => true,
                 ]);
         }
 
         return response()->json([
-            'message' => 'Damage report created successfully',
-            'data' => $report
+            'message' => 'Report created successfully',
+            'data'    => $report,
         ], 201);
     }
 
@@ -132,48 +126,37 @@ class RoomDamageReportController extends Controller
             'status' => 'required|in:pending,repairing,resolved'
         ]);
 
-        $report = RoomDamageReport::findOrFail($id);
+        $report = RoomIncident::findOrFail($id);
 
         $report->update([
-
-            'status' => $validated['status'],
-
-            'resolved_by' =>
-            $validated['status'] === 'resolved'
+            'status'      => $validated['status'],
+            'resolved_by' => $validated['status'] === 'resolved'
                 ? $request->user()?->id
                 : null,
-
-            'resolved_at' =>
-            $validated['status'] === 'resolved'
+            'resolved_at' => $validated['status'] === 'resolved'
                 ? now()
-                : null
+                : null,
         ]);
 
-        // IF RESOLVED
         if ($validated['status'] === 'resolved') {
 
-            $remainingDamages = RoomDamageReport::where(
-                'room_id',
-                $report->room_id
-            )
-                ->where('status', '!=', 'resolved')
+            $remainingDamages = RoomIncident::where('room_id', $report->room_id)
+                ->where('id', '!=', $report->id)
                 ->where('report_type', 'damaged')
+                ->whereIn('status', ['pending', 'repairing'])
                 ->count();
 
-            // NO MORE ACTIVE DAMAGE
             if ($remainingDamages === 0) {
-
-                Room::where('id', $report->room_id)
-                    ->update([
-                        'status' => 'available',
-                        'has_damage' => false
-                    ]);
+                Room::where('id', $report->room_id)->update([
+                    'status' => 'available',
+                    'has_damage' => false,
+                ]);
             }
         }
 
         return response()->json([
             'message' => 'Status updated successfully',
-            'data' => $report
+            'data'    => $report,
         ]);
     }
 }

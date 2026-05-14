@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NotificationCreated;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 
@@ -11,7 +12,9 @@ class NotificationController extends Controller
     public function index()
     {
         return response()->json(
-            Notification::with('user')->latest('created_at')->get(),
+            Notification::with('user')
+                ->latest('created_at')
+                ->get(),
             200
         );
     }
@@ -29,6 +32,9 @@ class NotificationController extends Controller
 
         $notification = Notification::create($validated);
 
+        // 🔥 REALTIME NOTIFICATION
+        broadcast(new NotificationCreated($notification));
+
         return response()->json([
             'message' => 'Notification created',
             'data' => $notification
@@ -38,31 +44,17 @@ class NotificationController extends Controller
     // 🔹 GET SINGLE NOTIFICATION
     public function show($id)
     {
-        $notification = Notification::with('user')->findOrFail($id);
+        $notification = Notification::with('user')
+            ->findOrFail($id);
 
         return response()->json($notification, 200);
     }
-
-
-
-    // // 🔹 MARK AS READ
-    // public function update($id)
-    // {
-    //     $notification = Notification::findOrFail($id);
-
-    //     $notification->update([
-    //         'is_read' => true
-    //     ]);
-
-    //     return response()->json([
-    //         'message' => 'Marked as read'
-    //     ]);
-    // }
 
     // 🔹 DELETE NOTIFICATION
     public function destroy($id)
     {
         $notification = Notification::findOrFail($id);
+
         $notification->delete();
 
         return response()->json([
@@ -70,17 +62,21 @@ class NotificationController extends Controller
         ], 200);
     }
 
+    // 🔹 MARK ALL AS READ
     public function markAllAsRead($id)
     {
         Notification::where('user_id', $id)
             ->where('is_read', false)
-            ->update(['is_read' => true]);
+            ->update([
+                'is_read' => true
+            ]);
 
         return response()->json([
             'message' => 'All notifications marked as read'
         ]);
     }
 
+    // 🔹 MARK SINGLE AS READ
     public function markAsRead($id)
     {
         $notification = Notification::findOrFail($id);
@@ -94,6 +90,7 @@ class NotificationController extends Controller
         ]);
     }
 
+    // 🔹 UNREAD COUNT
     public function unreadCount($id)
     {
         return response()->json([
@@ -103,10 +100,10 @@ class NotificationController extends Controller
         ]);
     }
 
-    // 🔥 GET NOTIFICATIONS PER USER (ADMIN ONLY)
+    // 🔥 GET NOTIFICATIONS OF CURRENT USER
     public function getByUser(Request $request)
     {
-        $user = $request->user(); // current logged-in user
+        $user = $request->user();
 
         $limit = $request->query('limit', 10);
         $offset = $request->query('offset', 0);
@@ -121,6 +118,7 @@ class NotificationController extends Controller
         );
     }
 
+    // 🔥 GET ALL CURRENT USER NOTIFICATIONS
     public function getCurrentUserNotifications(Request $request)
     {
         $user = $request->user();

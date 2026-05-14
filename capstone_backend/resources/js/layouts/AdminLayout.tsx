@@ -26,7 +26,9 @@ import {
     ChevronUp,
     Menu,
     X,
-    Package
+    Package,
+    TrendingUp,
+    TrendingDown
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -38,6 +40,7 @@ import {
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
+import Echo from "@/services/echo";
 
 const AdminLayout = ({
     children,
@@ -110,12 +113,16 @@ const AdminLayout = ({
     const routesMap: any = {
         "/dashboard": "Dashboard",
         "/bookings": "Bookings",
-        "/booking-transactions": "Booking Transactions",
-        "/booking-receipts": "Booking Receipts",
+        "/booking-transactions": "Booking List",
+        "/booking-receipts": "Booking Transaction",
+        "/incidents": "Incidents Reports",
         "/walk-in-guests": "Walk-in Guests",
         "/rooms": "Rooms",
-        "/guests": "Guests",
-        "/staff": "Staff",
+        "/expenses": "All Cash Transactions",
+        "/cash-management": "Cash Management",
+        "/guests": "Online Guests",
+        "/walkin-guest": "WalkIn Guest",
+        "/staff": "System Users",
         "/housekeepers": "House Keepers",
         "/admin/menu": "Menu",
         "/admin/orders": "Orders Report",
@@ -410,24 +417,70 @@ const AdminLayout = ({
 
     useEffect(() => {
         if (!user?.id) return;
-        if (offset === 0) {
-            fetchNotifications();
-        }
-        const interval = setInterval(() => {
-            if (!isNotifOpen && offset === 0) {
-                fetchNotifications();
-            }
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [user?.id, offset, isNotifOpen, fetchNotifications]);
+
+        // INITIAL LOAD
+        fetchNotifications();
+
+        // 🔥 REALTIME NOTIFICATIONS
+        Echo.private(`notifications.${user.id}`)
+            .listen(".NotificationCreated", (e: any) => {
+                console.log("🔔 REALTIME:", e);
+
+                const newNotification = e.notification;
+
+                setNotifications((prev) => {
+                    const exists = prev.some((n) => n.id === newNotification.id);
+
+                    if (exists) return prev;
+
+                    return [
+                        {
+                            ...newNotification,
+                            display_time: "Just now",
+                        },
+                        ...prev,
+                    ];
+                });
+
+                setUnreadCount((prev) => prev + 1);
+            });
+
+        return () => {
+            Echo.leave(`notifications.${user.id}`);
+        };
+    }, [user?.id]);
 
     useEffect(() => {
+
         if (!user?.id) return;
+
+        // 🔥 INITIAL LOAD
         fetchMessages();
-        const interval = setInterval(() => {
-            fetchMessages();
-        }, 3000);
-        return () => clearInterval(interval);
+
+        console.log(
+            "📩 LISTENING CHAT:",
+            `chat.${user.id}`
+        );
+
+        Echo.channel(`chat.${user.id}`)
+            .listen(".MessageSent", (e: any) => {
+
+                console.log(
+                    "📩 REALTIME MESSAGE:",
+                    e
+                );
+
+                fetchMessages();
+
+            });
+
+        return () => {
+
+            Echo.leaveChannel(
+                `chat.${user.id}`
+            );
+        };
+
     }, [user?.id]);
 
     if (!user) {
@@ -480,28 +533,28 @@ const AdminLayout = ({
             label: "MANAGEMENT",
             items: [
                 {
-                    name: "Bookings",
-                    description: "Reservations",
+                    name: "Bookings Management",
+                    description: "Booking Monitoring & Reservations",
                     href: "/bookings",
                     icon: CalendarDays,
                     hasDropdown: true,
                     dropdownItems: [
                         {
-                            name: "Booking Transaction",
-                            description: "Manage booking transactions",
+                            name: "Booking List",
+                            description: "Manage booking list transactions",
                             href: "/booking-transactions",
                             icon: CalendarDays
                         },
                         {
-                            name: "Booking Receipt",
-                            description: "View and print receipts",
+                            name: "Booking Transactions",
+                            description: "View and print transaction",
                             href: "/booking-receipts",
                             icon: ClipboardList
                         },
                         {
-                            name: "Damaged Rooms",
-                            description: "View reported damages",
-                            href: "/damaged-rooms",
+                            name: "Incidents Rooms",
+                            description: "View reported Incidents",
+                            href: "/incidents",
                             icon: ClipboardList
                         }
                     ]
@@ -519,31 +572,54 @@ const AdminLayout = ({
                     icon: Package
                 },
                 {
-                    name: "User",
-                    description: "User Management",
+                    name: "User & Guest",
+                    description: "User & Guest Management",
                     href: "/users",
                     icon: Users,
                     hasDropdown: true,
                     dropdownItems: [
                         {
-                            name: "Guest",
+                            name: "Online Guest",
                             description: "Guest profiles and history",
                             href: "/guests",
                             icon: Users
                         },
                         {
-                            name: "Staff",
-                            description: "Staff accounts and roles",
-                            href: "/staff",
+                            name: "Walk-in Guests",
+                            description: "Manage walk-in guest records",
+                            href: "/walkin-guest",
                             icon: Users
                         },
                         {
-                            name: "House Keeper",
-                            description: "Housekeeping assignments",
-                            href: "/housekeepers",
+                            name: "System Users",
+                            description: "Admin & Employee accounts and roles",
+                            href: "/staff",
                             icon: Users
-                        }
+                        },
+                        // {
+                        //     name: "House Keeper",
+                        //     description: "Housekeeping assignments",
+                        //     href: "/housekeepers",
+                        //     icon: Users
+                        // }
                     ]
+                },
+            ],
+        },
+        {
+            label: "FINANCE",
+            items: [
+                {
+                    name: "Cash Management",
+                    description: "Cash transactions",
+                    href: "/cash-management",
+                    icon: TrendingUp,
+                },
+                {
+                    name: "Expenses",
+                    description: "Expense tracking",
+                    href: "/expenses",
+                    icon: TrendingDown,
                 },
             ],
         },
@@ -640,7 +716,7 @@ const AdminLayout = ({
 
                     {isOpen && (
                         <div className="relative ml-2 pl-4 select-none">
-                            <div className="absolute left-3 top-0 bottom-0 w-px bg-gray-200"></div>
+                            <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div> {/*line for dropdown*/}
                             <div className="space-y-1">
                                 {item.dropdownItems.map((subItem: any) => {
                                     const isSubActive = location.pathname === subItem.href;
@@ -902,6 +978,12 @@ const AdminLayout = ({
     return (
         <>
             <style>{`
+                /* Apply DM Sans font to the entire admin layout */
+                .min-h-screen, 
+                .min-h-screen * {
+                    font-family: 'DM Sans', sans-serif;
+                }
+                
                 .scrollbar-mint::-webkit-scrollbar {
                     width: 6px;
                     height: 6px;
@@ -1040,7 +1122,7 @@ const AdminLayout = ({
                             <DropdownMenuTrigger asChild>
                                 <button
                                     className={`
-                                                w-full flex items-center p-2 rounded-lg hover:bg-gray-50 transition-all duration-200 group
+                                                w-full flex items-center -px-2 -py-2 rounded-lg hover:bg-gray-50 transition-all duration-200 group
                                                 focus:outline-none focus:ring-0 cursor-pointer select-none
                                                 ${isSidebarOpen ? 'gap-3' : 'justify-center'}
                                             `}
@@ -1062,7 +1144,7 @@ const AdminLayout = ({
                                         )}
                                     </div>
                                     <div className={`flex-1 text-left transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'opacity-100 max-w-xs' : 'opacity-0 max-w-0 w-0'}`}>
-                                        <p className="text-xs font-semibold text-gray-800 truncate leading-none select-none whitespace-nowrap">
+                                        <p className="text-xs relative top-2 font-semibold text-gray-800 truncate leading-none select-none whitespace-nowrap">
                                             {getDisplayName()}
                                         </p>
                                         <p className="text-[10px] text-gray-400 truncate select-none whitespace-nowrap">

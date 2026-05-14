@@ -7,7 +7,7 @@ import {
     Clock, 
     AlertTriangle, 
     Package, 
-    DollarSign,
+    PhilippinePeso,
     Loader2,
     RefreshCw
 } from "lucide-react";
@@ -133,7 +133,7 @@ export default function RestaurantDashboard() {
                                 </p>
                             </div>
                             <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-6 h-6 text-emerald-600" />
+                                <PhilippinePeso className="w-6 h-6 text-emerald-600" />
                             </div>
                         </div>
                         <div className="mt-4 text-xs text-gray-500">

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { updateRoom, uploadRoomImage } from "@/services/roomService";
+import { updateRoom, uploadRoomImage, deleteRoomImage } from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
 import { X, Upload, AlertCircle, CheckCircle, Trash2 } from "lucide-react";
 
@@ -79,9 +79,9 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         // Validate file type
         const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
         if (!validTypes.includes(file.type)) {
-            setErrors({ 
-                ...errors, 
-                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)" 
+            setErrors({
+                ...errors,
+                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)"
             });
             return false;
         }
@@ -89,9 +89,9 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         // Validate file size (5MB for panorama, 2MB for regular images)
         const maxSize = isPanorama ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
         if (file.size > maxSize) {
-            setErrors({ 
-                ...errors, 
-                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}` 
+            setErrors({
+                ...errors,
+                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}`
             });
             return false;
         }
@@ -184,31 +184,65 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
     };
 
-    const removeImage = () => {
-        setFile(null);
-        if (preview && preview.startsWith('blob:')) {
-            URL.revokeObjectURL(preview);
+    const removeImage = async () => {
+
+        try {
+
+            const normalImage = room.images?.find(
+                (img: any) => img.image_type === "normal"
+            );
+
+            if (normalImage) {
+                await deleteRoomImage(normalImage.id);
+            }
+
+            setFile(null);
+
+            if (preview && preview.startsWith("blob:")) {
+                URL.revokeObjectURL(preview);
+            }
+
             setPreview(null);
-        } else {
-            // If it's a server image, just remove preview but keep ability to upload new
-            setPreview(null);
-        }
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+
+            refresh();
+
+        } catch (err) {
+            console.error(err);
         }
     };
 
-    const removePanoramaImage = () => {
-        setPanoramaFile(null);
-        if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
-            URL.revokeObjectURL(panoramaPreview);
+    const removePanoramaImage = async () => {
+
+        try {
+
+            const panoramaImage = room.images?.find(
+                (img: any) => img.image_type === "360"
+            );
+
+            if (panoramaImage) {
+                await deleteRoomImage(panoramaImage.id);
+            }
+
+            setPanoramaFile(null);
+
+            if (panoramaPreview && panoramaPreview.startsWith("blob:")) {
+                URL.revokeObjectURL(panoramaPreview);
+            }
+
             setPanoramaPreview(null);
-        } else {
-            // If it's a server image, just remove preview but keep ability to upload new
-            setPanoramaPreview(null);
-        }
-        if (panoramaInputRef.current) {
-            panoramaInputRef.current.value = '';
+
+            if (panoramaInputRef.current) {
+                panoramaInputRef.current.value = "";
+            }
+
+            refresh();
+
+        } catch (err) {
+            console.error(err);
         }
     };
 
@@ -365,8 +399,8 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                     type="button"
                                     onClick={() => setForm(prev => ({ ...prev, status }))}
                                     className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${form.status === status
-                                            ? `${getStatusColor(status)} ring-2 ring-offset-1 ring-blue-500`
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        ? `${getStatusColor(status)} ring-2 ring-offset-1 ring-blue-500`
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                         }`}
                                 >
                                     {status}
@@ -386,10 +420,10 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
                             className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDragging
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : errors.image
-                                        ? 'border-red-500 bg-red-50'
-                                        : 'border-gray-300 hover:border-blue-500'
+                                ? 'border-blue-500 bg-blue-50'
+                                : errors.image
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-gray-300 hover:border-blue-500'
                                 }`}
                             onClick={() => fileInputRef.current?.click()}
                         >
@@ -464,10 +498,10 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                             onDragOver={handlePanoramaDragOver}
                             onDrop={handlePanoramaDrop}
                             className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDraggingPanorama
-                                    ? 'border-purple-500 bg-purple-50'
-                                    : errors.panorama
-                                        ? 'border-red-500 bg-red-50'
-                                        : 'border-gray-300 hover:border-purple-500'
+                                ? 'border-purple-500 bg-purple-50'
+                                : errors.panorama
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-gray-300 hover:border-purple-500'
                                 }`}
                             onClick={() => panoramaInputRef.current?.click()}
                         >

@@ -20,4 +20,14 @@ class Shift extends Model
     {
         return $this->hasMany(CashTransaction::class);
     }
+
+    public function payments()
+    {
+        return $this->hasMany(BookingPayment::class);
+    }
+
+    public function openedBy()
+    {
+        return $this->belongsTo(User::class, 'opened_by');
+    }
 }

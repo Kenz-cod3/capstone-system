@@ -18,3 +18,6 @@ export const uploadRoomImage = (formData: FormData) =>
             "Content-Type": "multipart/form-data",
         },
     });
+
+export const deleteRoomImage = (id: number) =>
+    api.delete(`/room-images/${id}`);

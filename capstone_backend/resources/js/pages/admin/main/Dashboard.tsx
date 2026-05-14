@@ -37,6 +37,8 @@ import OccupancyTrendChart from "@/components/AdminComponents/dashboard/Occupanc
 import RoomStatusChart from "@/components/AdminComponents/dashboard/RoomStatusChart";
 import RevenueChart from "@/components/AdminComponents/dashboard/RevenueChart";
 
+import Echo from "@/services/echo";
+
 // ============================================
 // TYPES
 // ============================================
@@ -481,7 +483,7 @@ export default function Dashboard() {
 
     // TanStack Query with silent auto refresh every 5 seconds
     const {
-        data,
+        data: dashboardData,
         isLoading,
         error,
         isError,
@@ -491,23 +493,66 @@ export default function Dashboard() {
             const res = await api.get("/dashboard");
             return res.data;
         },
-        staleTime: 0, // Data is immediately stale
-        refetchOnWindowFocus: true, // Refetch when window gains focus
-        refetchInterval: 3000, // Auto refresh every 5 seconds
-        refetchIntervalInBackground: true, // Continue in background
+
+        staleTime: 1000 * 60 * 5,
+        refetchOnWindowFocus: false,
+
         retry: 2,
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-        // Disable all loading and error indicators during background refetch
-        notifyOnChangeProps: ['data'], // Only notify when data changes
+        retryDelay: (attemptIndex) =>
+            Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
-    const { data: roomsData } = useQuery({
-        queryKey: ["rooms"],
+    const {
+        data: statsData,
+        refetch: refetchStats,
+    } = useQuery({
+        queryKey: ["dashboard-stats"],
         queryFn: async () => {
-            const res = await api.get("/rooms");
+            const res = await api.get("/dashboard/stats");
             return res.data;
         },
+
+        staleTime: 0,
+        refetchOnWindowFocus: true,
+
+        retry: 2,
+        retryDelay: (attemptIndex) =>
+            Math.min(1000 * 2 ** attemptIndex, 30000),
+
+        notifyOnChangeProps: ['data'],
     });
+
+    const {
+        data: roomsData,
+        refetch: refetchRooms,
+    } = useQuery({
+        queryKey: ["rooms-status-grid"],
+        queryFn: async () => {
+            const res = await api.get("/rooms/status-grid");
+            return res.data;
+        },
+
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+    });
+
+    React.useEffect(() => {
+        console.log("Subscribing to dashboard channel...");
+
+        Echo.channel("dashboard")
+            .listen(".DashboardUpdated", async (e: any) => {
+                console.log("✅ Realtime received!", e);
+
+                await Promise.all([
+                    refetchStats(),
+                    refetchRooms(),
+                ]);
+            });
+
+        return () => {
+            Echo.leave("dashboard");
+        };
+    }, []); // ← EMPTY, walang refetch dito
 
     // Handle error state
     if (isError) {
@@ -533,45 +578,107 @@ export default function Dashboard() {
     }
 
     // Safe destructuring with fallbacks
-    const stats = data?.stats;
-    const recentBookings = data?.recentBookings ?? [];
-    const occupancy = data?.occupancy ?? 0;
-    const roomStatus = data?.roomStatus ?? [];
-    const occupancyTrend = data?.trend ?? [];
+    const stats = statsData?.stats;
+    const recentBookings = statsData?.recentBookings ?? [];
+    const occupancy = statsData?.occupancy ?? 0;
+    const roomStatus = statsData?.roomStatus ?? [];
+
+    const occupancyTrend = dashboardData?.trend ?? [];
 
     const navigateTo = (path: string) => {
         navigate(path);
     };
 
+
+
     // Show loading skeleton only on initial load
     if (isLoading) {
         return (
-            <div className="space-y-6 min-h-screen pb-6">
-                {/* <PageHeader user={user} /> */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                    {[1, 2, 3, 4].map((i) => (
-                        <Card key={i} className="border-0 shadow-sm bg-white">
-                            <CardContent className="p-5">
-                                <div className="animate-pulse">
-                                    <div className="h-10 w-10 bg-gray-100 rounded-lg mb-4"></div>
-                                    <div className="h-8 w-24 bg-gray-100 rounded mb-2"></div>
-                                    <div className="h-4 w-20 bg-gray-100 rounded"></div>
-                                </div>
-                            </CardContent>
-                        </Card>
+            <div className="space-y-3">
+
+                {/* TOP STATS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <div
+                            key={i}
+                            className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse"
+                        >
+                            <div className="flex justify-between mb-6">
+                                <div className="w-20 h-4 bg-gray-100 rounded"></div>
+                                <div className="w-10 h-4 bg-gray-100 rounded"></div>
+                            </div>
+
+                            <div className="w-32 h-8 bg-gray-100 rounded mb-3"></div>
+                            <div className="w-24 h-4 bg-gray-100 rounded"></div>
+                        </div>
                     ))}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card className="border border-gray-300 shadow-sm">
-                        <CardContent className="p-5">
-                            <div className="animate-pulse h-80 bg-gray-200 rounded"></div>
-                        </CardContent>
-                    </Card>
-                    <Card className="border border-gray-300 shadow-sm">
-                        <CardContent className="p-5">
-                            <div className="animate-pulse h-80 bg-gray-200 rounded"></div>
-                        </CardContent>
-                    </Card>
+
+                {/* ROOM STATUS + PIE */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+                    {/* ROOM GRID */}
+                    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
+
+                        <div className="flex justify-between items-center mb-5">
+                            <div className="w-44 h-6 bg-gray-100 rounded"></div>
+
+                            <div className="flex gap-3">
+                                <div className="w-16 h-4 bg-gray-100 rounded"></div>
+                                <div className="w-16 h-4 bg-gray-100 rounded"></div>
+                                <div className="w-20 h-4 bg-gray-100 rounded"></div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                            {[...Array(16)].map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="rounded-lg p-4 w-full aspect-square bg-gray-100 animate-pulse"
+                                />
+                            ))}
+                        </div>
+                        <div className="flex justify-between items-center pt-3">
+                            <div className="w-12 h-6 rounded bg-gray-100"></div>
+
+                            <div className="w-8 h-4 rounded bg-gray-100"></div>
+
+                            <div className="w-12 h-6 rounded bg-gray-100"></div>
+                        </div>
+                    </div>
+
+                    {/* PIE CHART */}
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
+
+                        {/* HEADER */}
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="w-52 h-7 bg-gray-100 rounded"></div>
+                            <div className="w-4 h-4 bg-gray-100 rounded"></div>
+                        </div>
+
+                        {/* CHART + LEGEND */}
+                        <div className="flex items-center justify-between gap-6 mt-8">
+
+                            {/* DONUT */}
+                            <div className="w-44 h-44 rounded-full border-[28px] border-gray-100 shrink-0"></div>
+
+                            {/* LEGEND */}
+                            <div className="flex-1 space-y-4">
+
+                                {[1, 2, 3, 4, 5].map((i) => (
+                                    <div
+                                        key={i}
+                                        className="h-4 bg-gray-100 rounded"
+                                    />
+                                ))}
+
+                                <div className="h-px bg-gray-100 my-2"></div>
+
+                                <div className="h-5 bg-gray-100 rounded w-32"></div>
+
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -595,9 +702,9 @@ export default function Dashboard() {
             {/*---------REVENUE CHART---->*/}
             <div className="mt-8">
                 <RevenueChart
-                    data={data?.financialTrend ?? []}
-                    yearlyData={data?.yearlyTrend ?? []}
-                    lastYearData={data?.lastYearTrend ?? []}
+                    data={dashboardData?.financialTrend ?? []}
+                    yearlyData={dashboardData?.yearlyTrend ?? []}
+                    lastYearData={dashboardData?.lastYearTrend ?? []}
                     role={user?.role ?? "staff"}
                 />
             </div>

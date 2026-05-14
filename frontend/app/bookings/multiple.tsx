@@ -64,6 +64,9 @@ export default function MultipleBooking() {
     const [showCheckInPicker, setShowCheckInPicker] = useState(false);
     const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
     const [previewAmount, setPreviewAmount] = useState(0);
+    const [paymentMethod, setPaymentMethod] = useState("cash");
+    const [gcashReference, setGcashReference] = useState("");
+    const [bankReference, setBankReference] = useState("");
 
     useEffect(() => {
         fetchRooms();
@@ -171,8 +174,8 @@ export default function MultipleBooking() {
             "Are you sure you want to remove this room?",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Remove", 
+                {
+                    text: "Remove",
                     style: "destructive",
                     onPress: () => {
                         setSelectedRoomsDetails(prev => prev.filter(r => r.id !== roomId));
@@ -191,45 +194,34 @@ export default function MultipleBooking() {
         );
     };
 
-    const handleBooking = async () => {
-        if (selectedRoomsDetails.length === 0) {
-            Alert.alert("Selection Required", "Please add at least one room.");
+    const handleBooking = () => {
+
+        if (
+            selectedRoomsDetails.length === 0
+        ) {
+
+            Alert.alert(
+                "Selection Required",
+                "Please add at least one room."
+            );
+
             return;
         }
 
-        setSubmitting(true);
-        
-        try {
-            // Create a promise for each room booking
-            const bookingPromises = selectedRoomsDetails.map(async (room) => {
-                const payload: any = {
-                    booking_type: room.stay_type === "short_stay" ? "short" : "overnight",
-                    room_ids: [room.id],
-                };
+        router.push({
 
-                if (room.stay_type === "overnight") {
-                    payload.check_in_date = room.check_in_date;
-                    payload.check_out_date = room.check_out_date;
-                } else {
-                    // For short stay, send the hours
-                    payload.hours = room.hours || 3;
-                }
+            pathname:
+                "/bookings/payment",
 
-                return api.post("/bookings", payload);
-            });
+            params: {
 
-            // Wait for all bookings to complete
-            await Promise.all(bookingPromises);
-            
-            Alert.alert("Success", `Successfully booked ${selectedRoomsDetails.length} room(s)!`, [
-                { text: "OK", onPress: () => router.back() },
-            ]);
-        } catch (error: any) {
-            console.log("Booking error:", error);
-            Alert.alert("Error", error.response?.data?.message || "Failed to create booking.");
-        } finally {
-            setSubmitting(false);
-        }
+                multiple: "true",
+
+                rooms: JSON.stringify(
+                    selectedRoomsDetails
+                ),
+            },
+        });
     };
 
     const formatPrice = (price: number) =>
@@ -306,7 +298,7 @@ export default function MultipleBooking() {
                     <Text className="text-white text-lg tracking-widest uppercase" style={{ fontFamily: "Georgia" }}>
                         New Booking
                     </Text>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={() => {
                             if (selectedRoomsDetails.length > 0) {
                                 Alert.alert(
@@ -314,8 +306,8 @@ export default function MultipleBooking() {
                                     "Are you sure you want to remove all rooms?",
                                     [
                                         { text: "Cancel", style: "cancel" },
-                                        { 
-                                            text: "Clear All", 
+                                        {
+                                            text: "Clear All",
                                             style: "destructive",
                                             onPress: () => {
                                                 setSelectedRoomsDetails([]);
@@ -325,396 +317,396 @@ export default function MultipleBooking() {
                                     ]
                                 );
                             }
-                        }} 
-                                        className="px-3 py-2"
-                                    >
-                                        <Text className="text-[#c9a96e] text-xs tracking-wider">Clear All</Text>
-                                    </TouchableOpacity>
-                                </View>
+                        }}
+                        className="px-3 py-2"
+                    >
+                        <Text className="text-[#c9a96e] text-xs tracking-wider">Clear All</Text>
+                    </TouchableOpacity>
+                </View>
 
-                                <Text className="text-[#c9a96e] text-xs tracking-[4px] uppercase mb-2">Multiple Rooms</Text>
-                                <Text className="text-white text-3xl leading-tight" style={{ fontFamily: "Georgia" }}>
-                                    Reserve your stay
-                                </Text>
-                                <Text className="text-white/40 text-sm tracking-wide mt-1" style={{ fontFamily: "Georgia", fontStyle: "italic" }}>
-                                    Add rooms one by one with their own stay type
-                                </Text>
-                            </LinearGradient>
+                <Text className="text-[#c9a96e] text-xs tracking-[4px] uppercase mb-2">Multiple Rooms</Text>
+                <Text className="text-white text-3xl leading-tight" style={{ fontFamily: "Georgia" }}>
+                    Reserve your stay
+                </Text>
+                <Text className="text-white/40 text-sm tracking-wide mt-1" style={{ fontFamily: "Georgia", fontStyle: "italic" }}>
+                    Add rooms one by one with their own stay type
+                </Text>
+            </LinearGradient>
 
-                            <ScrollView
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}
+            >
+                {/* Add Room Button */}
+                <View className="px-6 pt-6">
+                    <TouchableOpacity
+                        onPress={() => setShowAddModal(true)}
+                        className="bg-[#1a4a35] py-4 rounded-2xl flex-row items-center justify-center gap-3"
+                    >
+                        <Ionicons name="add-circle-outline" size={24} color="#c9a96e" />
+                        <Text className="text-white text-base tracking-wider" style={{ fontFamily: "Georgia" }}>
+                            Add Room
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Selected Rooms Section */}
+                <View className="px-6 mt-8">
+                    <View className="flex-row items-center justify-between mb-4">
+                        <View className="flex-row items-center gap-2">
+                            <View className="w-1 h-6 bg-[#c9a96e] rounded-full" />
+                            <Text className="text-[#1a4a35] text-base" style={{ fontFamily: "Georgia" }}>
+                                Selected Rooms ({selectedRoomsDetails.length})
+                            </Text>
+                        </View>
+                    </View>
+
+                    {selectedRoomsDetails.length === 0 ? (
+                        <View className="items-center py-12 bg-white rounded-2xl border border-[#1a4a35]/10">
+                            <Ionicons name="bed-outline" size={48} color="#1a4a35/20" />
+                            <Text className="text-[#1a4a35]/40 mt-3 text-sm">No rooms added yet</Text>
+                            <Text className="text-[#1a4a35]/30 text-xs mt-1">Tap "Add Room" to start</Text>
+                        </View>
+                    ) : (
+                        selectedRoomsDetails.map((room) => (
+                            <View
+                                key={room.id}
+                                className="mb-4 rounded-2xl overflow-hidden border border-[#1a4a35]/10 bg-white"
                             >
-                                {/* Add Room Button */}
-                                <View className="px-6 pt-6">
-                                    <TouchableOpacity
-                                        onPress={() => setShowAddModal(true)}
-                                        className="bg-[#1a4a35] py-4 rounded-2xl flex-row items-center justify-center gap-3"
-                                    >
-                                        <Ionicons name="add-circle-outline" size={24} color="#c9a96e" />
-                                        <Text className="text-white text-base tracking-wider" style={{ fontFamily: "Georgia" }}>
-                                            Add Room
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
+                                <LinearGradient
+                                    colors={["#ffffff", "#faf8f3"]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={{ padding: 16 }}
+                                >
+                                    <View className="flex-row justify-between items-start">
+                                        <View className="flex-row items-center gap-3 flex-1">
+                                            <View className="w-10 h-10 rounded-full bg-[#1a4a35]/10 justify-center items-center">
+                                                <Ionicons
+                                                    name={getRoomTypeIcon(room.room_type_name)}
+                                                    size={20}
+                                                    color="#1a4a35"
+                                                />
+                                            </View>
+                                            <View className="flex-1">
+                                                <Text className="text-[#1a4a35] text-lg font-bold" style={{ fontFamily: "Georgia" }}>
+                                                    Room {room.room_number}
+                                                </Text>
+                                                <Text className="text-[#1a4a35]/50 text-xs">
+                                                    {room.room_type_name}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity onPress={() => removeRoom(room.id)} className="p-2">
+                                            <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                                        </TouchableOpacity>
+                                    </View>
 
-                                {/* Selected Rooms Section */}
-                                <View className="px-6 mt-8">
-                                    <View className="flex-row items-center justify-between mb-4">
-                                        <View className="flex-row items-center gap-2">
-                                            <View className="w-1 h-6 bg-[#c9a96e] rounded-full" />
-                                            <Text className="text-[#1a4a35] text-base" style={{ fontFamily: "Georgia" }}>
-                                                Selected Rooms ({selectedRoomsDetails.length})
+                                    <View className="mt-3 pt-3 border-t border-[#1a4a35]/10">
+                                        <View className="flex-row justify-between mb-2">
+                                            <Text className="text-[#1a4a35]/60 text-xs">Stay Type</Text>
+                                            <View className={`px-2 py-1 rounded-full ${room.stay_type === "short_stay" ? "bg-orange-100" : "bg-blue-100"}`}>
+                                                <Text className={`text-xs ${room.stay_type === "short_stay" ? "text-orange-600" : "text-blue-600"}`}>
+                                                    {room.stay_type === "short_stay" ? `Short Stay (${room.hours || 3} hrs)` : `Overnight (${room.nights} night${room.nights > 1 ? 's' : ''})`}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <View className="flex-row justify-between mb-2">
+                                            <Text className="text-[#1a4a35]/60 text-xs">Dates</Text>
+                                            <Text className="text-[#1a4a35] text-xs">
+                                                {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
                                             </Text>
                                         </View>
-                                    </View>
-
-                                    {selectedRoomsDetails.length === 0 ? (
-                                        <View className="items-center py-12 bg-white rounded-2xl border border-[#1a4a35]/10">
-                                            <Ionicons name="bed-outline" size={48} color="#1a4a35/20" />
-                                            <Text className="text-[#1a4a35]/40 mt-3 text-sm">No rooms added yet</Text>
-                                            <Text className="text-[#1a4a35]/30 text-xs mt-1">Tap "Add Room" to start</Text>
+                                        <View className="flex-row justify-between">
+                                            <Text className="text-[#1a4a35]/60 text-xs">Rate</Text>
+                                            <Text className="text-[#1a4a35] text-xs">
+                                                {formatPrice(room.price_per_unit)}{room.stay_type === "overnight" && "/night"}
+                                            </Text>
                                         </View>
-                                    ) : (
-                                        selectedRoomsDetails.map((room) => (
-                                            <View
-                                                key={room.id}
-                                                className="mb-4 rounded-2xl overflow-hidden border border-[#1a4a35]/10 bg-white"
-                                            >
-                                                <LinearGradient
-                                                    colors={["#ffffff", "#faf8f3"]}
-                                                    start={{ x: 0, y: 0 }}
-                                                    end={{ x: 1, y: 0 }}
-                                                    style={{ padding: 16 }}
-                                                >
-                                                    <View className="flex-row justify-between items-start">
-                                                        <View className="flex-row items-center gap-3 flex-1">
-                                                            <View className="w-10 h-10 rounded-full bg-[#1a4a35]/10 justify-center items-center">
-                                                                <Ionicons
-                                                                    name={getRoomTypeIcon(room.room_type_name)}
-                                                                    size={20}
-                                                                    color="#1a4a35"
-                                                                />
-                                                            </View>
-                                                            <View className="flex-1">
-                                                                <Text className="text-[#1a4a35] text-lg font-bold" style={{ fontFamily: "Georgia" }}>
-                                                                    Room {room.room_number}
-                                                                </Text>
-                                                                <Text className="text-[#1a4a35]/50 text-xs">
-                                                                    {room.room_type_name}
-                                                                </Text>
-                                                            </View>
-                                                        </View>
-                                                        <TouchableOpacity onPress={() => removeRoom(room.id)} className="p-2">
-                                                            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                                                        </TouchableOpacity>
-                                                    </View>
+                                        <View className="flex-row justify-between mt-2 pt-2 border-t border-[#1a4a35]/10">
+                                            <Text className="text-[#1a4a35] font-bold">Subtotal</Text>
+                                            <Text className="text-[#c9a96e] font-bold">{formatPrice(room.subtotal)}</Text>
+                                        </View>
+                                    </View>
+                                </LinearGradient>
+                            </View>
+                        ))
+                    )}
+                </View>
 
-                                                    <View className="mt-3 pt-3 border-t border-[#1a4a35]/10">
-                                                        <View className="flex-row justify-between mb-2">
-                                                            <Text className="text-[#1a4a35]/60 text-xs">Stay Type</Text>
-                                                            <View className={`px-2 py-1 rounded-full ${room.stay_type === "short_stay" ? "bg-orange-100" : "bg-blue-100"}`}>
-                                                                <Text className={`text-xs ${room.stay_type === "short_stay" ? "text-orange-600" : "text-blue-600"}`}>
-                                                                    {room.stay_type === "short_stay" ? `Short Stay (${room.hours || 3} hrs)` : `Overnight (${room.nights} night${room.nights > 1 ? 's' : ''})`}
+                {/* Booking Summary */}
+                {selectedRoomsDetails.length > 0 && (
+                    <View className="mx-6 mt-6 p-5 rounded-2xl bg-white shadow-lg border border-[#1a4a35]/10">
+                        <Text className="text-[#1a4a35] text-sm uppercase tracking-wider mb-3" style={{ fontFamily: "Georgia" }}>
+                            Booking Summary
+                        </Text>
+                        <View className="gap-2">
+                            <View className="flex-row justify-between">
+                                <Text className="text-[#1a4a35]/60">Total Rooms</Text>
+                                <Text className="text-[#1a4a35] font-medium">{selectedRoomsDetails.length} room(s)</Text>
+                            </View>
+                            <View className="flex-row justify-between">
+                                <Text className="text-[#1a4a35]/60">Short Stays</Text>
+                                <Text className="text-[#1a4a35] font-medium">
+                                    {selectedRoomsDetails.filter(r => r.stay_type === "short_stay").length}
+                                </Text>
+                            </View>
+                            <View className="flex-row justify-between">
+                                <Text className="text-[#1a4a35]/60">Overnight Stays</Text>
+                                <Text className="text-[#1a4a35] font-medium">
+                                    {selectedRoomsDetails.filter(r => r.stay_type === "overnight").length}
+                                </Text>
+                            </View>
+                            <View className="h-px bg-[#1a4a35]/10 my-2" />
+                            <View className="flex-row justify-between">
+                                <Text className="text-[#1a4a35] font-bold">Total Amount</Text>
+                                <Text className="text-[#c9a96e] text-xl font-bold" style={{ fontFamily: "Georgia" }}>
+                                    {formatPrice(total)}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {/* Submit Button */}
+                <View className="px-6 mt-8 mb-4">
+                    <LinearGradient
+                        colors={selectedRoomsDetails.length > 0 ? ["#1a4a35", "#0d2e1f"] : ["#6b8c7a", "#4a6b5a"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={{ borderRadius: 16, overflow: "hidden" }}
+                    >
+                        <TouchableOpacity
+                            onPress={handleBooking}
+                            disabled={selectedRoomsDetails.length === 0 || submitting}
+                            className="py-4 flex-row items-center justify-center gap-3"
+                        >
+                            {submitting ? (
+                                <ActivityIndicator size="small" color="#c9a96e" />
+                            ) : (
+                                <>
+                                    <Text className="text-white text-base tracking-widest uppercase" style={{ fontFamily: "Georgia" }}>
+                                        Confirm Booking
+                                    </Text>
+                                    <Ionicons name="arrow-forward" size={18} color="#c9a96e" />
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </LinearGradient>
+                </View>
+            </ScrollView>
+
+            {/* Add Room Modal */}
+            <Modal
+                visible={showAddModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowAddModal(false)}
+            >
+                <View className="flex-1 bg-black/50 justify-end">
+                    <View className="bg-[#faf8f3] rounded-t-3xl" style={{ paddingBottom: insets.bottom }}>
+                        <View className="px-6 pt-6 pb-4 border-b border-[#1a4a35]/10">
+                            <View className="flex-row justify-between items-center">
+                                <Text className="text-[#1a4a35] text-xl font-bold" style={{ fontFamily: "Georgia" }}>
+                                    Add Room
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => setShowAddModal(false)}
+                                    className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center"
+                                >
+                                    <Ionicons name="close" size={20} color="#1a4a35" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        <ScrollView className="p-6" showsVerticalScrollIndicator={false}>
+                            {/* Room Selection */}
+                            <View className="mb-6">
+                                <Text className="text-[#1a4a35] font-medium mb-2">Select Room</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                                    {Object.entries(groupedRooms).map(([typeName, typeRooms]) => (
+                                        <View key={typeName}>
+                                            {typeRooms.map((room) => (
+                                                <TouchableOpacity
+                                                    key={room.id}
+                                                    onPress={() => setSelectedRoomId(room.id)}
+                                                    className={`mb-3 p-4 rounded-2xl border ${selectedRoomId === room.id ? "border-[#c9a96e] bg-[#c9a96e]/10" : "border-[#1a4a35]/10 bg-white"
+                                                        }`}
+                                                    style={{ minWidth: width - 48 }}
+                                                >
+                                                    <View className="flex-row justify-between items-center">
+                                                        <View>
+                                                            <Text className="text-[#1a4a35] font-bold text-lg">Room {room.room_number}</Text>
+                                                            <Text className="text-[#1a4a35]/50 text-xs">{typeName}</Text>
+                                                        </View>
+                                                        <View className="items-end">
+                                                            <Text className="text-[#c9a96e] font-bold">
+                                                                {formatPrice(room.room_type?.base_price || 0)}/night
+                                                            </Text>
+                                                            {room.room_type?.short_stay_price && (
+                                                                <Text className="text-[#1a4a35]/40 text-xs">
+                                                                    or {formatPrice(room.room_type.short_stay_price)} short stay
                                                                 </Text>
-                                                            </View>
-                                                        </View>
-                                                        <View className="flex-row justify-between mb-2">
-                                                            <Text className="text-[#1a4a35]/60 text-xs">Dates</Text>
-                                                            <Text className="text-[#1a4a35] text-xs">
-                                                                {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
-                                                            </Text>
-                                                        </View>
-                                                        <View className="flex-row justify-between">
-                                                            <Text className="text-[#1a4a35]/60 text-xs">Rate</Text>
-                                                            <Text className="text-[#1a4a35] text-xs">
-                                                                {formatPrice(room.price_per_unit)}{room.stay_type === "overnight" && "/night"}
-                                                            </Text>
-                                                        </View>
-                                                        <View className="flex-row justify-between mt-2 pt-2 border-t border-[#1a4a35]/10">
-                                                            <Text className="text-[#1a4a35] font-bold">Subtotal</Text>
-                                                            <Text className="text-[#c9a96e] font-bold">{formatPrice(room.subtotal)}</Text>
+                                                            )}
                                                         </View>
                                                     </View>
-                                                </LinearGradient>
-                                            </View>
-                                        ))
+                                                    {isRoomSelected(room.id) && (
+                                                        <View className="absolute top-2 right-2">
+                                                            <Ionicons name="checkmark-circle" size={24} color="#c9a96e" />
+                                                        </View>
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    ))}
+                                </ScrollView>
+                                {fetchingRooms && <ActivityIndicator size="small" color="#1a4a35" className="mt-4" />}
+                                {rooms.length === 0 && !fetchingRooms && (
+                                    <Text className="text-[#1a4a35]/40 text-center py-8">No available rooms</Text>
+                                )}
+                            </View>
+
+                            {/* Stay Type */}
+                            <View className="mb-6">
+                                <Text className="text-[#1a4a35] font-medium mb-2">Stay Type</Text>
+                                <View className="flex-row gap-3">
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setStayType("overnight");
+                                            setCheckOutDate(new Date(checkInDate.getTime() + 86400000));
+                                        }}
+                                        className={`flex-1 py-3 rounded-xl ${stayType === "overnight" ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
+                                    >
+                                        <Text className={`text-center ${stayType === "overnight" ? "text-white" : "text-[#1a4a35]"}`}>
+                                            Overnight
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setStayType("short_stay");
+                                            setCheckOutDate(checkInDate);
+                                        }}
+                                        className={`flex-1 py-3 rounded-xl ${stayType === "short_stay" ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
+                                    >
+                                        <Text className={`text-center ${stayType === "short_stay" ? "text-white" : "text-[#1a4a35]"}`}>
+                                            Short Stay
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            {/* Hours Selector (Short Stay Only) */}
+                            {stayType === "short_stay" && (
+                                <View className="mb-6">
+                                    <Text className="text-[#1a4a35] font-medium mb-2">Duration (Hours)</Text>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                                        {[3, 6, 9, 12, 18, 24].map((hours) => (
+                                            <TouchableOpacity
+                                                key={hours}
+                                                onPress={() => setSelectedHours(hours)}
+                                                className={`px-6 py-3 rounded-2xl ${selectedHours === hours ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
+                                            >
+                                                <Text
+                                                    className={`text-center ${selectedHours === hours ? "text-white" : "text-[#1a4a35]"} text-sm`}
+                                                    style={{ fontFamily: "Georgia" }}
+                                                >
+                                                    {hours} {hours === 1 ? "Hour" : "Hours"}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            {/* Check-in Date */}
+                            <View className="mb-6">
+                                <Text className="text-[#1a4a35] font-medium mb-2">Check-in Date</Text>
+                                <TouchableOpacity
+                                    onPress={() => setShowCheckInPicker(true)}
+                                    className="p-4 rounded-xl bg-white border border-[#1a4a35]/10 flex-row justify-between items-center"
+                                >
+                                    <Text className="text-[#1a4a35]">
+                                        {checkInDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                    </Text>
+                                    <Ionicons name="calendar-outline" size={20} color="#c9a96e" />
+                                </TouchableOpacity>
+                                {showCheckInPicker && (
+                                    <DateTimePicker
+                                        value={checkInDate}
+                                        mode="date"
+                                        display="default"
+                                        onChange={(event, selectedDate) => {
+                                            setShowCheckInPicker(false);
+                                            if (selectedDate) {
+                                                setCheckInDate(selectedDate);
+                                                if (stayType === "overnight") {
+                                                    setCheckOutDate(new Date(selectedDate.getTime() + 86400000));
+                                                } else {
+                                                    setCheckOutDate(selectedDate);
+                                                }
+                                            }
+                                        }}
+                                        minimumDate={new Date()}
+                                    />
+                                )}
+                            </View>
+
+                            {/* Check-out Date (Overnight only) */}
+                            {stayType === "overnight" && (
+                                <View className="mb-6">
+                                    <Text className="text-[#1a4a35] font-medium mb-2">Check-out Date</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setShowCheckOutPicker(true)}
+                                        className="p-4 rounded-xl bg-white border border-[#1a4a35]/10 flex-row justify-between items-center"
+                                    >
+                                        <Text className="text-[#1a4a35]">
+                                            {checkOutDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                        </Text>
+                                        <Ionicons name="calendar-outline" size={20} color="#c9a96e" />
+                                    </TouchableOpacity>
+                                    {showCheckOutPicker && (
+                                        <DateTimePicker
+                                            value={checkOutDate}
+                                            mode="date"
+                                            display="default"
+                                            onChange={(event, selectedDate) => {
+                                                setShowCheckOutPicker(false);
+                                                if (selectedDate && selectedDate > checkInDate) {
+                                                    setCheckOutDate(selectedDate);
+                                                }
+                                            }}
+                                            minimumDate={new Date(checkInDate.getTime() + 86400000)}
+                                        />
                                     )}
                                 </View>
+                            )}
 
-                                {/* Booking Summary */}
-                                {selectedRoomsDetails.length > 0 && (
-                                    <View className="mx-6 mt-6 p-5 rounded-2xl bg-white shadow-lg border border-[#1a4a35]/10">
-                                        <Text className="text-[#1a4a35] text-sm uppercase tracking-wider mb-3" style={{ fontFamily: "Georgia" }}>
-                                            Booking Summary
+                            {/* Preview Amount */}
+                            {selectedRoomId && previewAmount > 0 && (
+                                <View className="mb-6 p-4 rounded-xl bg-[#c9a96e]/10 border border-[#c9a96e]/20">
+                                    <View className="flex-row justify-between items-center">
+                                        <Text className="text-[#1a4a35] font-medium">
+                                            {stayType === "short_stay" ? "Short Stay Amount:" : `Total for ${getNightsCount(checkInDate, checkOutDate)} night(s):`}
                                         </Text>
-                                        <View className="gap-2">
-                                            <View className="flex-row justify-between">
-                                                <Text className="text-[#1a4a35]/60">Total Rooms</Text>
-                                                <Text className="text-[#1a4a35] font-medium">{selectedRoomsDetails.length} room(s)</Text>
-                                            </View>
-                                            <View className="flex-row justify-between">
-                                                <Text className="text-[#1a4a35]/60">Short Stays</Text>
-                                                <Text className="text-[#1a4a35] font-medium">
-                                                    {selectedRoomsDetails.filter(r => r.stay_type === "short_stay").length}
-                                                </Text>
-                                            </View>
-                                            <View className="flex-row justify-between">
-                                                <Text className="text-[#1a4a35]/60">Overnight Stays</Text>
-                                                <Text className="text-[#1a4a35] font-medium">
-                                                    {selectedRoomsDetails.filter(r => r.stay_type === "overnight").length}
-                                                </Text>
-                                            </View>
-                                            <View className="h-px bg-[#1a4a35]/10 my-2" />
-                                            <View className="flex-row justify-between">
-                                                <Text className="text-[#1a4a35] font-bold">Total Amount</Text>
-                                                <Text className="text-[#c9a96e] text-xl font-bold" style={{ fontFamily: "Georgia" }}>
-                                                    {formatPrice(total)}
-                                                </Text>
-                                            </View>
-                                        </View>
+                                        <Text className="text-[#c9a96e] text-2xl font-bold" style={{ fontFamily: "Georgia" }}>
+                                            {formatPrice(previewAmount)}
+                                        </Text>
                                     </View>
-                                )}
-
-                                {/* Submit Button */}
-                                <View className="px-6 mt-8 mb-4">
-                                    <LinearGradient
-                                        colors={selectedRoomsDetails.length > 0 ? ["#1a4a35", "#0d2e1f"] : ["#6b8c7a", "#4a6b5a"]}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 1, y: 0 }}
-                                        style={{ borderRadius: 16, overflow: "hidden" }}
-                                    >
-                                        <TouchableOpacity
-                                            onPress={handleBooking}
-                                            disabled={selectedRoomsDetails.length === 0 || submitting}
-                                            className="py-4 flex-row items-center justify-center gap-3"
-                                        >
-                                            {submitting ? (
-                                                <ActivityIndicator size="small" color="#c9a96e" />
-                                            ) : (
-                                                <>
-                                                    <Text className="text-white text-base tracking-widest uppercase" style={{ fontFamily: "Georgia" }}>
-                                                        Confirm Booking
-                                                    </Text>
-                                                    <Ionicons name="arrow-forward" size={18} color="#c9a96e" />
-                                                </>
-                                            )}
-                                        </TouchableOpacity>
-                                    </LinearGradient>
                                 </View>
-                            </ScrollView>
+                            )}
 
-                            {/* Add Room Modal */}
-                            <Modal
-                                visible={showAddModal}
-                                animationType="slide"
-                                transparent={true}
-                                onRequestClose={() => setShowAddModal(false)}
+                            {/* Add Button */}
+                            <TouchableOpacity
+                                onPress={addRoom}
+                                disabled={!selectedRoomId}
+                                className={`py-4 rounded-2xl mb-4 ${!selectedRoomId ? "bg-[#1a4a35]/50" : "bg-[#1a4a35]"}`}
                             >
-                                <View className="flex-1 bg-black/50 justify-end">
-                                    <View className="bg-[#faf8f3] rounded-t-3xl" style={{ paddingBottom: insets.bottom }}>
-                                        <View className="px-6 pt-6 pb-4 border-b border-[#1a4a35]/10">
-                                            <View className="flex-row justify-between items-center">
-                                                <Text className="text-[#1a4a35] text-xl font-bold" style={{ fontFamily: "Georgia" }}>
-                                                    Add Room
-                                                </Text>
-                                                <TouchableOpacity
-                                                    onPress={() => setShowAddModal(false)}
-                                                    className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center"
-                                                >
-                                                    <Ionicons name="close" size={20} color="#1a4a35" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        </View>
-
-                                        <ScrollView className="p-6" showsVerticalScrollIndicator={false}>
-                                            {/* Room Selection */}
-                                            <View className="mb-6">
-                                                <Text className="text-[#1a4a35] font-medium mb-2">Select Room</Text>
-                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
-                                                    {Object.entries(groupedRooms).map(([typeName, typeRooms]) => (
-                                                        <View key={typeName}>
-                                                            {typeRooms.map((room) => (
-                                                                <TouchableOpacity
-                                                                    key={room.id}
-                                                                    onPress={() => setSelectedRoomId(room.id)}
-                                                                    className={`mb-3 p-4 rounded-2xl border ${selectedRoomId === room.id ? "border-[#c9a96e] bg-[#c9a96e]/10" : "border-[#1a4a35]/10 bg-white"
-                                                                        }`}
-                                                                    style={{ minWidth: width - 48 }}
-                                                                >
-                                                                    <View className="flex-row justify-between items-center">
-                                                                        <View>
-                                                                            <Text className="text-[#1a4a35] font-bold text-lg">Room {room.room_number}</Text>
-                                                                            <Text className="text-[#1a4a35]/50 text-xs">{typeName}</Text>
-                                                                        </View>
-                                                                        <View className="items-end">
-                                                                            <Text className="text-[#c9a96e] font-bold">
-                                                                                {formatPrice(room.room_type?.base_price || 0)}/night
-                                                                            </Text>
-                                                                            {room.room_type?.short_stay_price && (
-                                                                                <Text className="text-[#1a4a35]/40 text-xs">
-                                                                                    or {formatPrice(room.room_type.short_stay_price)} short stay
-                                                                                </Text>
-                                                                            )}
-                                                                        </View>
-                                                                    </View>
-                                                                    {isRoomSelected(room.id) && (
-                                                                        <View className="absolute top-2 right-2">
-                                                                            <Ionicons name="checkmark-circle" size={24} color="#c9a96e" />
-                                                                        </View>
-                                                                    )}
-                                                                </TouchableOpacity>
-                                                            ))}
-                                                        </View>
-                                                    ))}
-                                                </ScrollView>
-                                                {fetchingRooms && <ActivityIndicator size="small" color="#1a4a35" className="mt-4" />}
-                                                {rooms.length === 0 && !fetchingRooms && (
-                                                    <Text className="text-[#1a4a35]/40 text-center py-8">No available rooms</Text>
-                                                )}
-                                            </View>
-
-                                            {/* Stay Type */}
-                                            <View className="mb-6">
-                                                <Text className="text-[#1a4a35] font-medium mb-2">Stay Type</Text>
-                                                <View className="flex-row gap-3">
-                                                    <TouchableOpacity
-                                                        onPress={() => {
-                                                            setStayType("overnight");
-                                                            setCheckOutDate(new Date(checkInDate.getTime() + 86400000));
-                                                        }}
-                                                        className={`flex-1 py-3 rounded-xl ${stayType === "overnight" ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
-                                                    >
-                                                        <Text className={`text-center ${stayType === "overnight" ? "text-white" : "text-[#1a4a35]"}`}>
-                                                            Overnight
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity
-                                                        onPress={() => {
-                                                            setStayType("short_stay");
-                                                            setCheckOutDate(checkInDate);
-                                                        }}
-                                                        className={`flex-1 py-3 rounded-xl ${stayType === "short_stay" ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
-                                                    >
-                                                        <Text className={`text-center ${stayType === "short_stay" ? "text-white" : "text-[#1a4a35]"}`}>
-                                                            Short Stay
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                </View>
-                                            </View>
-
-                                            {/* Hours Selector (Short Stay Only) */}
-                                            {stayType === "short_stay" && (
-                                                <View className="mb-6">
-                                                    <Text className="text-[#1a4a35] font-medium mb-2">Duration (Hours)</Text>
-                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
-                                                        {[3, 6, 9, 12, 18, 24].map((hours) => (
-                                                            <TouchableOpacity
-                                                                key={hours}
-                                                                onPress={() => setSelectedHours(hours)}
-                                                                className={`px-6 py-3 rounded-2xl ${selectedHours === hours ? "bg-[#1a4a35]" : "bg-[#1a4a35]/08"}`}
-                                                            >
-                                                                <Text
-                                                                    className={`text-center ${selectedHours === hours ? "text-white" : "text-[#1a4a35]"} text-sm`}
-                                                                    style={{ fontFamily: "Georgia" }}
-                                                                >
-                                                                    {hours} {hours === 1 ? "Hour" : "Hours"}
-                                                                </Text>
-                                                            </TouchableOpacity>
-                                                        ))}
-                                                    </ScrollView>
-                                                </View>
-                                            )}
-
-                                            {/* Check-in Date */}
-                                            <View className="mb-6">
-                                                <Text className="text-[#1a4a35] font-medium mb-2">Check-in Date</Text>
-                                                <TouchableOpacity
-                                                    onPress={() => setShowCheckInPicker(true)}
-                                                    className="p-4 rounded-xl bg-white border border-[#1a4a35]/10 flex-row justify-between items-center"
-                                                >
-                                                    <Text className="text-[#1a4a35]">
-                                                        {checkInDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                                                    </Text>
-                                                    <Ionicons name="calendar-outline" size={20} color="#c9a96e" />
-                                                </TouchableOpacity>
-                                                {showCheckInPicker && (
-                                                    <DateTimePicker
-                                                        value={checkInDate}
-                                                        mode="date"
-                                                        display="default"
-                                                        onChange={(event, selectedDate) => {
-                                                            setShowCheckInPicker(false);
-                                                            if (selectedDate) {
-                                                                setCheckInDate(selectedDate);
-                                                                if (stayType === "overnight") {
-                                                                    setCheckOutDate(new Date(selectedDate.getTime() + 86400000));
-                                                                } else {
-                                                                    setCheckOutDate(selectedDate);
-                                                                }
-                                                            }
-                                                        }}
-                                                        minimumDate={new Date()}
-                                                    />
-                                                )}
-                                            </View>
-
-                                            {/* Check-out Date (Overnight only) */}
-                                            {stayType === "overnight" && (
-                                                <View className="mb-6">
-                                                    <Text className="text-[#1a4a35] font-medium mb-2">Check-out Date</Text>
-                                                    <TouchableOpacity
-                                                        onPress={() => setShowCheckOutPicker(true)}
-                                                        className="p-4 rounded-xl bg-white border border-[#1a4a35]/10 flex-row justify-between items-center"
-                                                    >
-                                                        <Text className="text-[#1a4a35]">
-                                                            {checkOutDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                                                        </Text>
-                                                        <Ionicons name="calendar-outline" size={20} color="#c9a96e" />
-                                                    </TouchableOpacity>
-                                                    {showCheckOutPicker && (
-                                                        <DateTimePicker
-                                                            value={checkOutDate}
-                                                            mode="date"
-                                                            display="default"
-                                                            onChange={(event, selectedDate) => {
-                                                                setShowCheckOutPicker(false);
-                                                                if (selectedDate && selectedDate > checkInDate) {
-                                                                    setCheckOutDate(selectedDate);
-                                                                }
-                                                            }}
-                                                            minimumDate={new Date(checkInDate.getTime() + 86400000)}
-                                                        />
-                                                    )}
-                                                </View>
-                                            )}
-
-                                            {/* Preview Amount */}
-                                            {selectedRoomId && previewAmount > 0 && (
-                                                <View className="mb-6 p-4 rounded-xl bg-[#c9a96e]/10 border border-[#c9a96e]/20">
-                                                    <View className="flex-row justify-between items-center">
-                                                        <Text className="text-[#1a4a35] font-medium">
-                                                            {stayType === "short_stay" ? "Short Stay Amount:" : `Total for ${getNightsCount(checkInDate, checkOutDate)} night(s):`}
-                                                        </Text>
-                                                        <Text className="text-[#c9a96e] text-2xl font-bold" style={{ fontFamily: "Georgia" }}>
-                                                            {formatPrice(previewAmount)}
-                                                        </Text>
-                                                    </View>
-                                                </View>
-                                            )}
-
-                                            {/* Add Button */}
-                                            <TouchableOpacity
-                                                onPress={addRoom}
-                                                disabled={!selectedRoomId}
-                                                className={`py-4 rounded-2xl mb-4 ${!selectedRoomId ? "bg-[#1a4a35]/50" : "bg-[#1a4a35]"}`}
-                                            >
-                                                <Text className="text-white text-center font-bold text-base">Add Room</Text>
-                                            </TouchableOpacity>
-                                        </ScrollView>
-                                    </View>
-                                </View>
-                            </Modal>
-                        </View>
-                    );
-                }
+                                <Text className="text-white text-center font-bold text-base">Add Room</Text>
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+        </View>
+    );
+}

@@ -28,4 +28,5 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get('/dashboard/stats', [DashboardController::class, 'stats']); // ← ADD
 });

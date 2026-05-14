@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Models\RoomDamageReport;
+use App\Models\RoomIncident;
 
 class Room extends Model
 {
@@ -79,7 +79,7 @@ class Room extends Model
     // DAMAGE REPORTS
     public function damageReports()
     {
-        return $this->hasMany(RoomDamageReport::class);
+        return $this->hasMany(RoomIncident::class);
     }
 
     /*
@@ -115,7 +115,7 @@ class Room extends Model
         } elseif ($latestReport->booking?->walkInGuest) {
 
             $guestName =
-                $latestReport->booking->walkInGuest->guest_name;
+                $latestReport->booking->walkInGuest->full_name;
         }
 
         return [

@@ -18,7 +18,9 @@ return new class extends Migration
             $table->string('payment_method');
             $table->string('gcash_reference')->nullable();
             $table->string('bank_reference')->nullable();
-            $table->foreignId('received_by')->constrained('users');
+            $table->foreignId('received_by')
+                ->nullable()
+                ->constrained('users');
             $table->timestamp('payment_date');
         });
     }

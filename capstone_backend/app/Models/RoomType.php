@@ -10,8 +10,9 @@ class RoomType extends Model
         'type_name',
         'description',
         'max_occupancy',
-        'base_price'
-    ];
+        'base_price',
+        'short_stay_price'
+    ];  
 
     public function rooms()
     {

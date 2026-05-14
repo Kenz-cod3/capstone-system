@@ -45,29 +45,49 @@ const STATUS_CONFIG = {
 export default function Bookings() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"active" | "history">("active");
+  const [page, setPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const BASE_URL = "http://10.160.66.76:8000/storage/";
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (currentPage = 1) => {
     try {
-      setLoading(true);
-      const res = await api.get("/bookings");
-      setData(res.data);
+
+      if (data.length === 0) {
+        setLoading(true);
+      } else {
+        setContentLoading(true);
+      }
+
+      const endpoint =
+        filter === "history"
+          ? `/bookings/history?page=${currentPage}&per_page=10`
+          : "/bookings";
+
+      const res = await api.get(endpoint);
+
+      if (filter === "history") {
+        setData(res.data.data);
+        setLastPage(res.data.last_page);
+      } else {
+        setData(res.data);
+      }
+
     } catch (e: any) {
       console.log("❌ FETCH ERROR:", e?.response || e);
     } finally {
       setLoading(false);
+      setContentLoading(false);
     }
   };
 
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      const res = await api.get("/bookings");
-      setData(res.data);
+      await fetchBookings(page);
     } catch (e) {
       console.log(e);
     } finally {
@@ -76,8 +96,8 @@ export default function Bookings() {
   };
 
   useEffect(() => {
-    fetchBookings();
-  }, []);
+    fetchBookings(page);
+  }, [filter, page]);
 
   const filteredData = data.filter((item) => {
     if (filter === "active") {
@@ -158,7 +178,7 @@ export default function Bookings() {
           </View>
 
           <TouchableOpacity
-            onPress={fetchBookings}
+            onPress={() => fetchBookings(page)}
             activeOpacity={0.7}
             className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center mt-1"
           >
@@ -171,7 +191,10 @@ export default function Bookings() {
           {(["active", "history"] as const).map((tab) => (
             <TouchableOpacity
               key={tab}
-              onPress={() => setFilter(tab)}
+              onPress={() => {
+                setPage(1);
+                setFilter(tab);
+              }}
               activeOpacity={0.8}
               className="flex-1 rounded-xl py-2.5 items-center"
               style={{
@@ -193,6 +216,13 @@ export default function Bookings() {
       </LinearGradient>
 
       {/* ── LIST ── */}
+      {contentLoading && (
+        <View className="absolute top-[220px] left-0 right-0 z-50 items-center">
+          <View className="bg-white px-4 py-2 rounded-full shadow">
+            <ActivityIndicator size="small" color="#1a4a35" />
+          </View>
+        </View>
+      )}
       <FlatList
         data={filteredData}
         keyExtractor={(item) => item.id.toString()}
@@ -204,6 +234,8 @@ export default function Bookings() {
             colors={["#1a4a35"]}
             tintColor="#1a4a35"
           />
+
+
         }
         contentContainerStyle={{
           padding: 20,
@@ -235,13 +267,14 @@ export default function Bookings() {
         }
 
         renderItem={({ item }) => {
-          console.log("IMAGES FULL:", JSON.stringify(item.rooms?.[0]?.images, null, 2));
-          const room = item.rooms?.[0];
+          const room =
+            item.booked_rooms?.[0]?.room ||
+            item.rooms?.[0];
+          console.log("ROOM DATA:", JSON.stringify(room, null, 2));
 
-          const normalImagePath =
-            room?.images?.find((img: any) => img.image_type === "normal")?.image_path;
-
-          const normalImage = getImageUrl(normalImagePath);
+          const normalImage = room?.image_url
+            ? `${room.image_url}?t=${new Date().getTime()}`
+            : null;
 
           const statusKey = item.booking_status?.toLowerCase().replace("-", "_");
 
@@ -278,7 +311,6 @@ export default function Bookings() {
                   source={{
                     uri:
                       normalImage ||
-                      BASE_URL + room?.image_path ||
                       "https://picsum.photos/seed/booking/400/250",
                   }}
                   style={{ width: "100%", height: 180 }}
@@ -317,7 +349,7 @@ export default function Bookings() {
                       className="text-white text-3xl"
                       style={{ fontFamily: "Georgia" }}
                     >
-                      {item.rooms?.[0]?.room_number ?? "N/A"}
+                      {room?.room_number ?? "N/A"}
                     </Text>
                   </View>
                   <Text
@@ -394,6 +426,33 @@ export default function Bookings() {
           );
         }}
       />
+      {/* {filter === "history" && (
+        <View className="flex-row justify-center items-center gap-4 pb-10">
+
+          <TouchableOpacity
+            disabled={page === 1}
+            onPress={() => setPage((p) => p - 1)}
+            className={`px-4 py-2 rounded-xl ${page === 1 ? "bg-gray-300" : "bg-[#1a4a35]"
+              }`}
+          >
+            <Text className="text-white">Previous</Text>
+          </TouchableOpacity>
+
+          <Text className="text-[#1a4a35] font-semibold">
+            {page} / {lastPage}
+          </Text>
+
+          <TouchableOpacity
+            disabled={page === lastPage}
+            onPress={() => setPage((p) => p + 1)}
+            className={`px-4 py-2 rounded-xl ${page === lastPage ? "bg-gray-300" : "bg-[#1a4a35]"
+              }`}
+          >
+            <Text className="text-white">Next</Text>
+          </TouchableOpacity>
+
+        </View>
+      )} */}
     </View>
   );
 }

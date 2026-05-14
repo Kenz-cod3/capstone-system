@@ -21,7 +21,9 @@ class RoomTypeController extends Controller
     {
         $validated = $request->validate([
             'type_name' => 'required|string|max:255',
+            'description' => 'nullable|string',
             'base_price' => 'required|numeric|min:0',
+            'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'required|integer|min:1'
         ]);
 
@@ -48,7 +50,9 @@ class RoomTypeController extends Controller
 
         $validated = $request->validate([
             'type_name' => 'sometimes|string|max:255',
+            'description' => 'nullable|string',
             'base_price' => 'sometimes|numeric|min:0',
+            'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'sometimes|integer|min:1'
         ]);
 

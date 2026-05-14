@@ -34,7 +34,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
 
     useEffect(() => {
         setPage(0);
-    }, [rooms]);
+    }, [rooms.length]);
 
     // ALWAYS CREATE 16 SLOTS
     const slots = Array.from({ length: itemsPerPage });
@@ -65,27 +65,28 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
             </div>
 
             {/* GRID */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 flex-1 auto-rows-fr">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 auto-rows-fr">
                 {slots.map((_, index) => {
                     const room = paginatedRooms[index];
 
                     return (
                         <div
                             key={index}
-                            className={`rounded-lg p-4 w-full flex flex-col justify-center items-center aspect-square
-                            ${room
+                            className={`rounded-lg p-4 w-full aspect-square
+                                        flex flex-col items-center justify-center
+                                        overflow-hidden
+                                        ${room
                                     ? getColor(room.status)
                                     : "bg-gray-100 text-gray-400"
                                 }
-                            shadow-sm 
-                            transition duration-200`}
+                                shadow-sm transition duration-200`}
                         >
                             {room ? (
                                 <>
-                                    <p className="text-base relative top-2 font-semibold">
+                                    <p className="text-base relative top-2 font-semibold leading-none">
                                         {room.room_number}
                                     </p>
-                                    <p className="text-xs opacity-70 capitalize">
+                                    <p className="text-xs opacity-70 capitalize leading-none mt-1">
                                         {room.status}
                                     </p>
                                 </>

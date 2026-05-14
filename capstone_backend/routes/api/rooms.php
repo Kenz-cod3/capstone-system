@@ -10,6 +10,8 @@ use App\Http\Controllers\{
 
 Route::get('/rooms/damaged', [RoomController::class, 'damaged']);
 
+Route::get('/rooms/status-grid', [RoomController::class, 'statusGrid']);
+
 Route::apiResource('rooms', RoomController::class);
 Route::apiResource('room-types', RoomTypeController::class);
 Route::apiResource('room-status-history', RoomStatusHistoryController::class);

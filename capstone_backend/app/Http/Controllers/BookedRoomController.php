@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
 use App\Models\BookedRoom;
 use App\Models\Room;
 use Illuminate\Http\Request;
 
 class BookedRoomController extends Controller
 {
-    //GET ALL BOOKED ROOMS
+    // GET ALL BOOKED ROOMS
     public function index()
     {
         return response()->json(
@@ -17,40 +18,47 @@ class BookedRoomController extends Controller
         );
     }
 
-    //ASSIGN ROOM TO BOOKING
+    // ASSIGN ROOM TO BOOKING
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'booking_id' => 'required|exists:bookings,id',
-            'room_id' => 'required|exists:rooms,id',
-            'price' => 'required|numeric|min:0',
-            'status' => 'required|in:reserved,checked_in,checked_out'
+            'booking_id'               => 'required|exists:bookings,id',
+            'room_id'                  => 'required|exists:rooms,id',
+            'price_at_time_of_booking' => 'required|numeric|min:0',
+            'subtotal'                 => 'required|numeric|min:0',
+            'stay_type'                => 'required|in:overnight,short_stay',
         ]);
 
-        // Check if room already assigned
-        $exists = BookedRoom::where('room_id', $validated['room_id'])
-            ->where('status', '!=', 'checked_out')
-            ->exists();
+        $room = Room::findOrFail($validated['room_id']);
 
-        if ($exists) {
+        if ($room->status !== 'available') {
             return response()->json([
                 'message' => 'Room already assigned or occupied'
             ], 400);
         }
 
-        $bookedRoom = BookedRoom::create($validated);
+        $bookedRoom = BookedRoom::create([
+            'booking_id'               => $validated['booking_id'],
+            'room_id'                  => $validated['room_id'],
+            'price_at_time_of_booking' => $validated['price_at_time_of_booking'],
+            'subtotal'                 => $validated['subtotal'],
+            'stay_type'                => $validated['stay_type'],
+        ]);
 
-        // Update room status
-        Room::where('id', $validated['room_id'])
-            ->update(['status' => 'occupied']);
+        $room->update([
+            'status' => 'occupied'
+        ]);
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
             'message' => 'Room assigned to booking',
-            'data' => $bookedRoom->load(['booking', 'room'])
+            'data'    => $bookedRoom->load(['booking', 'room'])
         ], 201);
     }
 
-    //GET SINGLE
+    // GET SINGLE
     public function show($id)
     {
         $bookedRoom = BookedRoom::with(['booking', 'room'])->findOrFail($id);
@@ -58,43 +66,75 @@ class BookedRoomController extends Controller
         return response()->json($bookedRoom, 200);
     }
 
-    // 🔹 UPDATE (e.g., CHECK-IN / CHECK-OUT)
+    // UPDATE
     public function update(Request $request, $id)
     {
-        $bookedRoom = BookedRoom::findOrFail($id);
+        $bookedRoom = BookedRoom::with('room')->findOrFail($id);
 
         $validated = $request->validate([
-            'price' => 'sometimes|numeric|min:0',
-            'status' => 'sometimes|in:reserved,checked_in,checked_out'
+            'price_at_time_of_booking' => 'sometimes|numeric|min:0',
+            'subtotal'                 => 'sometimes|numeric|min:0',
+            'stay_type'                => 'sometimes|in:overnight,short_stay',
+            'check_out'                => 'sometimes|boolean',
         ]);
 
-        $bookedRoom->update($validated);
+        // CHECKOUT
+        if (!empty($validated['check_out'])) {
 
-        // If checked out → free the room
-        if (isset($validated['status']) && $validated['status'] === 'checked_out') {
-            Room::where('id', $bookedRoom->room_id)
-                ->update(['status' => 'available']);
+            $bookedRoom->update([
+                'check_out_time' => now()
+            ]);
+
+            // ROOM → DIRTY
+            $bookedRoom->room->update([
+                'status' => 'dirty'
+            ]);
+
+            unset($validated['check_out']);
         }
+
+        // OTHER FIELD UPDATES
+        $updateData = collect($validated)
+            ->only([
+                'price_at_time_of_booking',
+                'subtotal',
+                'stay_type'
+            ])
+            ->filter(fn($v) => $v !== null)
+            ->toArray();
+
+        if (!empty($updateData)) {
+            $bookedRoom->update($updateData);
+        }
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
             'message' => 'Booked room updated',
-            'data' => $bookedRoom
+            'data'    => $bookedRoom->fresh(['booking', 'room'])
         ], 200);
     }
 
-    // 🔹 REMOVE ROOM FROM BOOKING
+    // REMOVE ROOM FROM BOOKING
     public function destroy($id)
     {
-        $bookedRoom = BookedRoom::findOrFail($id);
+        $bookedRoom = BookedRoom::with('room')->findOrFail($id);
 
-        // Free the room
-        Room::where('id', $bookedRoom->room_id)
-            ->update(['status' => 'available']);
+        // ROOM → DIRTY
+        if ($bookedRoom->room) {
+            $bookedRoom->room->update([
+                'status' => 'dirty'
+            ]);
+        }
 
         $bookedRoom->delete();
 
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
+
         return response()->json([
-            'message' => 'Booked room deleted'
+            'message' => 'Booked room removed'
         ], 200);
     }
 }

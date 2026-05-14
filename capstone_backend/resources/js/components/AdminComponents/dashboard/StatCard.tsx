@@ -16,16 +16,17 @@ export default function StatCard({
         label === "Total Expenses" ||
         label === "Total Profit";
 
-    const numericValue =
-        isMoney
-            ? Number(String(value).replace(/[^\d]/g, ""))
-            : 0;
+    const numericValue = isMoney
+        ? parseFloat(
+            String(value).replace(/[^0-9.-]+/g, "")
+        ) || 0
+        : Number(value) || 0;
 
     const prevValueRef = useRef<number>(numericValue);
     const previousValue = prevValueRef.current;
 
     const shouldAnimate =
-        isMoney && previousValue !== numericValue;
+        Math.abs(previousValue - numericValue) > 0.01;
 
     useEffect(() => {
         if (isMoney) {
@@ -49,13 +50,12 @@ export default function StatCard({
             {/* TOP */}
             <div className="flex justify-end">
                 <div
-                    className={`flex items-center gap-1 text-xs font-medium ${
-                        trend === "up"
-                            ? "text-emerald-600"
-                            : trend === "down"
+                    className={`flex items-center gap-1 text-xs font-medium ${trend === "up"
+                        ? "text-emerald-600"
+                        : trend === "down"
                             ? "text-red-600"
                             : "text-gray-400"
-                    }`}
+                        }`}
                 >
                     {trend === "up" ? (
                         <ArrowUpRight className="h-3 w-3" />

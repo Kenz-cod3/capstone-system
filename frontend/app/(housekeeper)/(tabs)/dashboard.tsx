@@ -8,7 +8,8 @@ import {
   StatusBar,
   Dimensions,
 } from "react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import api from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -58,9 +59,21 @@ export default function Dashboard() {
     try {
       if (!isRefresh) setLoading(true);
 
-      const res = await api.get("/housekeeper/tasks");
-      const data = Array.isArray(res.data) ? res.data : res.data?.data || [];
+      // Fetch both endpoints at the same time
+      const [tasksRes, historyRes] = await Promise.all([
+        api.get("/housekeeper/tasks"),
+        api.get("/housekeeper/history"),
+      ]);
 
+      const data: any[] = Array.isArray(tasksRes.data)
+        ? tasksRes.data
+        : tasksRes.data?.data || [];
+
+      const history: any[] = Array.isArray(historyRes.data)
+        ? historyRes.data
+        : historyRes.data?.data || [];
+
+      // Active tasks shown in the list (dirty + cleaning only)
       const cleaningTasks = data.filter(
         (t: any) => t.status === "dirty" || t.status === "cleaning"
       );
@@ -68,11 +81,11 @@ export default function Dashboard() {
       setTasks(cleaningTasks);
 
       setStats({
-        total: data.length,
-        completed: data.filter((t: any) => t.status === "available").length,
+        total: data.length + history.length,         // active + completed
+        completed: history.length,                    // ✅ from history endpoint
         pending: data.filter((t: any) => t.status === "dirty").length,
         inProgress: data.filter((t: any) => t.status === "cleaning").length,
-        damaged: data.filter((t: any) => t.status === "available" && t.has_damage).length,
+        damaged: data.filter((t: any) => t.has_damage).length,
       });
     } catch (error) {
       console.log("Dashboard error:", error);
@@ -82,7 +95,11 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => { getTasks(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      getTasks();
+    }, [])
+  );
 
   const onRefresh = () => { setRefreshing(true); getTasks(true); };
 
@@ -385,7 +402,7 @@ export default function Dashboard() {
   return (
     <View style={{ flex: 1, backgroundColor: "#f9fafb" }}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      
+
       <FlatList
         data={tasks}
         keyExtractor={(item) => item.id.toString()}

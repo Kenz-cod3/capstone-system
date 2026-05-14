@@ -1,5 +1,5 @@
 export const WS_CONFIG = {
-  host: "192.168.254.188",
+  host: "10.210.240.76",
   port: 8080,
   appKey: "app-key",
 };

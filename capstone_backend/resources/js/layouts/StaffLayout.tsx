@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import api, { API_BASE } from "@/services/api";
+import "@/services/echo";
 import logo from "../../images/logo1.png";
 
 const StaffLayout = ({
@@ -93,6 +94,7 @@ const StaffLayout = ({
     const routesMap: any = {
         "/dashboard": "Dashboard",
         "/bookings": "Bookings",
+        "/incidents": "Incidents Reports",
         "/transactions": "Transaction",
         "/walk-in-guests": "Walk-in Guests",
         "/cash": "Cash",
@@ -127,15 +129,36 @@ const StaffLayout = ({
     }, []);
 
     const handleLogout = async () => {
+
         try {
+
+            const currentShift =
+                await api.get("/shift/current");
+
+            if (currentShift.data?.id) {
+
+                await api.post(
+                    `/shift/close/${currentShift.data.id}`,
+                    {
+                        closed_cash:
+                            currentShift.data.expected_cash
+                    }
+                );
+            }
+
             await api.post("/auth/logout");
+
         } catch (err) {
-            console.log("Logout API failed");
+
+            console.log(err);
         }
 
         localStorage.removeItem("token");
         localStorage.removeItem("user");
-        navigate("/login");
+
+        navigate("/login", {
+            replace: true
+        });
     };
 
     const handleNavigation = (href: string) => {
@@ -319,25 +342,12 @@ const StaffLayout = ({
     };
 
     useEffect(() => {
-        if (!user?.id) return;
-        if (offset === 0) {
-            fetchNotifications();
-        }
-        const interval = setInterval(() => {
-            if (!isNotifOpen && offset === 0) {
-                fetchNotifications();
-            }
-        }, 5000);
-        return () => clearInterval(interval);
-    }, [user?.id, offset, isNotifOpen]);
 
-    useEffect(() => {
         if (!user?.id) return;
+
         fetchMessages();
-        const interval = setInterval(() => {
-            fetchMessages();
-        }, 3000);
-        return () => clearInterval(interval);
+        fetchNotifications();
+
     }, [user?.id]);
 
     if (!user) {
@@ -361,6 +371,44 @@ const StaffLayout = ({
         window.addEventListener("mousedown", handleClickOutside);
         return () => window.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        console.log("👂 STAFF listening:", `notifications.${user.id}`);
+
+        window.Echo
+            .private(`notifications.${user.id}`)
+            .listen(".NotificationCreated", (e: any) => {
+
+                console.log("🔔 STAFF REALTIME:", e);
+
+                const newNotification = e.notification;
+
+                setNotifications((prev) => {
+
+                    const exists = prev.some(
+                        (n) => n.id === newNotification.id
+                    );
+
+                    if (exists) return prev;
+
+                    return [
+                        {
+                            ...newNotification,
+                            display_time: "Just now",
+                        },
+                        ...prev,
+                    ];
+                });
+
+                setUnreadCount((prev) => prev + 1);
+            });
+
+        return () => {
+            window.Echo.leave(`notifications.${user.id}`);
+        };
+    }, [user?.id]);
 
     const navigationGroups = [
         {
@@ -413,9 +461,9 @@ const StaffLayout = ({
                     icon: ClipboardList
                 },
                 {
-                    name: "Damaged Rooms",
-                    description: "View reported damages",
-                    href: "/damaged-rooms",
+                    name: "Incidents Rooms",
+                    description: "View reported incidents",
+                    href: "/incidents",
                     icon: ClipboardList
                 },
             ],

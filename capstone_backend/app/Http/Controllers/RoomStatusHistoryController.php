@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
 use App\Models\RoomStatusHistory;
 use App\Models\Room;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ class RoomStatusHistoryController extends Controller
     {
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
-            'status' => 'required|in:available,occupied,maintenance'
+            'status' => 'required|in:available,occupied,maintenance,dirty,cleaning'
         ]);
 
         $validated['changed_at'] = Carbon::now();
@@ -30,6 +31,9 @@ class RoomStatusHistoryController extends Controller
             ->update(['status' => $validated['status']]);
 
         $history = RoomStatusHistory::create($validated);
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
             'message' => 'Room status updated and logged',
@@ -49,22 +53,35 @@ class RoomStatusHistoryController extends Controller
         $history = RoomStatusHistory::findOrFail($id);
 
         $validated = $request->validate([
-            'status' => 'sometimes|in:available,occupied,maintenance',
+            'status' => 'sometimes|in:available,occupied,maintenance,dirty,cleaning',
             'changed_at' => 'sometimes|date'
         ]);
 
         $history->update($validated);
 
+        // 🔥 UPDATE ROOM STATUS TOO
+        if (isset($validated['status'])) {
+            Room::where('id', $history->room_id)
+                ->update(['status' => $validated['status']]);
+        }
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
+
         return response()->json([
             'message' => 'History updated',
-            'data' => $history
+            'data' => $history->fresh('room')
         ], 200);
     }
 
     public function destroy($id)
     {
         $history = RoomStatusHistory::findOrFail($id);
+
         $history->delete();
+
+        // 🔥 REALTIME DASHBOARD UPDATE
+        broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
             'message' => 'History deleted'

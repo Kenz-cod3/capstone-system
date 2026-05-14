@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import api from "@/services/api";
+import Echo from "@/services/echo";
 
 type ChatBoxProps = {
     userId: number;
@@ -10,9 +11,16 @@ type ChatBoxProps = {
     onMessageSent?: (msg: string) => void;
 };
 
-export default function ChatBox({ userId, userName, onClose, onMessageSent }: ChatBoxProps) {
+export default function ChatBox({
+    userId,
+    userName,
+    onClose,
+    onMessageSent
+}: ChatBoxProps) {
 
-    const currentUser = JSON.parse(localStorage.getItem("user")!);
+    const currentUser = JSON.parse(
+        localStorage.getItem("user")!
+    );
 
     const [messages, setMessages] = useState<any[]>([]);
     const [newMessage, setNewMessage] = useState("");
@@ -21,78 +29,145 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
     const isAtBottom = useRef(true);
 
     useEffect(() => {
+
         if (!bottomRef.current) return;
 
         if (isAtBottom.current) {
-            bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
+            bottomRef.current.scrollTop =
+                bottomRef.current.scrollHeight;
         }
+
     }, [messages]);
 
     const markAsRead = async () => {
+
         try {
-            await api.put(`/messages/read/${currentUser.id}/${userId}`);
+
+            await api.put(
+                `/messages/read/${currentUser.id}/${userId}`
+            );
+
         } catch (err) {
             console.error(err);
         }
     };
 
     const fetchMessages = async () => {
+
         try {
-            // ✅ mark first
+
             await markAsRead();
 
-            // ✅ then fetch updated data
-            const res = await api.get(`/messages/conversation/${currentUser.id}/${userId}`);
-            setMessages(prev => {
-                const newData = Array.isArray(res.data) ? res.data : [];
+            const res = await api.get(
+                `/messages/conversation/${currentUser.id}/${userId}`
+            );
 
-                // 🔥 keep temp messages (yung sending pa)
-                const tempMessages = prev.filter(m => m.status === "sending");
+            const newData = Array.isArray(res.data)
+                ? res.data
+                : [];
 
-                // 🔥 merge backend + existing status
-                const merged = newData.map(msg => {
-                    const existing = prev.find(p => p.id === msg.id);
-
-                    return {
-                        ...msg,
-                        status: existing?.status || "sent"
-                    };
-                });
-
-                // ✅ combine both
-                return [...merged, ...tempMessages];
-            });
+            setMessages(newData);
 
         } catch (err) {
+
             console.error(err);
+
             setMessages([]);
         }
     };
 
+    // 🔥 REALTIME
     useEffect(() => {
+
         if (!userId) return;
 
-        const load = async () => {
-            await fetchMessages();
+        // ✅ INITIAL LOAD
+        fetchMessages();
+
+        console.log(
+            "📩 CHATBOX LISTENING:",
+            `chat.${currentUser.id}`
+        );
+
+        Echo.channel(`chat.${currentUser.id}`)
+            .listen(".MessageSent", (e: any) => {
+
+                console.log(
+                    "🔥 CHATBOX REALTIME:",
+                    e
+                );
+
+                console.log(
+                    "🔥 FULL EVENT:",
+                    e
+                );
+
+                const raw =
+                    e.message_target ||
+                    e.notification ||
+                    e.message ||
+                    e.data;
+
+                const incoming = {
+
+                    id: raw?.id,
+
+                    is_read: false,
+
+                    status: "sent",
+
+                    message: {
+                        message: raw?.message,
+                        sender_id: raw?.sender_id,
+                    }
+                };
+
+                setMessages((prev) => {
+
+                    if (!incoming?.id) {
+
+                        console.log(
+                            "❌ INVALID MESSAGE:",
+                            incoming
+                        );
+
+                        return prev;
+                    }
+
+                    const exists = prev.some(
+                        (m) => m.id === incoming.id
+                    );
+
+                    if (exists) return prev;
+
+                    return [
+                        ...prev,
+                        incoming
+                    ];
+                });
+
+            });
+
+        return () => {
+
+            Echo.leaveChannel(
+                `chat.${currentUser.id}`
+            );
         };
-
-        load();
-
-        const interval = setInterval(load, 3000);
-        return () => clearInterval(interval);
 
     }, [userId]);
 
     const sendMessage = async () => {
+
         if (!newMessage.trim()) return;
 
         const messageToSend = newMessage;
 
-        // 🔥 create temp message
+        // 🔥 TEMP ID
         const tempId = Date.now();
 
         // ✅ INSTANT UI
-        setMessages(prev => [
+        setMessages((prev) => [
             ...prev,
             {
                 id: tempId,
@@ -101,13 +176,14 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                     sender_id: currentUser.id
                 },
                 is_read: false,
-                status: "sending" // 🔥 NEW
+                status: "sending"
             }
         ]);
 
         setNewMessage("");
 
         try {
+
             await api.post("/messages", {
                 sender_id: currentUser.id,
                 content: messageToSend,
@@ -119,11 +195,14 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                 ]
             });
 
-            // ✅ UPDATE STATUS → SENT
-            setMessages(prev =>
-                prev.map(m =>
+            // ✅ SENT
+            setMessages((prev) =>
+                prev.map((m) =>
                     m.id === tempId
-                        ? { ...m, status: "sent" }
+                        ? {
+                            ...m,
+                            status: "sent"
+                        }
                         : m
                 )
             );
@@ -133,13 +212,17 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
             }
 
         } catch (err) {
+
             console.error(err);
 
-            // ❌ UPDATE STATUS → FAILED
-            setMessages(prev =>
-                prev.map(m =>
+            // ❌ FAILED
+            setMessages((prev) =>
+                prev.map((m) =>
                     m.id === tempId
-                        ? { ...m, status: "failed" }
+                        ? {
+                            ...m,
+                            status: "failed"
+                        }
                         : m
                 )
             );
@@ -152,16 +235,19 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
             {/* HEADER */}
             <div className="p-3 border-b flex justify-between items-center bg-emerald-600 text-white rounded-t-lg">
 
-                {/* LEFT SIDE (PROFILE + NAME) */}
                 <div className="flex items-center gap-2">
+
                     <div className="w-8 h-8 bg-white text-emerald-600 rounded-full flex items-center justify-center font-bold">
                         {userName?.[0]}
                     </div>
+
                     <span>{userName}</span>
+
                 </div>
 
-                {/* CLOSE BUTTON */}
-                <button onClick={onClose}>✕</button>
+                <button onClick={onClose}>
+                    ✕
+                </button>
 
             </div>
 
@@ -169,18 +255,28 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
             <div
                 ref={bottomRef}
                 onScroll={(e) => {
+
                     const el = e.currentTarget;
 
                     const isBottom =
-                        el.scrollHeight - el.scrollTop <= el.clientHeight + 20;
+                        el.scrollHeight -
+                        el.scrollTop <=
+                        el.clientHeight + 20;
 
-                    isAtBottom.current = isBottom;
+                    isAtBottom.current =
+                        isBottom;
                 }}
                 className="flex-1 overflow-y-auto p-3 space-y-2 hide-scrollbar"
             >
+
                 {messages.map((m, index) => {
-                    const isMine = m.message?.sender_id === currentUser.id;
-                    const isLast = index === messages.length - 1;
+
+                    const isMine =
+                        m.message?.sender_id ===
+                        currentUser.id;
+
+                    const isLast =
+                        index === messages.length - 1;
 
                     return (
                         <div key={m.id}>
@@ -192,43 +288,81 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                                     : "bg-gray-200 max-w-[70%]"
                                     }`}
                             >
-                                {m.message?.message || "No message"}
+                                {m.message?.message ||
+                                    "No message"}
                             </div>
 
-                            {/* ✅ SEEN INDICATOR */}
+                            {/* STATUS */}
                             {isMine && isLast && (
+
                                 <div className="text-[10px] text-gray-400 mt-1 text-right">
-                                    {m.status === "sending" && "Sending..."}
-                                    {m.status === "failed" && "Failed ❌"}
-                                    {m.status === "sent" && (m.is_read ? "Seen" : "Sent")}
+
+                                    {m.status ===
+                                        "sending" &&
+                                        "Sending..."}
+
+                                    {m.status ===
+                                        "failed" &&
+                                        "Failed ❌"}
+
+                                    {m.status ===
+                                        "sent" &&
+                                        (
+                                            m.is_read
+                                                ? "Seen"
+                                                : "Sent"
+                                        )}
+
                                 </div>
                             )}
 
                         </div>
                     );
                 })}
+
             </div>
 
             {/* INPUT */}
             <div className="p-2 border-t flex items-end gap-2">
+
                 <textarea
                     value={newMessage}
                     onChange={(e) => {
-                        setNewMessage(e.target.value);
 
-                        // 🔥 auto expand WITH LIMIT
-                        e.target.style.height = "auto";
-                        const maxHeight = 120; // 👈 LIMIT (px)
+                        setNewMessage(
+                            e.target.value
+                        );
 
-                        if (e.target.scrollHeight <= maxHeight) {
-                            e.target.style.height = e.target.scrollHeight + "px";
+                        e.target.style.height =
+                            "auto";
+
+                        const maxHeight = 120;
+
+                        if (
+                            e.target.scrollHeight <=
+                            maxHeight
+                        ) {
+
+                            e.target.style.height =
+                                e.target.scrollHeight +
+                                "px";
+
                         } else {
-                            e.target.style.height = maxHeight + "px";
+
+                            e.target.style.height =
+                                maxHeight + "px";
                         }
                     }}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && newMessage.trim()) {
+
+                        if (
+                            e.key === "Enter" &&
+                            !e.shiftKey &&
+                            newMessage.trim()
+                        ) {
+
                             e.preventDefault();
+
                             sendMessage();
                         }
                     }}
@@ -236,12 +370,14 @@ export default function ChatBox({ userId, userName, onClose, onMessageSent }: Ch
                     placeholder="Type..."
                     rows={1}
                 />
+
                 <button
                     onClick={sendMessage}
                     className="bg-emerald-600 text-white p-2 rounded-full flex items-center justify-center hover:bg-emerald-700 transition"
                 >
                     <Send size={18} />
                 </button>
+
             </div>
 
         </div>

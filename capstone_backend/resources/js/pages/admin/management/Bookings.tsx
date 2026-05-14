@@ -108,6 +108,9 @@ interface CreatedByUser {
 
 interface Booking {
     id: number;
+    payment_method?: string;
+    gcash_reference?: string;
+    bank_reference?: string;
     add_ons?: AddOn[];
     booking_reference: string;
     booking_type: "online" | "walk_in";
@@ -125,6 +128,11 @@ interface Booking {
     rooms?: Room[];
     histories?: History[];
     created_by?: CreatedByUser;
+    payments?: {
+        payment_method?: string;
+        gcash_reference?: string;
+        bank_reference?: string;
+    }[];
 }
 
 interface PaginatedResponse {
@@ -305,35 +313,110 @@ export default function Bookings() {
     };
 
     const handleUpdateStatus = async (id: number, status: string, actionName: string) => {
-        let overrideReason = "";
-
         const action = async (reason?: string) => {
-            await api.put(`/bookings/${id}`, {
-                booking_status: status,
-                override_reason: overrideReason
-            });
+            // ✅ OPTIMISTIC UPDATE FIRST — instant UI change
+            setActive((prev: Booking[]) =>
+                prev.map((booking): Booking => {
+                    if (booking.id !== id) return booking;
+                    return {
+                        ...booking,
+                        booking_status: status as Booking["booking_status"],
+                        ...(status === "checked_in"
+                            ? { check_in_time: new Date().toISOString() }
+                            : {})
+                    };
+                })
+            );
 
-            await fetchAll();
-
+            // Update drawer if open
             if (selectedBooking && selectedBooking.id === id) {
                 setSelectedBooking((prev) =>
-                    prev ? { ...prev, booking_status: status as Booking["booking_status"] } : null
+                    prev
+                        ? {
+                            ...prev,
+                            booking_status: status as Booking["booking_status"],
+                            ...(status === "checked_in" && !prev.check_in_time
+                                ? { check_in_time: new Date().toISOString() }
+                                : {})
+                        }
+                        : null
                 );
+            }
+
+            try {
+                const response = await api.put(`/bookings/${id}`, {
+
+                    booking_status: status,
+
+                    payment_method:
+                        selectedBooking?.payment_method,
+
+                    gcash_reference:
+                        selectedBooking?.gcash_reference,
+
+                    bank_reference:
+                        selectedBooking?.bank_reference,
+
+                    override_reason: reason
+                });
+
+                const updatedBooking: Booking = {
+                    ...(response.data.data as Booking),
+                    booking_status: status as Booking["booking_status"],
+                    check_in_time:
+                        response.data.data?.check_in_time
+                };
+
+                // Sync with real server data after API resolves
+                setActive((prev: Booking[]) => {
+                    const updated = prev.map((booking): Booking => {
+                        if (booking.id !== id) return booking;
+                        return {
+                            ...booking,
+                            ...updatedBooking,
+                            histories: updatedBooking.histories ?? booking.histories ?? []
+                        };
+                    });
+
+                    // Move to history if checked_out or cancelled
+                    if (status === "checked_out" || status === "cancelled") {
+                        const moved = updated.find((b) => b.id === id);
+                        if (moved) setHistory((prev) => [moved, ...prev]);
+                        return updated.filter((b) => b.id !== id);
+                    }
+
+                    return updated;
+                });
+
+                if (selectedBooking && selectedBooking.id === id) {
+                    setSelectedBooking(updatedBooking);
+                }
+
+                message.success(`${actionName} successful`);
+
+                // Sync in background (no await — non-blocking)
+                setTimeout(() => fetchAll(), 800);
+            } catch (err) {
+                // ✅ ROLLBACK on error — revert optimistic update
+                console.error(err);
+                message.error(`${actionName} failed, reverting...`);
+                fetchAll(); // re-fetch to restore correct state
             }
         };
 
         if (userRole === "admin") {
+            let overrideReason = "";
             Modal.confirm({
                 title: `Admin Override: ${actionName}`,
                 content: (
                     <Input.TextArea
                         rows={3}
                         placeholder="Enter reason..."
-                        onChange={(e) => overrideReason = e.target.value}
+                        onChange={(e) => (overrideReason = e.target.value)}
                         style={{ fontSize: "13px" }}
                     />
                 ),
-                onOk: action
+                onOk: () => action(overrideReason)
             });
         } else {
             await action();
@@ -347,7 +430,6 @@ export default function Bookings() {
 
             if (!booking) return;
 
-            // 🔥 USE CORRECT ENDPOINT
             if (booking.booking_type === "walk_in") {
                 await api.post(`/walk-in-guests/${bookingId}/checkout`, {
                     override_reason: reason
@@ -359,18 +441,54 @@ export default function Bookings() {
                 });
             }
 
-            // 🔥 VERY IMPORTANT
-            await fetchAll();
+            setActive((prev) =>
+                prev.filter((b) => b.id !== bookingId)
+            );
 
-            // optional UI update
-            if (selectedBooking && selectedBooking.id === bookingId) {
+            const checkedOutBooking = active.find(
+                (b) => b.id === bookingId
+            );
+
+            if (checkedOutBooking) {
+
+                const historyBooking: Booking = {
+                    ...checkedOutBooking,
+                    booking_status: "checked_out"
+                };
+
+                setHistory((prev) => [
+                    historyBooking,
+                    ...prev
+                ]);
+            }
+
+            if (
+                selectedBooking &&
+                selectedBooking.id === bookingId
+            ) {
                 setSelectedBooking((prev) =>
-                    prev ? { ...prev, booking_status: "checked_out" } : null
+                    prev
+                        ? {
+                            ...prev,
+                            booking_status: "checked_out"
+                        }
+                        : null
                 );
             }
+
+            message.success("Check Out successful");
+
+            setTimeout(() => {
+                fetchAll();
+            }, 800);
         };
 
-        await handleActionWithOverride(action, "Check Out", bookingId, true);
+        await handleActionWithOverride(
+            action,
+            "Check Out",
+            bookingId,
+            true
+        );
     };
 
     // const handleCheckoutAction = async (bookingId: number) => {
@@ -410,10 +528,14 @@ export default function Bookings() {
                 )
             );
 
-            if (selectedBooking && selectedBooking.id === booking.id) {
-                setSelectedBooking((prev: Booking | null) =>
-                    prev ? { ...prev, total_price: res.data.total_price } : null
-                );
+            const updatedBooking = await api.get(`/bookings`);
+
+            const latest = updatedBooking.data.find(
+                (b: Booking) => b.id === booking.id
+            );
+
+            if (latest) {
+                setSelectedBooking(latest);
             }
         };
 
@@ -431,6 +553,7 @@ export default function Bookings() {
                 onOk: async () => {
                     try {
                         const res = await api.post<{ total_price: number }>(`/bookings/${booking.id}/extend`);
+                        await fetchAll();
 
                         setActive((prev: Booking[]) =>
                             prev.map(b =>
@@ -440,10 +563,14 @@ export default function Bookings() {
                             )
                         );
 
-                        if (selectedBooking && selectedBooking.id === booking.id) {
-                            setSelectedBooking((prev: Booking | null) =>
-                                prev ? { ...prev, total_price: res.data.total_price } : null
-                            );
+                        const updatedBooking = await api.get(`/bookings`);
+
+                        const latest = updatedBooking.data.find(
+                            (b: Booking) => b.id === booking.id
+                        );
+
+                        if (latest) {
+                            setSelectedBooking(latest);
                         }
 
                         message.success("Stay extended successfully");
@@ -481,17 +608,23 @@ export default function Bookings() {
         };
 
         if (userRole === "staff") {
-            Modal.confirm({
-                title: "Move to Trash",
-                content: "Are you sure you want to move this booking to trash?",
-                okText: "Yes",
-                cancelText: "Cancel",
-                okButtonProps: { danger: true },
-                onOk: action
+
+            Modal.warning({
+                title: "Access Restricted",
+                content: "Only administrators can move bookings to trash.",
+                okText: "OK",
+                centered: true,
             });
-        } else {
-            await handleActionWithOverride(action, "Move to Trash", id, true);
+
+            return;
         }
+
+        await handleActionWithOverride(
+            action,
+            "Move to Trash",
+            id,
+            true
+        );
     };
 
     const handleRestore = async (id: number) => {
@@ -631,6 +764,32 @@ export default function Bookings() {
         return colors[status] || "#8c8c8c";
     };
 
+    const getOverdueDays = (booking: Booking) => {
+
+        if (booking.booking_status !== "checked_in") {
+            return 0;
+        }
+
+        const checkoutDate = new Date(
+            booking.check_out_date
+        );
+
+        const today = new Date();
+
+        checkoutDate.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+
+        const diff =
+            today.getTime() -
+            checkoutDate.getTime();
+
+        const days = Math.floor(
+            diff / (1000 * 60 * 60 * 24)
+        );
+
+        return days > 0 ? days : 0;
+    };
+
     const getGuestName = (booking: Booking): string => {
         if (booking.booking_type === "online") {
             const firstName = booking.user?.first_name ?? "";
@@ -735,13 +894,43 @@ export default function Bookings() {
                 {
                     key: "restore",
                     label: "Restore",
-                    onClick: () => handleRestore(record.id)
+                    onClick: () => {
+
+                        if (userRole === "staff") {
+
+                            Modal.warning({
+                                title: "Access Restricted",
+                                content: "Only administrators can restore bookings.",
+                                okText: "OK",
+                                centered: true,
+                            });
+
+                            return;
+                        }
+
+                        handleRestore(record.id);
+                    }
                 },
                 {
                     key: "delete",
                     label: "Delete Forever",
                     danger: true,
-                    onClick: () => handleForceDelete(record.id)
+                    onClick: () => {
+
+                        if (userRole === "staff") {
+
+                            Modal.warning({
+                                title: "Access Restricted",
+                                content: "Only administrators can permanently delete bookings.",
+                                okText: "OK",
+                                centered: true,
+                            });
+
+                            return;
+                        }
+
+                        handleForceDelete(record.id);
+                    }
                 }
             );
         }
@@ -810,11 +999,44 @@ export default function Bookings() {
             title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Status</span>,
             key: "status",
             width: "10%",
-            render: (_: any, record: Booking) => (
-                <Tag color={getStatusColor(record.booking_status)} style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "6px" }}>
-                    {record.booking_status?.replace(/_/g, " ").toUpperCase()}
-                </Tag>
-            )
+            render: (_: any, record: Booking) => {
+
+                const wasExtended =
+                    record.histories?.some(h =>
+                        h.change_note?.toLowerCase().includes("extended")
+                    );
+
+                return (
+                    <Space size={4} wrap>
+
+                        <Tag
+                            color={getStatusColor(record.booking_status)}
+                            style={{
+                                fontSize: "12px",
+                                padding: "4px 12px",
+                                borderRadius: "6px"
+                            }}
+                        >
+                            {record.booking_status
+                                ?.replace(/_/g, " ")
+                                .toUpperCase()}
+                        </Tag>
+
+                        {wasExtended && (
+                            <Tag
+                                color="purple"
+                                style={{
+                                    fontSize: "11px",
+                                    borderRadius: "6px"
+                                }}
+                            >
+                                EXTENDED
+                            </Tag>
+                        )}
+
+                    </Space>
+                );
+            }
         },
         {
             title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Stay Type</span>,
@@ -885,10 +1107,23 @@ export default function Bookings() {
     ];
 
     const rowProps = (record: Booking) => {
+
+        const overdueDays =
+            getOverdueDays(record);
+
         return {
             onClick: () => showDetails(record),
-            style: { cursor: "pointer" },
-            className: "clickable-row"
+
+            style: {
+                cursor: "pointer"
+            },
+
+            className:
+                overdueDays >= 3
+                    ? "critical-overdue-row"
+                    : overdueDays >= 1
+                        ? "warning-overdue-row"
+                        : "clickable-row"
         };
     };
 
@@ -917,7 +1152,6 @@ export default function Bookings() {
             pagination={false}
             // scroll={{ x: "max-content" }}
             onRow={rowProps}
-            rowSelection={rowSelection}
         />
     );
 
@@ -1058,6 +1292,8 @@ export default function Bookings() {
         const checkedInBy = histories.find(h => h.new_status === "checked_in");
         const checkedOutBy = histories.find(h => h.new_status === "checked_out");
         const override = histories.find(h => h.is_override);
+        const overdueDays =
+            getOverdueDays(selectedBooking);
 
         return (
             <Drawer
@@ -1131,6 +1367,21 @@ export default function Bookings() {
                         )}
                     </Descriptions>
                 </Card>
+                {overdueDays > 0 && (
+
+                    <Alert
+                        type="error"
+                        showIcon
+                        style={{
+                            marginBottom: 16,
+                            borderRadius: "12px",
+                            alignItems: "center",
+                        }}
+                        message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
+                        description="Guest exceeded expected checkout date."
+                    />
+
+                )}
 
                 <Card
                     title={
@@ -1408,6 +1659,41 @@ export default function Bookings() {
                     size="small"
                     style={{ marginBottom: 16, borderRadius: "12px", border: "1px solid #f0f0f0" }}
                 >
+                    <div style={{ marginBottom: 16 }}>
+                        <div style={{ marginBottom: 8 }}>
+                            <Text type="secondary">
+                                Payment Method:
+                            </Text>
+                            <Tag color="green" style={{ marginLeft: 8 }}>
+                                {selectedBooking.payments?.[0]?.payment_method
+                                    ?.toUpperCase() || "N/A"}
+
+                            </Tag>
+                        </div>
+
+                        {selectedBooking.payments?.[0]?.payment_method !== "cash" && (
+
+                            <div>
+
+                                <Text type="secondary">
+                                    Reference:
+                                </Text>
+
+                                <Text strong style={{ marginLeft: 8 }}>
+
+                                    {selectedBooking.payments?.[0]?.gcash_reference ||
+
+                                        selectedBooking.payments?.[0]?.bank_reference ||
+
+                                        "N/A"}
+
+                                </Text>
+
+                            </div>
+
+                        )}
+
+                    </div>
                     <div style={{ textAlign: "right" }}>
                         <div style={{ marginBottom: 8 }}>
                             <Text type="secondary" style={{ fontSize: "12px" }}>Subtotal:</Text>
@@ -1481,6 +1767,13 @@ export default function Bookings() {
                     }
                     .clickable-row {
                         cursor: pointer;
+                    }
+                        .warning-overdue-row td:first-child {
+                        border-left: 4px solid #faad14 !important;
+                    }
+
+                    .critical-overdue-row td:first-child {
+                        border-left: 4px solid #ff4d4f !important;
                     }
                     .tabs-right .ant-tabs-nav {
                         justify-content: flex-end !important;
@@ -1601,7 +1894,7 @@ export default function Bookings() {
             </style>
             <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
                 <div>
-                    <Title level={5} style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "#0f172a" }}>Bookings Management</Title>
+                    <Title level={5} style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "#0f172a" }}>Booking List</Title>
                     <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>Manage and track all reservations</Text>
                 </div>
                 <Search

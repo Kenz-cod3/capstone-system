@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Room;
+use DateTimeInterface;
 
 class Booking extends Model
 {
@@ -21,10 +22,23 @@ class Booking extends Model
         'check_in_time',
         'booking_reference',
         'total_price',
-        'booking_status'
+        'booking_status',
+        'overdue_started_at'
     ];
 
     protected $appends = ['guest_name'];
+
+    protected $casts = [
+        'check_in_date' => 'date',
+        'check_out_date' => 'date',
+        'check_in_time' => 'datetime',
+        'overdue_started_at' => 'datetime',
+    ];
+
+    protected function serializeDate(DateTimeInterface $date)
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
 
     // 🔹 USER (ONLINE)
     public function user()

@@ -282,6 +282,7 @@ function GuestCard({
                         <AutoComplete
                             style={{ width: '100%' }}
                             onSearch={onSearchGuests}
+                            onFocus={() => onSearchGuests("")}
                             options={searchResults.map(guest => ({
                                 key: guest.id,
                                 value: guest.full_name || "",
@@ -679,6 +680,9 @@ function WalkInContent() {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [selectedRoomsDetails, setSelectedRoomsDetails] = useState<SelectedRoom[]>([]);
     const [loading, setLoading] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState("cash");
+    const [gcashReference, setGcashReference] = useState("");
+    const [bankReference, setBankReference] = useState("");
     const [fetchingRooms, setFetchingRooms] = useState(false);
 
     const [selectedGuest, setSelectedGuest] = useState<WalkInGuest | null>(null);
@@ -738,17 +742,34 @@ function WalkInContent() {
     }, [selectedRoomsDetails]);
 
     const searchGuests = async (searchText: string) => {
-        if (!searchText || searchText.trim().length < 2) {
-            setSearchResults([]);
-            return;
-        }
         setSearchingGuests(true);
+
         try {
-            const res = await api.get(`/walk-in-guests/search?q=${encodeURIComponent(searchText)}`);
-            setSearchResults(res.data);
+            let res;
+
+            // SHOW RECENT 5 GUESTS
+            if (!searchText || searchText.trim().length === 0) {
+
+                res = await api.get("/walk-in-guests?per_page=5");
+
+                setSearchResults(res.data.data || []);
+
+            } else {
+
+                // NORMAL SEARCH
+                res = await api.get(
+                    `/walk-in-guests/search?q=${encodeURIComponent(searchText)}`
+                );
+
+                setSearchResults(res.data || []);
+            }
+
         } catch (err) {
+
             console.error("Failed to search guests", err);
+
         } finally {
+
             setSearchingGuests(false);
         }
     };
@@ -939,7 +960,16 @@ function WalkInContent() {
             const payload = {
                 guest_id: selectedGuest.id,
                 bookings: bookingsData,
-                total_amount: totalAmount
+                total_amount: totalAmount,
+                payment_method: paymentMethod,
+                gcash_reference:
+                    paymentMethod === "gcash"
+                        ? gcashReference
+                        : null,
+                bank_reference:
+                    paymentMethod === "bank"
+                        ? bankReference
+                        : null,
             };
             await api.post("/walk-in-guests/checkin", payload);
             queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -1272,6 +1302,61 @@ function WalkInContent() {
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+
+                                        <div style={{ marginBottom: 20 }}>
+                                            <div
+                                                style={{
+                                                    marginBottom: 8,
+                                                    fontWeight: 600,
+                                                    color: '#374151'
+                                                }}
+                                            >
+                                                Payment Method
+                                            </div>
+
+                                            <Select
+                                                size="large"
+                                                value={paymentMethod}
+                                                onChange={setPaymentMethod}
+                                                style={{ width: '100%' }}
+                                            >
+                                                <Select.Option value="cash">
+                                                    Cash
+                                                </Select.Option>
+
+                                                <Select.Option value="gcash">
+                                                    GCash
+                                                </Select.Option>
+
+                                                <Select.Option value="bank">
+                                                    Bank
+                                                </Select.Option>
+                                            </Select>
+
+                                            {paymentMethod === "gcash" && (
+                                                <Input
+                                                    size="large"
+                                                    placeholder="GCash Reference"
+                                                    value={gcashReference}
+                                                    onChange={(e) =>
+                                                        setGcashReference(e.target.value)
+                                                    }
+                                                    style={{ marginTop: 12 }}
+                                                />
+                                            )}
+
+                                            {paymentMethod === "bank" && (
+                                                <Input
+                                                    size="large"
+                                                    placeholder="Bank Reference"
+                                                    value={bankReference}
+                                                    onChange={(e) =>
+                                                        setBankReference(e.target.value)
+                                                    }
+                                                    style={{ marginTop: 12 }}
+                                                />
+                                            )}
                                         </div>
 
                                         <Divider style={{ margin: '12px 0' }} />

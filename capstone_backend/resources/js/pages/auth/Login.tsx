@@ -48,8 +48,23 @@ export default function Login() {
             localStorage.removeItem("token");
             localStorage.removeItem("user");
 
-            localStorage.setItem("user", JSON.stringify(user));
-            localStorage.setItem("token", token);
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+
+            localStorage.setItem(
+                "user",
+                JSON.stringify(user)
+            );
+
+            localStorage.setItem(
+                "token",
+                token
+            );
+
+            localStorage.setItem(
+                "role",
+                user.role
+            );
 
             if (user.role === "admin") {
                 window.location.replace("/dashboard");

@@ -22,7 +22,8 @@ class OrderPaymentController extends Controller
     {
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'amount' => 'required|numeric|min:0'
+            'amount' => 'required|numeric|min:0',
+            'payment_method' => 'required|in:cash,gcash'
         ]);
 
         $order = Order::findOrFail($validated['order_id']);
@@ -34,24 +35,24 @@ class OrderPaymentController extends Controller
             ], 400);
         }
 
-        // 💵 COMPUTE CHANGE
+        // COMPUTE CHANGE
         $change = 0;
 
         if ($validated['amount'] > $order->total_amount) {
             $change = $validated['amount'] - $order->total_amount;
         }
 
-        // 💰 SAVE PAYMENT (FIXED 🔥)
+        // SAVE PAYMENT (FIXED )
         $payment = OrderPayment::create([
             'order_id' => $order->id,
             'amount' => $validated['amount'],
-            'payment_method' => 'cash',
-            'user_id' => Auth::id() ?? 2, // 🔥 FIX
+            'payment_method' => $validated['payment_method'],
+            'user_id' => Auth::id() ?? 2, //FIX
             'change_amount' => $change,
             'payment_date' => now()
         ]);
 
-        // 🔥 UPDATE ORDER STATUS (FIXED)
+        // UPDATE ORDER STATUS (FIXED)
         $order->update([
             'order_status' => 'paid'
         ]);

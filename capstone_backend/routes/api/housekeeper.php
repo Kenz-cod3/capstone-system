@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\HousekeeperController;
-use App\Http\Controllers\RoomDamageReportController;
+use App\Http\Controllers\RoomIncidentController;
 
 Route::prefix('housekeeper')->group(function () {
 
@@ -35,31 +35,31 @@ Route::prefix('housekeeper')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | DAMAGE REPORTS
+    | ROOM INCIDENTS
     |--------------------------------------------------------------------------
     */
 
-    // GET ALL REPORTS
-    Route::get('/damage-reports', [
-        RoomDamageReportController::class,
+    // GET ALL INCIDENTS
+    Route::get('/incidents', [
+        RoomIncidentController::class,
         'index'
     ]);
 
-    // GET SINGLE REPORT
-    Route::get('/damage-reports/{id}', [
-        RoomDamageReportController::class,
+    // GET SINGLE INCIDENT
+    Route::get('/incidents/{id}', [
+       RoomIncidentController::class,
         'show'
     ]);
 
-    // CREATE REPORT
-    Route::post('/damage-reports', [
-        RoomDamageReportController::class,
+    // CREATE INCIDENT
+    Route::post('/incidents', [
+        RoomIncidentController::class,
         'store'
     ]);
 
     // UPDATE STATUS
-    Route::put('/damage-reports/{id}/status', [
-        RoomDamageReportController::class,
+    Route::put('/incidents/{id}/status', [
+        RoomIncidentController::class,
         'updateStatus'
     ]);
 });

@@ -7,7 +7,8 @@ type Status = "connected" | "disconnected" | "reconnecting";
 export const connectRealtime = (
   userId: number,
   onInactive: () => void,
-  onActive: () => void, // bagong callback
+  onActive: () => void,
+  onMessage?: (message: any) => void,
   onStatusChange?: (status: Status) => void
 ) => {
   let ws: WebSocket;
@@ -32,41 +33,109 @@ export const connectRealtime = (
         event: "pusher:subscribe",
         data: { channel: "users" },
       }));
+
+      ws.send(JSON.stringify({
+        event: "pusher:subscribe",
+        data: {
+          channel: `chat.${userId}`
+        },
+      }));
     };
 
     ws.onmessage = (event) => {
+
       try {
+
         const data = JSON.parse(event.data);
 
+        console.log(
+          "📡 RAW EVENT:",
+          data.event
+        );
+
+        console.log(
+          "📡 RAW DATA:",
+          data
+        );
+
+        // 🔥 KEEP CONNECTION ALIVE
         if (data.event === "pusher:ping") {
-          ws.send(JSON.stringify({ event: "pusher:pong" }));
+
+          ws.send(
+            JSON.stringify({
+              event: "pusher:pong",
+            })
+          );
+
           return;
         }
 
+        // 🔥 USER STATUS
         if (data.event === "UserStatusChanged") {
+
           const payload =
             typeof data.data === "string"
               ? JSON.parse(data.data)
               : data.data;
 
           if (payload.userId === userId) {
-            if (!payload.isActive && !inactiveCalled) {
-              // 🔴 naging inactive
+
+            if (
+              !payload.isActive &&
+              !inactiveCalled
+            ) {
+
               inactiveCalled = true;
+
               shouldReconnect = false;
-              console.log("🔴 User is inactive");
+
+              console.log(
+                "🔴 User is inactive"
+              );
+
               onInactive();
-            } else if (payload.isActive) {
-              // 🟢 naging active ulit
+
+            } else if (
+              payload.isActive
+            ) {
+
               inactiveCalled = false;
+
               shouldReconnect = true;
-              console.log("🟢 User is active");
-              onActive(); // ✅
+
+              console.log(
+                "🟢 User is active"
+              );
+
+              onActive();
             }
           }
         }
+
+        // 🔥 REALTIME MESSAGE
+        if (
+          data.event === "MessageSent"
+        ) {
+
+          const payload =
+            typeof data.data === "string"
+              ? JSON.parse(data.data)
+              : data.data;
+
+          console.log(
+            "📩 MOBILE REALTIME MESSAGE:",
+            payload
+          );
+
+          onMessage?.(payload);
+        }
+
       } catch (e) {
-        console.log("Parse error:", e);
+
+        console.log(
+          "Parse error:",
+          e
+        );
       }
     };
 

@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Modal, message } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRooms, deleteRoom } from "@/services/roomService";
 import RoomCard from "@/components/AdminComponents/room/RoomCard";
 import EditRoomModal from "@/components/AdminComponents/room/EditRoomModal";
 import AddRoomModal from "@/components/AdminComponents/room/AddRoomModal";
 import PanoramaModal from "@/components/AdminComponents/room/PanoramaModal";
+import RoomTypeManager from "@/components/AdminComponents/room/RoomTypeManager";
 
 interface Room {
     id: number;
@@ -23,6 +25,7 @@ export default function Rooms() {
     const [editOpen, setEditOpen] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<any>(null);
     const [panoramaData, setPanoramaData] = useState<any>(null);
+    const [roomTypeManagerOpen, setRoomTypeManagerOpen] = useState(false); // New state
 
     const queryClient = useQueryClient();
 
@@ -40,16 +43,43 @@ export default function Rooms() {
     // ✅ DELETE ROOM
     const deleteMutation = useMutation({
         mutationFn: deleteRoom,
+
         onSuccess: (_, id) => {
+
             queryClient.setQueryData(["rooms"], (old: any[] = []) =>
                 old.filter(r => r.id !== id)
             );
+
+            message.success("Room deleted successfully.");
+        },
+
+        onError: (err: any) => {
+
+            Modal.warning({
+                title: "Cannot Delete Room",
+                content:
+                    err.response?.data?.message ||
+                    "The room is occupied and cannot be deleted.",
+                okText: "OK",
+                centered: true,
+            });
         },
     });
 
     const handleDelete = (id: number) => {
-        if (!confirm("Delete this room?")) return;
-        deleteMutation.mutate(id);
+
+        Modal.confirm({
+            title: "Delete Room",
+            content: "Are you sure you want to delete this room?",
+            okText: "Delete",
+            cancelText: "Cancel",
+            okButtonProps: { danger: true },
+            centered: true,
+
+            onOk: () => {
+                deleteMutation.mutate(id);
+            }
+        });
     };
 
     // Calculate stats with color coding
@@ -67,7 +97,10 @@ export default function Rooms() {
                             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl animate-pulse"></div>
                             <div className="h-8 w-48 bg-gray-200 rounded-lg animate-pulse"></div>
                         </div>
-                        <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
+                        <div className="flex gap-3">
+                            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
+                            <div className="h-10 w-32 bg-gray-200 rounded-lg animate-pulse"></div>
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -97,15 +130,29 @@ export default function Rooms() {
                         </h1>
                         <p className="text-gray-500 mt-1 text-sm">Manage all hotel rooms, track availability, and update details</p>
                     </div>
-                    <button
-                        onClick={() => setOpen(true)}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-[1.02]"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Add Room
-                    </button>
+                    <div className="flex gap-3">
+                        {/* NEW: Room Types Management Button */}
+                        <button
+                            onClick={() => setRoomTypeManagerOpen(true)}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-[1.02]"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            Manage Room Types
+                        </button>
+
+                        {/* Existing Add Room Button */}
+                        <button
+                            onClick={() => setOpen(true)}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-[1.02]"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add Room
+                        </button>
+                    </div>
                 </div>
 
                 {/* Stats Cards with Color Coding */}
@@ -228,11 +275,23 @@ export default function Rooms() {
                     refresh={() => queryClient.invalidateQueries({ queryKey: ["rooms"] })}
                 />
             )}
+
             {/* PANORAMA MODAL */}
             {panoramaData && (
                 <PanoramaModal
                     data={panoramaData}
                     onClose={() => setPanoramaData(null)}
+                />
+            )}
+
+            {/* ROOM TYPE MANAGER MODAL */}
+            {roomTypeManagerOpen && (
+                <RoomTypeManager
+                    onClose={() => setRoomTypeManagerOpen(false)}
+                    onRefresh={() => {
+                        // Also refresh rooms since room types affect room data
+                        queryClient.invalidateQueries({ queryKey: ["rooms"] });
+                    }}
                 />
             )}
         </div>

@@ -49,6 +49,15 @@ Route::prefix('walk-in-guests')->group(function () {
     
     // Checkout route
     Route::post('/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);
+    
+    // GET GUEST DETAILS WITH BOOKINGS AND TOTAL SPENT
+    Route::get('/{id}/details', [WalkInGuestController::class, 'getGuestDetails']); // NEW: Get guest with booking history and total spent
+    
+    // Get booking details with add-ons (for viewing inside modal)
+    Route::get('/bookings/{bookingId}', [WalkInGuestController::class, 'getBookingDetails']);
+    
+    // Delete guest
+    Route::delete('/{id}', [WalkInGuestController::class, 'destroy']);
 });
 
 // Alternative: If you want to keep RESTful structure but with custom methods

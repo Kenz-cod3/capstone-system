@@ -16,18 +16,24 @@ import Dashboard from "./pages/admin/main/Dashboard";
 import Bookings from "./pages/admin/management/Bookings";
 import BookingTransaction  from "./pages/admin/management/Bookings";
 import BookingReceipt  from "./pages/admin/management/BookingReciept";
-import DamagedRooms from "./pages/admin/management/damaged-rooms";
+import IncidentsRooms from "./pages/admin/management/incidents";
+
+import GuestDetails from "./components/AdminComponents/users/[id]";
 
 import Rooms from "./pages/admin/management/Rooms";
+import Expenses from "./pages/admin/management/Expenses";
+import CashManagement from "./pages/admin/management/CashManagement";
 import AddOnsPage from "./pages/admin/management/AddOnsPage";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
 import Guests from "./pages/admin/management/Guests";
+import WalkInGuest from "./pages/admin/management/WalkInGuests";
 import Staff from "./pages/admin/management/Staff";
 import HouseKeeper from "./pages/admin/management/HouseKeeper";
 import Reports from "./pages/admin/analytics/Reports";
 import AdminMenu from "./pages/admin/restaurant/Menu";
 import AdminOrders from "./pages/admin/restaurant/OrdersReport";
 import ChatPage from "./pages/admin/messages/[userId]";
+
 
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
@@ -87,11 +93,18 @@ export default function App() {
                         <Route path="/bookings" element={<Bookings />} />
                         <Route path="/booking-transactions" element={<BookingTransaction />} />
                         <Route path="/booking-receipts" element={<BookingReceipt />} />
-                        <Route path="/damaged-rooms" element={<DamagedRooms />} />
+                        <Route path="/incidents" element={<IncidentsRooms />} />
                         <Route path="/add-ons" element={<AddOnsPage />} />
                         {/* <Route path="/walk-in-guests" element={<WalkIn />} /> */}
+
+                        <Route path="/guests/:id" element={<GuestDetails />} />
+
+                        
                         <Route path="/rooms" element={<Rooms />} />
+                        <Route path="/expenses" element={<Expenses />} />
+                        <Route path="/cash-management" element={<CashManagement />} />
                         <Route path="/guests" element={<Guests />} />
+                        <Route path="/walkin-guest" element={<WalkInGuest />} />
                         <Route path="/staff" element={<Staff />} />
                         <Route path="/housekeepers" element={<HouseKeeper />} />
                         <Route path="/reports" element={<Reports />} />
@@ -111,7 +124,7 @@ export default function App() {
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/bookings" element={<BookingStaff />} />
                         <Route path="/transactions" element={<Transaction />} />
-                        <Route path="/damaged-rooms" element={<DamagedRooms />} />
+                        <Route path="/incidents" element={<IncidentsRooms />} />
                         <Route path="/walk-in-guests" element={<WalkIn />} />
                         <Route path="/extend-stay" element={<BookingExtend />} />
                         <Route path="/cash" element={<Cash />} />
