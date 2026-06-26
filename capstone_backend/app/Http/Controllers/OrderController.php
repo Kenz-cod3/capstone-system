@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Auth;
 
 class OrderController extends Controller
 {
-    // 🔹 GET ALL ORDERS
+    // GET ALL ORDERS
     public function index()
     {
         return response()->json(
@@ -23,7 +23,7 @@ class OrderController extends Controller
         );
     }
 
-    // 🔹 CREATE ORDER (POS)
+    // CREATE ORDER (POS)
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -112,16 +112,16 @@ class OrderController extends Controller
         }
     }
 
-    // 🔹 GET SINGLE ORDER
+    // GET SINGLE ORDER
     public function show($id)
     {
-        $order = Order::with(['items.menuItem', 'cashier']) // ✅ FIXED: Changed from 'staff' to 'cashier'
+        $order = Order::with(['items.menuItem', 'cashier']) // FIXED: Changed from 'staff' to 'cashier'
             ->findOrFail($id);
 
         return response()->json($order, 200);
     }
 
-    // 🔹 UPDATE ORDER STATUS
+    // UPDATE ORDER STATUS
     public function update(Request $request, $id)
     {
         $order = Order::findOrFail($id);
@@ -138,7 +138,7 @@ class OrderController extends Controller
         ], 200);
     }
 
-    // 🔹 DELETE ORDER (CANCEL + RESTORE STOCK)
+    // DELETE ORDER (CANCEL + RESTORE STOCK)
     public function destroy($id)
     {
         try {
@@ -187,7 +187,7 @@ class OrderController extends Controller
         }
     }
 
-    // 🔹 GET STATS
+    //  GET STATS
     public function stats()
     {
         // Total revenue (paid only)

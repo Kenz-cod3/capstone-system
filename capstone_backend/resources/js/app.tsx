@@ -13,9 +13,9 @@ import AdminLayout from "./layouts/AdminLayout";
 
 // ADMIN
 import Dashboard from "./pages/admin/main/Dashboard";
-import Bookings from "./pages/admin/management/Bookings";
-import BookingTransaction  from "./pages/admin/management/Bookings";
-import BookingReceipt  from "./pages/admin/management/BookingReciept";
+import Bookings from "./pages/admin/management/BookingManagement";
+import BookingManagement  from "./pages/admin/management/BookingManagement";
+import BookingTransaction  from "./pages/admin/management/BookingTransaction";
 import IncidentsRooms from "./pages/admin/management/incidents";
 
 import GuestDetails from "./components/AdminComponents/users/[id]";
@@ -37,7 +37,7 @@ import ChatPage from "./pages/admin/messages/[userId]";
 
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
-import BookingStaff  from "./pages/admin/management/Bookings";
+import BookingStaff  from "./pages/admin/management/BookingManagement";
 import WalkIn from "./pages/admin/operations/WalkIn";
 import Transaction  from "./pages/staff/Transaction";
 import BookingExtend from "./pages/staff/BookingExtend";
@@ -91,8 +91,8 @@ export default function App() {
                     <Route element={<AdminLayout />}>
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/bookings" element={<Bookings />} />
-                        <Route path="/booking-transactions" element={<BookingTransaction />} />
-                        <Route path="/booking-receipts" element={<BookingReceipt />} />
+                        <Route path="/booking-management" element={<BookingManagement />} />
+                        <Route path="/booking-transaction" element={<BookingTransaction />} />
                         <Route path="/incidents" element={<IncidentsRooms />} />
                         <Route path="/add-ons" element={<AddOnsPage />} />
                         {/* <Route path="/walk-in-guests" element={<WalkIn />} /> */}

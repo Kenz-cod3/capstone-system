@@ -11,11 +11,16 @@ class RoomType extends Model
         'description',
         'max_occupancy',
         'base_price',
-        'short_stay_price'
-    ];  
+        'short_stay_price',
+    ];
 
     public function rooms()
     {
         return $this->hasMany(Room::class);
+    }
+
+    public function amenities()
+    {
+        return $this->belongsToMany(Amenity::class);
     }
 }

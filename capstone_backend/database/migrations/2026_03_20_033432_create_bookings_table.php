@@ -23,7 +23,7 @@ return new class extends Migration
             $table->timestamp('check_in_time')->nullable();
             $table->string('booking_reference')->unique();
             $table->decimal('total_price', 10, 2)->default(0);
-            $table->enum('booking_status', ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled']);
+            $table->enum('booking_status', ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'refunded']);
             $table->timestamps();
             $table->softDeletes();
         });

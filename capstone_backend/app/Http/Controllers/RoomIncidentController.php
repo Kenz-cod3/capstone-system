@@ -10,12 +10,18 @@ class RoomIncidentController extends Controller
 {
     /*
     |--------------------------------------------------------------------------
-    | GET ALL INCIDENTS
+    | GET ALL INCIDENTS WITH PAGINATION
     |--------------------------------------------------------------------------
     */
 
-    public function index()
+    public function index(Request $request)
     {
+        $perPage = (int) ($request->per_page ?? 10);
+        
+        // Ensure per_page is within reasonable bounds
+        if ($perPage < 1) $perPage = 1;
+        if ($perPage > 100) $perPage = 100;
+
         $reports = RoomIncident::with([
             'room',
             'cleaner',
@@ -24,9 +30,20 @@ class RoomIncidentController extends Controller
             'booking.walkInGuest'
         ])
             ->latest()
-            ->get();
+            ->paginate($perPage);
 
-        return response()->json($reports);
+        // Transform the data to match frontend expectations
+        $transformedData = $reports->getCollection()->map(function ($report) {
+            return $report;
+        });
+
+        return response()->json([
+            'data' => $transformedData,
+            'current_page' => $reports->currentPage(),
+            'last_page' => $reports->lastPage(),
+            'per_page' => $reports->perPage(),
+            'total' => $reports->total(),
+        ]);
     }
 
     /*

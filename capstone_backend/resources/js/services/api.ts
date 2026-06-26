@@ -1,12 +1,12 @@
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: "http://10.210.240.76:8000/api",
+    baseURL: "http://10.99.189.76:8000/api",
 });
 
-export const API_BASE = "http://10.210.240.76:8000";
+export const API_BASE = "http://10.99.189.76:8000";
 
-// ✅ REQUEST INTERCEPTOR (attach token)
+// REQUEST INTERCEPTOR (attach token)
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem("token");
 
@@ -19,7 +19,7 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// ✅ RESPONSE INTERCEPTOR (auto logout if 401)
+// RESPONSE INTERCEPTOR (auto logout if 401)
 api.interceptors.response.use(
     (response) => response,
     (error) => {

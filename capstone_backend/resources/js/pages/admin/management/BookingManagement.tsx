@@ -11,7 +11,8 @@ import {
     ClockCircleOutlined,
     HistoryOutlined,
     DeleteOutlined,
-    CheckCircleOutlined
+    CheckCircleOutlined,
+    SearchOutlined,
 } from "@ant-design/icons";
 import {
     Table,
@@ -36,7 +37,7 @@ import type { MenuProps, TabsProps } from "antd";
 import api from "@/services/api";
 
 const { Title, Text } = Typography;
-const { Search } = Input;
+// const { Search } = Input;
 
 interface AddOn {
     id: number;
@@ -114,7 +115,7 @@ interface Booking {
     add_ons?: AddOn[];
     booking_reference: string;
     booking_type: "online" | "walk_in";
-    booking_status: "pending" | "confirmed" | "checked_in" | "checked_out" | "cancelled";
+    booking_status: "pending" | "confirmed" | "checked_in" | "checked_out" | "cancelled" | "refunded";
     stay_type: "short_stay" | "overnight";
     check_in_date: string;
     check_out_date: string;
@@ -378,10 +379,22 @@ export default function Bookings() {
                         };
                     });
 
-                    // Move to history if checked_out or cancelled
-                    if (status === "checked_out" || status === "cancelled") {
+                    // Move to history if checked_out or refunded
+                    if (status === "checked_out" || status === "refunded") {
+
                         const moved = updated.find((b) => b.id === id);
-                        if (moved) setHistory((prev) => [moved, ...prev]);
+
+                        if (moved) {
+
+                            setHistory((prev) => [
+                                {
+                                    ...moved,
+                                    booking_status: status as Booking["booking_status"]
+                                },
+                                ...prev
+                            ]);
+                        }
+
                         return updated.filter((b) => b.id !== id);
                     }
 
@@ -748,7 +761,8 @@ export default function Bookings() {
             confirmed: "green",
             checked_in: "blue",
             checked_out: "default",
-            cancelled: "red"
+            cancelled: "red",
+            refunded: "purple"
         };
         return colors[status] || "default";
     };
@@ -759,7 +773,8 @@ export default function Bookings() {
             confirmed: "#52c41a",
             checked_in: "#1890ff",
             checked_out: "#8c8c8c",
-            cancelled: "#ff4d4f"
+            cancelled: "#ff4d4f",
+            refunded: "#722ed1"
         };
         return colors[status] || "#8c8c8c";
     };
@@ -882,6 +897,18 @@ export default function Bookings() {
                 danger: true,
                 onClick: () => handleDeleteAction(record.id)
             });
+            if (record.booking_status === "cancelled") {
+                items.push({
+                    key: "refunded",
+                    label: "Mark as Refunded",
+                    onClick: () =>
+                        handleUpdateStatus(
+                            record.id,
+                            "refunded",
+                            "Refund Booking"
+                        )
+                });
+            }
         } else if (type === "history") {
             items.push({
                 key: "trash",
@@ -1897,12 +1924,42 @@ export default function Bookings() {
                     <Title level={5} style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "#0f172a" }}>Booking List</Title>
                     <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>Manage and track all reservations</Text>
                 </div>
-                <Search
-                    placeholder="Search by name, ID, or type"
+                <Input
+                    className="mint-search-input"
+                    placeholder="Search by name, ID, or type..."
                     allowClear
+                    value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
-                    style={{ width: 300 }}
-                    size="middle"
+                    prefix={
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                            }}
+                        >
+                            <SearchOutlined
+                                style={{
+                                    color: "#94a3b8",
+                                    fontSize: 16,
+                                }}
+                            />
+
+                            <div
+                                style={{
+                                    width: 1,
+                                    height: 18,
+                                    background: "#d1d5db",
+                                    borderRadius: 999,
+                                }}
+                            />
+                        </div>
+                    }
+                    style={{
+                        width: 320,
+                        height: 42,
+                        borderRadius: 12,
+                    }}
                 />
             </div>
 

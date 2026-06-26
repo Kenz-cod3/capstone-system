@@ -15,5 +15,5 @@ Route::get('menu-items-available', [MenuItemController::class, 'available']);
 Route::apiResource('orders', OrderController::class);
 Route::apiResource('order-items', OrderItemController::class);
 Route::apiResource('order-payments', OrderPaymentController::class);
-Route::apiResource('order-invoices', OrderInvoiceController::class);
+// Route::apiResource('order-invoices', OrderInvoiceController::class);
 

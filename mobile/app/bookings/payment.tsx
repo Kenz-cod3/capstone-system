@@ -5,10 +5,11 @@ import {
     TextInput,
     StatusBar,
     ScrollView,
+    BackHandler,
 } from "react-native";
 
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,6 +34,21 @@ export default function PaymentPage() {
 
     const [loading, setLoading] =
         useState(false);
+
+    const [paymentSuccess, setPaymentSuccess] = useState(false);
+
+    // Disable back button when payment is processing or after success
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Prevent back navigation during loading or after success
+            if (loading || paymentSuccess) {
+                return true; // Prevent back action
+            }
+            return false; // Allow normal back
+        });
+
+        return () => backHandler.remove();
+    }, [loading, paymentSuccess]);
 
     const handlePayment = async () => {
 
@@ -160,13 +176,18 @@ export default function PaymentPage() {
                 );
             }
 
-            alert(
-                "Booking Successful ✅"
-            );
+            setPaymentSuccess(true);
+            alert("Booking Successful ✅");
 
-            router.replace(
-                "/(guest)/(tabs)/home"
-            );
+            router.dismissAll();
+
+            router.replace({
+                pathname: "/(guest)/(tabs)/home",
+                params: {
+                    fromPayment: "true",
+                },
+            });
+
 
         } catch (err: any) {
 
@@ -207,8 +228,15 @@ export default function PaymentPage() {
             >
 
                 <TouchableOpacity
-                    onPress={() => router.back()}
+                    onPress={() => {
+                        // Prevent going back if loading or payment success
+                        if (!loading && !paymentSuccess) {
+                            router.back();
+                        }
+                    }}
                     className="w-10 h-10 rounded-full bg-white/10 justify-center items-center mb-6"
+                    style={{ opacity: (loading || paymentSuccess) ? 0.5 : 1 }}
+                    disabled={loading || paymentSuccess}
                 >
                     <Ionicons
                         name="chevron-back"
@@ -246,10 +274,11 @@ export default function PaymentPage() {
                             setPaymentMethod("gcash")
                         }
                         activeOpacity={0.85}
+                        disabled={loading || paymentSuccess}
                         className={`rounded-2xl border p-5 mb-4 flex-row items-center justify-between ${paymentMethod === "gcash"
                             ? "bg-[#1a4a35] border-[#1a4a35]"
                             : "bg-white border-[#1a4a35]/10"
-                            }`}
+                            } ${(loading || paymentSuccess) ? "opacity-50" : ""}`}
                     >
 
                         <View className="flex-row items-center gap-3">
@@ -313,10 +342,11 @@ export default function PaymentPage() {
                             setPaymentMethod("bank")
                         }
                         activeOpacity={0.85}
+                        disabled={loading || paymentSuccess}
                         className={`rounded-2xl border p-5 flex-row items-center justify-between ${paymentMethod === "bank"
                             ? "bg-[#1a4a35] border-[#1a4a35]"
                             : "bg-white border-[#1a4a35]/10"
-                            }`}
+                            } ${(loading || paymentSuccess) ? "opacity-50" : ""}`}
                     >
 
                         <View className="flex-row items-center gap-3">
@@ -390,6 +420,7 @@ export default function PaymentPage() {
                                     }
                                     placeholder="Enter GCash reference"
                                     className="bg-white border border-[#1a4a35]/10 rounded-2xl px-4 py-4"
+                                    editable={!loading && !paymentSuccess}
                                 />
                             </>
                         )}
@@ -407,6 +438,7 @@ export default function PaymentPage() {
                                     }
                                     placeholder="Enter bank transfer reference"
                                     className="bg-white border border-[#1a4a35]/10 rounded-2xl px-4 py-4"
+                                    editable={!loading && !paymentSuccess}
                                 />
                             </>
                         )}
@@ -429,7 +461,7 @@ export default function PaymentPage() {
 
                 <TouchableOpacity
                     onPress={handlePayment}
-                    disabled={loading}
+                    disabled={loading || paymentSuccess}
                     activeOpacity={0.85}
                     className="rounded-2xl overflow-hidden"
                 >
@@ -450,10 +482,12 @@ export default function PaymentPage() {
                         >
                             {loading
                                 ? "Processing..."
-                                : "Pay Now"}
+                                : paymentSuccess
+                                    ? "Completed ✓"
+                                    : "Pay Now"}
                         </Text>
 
-                        {!loading && (
+                        {!loading && !paymentSuccess && (
                             <Ionicons
                                 name="arrow-forward"
                                 size={16}

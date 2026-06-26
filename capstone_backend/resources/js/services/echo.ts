@@ -10,7 +10,7 @@ declare global {
 
 window.Pusher = Pusher;
 
-// 🔥 TOKEN
+// TOKEN
 const token = localStorage.getItem("token");
 
 const echo = new Echo({
@@ -18,14 +18,14 @@ const echo = new Echo({
 
     key: "app-key",
 
-    wsHost: "10.210.240.76",
+    wsHost: "10.99.189.76",
     wsPort: 8080,
 
     forceTLS: false,
 
     enabledTransports: ["ws"],
 
-    authEndpoint: "http://10.210.240.76:8000/broadcasting/auth",
+    authEndpoint: "http://10.99.189.76:8000/broadcasting/auth",
 
     auth: {
         headers: {
@@ -35,7 +35,7 @@ const echo = new Echo({
     },
 });
 
-// 🔥 MAKE GLOBAL
+// MAKE GLOBAL
 window.Echo = echo;
 
 console.log("✅ ECHO INITIALIZED");

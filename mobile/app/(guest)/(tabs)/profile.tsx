@@ -26,6 +26,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
   const { logout } = useAuthStore();
@@ -78,53 +79,62 @@ export default function Profile() {
     );
   };
 
-  // const handleLogout = () => {
-  //   Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-  //     { text: "Cancel", style: "cancel" },
-  //     {
-  //       text: "Sign Out",
-  //       style: "destructive",
-  //       onPress: async () => {
-  //         await logout();
-  //         router.replace("/auth/login");
-  //       },
-  //     },
-  //   ]);
-  // };
+  const handleLogout = () => {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLogoutLoading(true);
 
-  const handleLogout = async () => {
-
-    // WEB
-    if (typeof window !== "undefined") {
-
-      const confirmed = window.confirm(
-        "Are you sure you want to sign out?"
-      );
-
-      if (!confirmed) return;
-
-      await logout();
-      router.replace("/auth/login");
-      return;
-    }
-
-    // MOBILE
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
             await logout();
+
             router.replace("/auth/login");
-          },
+          } catch (e) {
+            console.log("Logout error:", e);
+          } finally {
+            setLogoutLoading(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
+
+  // const handleLogout = async () => {
+
+  //   // WEB
+  //   if (typeof window !== "undefined") {
+
+  //     const confirmed = window.confirm(
+  //       "Are you sure you want to sign out?"
+  //     );
+
+  //     if (!confirmed) return;
+
+  //     await logout();
+  //     router.replace("/auth/login");
+  //     return;
+  //   }
+
+  //   // MOBILE
+  //   Alert.alert(
+  //     "Sign Out",
+  //     "Are you sure you want to sign out?",
+  //     [
+  //       { text: "Cancel", style: "cancel" },
+  //       {
+  //         text: "Sign Out",
+  //         style: "destructive",
+  //         onPress: async () => {
+  //           await logout();
+  //           router.replace("/auth/login");
+  //         },
+  //       },
+  //     ]
+  //   );
+  // };
 
   const handleProfileUpdate = () => {
     setRefreshKey(prev => prev + 1);
@@ -334,16 +344,21 @@ export default function Profile() {
           <View className="px-6 mt-6">
             <TouchableOpacity
               onPress={handleLogout}
+              disabled={logoutLoading}
               activeOpacity={0.85}
               className="rounded-2xl overflow-hidden border border-red-200"
             >
               <View className="flex-row items-center justify-center py-4 gap-2 bg-red-50">
-                <Ionicons name="log-out-outline" size={18} color="#b91c1c" />
+                {logoutLoading ? (
+                  <ActivityIndicator size="small" color="#b91c1c" />
+                ) : (
+                  <Ionicons name="log-out-outline" size={18} color="#b91c1c" />
+                )}
                 <Text
                   className="text-red-700 text-sm tracking-widest uppercase"
                   style={{ fontFamily: "Georgia" }}
                 >
-                  Sign Out
+                  {logoutLoading ? "Signing Out..." : "Sign Out"}
                 </Text>
               </View>
             </TouchableOpacity>

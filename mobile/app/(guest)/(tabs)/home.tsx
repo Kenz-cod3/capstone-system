@@ -9,16 +9,20 @@ import {
   Dimensions,
   ActivityIndicator,
   RefreshControl,
+  BackHandler,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { getRooms } from "@/services/roomService";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "@/services/api";
+import { useLocalSearchParams } from "expo-router";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 56;
@@ -44,6 +48,38 @@ export default function Home() {
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const params = useLocalSearchParams();
+
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        Alert.alert(
+          "Exit App",
+          "Are you sure you want to exit the app?",
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+            {
+              text: "Exit",
+              onPress: () => BackHandler.exitApp(),
+            },
+          ]
+        );
+
+        return true;
+      };
+
+      const backHandler = BackHandler.addEventListener(
+        "hardwareBackPress",
+        backAction
+      );
+
+      return () => backHandler.remove();
+    }, [])
+  );
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -185,7 +221,8 @@ export default function Home() {
 
   return (
     <View className="flex-1 bg-[#faf8f3]">
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      {/* Status bar - light content for dark gradient header, dark content for rest of the screen */}
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <ScrollView
         ref={scrollViewRef}
@@ -238,13 +275,22 @@ export default function Home() {
                 </Text>
               </View>
 
-              {/* Action icons - REMOVED calendar icon from here */}
+              {/* Action icons */}
               <View className="flex-row gap-3">
                 {/* 💬 Chat icon with red dot if unread */}
                 <TouchableOpacity
                   onPress={() => {
+                    if (isNavigating) return;
+
+                    setIsNavigating(true);
+
                     setHasUnreadMessages(false);
+
                     router.push("/chat/1");
+
+                    setTimeout(() => {
+                      setIsNavigating(false);
+                    }, 1000);
                   }}
                   activeOpacity={0.7}
                   className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
@@ -258,12 +304,24 @@ export default function Home() {
                 {/* 🔔 Notification icon with gold dot if unread */}
                 <TouchableOpacity
                   onPress={async () => {
+                    if (isNavigating) return;
+
+                    setIsNavigating(true);
+
                     try {
                       await api.put(`/notifications/user/${user?.id}/read-all`);
+
                       setHasUnreadNotifications(false);
+
                       router.push("/notifications/notification");
+
+                      setTimeout(() => {
+                        setIsNavigating(false);
+                      }, 1000);
+
                     } catch (e) {
                       console.log("Error marking notifications as read:", e);
+                      setIsNavigating(false);
                     }
                   }}
                   activeOpacity={0.7}

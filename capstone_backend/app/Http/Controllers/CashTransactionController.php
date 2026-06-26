@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 class CashTransactionController extends Controller
 {
-    // 📥 GET ALL
+    // GET ALL
     public function index()
     {
         return CashTransaction::with([
@@ -21,7 +21,7 @@ class CashTransactionController extends Controller
             ->get();
     }
 
-    // 💸 STORE
+    // STORE
     public function store(Request $request)
     {
         $request->validate([
@@ -32,7 +32,7 @@ class CashTransactionController extends Controller
             'description' => 'nullable|string'
         ]);
 
-        // 🔥 AUTO SHIFT
+        // AUTO SHIFT
         $shift = Shift::where('opened_by', Auth::id())
             ->whereNull('closed_at')
             ->first();
@@ -52,7 +52,7 @@ class CashTransactionController extends Controller
             'recorded_by' => $request->recorded_by ?? Auth::id(),
         ]);
 
-        // ✅ UPDATE expected_cash IN REAL TIME
+        // UPDATE expected_cash IN REAL TIME
         $payIn = CashTransaction::where('shift_id', $shift->id)
             ->where('type', 'pay_in')
             ->sum('amount');
@@ -65,7 +65,7 @@ class CashTransactionController extends Controller
             'expected_cash' => $shift->starting_cash + $payIn - $payOut
         ]);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        // REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
@@ -77,7 +77,7 @@ class CashTransactionController extends Controller
         ], 201);
     }
 
-    // ✏️ UPDATE
+    // UPDATE
     public function update(Request $request, $id)
     {
         $request->validate([
@@ -96,7 +96,7 @@ class CashTransactionController extends Controller
             'recorded_by' => $request->recorded_by ?? $transaction->recorded_by,
         ]);
 
-        // ✅ RECALCULATE expected_cash AFTER UPDATE
+        // RECALCULATE expected_cash AFTER UPDATE
         $shift = Shift::findOrFail($transaction->shift_id);
 
         $payIn = CashTransaction::where('shift_id', $shift->id)
@@ -111,7 +111,7 @@ class CashTransactionController extends Controller
             'expected_cash' => $shift->starting_cash + $payIn - $payOut
         ]);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        // REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
@@ -131,7 +131,7 @@ class CashTransactionController extends Controller
 
         $transaction->delete();
 
-        // ✅ RECALCULATE expected_cash AFTER DELETE
+        // RECALCULATE expected_cash AFTER DELETE
         $shift = Shift::findOrFail($shiftId);
 
         $payIn = CashTransaction::where('shift_id', $shiftId)
@@ -146,7 +146,7 @@ class CashTransactionController extends Controller
             'expected_cash' => $shift->starting_cash + $payIn - $payOut
         ]);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        // REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
@@ -154,7 +154,7 @@ class CashTransactionController extends Controller
         ]);
     }
 
-    // 💰 TOTAL EXPENSES (FOR DASHBOARD)
+    // TOTAL EXPENSES (FOR DASHBOARD)
     public function totalExpenses()
     {
         $total = CashTransaction::where('type', 'pay_out')

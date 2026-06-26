@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    // 🔹 GET ALL NOTIFICATIONS (ADMIN VIEW)
+    // GET ALL NOTIFICATIONS (ADMIN VIEW)
     public function index()
     {
         return response()->json(
@@ -19,7 +19,7 @@ class NotificationController extends Controller
         );
     }
 
-    // 🔹 CREATE NOTIFICATION
+    //  CREATE NOTIFICATION
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -32,7 +32,7 @@ class NotificationController extends Controller
 
         $notification = Notification::create($validated);
 
-        // 🔥 REALTIME NOTIFICATION
+        // REALTIME NOTIFICATION
         broadcast(new NotificationCreated($notification));
 
         return response()->json([
@@ -41,7 +41,7 @@ class NotificationController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE NOTIFICATION
+    // GET SINGLE NOTIFICATION
     public function show($id)
     {
         $notification = Notification::with('user')
@@ -50,7 +50,7 @@ class NotificationController extends Controller
         return response()->json($notification, 200);
     }
 
-    // 🔹 DELETE NOTIFICATION
+    // DELETE NOTIFICATION
     public function destroy($id)
     {
         $notification = Notification::findOrFail($id);
@@ -62,7 +62,7 @@ class NotificationController extends Controller
         ], 200);
     }
 
-    // 🔹 MARK ALL AS READ
+    // MARK ALL AS READ
     public function markAllAsRead($id)
     {
         Notification::where('user_id', $id)
@@ -76,7 +76,7 @@ class NotificationController extends Controller
         ]);
     }
 
-    // 🔹 MARK SINGLE AS READ
+    // MARK SINGLE AS READ
     public function markAsRead($id)
     {
         $notification = Notification::findOrFail($id);
@@ -90,7 +90,7 @@ class NotificationController extends Controller
         ]);
     }
 
-    // 🔹 UNREAD COUNT
+    // UNREAD COUNT
     public function unreadCount($id)
     {
         return response()->json([
@@ -100,7 +100,7 @@ class NotificationController extends Controller
         ]);
     }
 
-    // 🔥 GET NOTIFICATIONS OF CURRENT USER
+    // GET NOTIFICATIONS OF CURRENT USER
     public function getByUser(Request $request)
     {
         $user = $request->user();
@@ -118,7 +118,7 @@ class NotificationController extends Controller
         );
     }
 
-    // 🔥 GET ALL CURRENT USER NOTIFICATIONS
+    // GET ALL CURRENT USER NOTIFICATIONS
     public function getCurrentUserNotifications(Request $request)
     {
         $user = $request->user();

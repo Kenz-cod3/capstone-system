@@ -300,12 +300,16 @@ export default function BookingDetails() {
 
                     <TouchableOpacity
                         onPress={handleBook}
-                        disabled={loading}
+                        disabled={loading || parsedRoom.status !== "available"}
                         activeOpacity={0.85}
                         className="rounded-2xl overflow-hidden flex-1"
                     >
                         <LinearGradient
-                            colors={loading ? ["#9ca3af", "#6b7280"] : ["#1a4a35", "#0d2e1f"]}
+                            colors={
+                                loading || parsedRoom.status !== "available"
+                                    ? ["#9ca3af", "#6b7280"]
+                                    : ["#1a4a35", "#0d2e1f"]
+                            }
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             className="flex-row items-center justify-center py-4 gap-2"
@@ -314,7 +318,11 @@ export default function BookingDetails() {
                                 className="text-white text-sm tracking-widest uppercase"
                                 style={{ fontFamily: "Georgia" }}
                             >
-                                {loading ? "Opening..." : "Reserve Now"}
+                                {loading
+                                    ? "Opening..."
+                                    : parsedRoom.status !== "available"
+                                        ? "Not Available"
+                                        : "Reserve Now"}
                             </Text>
                             {!loading && (
                                 <Ionicons name="arrow-forward" size={14} color="#c9a96e" />

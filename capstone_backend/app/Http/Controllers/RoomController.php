@@ -57,7 +57,7 @@ class RoomController extends Controller
         );
     }
 
-    // 🔥 LIGHTWEIGHT REALTIME ROOM GRID
+    // LIGHTWEIGHT REALTIME ROOM GRID
     public function statusGrid()
     {
         $rooms = Room::select(

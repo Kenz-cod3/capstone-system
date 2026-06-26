@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class EmailVerificationController extends Controller
 {
-    // 🔹 GET ALL VERIFICATIONS
+    // GET ALL VERIFICATIONS
     public function index()
     {
         return response()->json(
@@ -19,7 +19,7 @@ class EmailVerificationController extends Controller
         );
     }
 
-    // 🔹 CREATE EMAIL VERIFICATION
+    // CREATE EMAIL VERIFICATION
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -28,10 +28,10 @@ class EmailVerificationController extends Controller
 
         $user = User::findOrFail($validated['user_id']);
 
-        // 🔥 DELETE OLD TOKENS
+        // DELETE OLD TOKENS
         EmailVerification::where('user_id', $user->id)->delete();
 
-        // 🔥 CREATE TOKEN
+        // CREATE TOKEN
         $verification = EmailVerification::create([
             'user_id' => $user->id,
             'token' => Str::random(60),
@@ -44,7 +44,7 @@ class EmailVerificationController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE VERIFICATION
+    // GET SINGLE VERIFICATION
     public function show($id)
     {
         $verification = EmailVerification::with('user')
@@ -53,39 +53,39 @@ class EmailVerificationController extends Controller
         return response()->json($verification, 200);
     }
 
-    // 🔹 VERIFY EMAIL TOKEN
+    // VERIFY EMAIL TOKEN
     public function verify($token)
     {
         $verification = EmailVerification::where('token', $token)
             ->first();
 
-        // ❌ INVALID TOKEN
+        // INVALID TOKEN
         if (!$verification) {
             return response()->json([
                 'message' => 'Invalid token'
             ], 400);
         }
 
-        // ❌ ALREADY VERIFIED
+        // ALREADY VERIFIED
         if ($verification->verified_at) {
             return response()->json([
                 'message' => 'Email already verified'
             ], 400);
         }
 
-        // ❌ EXPIRED
+        // EXPIRED
         if (Carbon::now()->greaterThan($verification->expires_at)) {
             return response()->json([
                 'message' => 'Token expired'
             ], 400);
         }
 
-        // 🔥 MARK VERIFIED
+        // MARK VERIFIED
         $verification->update([
             'verified_at' => Carbon::now()
         ]);
 
-        // 🔥 UPDATE USER
+        // UPDATE USER
         $verification->user->update([
             'is_verified' => true,
             'email_verified_at' => Carbon::now()
@@ -96,7 +96,7 @@ class EmailVerificationController extends Controller
         ], 200);
     }
 
-    // 🔹 UPDATE VERIFICATION
+    // UPDATE VERIFICATION
     public function update(Request $request, $id)
     {
         $verification = EmailVerification::findOrFail($id);
@@ -113,7 +113,7 @@ class EmailVerificationController extends Controller
         ], 200);
     }
 
-    // 🔹 DELETE VERIFICATION
+    // DELETE VERIFICATION
     public function destroy($id)
     {
         $verification = EmailVerification::findOrFail($id);

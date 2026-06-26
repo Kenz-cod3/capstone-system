@@ -16,7 +16,7 @@ class OrderPayment extends Model
         'user_id'
     ];
 
-    public $timestamps = false; // 🔥 FIX HERE
+    public $timestamps = false;
 
     public function order()
     {

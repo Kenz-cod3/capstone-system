@@ -40,31 +40,31 @@ class Booking extends Model
         return $date->format('Y-m-d H:i:s');
     }
 
-    // 🔹 USER (ONLINE)
+    // USER (ONLINE)
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    // 🔹 WALK-IN GUEST
+    // WALK-IN GUEST
     public function walkInGuest()
     {
         return $this->belongsTo(WalkInGuest::class);
     }
 
-    // 🔹 CREATED BY USER (WHO CREATED THIS BOOKING)
-    public function createdBy()  // ✅ ADD THIS METHOD
+    // CREATED BY USER (WHO CREATED THIS BOOKING)
+    public function createdBy() 
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // 🔹 BOOKED ROOMS (PIVOT TABLE)
+    // BOOKED ROOMS (PIVOT TABLE)
     public function bookedRooms()
     {
         return $this->hasMany(BookedRoom::class);
     }
 
-    // 🔹 ROOMS (MAIN RELATION - IMPORTANT)
+    // ROOMS (MAIN RELATION - IMPORTANT)
     public function rooms()
     {
         return $this->belongsToMany(
@@ -75,13 +75,13 @@ class Booking extends Model
         )->withPivot('price_at_time_of_booking', 'subtotal', 'stay_type', 'check_out_time');
     }
 
-    // 🔹 ADD ONS (HAS MANY)
+    // ADD ONS (HAS MANY)
     public function bookingAddOns()
     {
         return $this->hasMany(BookingAddOn::class);
     }
 
-    // 🔹 ADD ONS (MANY TO MANY)
+    // ADD ONS (MANY TO MANY)
     public function addOns()
     {
         return $this->belongsToMany(
@@ -92,32 +92,32 @@ class Booking extends Model
         )->withPivot('quantity', 'subtotal');
     }
 
-    // 🔹 PAYMENTS
+    // PAYMENTS
     public function payments()
     {
         return $this->hasMany(BookingPayment::class);
     }
 
-    // 🔹 INVOICE
+    // INVOICE
     public function invoice()
     {
         return $this->hasOne(BookingInvoice::class);
     }
 
-    // 🔥 RELATION: ORDERS (restaurant orders)
+    // RELATION: ORDERS (restaurant orders)
     public function orders()
     {
         return $this->hasMany(Order::class);
     }
 
-    // 🔹 HISTORY (VERY IMPORTANT)
+    // HISTORY (VERY IMPORTANT)
     public function histories()
     {
         return $this->hasMany(BookingHistory::class)
             ->orderByDesc('changed_at');
     }
 
-    // 🔹 REVIEW
+    // REVIEW
     public function review()
     {
         return $this->hasOne(Review::class);
@@ -125,12 +125,12 @@ class Booking extends Model
 
     public function getGuestNameAttribute()
     {
-        // 🔹 ONLINE USER
+        // ONLINE USER
         if ($this->user) {
             return $this->user->first_name . ' ' . $this->user->last_name;
         }
 
-        // 🔹 WALK-IN GUEST
+        //  WALK-IN GUEST
         if ($this->walkInGuest) {
             return $this->walkInGuest->full_name;
         }

@@ -295,7 +295,7 @@ export default function Dashboard() {
             </Text>
           </View>
           <Text style={{ color: "white", fontSize: 28, fontWeight: "800", letterSpacing: -0.5, marginTop: 4 }}>
-            {firstName} 👋
+            {firstName}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
             <Calendar size={12} color="rgba(255,255,255,0.5)" />
@@ -412,7 +412,7 @@ export default function Dashboard() {
         ListEmptyComponent={
           loading ? null : (
             <View style={{ alignItems: "center", paddingTop: 60, paddingHorizontal: 40 }}>
-              <View style={{
+              {/* <View style={{
                 width: 80,
                 height: 80,
                 borderRadius: 40,
@@ -420,9 +420,9 @@ export default function Dashboard() {
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 20,
-              }}>
-                <Sparkles size={40} color="#10b981" strokeWidth={1.5} />
-              </View>
+              }}> */}
+                {/* <Sparkles size={40} color="#10b981" strokeWidth={1.5} /> */}
+              {/* </View> */}
               <Text style={{ fontSize: 22, fontWeight: "800", color: "#111827", textAlign: "center", letterSpacing: -0.5 }}>
                 All Clear!
               </Text>

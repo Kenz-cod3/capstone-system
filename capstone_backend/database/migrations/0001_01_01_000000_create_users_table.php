@@ -31,7 +31,7 @@ return new class extends Migration
         Schema::create('password_reset_tokens', function (Blueprint $table) {
             $table->id();
 
-            // ✅ FIXED FOREIGN KEY
+            // FIXED FOREIGN KEY
             $table->unsignedBigInteger('user_id');
 
             $table->string('token')->unique();
@@ -39,7 +39,7 @@ return new class extends Migration
             $table->timestamp('used_at')->nullable();
             $table->timestamps();
 
-            // ✅ ADD FOREIGN KEY MANUALLY
+            // ADD FOREIGN KEY MANUALLY
             $table->foreign('user_id')
                 ->references('id')
                 ->on('users')

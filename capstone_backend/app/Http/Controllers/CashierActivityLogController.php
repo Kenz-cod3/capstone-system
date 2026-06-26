@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class StaffActivityLogController extends Controller
 {
-    // 🔹 GET ALL LOGS
+    //  GET ALL LOGS
     public function index()
     {
         return response()->json(
@@ -16,7 +16,7 @@ class StaffActivityLogController extends Controller
         );
     }
 
-    // 🔹 CREATE LOG (MANUAL OR SYSTEM TRIGGERED)
+    // CREATE LOG (MANUAL OR SYSTEM TRIGGERED)
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -33,7 +33,7 @@ class StaffActivityLogController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE LOG
+    // GET SINGLE LOG
     public function show($id)
     {
         $log = StaffActivityLog::with('user')->findOrFail($id);
@@ -41,7 +41,7 @@ class StaffActivityLogController extends Controller
         return response()->json($log, 200);
     }
 
-    // ❌ UPDATE (DISABLED FOR AUDIT INTEGRITY)
+    // UPDATE (DISABLED FOR AUDIT INTEGRITY)
     public function update(Request $request, $id)
     {
         return response()->json([
@@ -49,7 +49,7 @@ class StaffActivityLogController extends Controller
         ], 403);
     }
 
-    // ❌ DELETE (DISABLED FOR AUDIT INTEGRITY)
+    // DELETE (DISABLED FOR AUDIT INTEGRITY)
     public function destroy($id)
     {
         return response()->json([

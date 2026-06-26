@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 
 class BookingInvoiceController extends Controller
 {
-    // 🔹 GET ALL INVOICES
+    // GET ALL INVOICES
     public function index()
     {
         return response()->json(
@@ -18,7 +18,7 @@ class BookingInvoiceController extends Controller
         );
     }
 
-    // 🔹 CREATE INVOICE
+    // CREATE INVOICE
     public function store(Request $request)
     {
         $validated = $request->validate([

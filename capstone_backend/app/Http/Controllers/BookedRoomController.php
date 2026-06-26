@@ -49,7 +49,7 @@ class BookedRoomController extends Controller
             'status' => 'occupied'
         ]);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        //  REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
@@ -107,7 +107,7 @@ class BookedRoomController extends Controller
             $bookedRoom->update($updateData);
         }
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        // REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([
@@ -130,7 +130,7 @@ class BookedRoomController extends Controller
 
         $bookedRoom->delete();
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        // REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([

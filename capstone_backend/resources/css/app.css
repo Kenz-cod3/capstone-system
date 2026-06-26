@@ -335,4 +335,20 @@
   .recharts-surface {
     outline: none !important;
   }
+
+  /* Mint green input border */
+  .mint-search-input {
+    border-color: #6ee7b7 !important;
+    border-radius: 12px !important;
+  }
+
+  .mint-search-input:hover {
+    border-color: #34d399 !important;
+  }
+
+  .mint-search-input:focus-within,
+  .mint-search-input.ant-input-affix-wrapper-focused {
+    border-color: #34d399 !important;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15) !important;
+  }
 }

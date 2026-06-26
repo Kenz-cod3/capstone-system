@@ -901,7 +901,7 @@ export default function Users() {
                         </Select>
                     </Form.Item>
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 mb-4">
-                        <p className="text-xs text-slate-500 font-medium mb-3">🔒 Password Change (optional)</p>
+                        <p className="text-xs text-slate-500 font-medium mb-3">Password Change (optional)</p>
                         <div className="grid grid-cols-2 gap-4">
                             <Form.Item name="password" label="New Password" style={{ marginBottom: 0 }} tooltip="Leave blank to keep current password">
                                 <AntInput.Password placeholder="New password" className="rounded-xl" />

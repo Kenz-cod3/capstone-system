@@ -30,14 +30,14 @@ class MessageController extends Controller
 
         $sender = \App\Models\User::findOrFail($validated['sender_id']);
 
-        // 🔥 VALIDATE ROLE RULES
+        // VALIDATE ROLE RULES
         foreach ($validated['targets'] as $target) {
 
             $receiver = \App\Models\User::findOrFail(
                 $target['target_id']
             );
 
-            // ❌ guest → staff NOT allowed
+            // guest → staff NOT allowed
             if (
                 $sender->role === 'guest' &&
                 $receiver->role === 'staff'
@@ -47,7 +47,7 @@ class MessageController extends Controller
                 ], 403);
             }
 
-            // ❌ staff → guest NOT allowed
+            // staff → guest NOT allowed
             if (
                 $sender->role === 'staff' &&
                 $receiver->role === 'guest'
@@ -57,7 +57,7 @@ class MessageController extends Controller
                 ], 403);
             }
 
-            // ❌ prevent self messaging
+            // prevent self messaging
             if ($sender->id === $receiver->id) {
                 return response()->json([
                     'error' => 'You cannot message yourself'
@@ -65,13 +65,13 @@ class MessageController extends Controller
             }
         }
 
-        // ✅ CREATE MESSAGE
+        // CREATE MESSAGE
         $message = Message::create([
             'sender_id' => $validated['sender_id'],
             'message' => $validated['content']
         ]);
 
-        // ✅ CREATE TARGETS
+        // CREATE TARGETS
         foreach ($validated['targets'] as $target) {
 
             MessageTarget::create([
@@ -81,10 +81,10 @@ class MessageController extends Controller
                 'is_read' => false
             ]);
 
-            // 🔥 REALTIME RECEIVER
+            // REALTIME RECEIVER
             $message->receiver_id = $target['target_id'];
 
-            // 🔥 BROADCAST
+            // BROADCAST
             broadcast(new MessageSent($message));
         }
 

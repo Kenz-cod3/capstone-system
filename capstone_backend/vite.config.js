@@ -12,16 +12,16 @@ export default defineConfig({
         react(),
     ],
     resolve: {
-        alias: {
+        alias: { 
             '@': path.resolve(__dirname, 'resources/js'),
         },
-    },
+    }, 
     server: {
         host: '0.0.0.0',
         port: 5173,
         strictPort: true,
         hmr: {
-            host: '10.210.240.76',
+            host: '10.99.189.76',
         },
         watch: {
             ignored: ['**/storage/framework/views/**'],

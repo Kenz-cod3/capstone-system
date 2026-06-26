@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 Route::middleware('auth:sanctum')->group(function () {
 
     // CASH
-    Route::apiResource('cash', CashTransactionController::class);
+    Route::apiResource('/cash', CashTransactionController::class);
 
     Route::get('/cash/expenses/total', [CashTransactionController::class, 'totalExpenses']);
 
@@ -18,7 +18,7 @@ Route::middleware('auth:sanctum')->group(function () {
         return CashCategory::all();
     });
 
-    // USERS (FILTERED ROLES 🔥)
+    // USERS (FILTERED ROLES)
     return User::whereIn(DB::raw('LOWER(role)'), [
         'staff',
         'housekeeper',

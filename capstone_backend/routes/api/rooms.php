@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\{
+    AmenityController,
     RoomController,
     RoomTypeController,
     RoomStatusHistoryController,
@@ -14,6 +15,7 @@ Route::get('/rooms/status-grid', [RoomController::class, 'statusGrid']);
 
 Route::apiResource('rooms', RoomController::class);
 Route::apiResource('room-types', RoomTypeController::class);
+Route::apiResource('amenities', AmenityController::class);
 Route::apiResource('room-status-history', RoomStatusHistoryController::class);
 Route::apiResource('room-images', RoomImageController::class);
 

@@ -70,10 +70,10 @@ export default function Login() {
                 window.location.replace("/dashboard");
             }
             else if (user.role === "staff") {
-                window.location.replace("/staff"); // 🧑‍💼 hotel staff
+                window.location.replace("/staff"); // hotel staff
             }
             else if (user.role === "cashier") {
-                window.location.replace("/restaurant"); // 🧑‍🍳 cashier
+                window.location.replace("/restaurant"); // cashier
             }
             else {
                 setError("Access denied.");

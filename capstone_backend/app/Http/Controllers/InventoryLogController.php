@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 
 class InventoryLogController extends Controller
 {
-    // 🔹 GET ALL LOGS
+    // GET ALL LOGS
     public function index()
     {
         return response()->json(
@@ -17,7 +17,7 @@ class InventoryLogController extends Controller
         );
     }
 
-    // 🔹 CREATE INVENTORY LOG
+    // CREATE INVENTORY LOG
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -30,7 +30,7 @@ class InventoryLogController extends Controller
 
         $menuItem = MenuItem::findOrFail($validated['menu_item_id']);
 
-        // 🔥 STOCK LOGIC
+        // STOCK LOGIC
         if ($validated['type'] === 'OUT') {
             if ($menuItem->stock < $validated['quantity']) {
                 return response()->json([
@@ -51,7 +51,7 @@ class InventoryLogController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE LOG
+    // GET SINGLE LOG
     public function show($id)
     {
         $log = InventoryLog::with(['menuItem', 'user'])->findOrFail($id);
@@ -59,7 +59,7 @@ class InventoryLogController extends Controller
         return response()->json($log, 200);
     }
 
-    // 🔹 UPDATE LOG (RARE – usually not allowed)
+    // UPDATE LOG (RARE – usually not allowed)
     public function update(Request $request, $id)
     {
         $log = InventoryLog::findOrFail($id);
@@ -76,7 +76,7 @@ class InventoryLogController extends Controller
         ], 200);
     }
 
-    // 🔹 DELETE LOG (NOT RECOMMENDED)
+    // DELETE LOG (NOT RECOMMENDED)
     public function destroy($id)
     {
         $log = InventoryLog::findOrFail($id);

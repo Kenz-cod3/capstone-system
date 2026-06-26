@@ -36,7 +36,7 @@ class User extends Authenticatable
         ];
     }
 
-    // 🔗 RELATIONSHIPS
+    // RELATIONSHIPS
 
     public function bookings()
     {
@@ -68,10 +68,10 @@ class User extends Authenticatable
         return $this->hasMany(Order::class, 'staff_id');
     }
 
-    public function orderInvoices()
-    {
-        return $this->hasMany(OrderInvoice::class, 'staff_id');
-    }
+    // public function orderInvoices()
+    // {
+    //     return $this->hasMany(OrderInvoice::class, 'staff_id');
+    // }
 
     public function orderPayments()
     {

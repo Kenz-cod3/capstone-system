@@ -38,14 +38,14 @@ class AuthController extends Controller
 
         if ($existingUser) {
 
-            // 🔴 IF VERIFIED → BLOCK
+            // IF VERIFIED → BLOCK
             if ($existingUser->is_verified) {
                 return response()->json([
                     'message' => 'Email already registered'
                 ], 400);
             }
 
-            // 🟡 IF NOT VERIFIED → RESEND OTP
+            // IF NOT VERIFIED → RESEND OTP
             $otp = rand(100000, 999999);
 
             $existingUser->otp = $otp;
@@ -147,7 +147,7 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // ✅ SUCCESS
+        // SUCCESS
         $user->otp = null;
         $user->is_verified = true;
         $user->email_verified_at = now();
@@ -215,7 +215,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // ✅ ONLY ADMIN + STAFF
+        // ONLY ADMIN + STAFF
         if (!in_array($user->role, ['admin', 'staff', 'cashier'])) {
             return response()->json([
                 'message' => 'Access Denied'
@@ -230,7 +230,7 @@ class AuthController extends Controller
 
         // $user->tokens()->delete();
 
-        // ✅ ADD THIS
+        // ADD THIS
         $user->last_login = now();
         $user->save();
 
@@ -309,7 +309,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // 🔥 ADD THIS (CRITICAL FIX)
+        // ADD THIS (CRITICAL FIX)
         if (!$user->is_active) {
             return response()->json([
                 'message' => 'Account inactive'
@@ -318,7 +318,7 @@ class AuthController extends Controller
 
         // $user->tokens()->delete();
 
-        // ✅ ADD THIS
+        // ADD THIS
         $user->last_login = now();
         $user->save();
 
@@ -329,7 +329,7 @@ class AuthController extends Controller
             $user->otp = $otp;
             $user->save();
 
-            // 🔥 SEND EMAIL
+            // SEND EMAIL
             $mail = new PHPMailer(true);
 
             try {

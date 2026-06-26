@@ -18,16 +18,16 @@ class BookingHistoryController extends Controller
             'booking.walkInGuest',
             'booking.addOns',
             'booking.rooms' => function ($q) {
-                // ✅ withTrashed() — rooms may be soft-deleted after checkout
-                // ✅ roomType     — needed for type_name, base_price, short_stay_price
-                // ✅ images       — needed to resolve image_url
+                //  withTrashed() — rooms may be soft-deleted after checkout
+                //  roomType     — needed for type_name, base_price, short_stay_price
+                //  images       — needed to resolve image_url
                 $q->withTrashed()->with(['roomType', 'images']);
             },
         ])
             ->orderByDesc('changed_at')
             ->get();
 
-        // ✅ Attach image_url to each room (consistent with BookingController::index)
+        //  Attach image_url to each room (consistent with BookingController::index)
         $histories->each(function ($history) {
             if (!$history->booking) return;
 
@@ -62,7 +62,7 @@ class BookingHistoryController extends Controller
             },
         ])->findOrFail($id);
 
-        // ✅ Same image_url resolution for single record
+        // Same image_url resolution for single record
         if ($history->booking) {
             foreach ($history->booking->rooms as $room) {
                 $validImages = $room->images->filter(function ($img) {

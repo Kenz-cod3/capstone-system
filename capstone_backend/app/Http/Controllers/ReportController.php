@@ -23,7 +23,7 @@ class ReportController extends Controller
             'total_bookings' => (clone $query)->count(),
             'checked_in' => (clone $query)->where('booking_status', 'checked_in')->count(),
 
-            // ✅ PAGINATED DATA
+            // PAGINATED DATA
             'bookings' => (clone $query)
                 ->latest()
                 ->paginate($request->per_page ?? 10),

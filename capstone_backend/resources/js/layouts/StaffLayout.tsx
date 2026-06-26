@@ -431,12 +431,12 @@ const StaffLayout = ({
                     href: "/walk-in-guests",
                     icon: UserPlus
                 },
-                {
-                    name: "Extend Booking",
-                    description: "Guest Extend Stay",
-                    href: "/extend-stay",
-                    icon: BookUser
-                },
+                // {
+                //     name: "Extend Booking",
+                //     description: "Guest Extend Stay",
+                //     href: "/extend-stay",
+                //     icon: BookUser
+                // },
                 {
                     name: "Cash",
                     description: "Cash Management",

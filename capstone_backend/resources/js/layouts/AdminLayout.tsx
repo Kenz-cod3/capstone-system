@@ -113,8 +113,8 @@ const AdminLayout = ({
     const routesMap: any = {
         "/dashboard": "Dashboard",
         "/bookings": "Bookings",
-        "/booking-transactions": "Booking List",
-        "/booking-receipts": "Booking Transaction",
+        "/booking-management": "Booking List",
+        "/booking-transaction": "Booking Transaction",
         "/incidents": "Incidents Reports",
         "/walk-in-guests": "Walk-in Guests",
         "/rooms": "Rooms",
@@ -125,7 +125,7 @@ const AdminLayout = ({
         "/staff": "System Users",
         "/housekeepers": "House Keepers",
         "/admin/menu": "Menu",
-        "/admin/orders": "Orders Report",
+        "/admin/orders": "Order Reports",
         "/reports": "Reports",
     };
 
@@ -542,17 +542,17 @@ const AdminLayout = ({
                         {
                             name: "Booking List",
                             description: "Manage booking list transactions",
-                            href: "/booking-transactions",
+                            href: "/booking-management",
                             icon: CalendarDays
                         },
                         {
                             name: "Booking Transactions",
                             description: "View and print transaction",
-                            href: "/booking-receipts",
+                            href: "/booking-transaction",
                             icon: ClipboardList
                         },
                         {
-                            name: "Incidents Rooms",
+                            name: "Room Incidents",
                             description: "View reported Incidents",
                             href: "/incidents",
                             icon: ClipboardList
@@ -730,8 +730,8 @@ const AdminLayout = ({
                                             className={`
                                                 relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer
                                                 ${isSubActive
-                                                    ? 'bg-emerald-500 text-white'
-                                                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                    : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
                                                 }
                                             `}
                                         >
@@ -741,7 +741,10 @@ const AdminLayout = ({
                                                     {subItem.name}
                                                 </span>
                                                 {subItem.description && (
-                                                    <p className={`text-[8px] truncate ${isSubActive ? 'text-emerald-100' : 'text-gray-400'}`}>
+                                                    <p
+                                                        className={`text-[8px] truncate ${isSubActive ? 'text-emerald-600' : 'text-gray-400'
+                                                            }`}
+                                                    >
                                                         {subItem.description}
                                                     </p>
                                                 )}
@@ -1316,10 +1319,19 @@ const AdminLayout = ({
                                     )}
                                 </Button>
 
-                                <div className="w-px h-4 bg-gray-300 hidden sm:block"></div>
-                                <h1 className="text-sm relative top-0.5 font-medium text-gray-600 tracking-wide select-none">
-                                    {getPageTitle()}
-                                </h1>
+                                <div className="relative right-2 h-4 w-[1.5px] bg-gray-300 rounded-sm hidden sm:block"></div>
+
+                                <div className="relative right-2 flex items-center gap-1 text-sm select-none">
+                                    <span className="text-gray-400">
+                                        Lynn Ennia's
+                                    </span>
+
+                                    <ChevronRight className="h-3 w-3 text-gray-400" />
+
+                                    <span className="font-medium text-gray-600">
+                                        {getPageTitle()}
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-1">

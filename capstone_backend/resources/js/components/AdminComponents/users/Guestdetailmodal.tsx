@@ -251,10 +251,9 @@ export default function GuestDetailModal({
 
     return (
         <div
-            className={`fixed inset-0 z-[1000] flex flex-col bg-white font-['DM_Sans',sans-serif] transition-transform duration-300 ease-out ${
-                isAnimating ? 'translate-y-0' : 'translate-y-full'
-            }`}
-            style={{ 
+            className={`fixed inset-0 z-[1000] flex flex-col bg-white font-['DM_Sans',sans-serif] transition-transform duration-300 ease-out ${isAnimating ? 'translate-y-0' : 'translate-y-full'
+                }`}
+            style={{
                 fontFamily: "'DM Sans', sans-serif",
                 transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
             }}
@@ -325,35 +324,30 @@ export default function GuestDetailModal({
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                                 {[
                                     {
-                                        icon: <HistoryOutlined style={{ fontSize: 22, color: "#3b82f6" }} />,
                                         label: "Total Visits",
                                         value: guestDetails.summary.total_bookings,
                                         valueClass: "text-[#1a1a18]",
                                     },
                                     {
-                                        icon: <DollarOutlined style={{ fontSize: 22, color: "#1e7a45" }} />,
                                         label: "Total Spent",
                                         value: formatCurrency(guestDetails.summary.total_spent),
                                         valueClass: "text-[#1e7a45]",
                                     },
                                     {
-                                        icon: <span style={{ fontSize: 20, color: "#c17a00", fontWeight: 700 }}>₱</span>,
                                         label: "Avg per Visit",
                                         value: formatCurrency(guestDetails.summary.average_spent),
                                         valueClass: "text-[#c17a00]",
                                     },
                                     {
-                                        icon: <CalendarOutlined style={{ fontSize: 22, color: "#8a8878" }} />,
                                         label: "First Visit",
                                         value: guestDetails.summary.first_visit
                                             ? dayjs(guestDetails.summary.first_visit).format("MMM DD, YYYY")
                                             : "No visits",
                                         valueClass: "text-[#1a1a18] text-base",
                                     },
-                                ].map(({ icon, label, value, valueClass }) => (
+                                ].map(({ label, value, valueClass }) => (
                                     <div key={label} className="bg-white rounded-2xl border border-[#e8e6df] shadow-sm p-5 flex flex-col gap-2">
                                         <div className="flex items-center gap-2">
-                                            {icon}
                                             <span className="text-[10px] font-bold uppercase tracking-widest text-[#8a8878]">{label}</span>
                                         </div>
                                         <p className={`text-2xl font-bold m-0 ${valueClass}`}>{value}</p>
@@ -370,8 +364,8 @@ export default function GuestDetailModal({
                                             key={tab}
                                             onClick={() => setActiveTab(tab)}
                                             className={`flex items-center gap-2 px-4 py-4 text-sm font-semibold transition-all border-b-2 -mb-px ${activeTab === tab
-                                                    ? "text-[#3eb489] border-[#3eb489]"
-                                                    : "text-[#8a8878] border-transparent hover:text-[#1a1a18]"
+                                                ? "text-[#3eb489] border-[#3eb489]"
+                                                : "text-[#8a8878] border-transparent hover:text-[#1a1a18]"
                                                 }`}
                                         >
                                             {tab === "overview" ? <InfoCircleOutlined /> : <HistoryOutlined />}

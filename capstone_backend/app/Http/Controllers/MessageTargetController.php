@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class MessageTargetController extends Controller
 {
-    // 🔹 GET ALL TARGETS
+    //  GET ALL TARGETS
     public function index()
     {
         return response()->json(
@@ -16,7 +16,7 @@ class MessageTargetController extends Controller
         );
     }
 
-    // 🔹 CREATE TARGET (RARE – usually from MessageController)
+    // CREATE TARGET (RARE – usually from MessageController)
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -35,7 +35,7 @@ class MessageTargetController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE TARGET
+    // GET SINGLE TARGET
     public function show($id)
     {
         $target = MessageTarget::with(['message', 'target'])->findOrFail($id);
@@ -43,7 +43,7 @@ class MessageTargetController extends Controller
         return response()->json($target, 200);
     }
 
-    // 🔹 UPDATE TARGET (MARK AS READ/UNREAD)
+    // UPDATE TARGET (MARK AS READ/UNREAD)
     public function update(Request $request, $id)
     {
         $target = MessageTarget::findOrFail($id);
@@ -65,7 +65,7 @@ class MessageTargetController extends Controller
         ], 200);
     }
 
-    // 🔹 DELETE TARGET
+    // DELETE TARGET
     public function destroy($id)
     {
         $target = MessageTarget::findOrFail($id);
@@ -76,7 +76,7 @@ class MessageTargetController extends Controller
         ], 200);
     }
 
-    // 🔥 CUSTOM: GET MESSAGES FOR A SPECIFIC TARGET (VERY IMPORTANT)
+    // CUSTOM: GET MESSAGES FOR A SPECIFIC TARGET (VERY IMPORTANT)
     public function getByTarget($target_id, $target_type)
     {
         $messages = MessageTarget::where('target_id', $target_id)

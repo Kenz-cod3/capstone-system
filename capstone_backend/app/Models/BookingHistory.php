@@ -21,7 +21,7 @@ class BookingHistory extends Model
         'changed_at'
     ];
 
-    // ✅ FIX: proper datetime
+    // proper datetime
     protected $casts = [
         'changed_at' => 'datetime',
         'is_override' => 'boolean'
@@ -32,7 +32,7 @@ class BookingHistory extends Model
         return $this->belongsTo(Booking::class);
     }
 
-    // ✅ FIX: no null crash (System fallback)
+    // System fallback
     public function user()
     {
         return $this->belongsTo(User::class, 'changed_by')

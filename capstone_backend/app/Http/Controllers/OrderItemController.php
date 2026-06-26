@@ -40,7 +40,7 @@ class OrderItemController extends Controller
             'subtotal' => $subtotal
         ]);
 
-        // 🔥 Update order total
+        // Update order total
         $order = Order::findOrFail($validated['order_id']);
         $newTotal = $order->items()->sum('subtotal');
         $order->update(['total_amount' => $newTotal]);
@@ -51,7 +51,7 @@ class OrderItemController extends Controller
         ], 201);
     }
 
-    // 🔹 GET SINGLE ITEM
+    // GET SINGLE ITEM
     public function show($id)
     {
         $item = OrderItem::with(['order', 'menuItem'])->findOrFail($id);
@@ -59,7 +59,7 @@ class OrderItemController extends Controller
         return response()->json($item, 200);
     }
 
-    // 🔹 UPDATE ITEM (CHANGE QUANTITY)
+    // UPDATE ITEM (CHANGE QUANTITY)
     public function update(Request $request, $id)
     {
         $item = OrderItem::findOrFail($id);
@@ -68,7 +68,7 @@ class OrderItemController extends Controller
             'quantity' => 'required|integer|min:1'
         ]);
 
-        // 🔥 FIX: gamitin tamang column
+        // FIX: gamitin tamang column
         $subtotal = $item->price_at_time_of_order * $validated['quantity'];
 
         $item->update([
@@ -76,7 +76,7 @@ class OrderItemController extends Controller
             'subtotal' => $subtotal
         ]);
 
-        // 🔥 Update order total
+        // Update order total
         $order = $item->order;
         $newTotal = $order->items()->sum('subtotal');
         $order->update(['total_amount' => $newTotal]);

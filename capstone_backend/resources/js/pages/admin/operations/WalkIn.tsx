@@ -27,28 +27,28 @@ import {
     Avatar
 } from "antd";
 import {
-    UserOutlined,
-    PhoneOutlined,
-    EnvironmentOutlined,
-    TeamOutlined,
-    PlusOutlined,
-    DeleteOutlined,
-    ApartmentOutlined,
-    CreditCardOutlined,
-    SearchOutlined,
-    UserAddOutlined,
-    CloseOutlined,
-    GiftOutlined,
-    MinusOutlined,
-    CheckCircleOutlined,
-    WalletOutlined,
-    CalendarOutlined,
-    HomeOutlined,
-    DownOutlined,
-    RightOutlined,
-    MailOutlined,
-    IdcardOutlined
-} from "@ant-design/icons";
+    User,
+    Phone,
+    MapPin,
+    Users,
+    Plus,
+    Trash2,
+    Building2,
+    CreditCard,
+    Search,
+    UserPlus,
+    X,
+    Gift,
+    Minus,
+    CheckCircle,
+    Wallet,
+    Calendar,
+    Home,
+    ChevronDown,
+    ChevronRight,
+    Mail,
+    IdCard
+} from "lucide-react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import api from "@/services/api";
@@ -164,7 +164,7 @@ function GuestCard({
                 >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <Avatar
-                            icon={<UserOutlined />}
+                            icon={<User size={20} />}
                             style={{ background: '#059669', width: 40, height: 40 }}
                         />
                         <div>
@@ -180,15 +180,15 @@ function GuestCard({
                         {!expanded && (
                             <div style={{ display: 'flex', gap: 8 }}>
                                 {selectedGuest.contact_number && (
-                                    <Tag icon={<PhoneOutlined />} color="default">{selectedGuest.contact_number}</Tag>
+                                    <Tag icon={<Phone size={12} />} color="default">{selectedGuest.contact_number}</Tag>
                                 )}
                             </div>
                         )}
-                        {expanded ? <DownOutlined /> : <RightOutlined />}
+                        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         <Button
                             size="small"
                             onClick={(e) => { e.stopPropagation(); onClearGuest(); }}
-                            icon={<CloseOutlined />}
+                            icon={<X size={14} />}
                         >
                             Change
                         </Button>
@@ -209,7 +209,7 @@ function GuestCard({
                                     {selectedGuest.contact_number && (
                                         <Col xs={24} sm={12}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <PhoneOutlined style={{ color: '#059669' }} />
+                                                <Phone size={16} style={{ color: '#059669' }} />
                                                 <div>
                                                     <Text type="secondary" style={{ fontSize: 12 }}>Contact Number</Text>
                                                     <div><Text>{selectedGuest.contact_number}</Text></div>
@@ -220,7 +220,7 @@ function GuestCard({
                                     {selectedGuest.address && (
                                         <Col xs={24} sm={12}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <EnvironmentOutlined style={{ color: '#059669' }} />
+                                                <MapPin size={16} style={{ color: '#059669' }} />
                                                 <div>
                                                     <Text type="secondary" style={{ fontSize: 12 }}>Address</Text>
                                                     <div><Text>{selectedGuest.address}</Text></div>
@@ -230,7 +230,7 @@ function GuestCard({
                                     )}
                                     <Col xs={24}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <IdcardOutlined style={{ color: '#059669' }} />
+                                            <IdCard size={16} style={{ color: '#059669' }} />
                                             <div>
                                                 <Text type="secondary" style={{ fontSize: 12 }}>Guest ID</Text>
                                                 <div><Text code>#{selectedGuest.id}</Text></div>
@@ -268,7 +268,7 @@ function GuestCard({
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Avatar icon={<UserOutlined />} style={{ background: '#9ca3af', width: 40, height: 40 }} />
+                    <Avatar icon={<User size={20} />} style={{ background: '#9ca3af', width: 40, height: 40 }} />
                     <div>
                         <Text strong style={{ fontSize: 16, color: '#111827' }}>Guest Information</Text>
                         <div style={{ fontSize: 12, color: '#6c757d' }}>Select or add a guest</div>
@@ -289,9 +289,19 @@ function GuestCard({
                                 label: (
                                     <div onClick={() => onSelectGuest(guest)} style={{ padding: 8 }}>
                                         <div><strong>{guest.full_name}</strong></div>
-                                        <div style={{ fontSize: 12, color: '#6c757d' }}>
-                                            {guest.contact_number && `📞 ${guest.contact_number}`}
-                                            {guest.address && ` 📍 ${guest.address}`}
+                                        <div style={{ fontSize: 12, color: '#6c757d', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            {guest.contact_number && (
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <Phone size={12} />
+                                                    {guest.contact_number}
+                                                </span>
+                                            )}
+                                            {guest.address && (
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <MapPin size={12} />
+                                                    {guest.address}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 )
@@ -301,14 +311,14 @@ function GuestCard({
                             <Input
                                 size="large"
                                 placeholder="Search existing guest by name, contact, or address..."
-                                prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
+                                prefix={<Search size={16} style={{ color: '#9ca3af' }} />}
                             />
                         </AutoComplete>
                     </Col>
                     <Col xs={24} md={6}>
                         <Button
                             size="large"
-                            icon={<UserAddOutlined />}
+                            icon={<UserPlus size={16} />}
                             onClick={onNewGuest}
                             block
                             style={{ borderColor: '#e5e7eb' }}
@@ -364,7 +374,7 @@ function RoomCard({ room, onRemove, onAddExtras, formatCurrency, formatDate, cal
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
                     <Avatar
-                        icon={<HomeOutlined />}
+                        icon={<Home size={20} />}
                         style={{ background: '#059669', width: 40, height: 40 }}
                     />
                     <div>
@@ -383,7 +393,7 @@ function RoomCard({ room, onRemove, onAddExtras, formatCurrency, formatDate, cal
                         </div>
                         {!expanded && (
                             <div style={{ fontSize: 12, color: '#6c757d', marginTop: 4 }}>
-                                <CalendarOutlined /> {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
+                                <Calendar size={12} style={{ marginRight: 4 }} /> {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
                             </div>
                         )}
                     </div>
@@ -393,11 +403,11 @@ function RoomCard({ room, onRemove, onAddExtras, formatCurrency, formatDate, cal
                     <Text strong style={{ fontSize: 18, color: '#059669' }}>
                         {formatCurrency(total)}
                     </Text>
-                    {expanded ? <DownOutlined /> : <RightOutlined />}
+                    {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     <Button
                         danger
                         size="small"
-                        icon={<DeleteOutlined />}
+                        icon={<Trash2 size={14} />}
                         onClick={(e) => { e.stopPropagation(); onRemove(room.id); }}
                     >
                         Remove
@@ -462,7 +472,7 @@ function RoomCard({ room, onRemove, onAddExtras, formatCurrency, formatDate, cal
 
                                 <Col xs={24}>
                                     <Button
-                                        icon={<GiftOutlined />}
+                                        icon={<Gift size={16} />}
                                         onClick={() => onAddExtras(room.id)}
                                         style={{ width: '100%', borderColor: '#e5e7eb' }}
                                     >
@@ -557,7 +567,7 @@ function AddOnsModal({ visible, onClose, onConfirm, initialSelected = [], roomNu
         <Modal
             title={
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <GiftOutlined style={{ color: '#059669', fontSize: '20px' }} />
+                    <Gift size={20} style={{ color: '#059669' }} />
                     <span style={{ fontSize: '18px', fontWeight: 600 }}>Add Extras & Amenities</span>
                     {roomNumber && roomNumber !== "" && (
                         <Tag color="green" style={{ marginLeft: '8px' }}>
@@ -578,7 +588,7 @@ function AddOnsModal({ visible, onClose, onConfirm, initialSelected = [], roomNu
                     type="primary"
                     onClick={handleConfirm}
                     style={{ background: '#059669', borderColor: '#059669' }}
-                    icon={<CheckCircleOutlined />}
+                    icon={<CheckCircle size={16} />}
                 >
                     Add to Booking ({selected.size} items)
                 </Button>
@@ -623,7 +633,7 @@ function AddOnsModal({ visible, onClose, onConfirm, initialSelected = [], roomNu
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                         <Button
                                             size="small"
-                                            icon={<MinusOutlined />}
+                                            icon={<Minus size={14} />}
                                             onClick={() => updateQuantity(addon, quantity - 1)}
                                             disabled={quantity === 0}
                                             style={{ borderRadius: '6px', width: '32px', height: '32px' }}
@@ -634,7 +644,7 @@ function AddOnsModal({ visible, onClose, onConfirm, initialSelected = [], roomNu
                                         <Button
                                             size="small"
                                             type="primary"
-                                            icon={<PlusOutlined />}
+                                            icon={<Plus size={14} />}
                                             onClick={() => updateQuantity(addon, quantity + 1)}
                                             style={{
                                                 borderRadius: '6px',
@@ -978,7 +988,7 @@ function WalkInContent() {
             message.success({
                 content: `Check-in successful! Guest checked into ${selectedRoomsDetails.length} room(s)`,
                 duration: 3,
-                icon: <CheckCircleOutlined />
+                icon: <CheckCircle size={20} />
             });
             setSelectedGuest(null);
             setSelectedRoomsDetails([]);
@@ -1062,7 +1072,7 @@ function WalkInContent() {
                                 borderRadius: 12,
                                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                             }}>
-                                <TeamOutlined style={{ fontSize: 28, color: 'white' }} />
+                                <Users size={28} color="white" />
                             </div>
                             <div>
                                 <Title level={3} style={{ margin: 0, color: '#111827' }}>Walk-In Guest Registration</Title>
@@ -1113,13 +1123,13 @@ function WalkInContent() {
                                         onClick={() => setAddRoomExpanded(!addRoomExpanded)}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                            <Avatar icon={<PlusOutlined />} style={{ background: '#059669', width: 40, height: 40 }} />
+                                            <Avatar icon={<Plus size={20} />} style={{ background: '#059669', width: 40, height: 40 }} />
                                             <div>
                                                 <Text strong style={{ fontSize: 16, color: '#111827' }}>Add Room</Text>
                                                 <div style={{ fontSize: 12, color: '#6c757d' }}>Select room and stay details</div>
                                             </div>
                                         </div>
-                                        {addRoomExpanded ? <DownOutlined /> : <RightOutlined />}
+                                        {addRoomExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                     </div>
 
                                     <AnimatePresence>
@@ -1215,7 +1225,7 @@ function WalkInContent() {
                                                     <div style={{ marginTop: 16, textAlign: 'right' }}>
                                                         <Button
                                                             type="primary"
-                                                            icon={<PlusOutlined />}
+                                                            icon={<Plus size={16} />}
                                                             onClick={() => {
                                                                 if (selectedRoomValue) {
                                                                     addRoom(selectedRoomValue, newRoomStayType, newRoomCheckIn, newRoomCheckOut);
@@ -1297,7 +1307,7 @@ function WalkInContent() {
                                                             ))}
                                                         </div>
                                                         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                                                            <CalendarOutlined /> {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
+                                                            <Calendar size={12} style={{ marginRight: 4 }} /> {formatDate(room.check_in_date)} → {formatDate(room.check_out_date)}
                                                         </Text>
                                                     </div>
                                                 );
@@ -1386,7 +1396,7 @@ function WalkInContent() {
                                     type="primary"
                                     size="large"
                                     block
-                                    icon={<CreditCardOutlined />}
+                                    icon={<CreditCard size={16} />}
                                     onClick={handleSubmit}
                                     loading={loading}
                                     disabled={selectedRoomsDetails.length === 0 || !selectedGuest}
@@ -1428,7 +1438,7 @@ function WalkInContent() {
                             ...newGuestForm,
                             first_name: e.target.value
                         })}
-                        prefix={<UserOutlined />}
+                        prefix={<User size={16} />}
                         size="large"
                     />
 
@@ -1439,7 +1449,7 @@ function WalkInContent() {
                             ...newGuestForm,
                             middle_name: e.target.value
                         })}
-                        prefix={<UserOutlined />}
+                        prefix={<User size={16} />}
                         size="large"
                     />
 
@@ -1450,21 +1460,21 @@ function WalkInContent() {
                             ...newGuestForm,
                             last_name: e.target.value
                         })}
-                        prefix={<UserOutlined />}
+                        prefix={<User size={16} />}
                         size="large"
                     />
                     <Input
                         placeholder="Contact Number"
                         value={newGuestForm.contact_number}
                         onChange={e => setNewGuestForm({ ...newGuestForm, contact_number: e.target.value })}
-                        prefix={<PhoneOutlined />}
+                        prefix={<Phone size={16} />}
                         size="large"
                     />
                     <Input
                         placeholder="Address"
                         value={newGuestForm.address}
                         onChange={e => setNewGuestForm({ ...newGuestForm, address: e.target.value })}
-                        prefix={<EnvironmentOutlined />}
+                        prefix={<MapPin size={16} />}
                         size="large"
                     />
                 </div>
