@@ -204,6 +204,12 @@ class BookingPaymentController extends Controller
             ->whereKey($validated['booked_room_id'])
             ->firstOrFail();
 
+        $bookedRoom->load('bookingAddOns');
+
+        $refundAmount =
+            $bookedRoom->subtotal +
+            $bookedRoom->bookingAddOns->sum('subtotal');
+
         if (!in_array($bookedRoom->status, [
             'confirmed',
             'checked_in',
@@ -248,7 +254,8 @@ class BookingPaymentController extends Controller
                 'receipt_number'  => $receiptNumber,
 
                 // Always positive
-                'amount'          => $bookedRoom->subtotal,
+                // 'amount'          => $bookedRoom->subtotal,
+                'amount' => $refundAmount,
 
                 'payment_method'  => $latestPayment?->payment_method ?? 'cash',
                 'payment_status'  => 'refunded',
@@ -281,14 +288,29 @@ class BookingPaymentController extends Controller
             }
 
             // Update booking total
+            $remainingTotal = 0;
+
+            $remainingRooms = $booking->bookedRooms()
+                ->whereNotIn('status', ['refunded', 'cancelled'])
+                ->with('bookingAddOns')
+                ->get();
+
+            foreach ($remainingRooms as $room) {
+                $remainingTotal += $room->subtotal;
+                $remainingTotal += $room->bookingAddOns->sum('subtotal');
+            }
+
             $booking->update([
-                'total_price' => $booking->bookedRooms()
-                    ->whereNotIn('status', [
-                        'refunded',
-                        'cancelled'
-                    ])
-                    ->sum('subtotal')
+                'total_price' => $remainingTotal,
             ]);
+            // $booking->update([
+            //     'total_price' => $booking->bookedRooms()
+            //         ->whereNotIn('status', [
+            //             'refunded',
+            //             'cancelled'
+            //         ])
+            //         ->sum('subtotal')
+            // ]);
 
             // Update shift cash
             if ($shift) {

@@ -204,7 +204,7 @@ const AdminLayout = ({
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.shiftKey && e.key.toLowerCase() === "f") {
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
                 e.preventDefault();
 
                 setIsTransitioning(true);

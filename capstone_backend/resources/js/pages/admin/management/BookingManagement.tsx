@@ -86,6 +86,7 @@ interface BookingPayment {
         id: number;
         first_name: string;
         last_name: string;
+        role?: string;
     };
 }
 
@@ -283,6 +284,16 @@ interface Booking {
     payments?: BookingPayment[];
 }
 
+// interface BookingRow extends Booking {
+//     booked_room_id: number;
+//     room?: Room;
+//     status: string;
+//     stay_type: "overnight" | "short_stay";
+//     subtotal: number;
+//     is_extended: boolean;
+//     check_in_date: string;
+//     check_out_date: string;
+// }
 interface BookingRow extends Booking {
     booked_room_id: number;
     room?: Room;
@@ -292,6 +303,17 @@ interface BookingRow extends Booking {
     is_extended: boolean;
     check_in_date: string;
     check_out_date: string;
+
+    booking_add_ons?: {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: {
+            id: number;
+            add_on_name: string;
+            price: number;
+        };
+    }[];
 }
 
 interface ExtendResponse {
@@ -403,7 +425,13 @@ export default function Bookings() {
 
     // Fetch all booked rooms based on active tab using the booked-rooms endpoints
     const bookingQuery = useQuery({
-        queryKey: ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+        queryKey: [
+            "booked-rooms",
+            activeTab,
+            currentPage,
+            pageSize,
+            searchText,
+        ],
         queryFn: async () => {
             let endpoint = "/booked-rooms";
 
@@ -422,14 +450,16 @@ export default function Bookings() {
             });
 
             if (searchText.trim()) {
-                params.append('search', searchText.trim());
+                params.append("search", searchText.trim());
             }
 
-            const { data } = await api.get<PaginatedResponse>(`${endpoint}?${params.toString()}`);
-            
+            const { data } = await api.get<PaginatedResponse>(
+                `${endpoint}?${params.toString()}`,
+            );
+
             // Update total from response
             setTotal(data.total || 0);
-            
+
             return data.data || [];
         },
         staleTime: 30000,
@@ -505,6 +535,7 @@ export default function Bookings() {
             status: bookedRoom.status,
             subtotal: Number(bookedRoom.subtotal),
             is_extended: bookedRoom.is_extended,
+            booking_add_ons: bookedRoom.booking_add_ons || [],
         } as BookingRow;
     });
 
@@ -696,7 +727,13 @@ export default function Bookings() {
 
                 // Update local state
                 queryClient.setQueryData(
-                    ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                    [
+                        "booked-rooms",
+                        activeTab,
+                        currentPage,
+                        pageSize,
+                        searchText,
+                    ],
                     (old: BookedRoom[] | undefined) => {
                         if (!old) return old;
                         return old.map((bookedRoom) =>
@@ -794,7 +831,13 @@ export default function Bookings() {
                     status: "checked_out" as BookedRoom["status"],
                 };
                 queryClient.setQueryData(
-                    ["booked-rooms", "history", currentPage, pageSize, searchText],
+                    [
+                        "booked-rooms",
+                        "history",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                    ],
                     (old: BookedRoom[] | undefined) => {
                         return [updatedBookedRoom, ...(old || [])];
                     },
@@ -853,7 +896,13 @@ export default function Bookings() {
                         );
 
                         queryClient.setQueryData(
-                            ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                            [
+                                "booked-rooms",
+                                activeTab,
+                                currentPage,
+                                pageSize,
+                                searchText,
+                            ],
                             (old: BookedRoom[] | undefined) => {
                                 if (!old) return old;
                                 return old.map((b) =>
@@ -933,7 +982,13 @@ export default function Bookings() {
             const deletedItem = bookings.find((b) => b.id === record.id);
             if (deletedItem) {
                 queryClient.setQueryData(
-                    ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                    [
+                        "booked-rooms",
+                        "trash",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                    ],
                     (old: BookedRoom[] | undefined) => {
                         return [deletedItem, ...(old || [])];
                     },
@@ -987,7 +1042,13 @@ export default function Bookings() {
                 };
                 delete cleanRestored.deleted_at;
                 queryClient.setQueryData(
-                    ["booked-rooms", "active", currentPage, pageSize, searchText],
+                    [
+                        "booked-rooms",
+                        "active",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                    ],
                     (old: BookedRoom[] | undefined) => {
                         return [cleanRestored, ...(old || [])];
                     },
@@ -1027,7 +1088,13 @@ export default function Bookings() {
                     );
 
                     queryClient.setQueryData(
-                        ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                        [
+                            "booked-rooms",
+                            "trash",
+                            currentPage,
+                            pageSize,
+                            searchText,
+                        ],
                         (old: BookedRoom[] | undefined) => {
                             if (!old) return old;
                             return old.filter((b) => b.id !== record.id);
@@ -1561,12 +1628,17 @@ export default function Bookings() {
             width: "8%",
             render: (_: any, record: BookingRow) => {
                 const addOnTotal =
-                    record.booked_rooms
-                        ?.find((br) => br.id === record.booked_room_id)
-                        ?.booking_add_ons?.reduce(
-                            (sum, addon) => sum + Number(addon.subtotal ?? 0),
-                            0,
-                        ) ?? 0;
+                    record.booking_add_ons?.reduce(
+                        (sum, addon) => sum + Number(addon.subtotal ?? 0),
+                        0,
+                    ) ?? 0;
+                // const addOnTotal =
+                //     record.booked_rooms
+                //         ?.find((br) => br.id === record.booked_room_id)
+                //         ?.booking_add_ons?.reduce(
+                //             (sum, addon) => sum + Number(addon.subtotal ?? 0),
+                //             0,
+                //         ) ?? 0;
 
                 const total = Number(record.subtotal) + addOnTotal;
 
@@ -1649,7 +1721,7 @@ export default function Bookings() {
 
     const renderPagination = () => {
         const totalPages = Math.ceil(totalRows / pageSize) || 1;
-        
+
         return (
             <div
                 style={{
@@ -1666,7 +1738,9 @@ export default function Bookings() {
                     <Button
                         size="small"
                         disabled={currentPage === 1 || bookingQuery.isLoading}
-                        onClick={() => setCurrentPage((prev: number) => prev - 1)}
+                        onClick={() =>
+                            setCurrentPage((prev: number) => prev - 1)
+                        }
                         style={{ borderRadius: "8px" }}
                     >
                         Prev
@@ -1679,10 +1753,11 @@ export default function Bookings() {
                     <Button
                         size="small"
                         disabled={
-                            currentPage >= totalPages ||
-                            bookingQuery.isLoading
+                            currentPage >= totalPages || bookingQuery.isLoading
                         }
-                        onClick={() => setCurrentPage((prev: number) => prev + 1)}
+                        onClick={() =>
+                            setCurrentPage((prev: number) => prev + 1)
+                        }
                         style={{ borderRadius: "8px" }}
                     >
                         Next
@@ -1692,7 +1767,13 @@ export default function Bookings() {
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <Text style={{ fontSize: "13px" }}>Total: {totalRows}</Text>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                        }}
+                    >
                         <Text style={{ fontSize: "13px" }}>Rows:</Text>
                         <select
                             value={pageSize}
@@ -1818,7 +1899,20 @@ export default function Bookings() {
 
         const displayAddOns = getBookingAddOns();
         const displayPayments = getPayments();
-        const firstPayment = displayPayments[0];
+        const roomStatus = (selectedBookedRoom as any)?.status ?? "pending";
+
+        const paymentStatus = roomStatus === "refunded" ? "refunded" : "paid";
+
+        const paymentToShow =
+            paymentStatus === "refunded"
+                ? displayPayments.find((p) => p.payment_status === "refunded")
+                : displayPayments.find((p) => p.payment_status === "paid");
+
+        const receiverLabel =
+            paymentStatus === "refunded" ? "Refunded By" : "Received By";
+
+        const paymentDateLabel =
+            paymentStatus === "refunded" ? "Refund Date" : "Payment Date";
 
         return (
             <Drawer
@@ -2468,84 +2562,135 @@ export default function Bookings() {
                         marginBottom: 16,
                         borderRadius: "12px",
                         border: "1px solid #f0f0f0",
+                        position: "relative",
+                        overflow: "hidden",
                     }}
                 >
+                    {/* {firstPayment?.payment_status === "refunded" && ( */}
+                    {paymentStatus === "refunded" && (
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: "50%",
+                                left: "50%",
+                                transform:
+                                    "translate(-50%, -50%) rotate(-18deg)",
+                                zIndex: 100,
+
+                                pointerEvents: "none",
+
+                                border: "5px double #d9363e",
+                                color: "#d9363e",
+
+                                padding: "12px 36px",
+                                borderRadius: 8,
+
+                                fontSize: 42,
+                                fontWeight: 900,
+                                letterSpacing: 3,
+
+                                opacity: 0.4,
+
+                                background: "rgba(255,255,255,0.12)",
+
+                                textTransform: "uppercase",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            REFUNDED
+                        </div>
+                    )}
                     <div style={{ marginBottom: 16 }}>
                         <div style={{ marginBottom: 8 }}>
                             <Text type="secondary">Payment Method:</Text>
                             <Tag color="green" style={{ marginLeft: 8 }}>
-                                {firstPayment?.payment_method?.toUpperCase() ||
+                                {paymentToShow?.payment_method?.toUpperCase() ||
                                     "N/A"}
                             </Tag>
                         </div>
+
                         <div style={{ marginBottom: 8 }}>
                             <Text type="secondary">Payment Status:</Text>
                             <Tag
-                                color={getPaymentStatusColor(
-                                    firstPayment?.payment_status ?? "pending",
-                                )}
+                                color={getPaymentStatusColor(paymentStatus)}
                                 style={{ marginLeft: 8 }}
                             >
-                                {(firstPayment?.payment_status ?? "pending")
-                                    .replace(/_/g, " ")
-                                    .toUpperCase()}
+                                {paymentStatus.toUpperCase()}
                             </Tag>
                         </div>
-                        {firstPayment?.payment_method !== "cash" && (
-                            <div>
+
+                        {paymentToShow?.payment_method !== "cash" && (
+                            <div style={{ marginTop: 8 }}>
                                 <Text type="secondary">Reference:</Text>
                                 <Text strong style={{ marginLeft: 8 }}>
-                                    {firstPayment?.gcash_reference ||
-                                        firstPayment?.bank_reference ||
+                                    {paymentToShow?.gcash_reference ||
+                                        paymentToShow?.bank_reference ||
                                         "N/A"}
                                 </Text>
                             </div>
                         )}
-                        {firstPayment?.receipt_number && (
+
+                        {paymentToShow?.receipt_number && (
                             <div style={{ marginTop: 8 }}>
                                 <Text type="secondary">Receipt Number:</Text>
                                 <Text strong style={{ marginLeft: 8 }}>
-                                    {firstPayment.receipt_number}
+                                    {paymentToShow.receipt_number}
                                 </Text>
                             </div>
                         )}
-                        {firstPayment?.payment_date && (
+
+                        {paymentToShow?.payment_date && (
                             <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Payment Date:</Text>
+                                <Text type="secondary">
+                                    {paymentDateLabel}:
+                                </Text>
+
                                 <Text strong style={{ marginLeft: 8 }}>
-                                    {formatDateTime(firstPayment.payment_date)}
+                                    {formatDateTime(paymentToShow.payment_date)}
                                 </Text>
                             </div>
                         )}
-                        {firstPayment?.receiver && (
+
+                        {paymentToShow?.receiver && (
                             <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Received By:</Text>
+                                <Text type="secondary">{receiverLabel}:</Text>
+
                                 <Text strong style={{ marginLeft: 8 }}>
-                                    {firstPayment.receiver.first_name}{" "}
-                                    {firstPayment.receiver.last_name}
+                                    {paymentToShow.receiver.first_name}{" "}
+                                    {paymentToShow.receiver.last_name}
+                                    <Text type="secondary">
+                                        {" "}
+                                        ({paymentToShow.receiver.role})
+                                    </Text>
                                 </Text>
                             </div>
                         )}
-                        {displayPayments.length > 1 && (
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Total Payments:</Text>
-                                <Text
-                                    strong
-                                    style={{ marginLeft: 8, color: "#52c41a" }}
-                                >
-                                    ₱
-                                    {displayPayments
-                                        .reduce(
-                                            (sum, p) => sum + Number(p.amount),
-                                            0,
-                                        )
-                                        .toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        })}
-                                </Text>
-                            </div>
-                        )}
+
+                        <div style={{ marginTop: 8 }}>
+                            <Text type="secondary">
+                                {paymentStatus === "refunded"
+                                    ? "Refund Amount"
+                                    : "Amount Paid"}
+                                :
+                            </Text>
+
+                            <Text
+                                strong
+                                style={{
+                                    marginLeft: 8,
+                                    color:
+                                        paymentStatus === "refunded"
+                                            ? "#cf1322"
+                                            : "#52c41a",
+                                }}
+                            >
+                                ₱
+                                {paymentSubtotal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
+                            </Text>
+                        </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                         <div style={{ marginBottom: 8 }}>
@@ -2890,4 +3035,4 @@ export default function Bookings() {
             {renderBookingDetails()}
         </div>
     );
-}   
+}

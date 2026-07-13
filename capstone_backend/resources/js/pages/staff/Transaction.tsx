@@ -320,7 +320,7 @@ export default function TransactionsPage() {
         "Booking Type",
         "Rooms",
         "Total Rooms",
-        "Amount",
+        "Amount Recieved",
         "Date",
     ];
     const pageSizeOptions = [
@@ -547,7 +547,7 @@ export default function TransactionsPage() {
                                                   </span>
                                               </td>
 
-                                              <td className="px-4 py-3.5 text-left">
+                                              <td className="px-4 py-3.5 text-center">
                                                   <span className="font-bold text-[#16a34a] text-[15px]">
                                                       ₱
                                                       {Number(
@@ -740,26 +740,80 @@ export default function TransactionsPage() {
                                 return (
                                     <div
                                         key={index}
-                                        className="border border-[#e8e6df] rounded-xl p-4 bg-[#faf9f6]"
+                                        className="relative overflow-hidden border border-[#e8e6df] rounded-xl p-4 bg-[#faf9f6]"
                                     >
-                                        {/* Header */}
-                                        <div className="relative">
-                                            {(refunded || cancelled) && (
-                                                <div className="absolute -top-3 -right-3 z-10">
+                                        {(refunded || cancelled) && (
+                                            <div
+                                                className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                                style={{ zIndex: 20 }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        width: 180,
+                                                        height: 180,
+                                                        borderRadius: "50%",
+                                                        border: refunded
+                                                            ? "6px double #cf1322"
+                                                            : "6px double #595959",
+                                                        boxShadow: refunded
+                                                            ? "0 0 0 3px rgba(207,19,34,.15)"
+                                                            : "0 0 0 3px rgba(89,89,89,.15)",
+
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        justifyContent:
+                                                            "center",
+                                                        alignItems: "center",
+
+                                                        color: refunded
+                                                            ? "#cf1322"
+                                                            : "#595959",
+
+                                                        opacity: 0.22,
+
+                                                        transform:
+                                                            "rotate(-18deg)",
+                                                    }}
+                                                >
                                                     <div
-                                                        className={`text-white text-[10px] font-extrabold uppercase px-4 py-1 rounded-full shadow-lg border-2 border-white rotate-12 ${
-                                                            refunded
-                                                                ? "bg-red-600"
-                                                                : "bg-gray-600"
-                                                        }`}
+                                                        style={{
+                                                            fontSize: 13,
+                                                            letterSpacing: 4,
+                                                            fontWeight: 700,
+                                                        }}
+                                                    >
+                                                        LYNN ENNIA'S
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            fontSize: 28,
+                                                            fontWeight: 900,
+                                                            letterSpacing: 4,
+                                                            lineHeight: 1.15,
+                                                        }}
                                                     >
                                                         {refunded
                                                             ? "REFUNDED"
                                                             : "CANCELLED"}
                                                     </div>
-                                                </div>
-                                            )}
 
+                                                    <div
+                                                        style={{
+                                                            fontSize: 12,
+                                                            letterSpacing: 3,
+                                                            marginTop: 4,
+                                                        }}
+                                                    >
+                                                        TRAVELERS INN
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Card Content */}
+                                        <div className="relative z-10">
+                                            {/* Header */}
                                             <div className="flex items-center justify-between mb-4">
                                                 <p
                                                     className={`font-bold ${
@@ -789,57 +843,59 @@ export default function TransactionsPage() {
                                                         : "Overnight"}
                                                 </span>
                                             </div>
-                                        </div>
 
-                                        {/* Dates */}
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-xs text-[#8a8878]">
-                                                    Check In
-                                                </p>
+                                            {/* Dates */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p className="text-xs text-[#8a8878]">
+                                                        Check In
+                                                    </p>
 
-                                                <p className="font-semibold text-[#1a1a18]">
-                                                    {stay.check_in_date
-                                                        ? new Date(
-                                                              stay.check_in_date,
-                                                          ).toLocaleDateString(
-                                                              "en-PH",
-                                                          )
-                                                        : "—"}
-                                                </p>
+                                                    <p className="font-semibold text-[#1a1a18]">
+                                                        {stay.check_in_date
+                                                            ? new Date(
+                                                                  stay.check_in_date,
+                                                              ).toLocaleDateString(
+                                                                  "en-PH",
+                                                              )
+                                                            : "—"}
+                                                    </p>
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-xs text-[#8a8878]">
+                                                        Check Out
+                                                    </p>
+
+                                                    <p className="font-semibold text-[#1a1a18]">
+                                                        {stay.check_out_date
+                                                            ? new Date(
+                                                                  stay.check_out_date,
+                                                              ).toLocaleDateString(
+                                                                  "en-PH",
+                                                              )
+                                                            : "—"}
+                                                    </p>
+                                                </div>
                                             </div>
 
-                                            <div>
-                                                <p className="text-xs text-[#8a8878]">
-                                                    Check Out
-                                                </p>
+                                            <Divider
+                                                style={{ margin: "12px 0" }}
+                                            />
 
-                                                <p className="font-semibold text-[#1a1a18]">
-                                                    {stay.check_out_date
-                                                        ? new Date(
-                                                              stay.check_out_date,
-                                                          ).toLocaleDateString(
-                                                              "en-PH",
-                                                          )
-                                                        : "—"}
-                                                </p>
+                                            {/* Amount */}
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs text-[#8a8878]">
+                                                    Room Amount
+                                                </span>
+
+                                                <span className="font-bold text-[#1e7a45] text-[15px]">
+                                                    ₱
+                                                    {Number(
+                                                        stay.subtotal || 0,
+                                                    ).toLocaleString()}
+                                                </span>
                                             </div>
-                                        </div>
-
-                                        <Divider style={{ margin: "12px 0" }} />
-
-                                        {/* Amount */}
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs text-[#8a8878]">
-                                                Room Amount
-                                            </span>
-
-                                            <span className="font-bold text-[#1e7a45] text-[15px]">
-                                                ₱
-                                                {Number(
-                                                    stay.subtotal || 0,
-                                                ).toLocaleString()}
-                                            </span>
                                         </div>
                                     </div>
                                 );
