@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Facades\Broadcast;
 
-// 🔥 IMPORTANT
+// IMPORTANT
 Broadcast::routes([
     'middleware' => ['auth:sanctum'],
 ]);
@@ -11,12 +11,12 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
-// 🔥 NOTIFICATIONS
+// NOTIFICATIONS
 Broadcast::channel('notifications.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
-// 🔥 CHAT
+// CHAT
 Broadcast::channel('chat.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });

@@ -8,12 +8,7 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-} from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 
@@ -42,7 +37,6 @@ type Message = {
 };
 
 export default function Chat() {
-
   const { user } = useAuthStore();
 
   const router = useRouter();
@@ -55,67 +49,49 @@ export default function Chat() {
 
   const name = params.name as string;
 
-  const [messages, setMessages] =
-    useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const [text, setText] = useState("");
 
-  const [inputHeight, setInputHeight] =
-    useState(45);
+  const [inputHeight, setInputHeight] = useState(45);
 
-  const flatListRef =
-    useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  const inputRef =
-    useRef<TextInput>(null);
+  const inputRef = useRef<TextInput>(null);
 
-  // 🔥 FETCH
+  // FETCH
   const fetchMessages = async () => {
-
     try {
-
       const res = await api.get(
-        `/messages/conversation/${user.id}/${otherUserId}`
+        `/messages/conversation/${user.id}/${otherUserId}`,
       );
 
-      const data = Array.isArray(res.data)
-        ? res.data
-        : [];
+      const data = Array.isArray(res.data) ? res.data : [];
 
       setMessages((prev) =>
         data.map((msg: any) => {
-
-          const existing = prev.find(
-            (p) => p.id === msg.id
-          );
+          const existing = prev.find((p) => p.id === msg.id);
 
           return {
             ...msg,
-            status:
-              existing?.status || "sent",
+            status: existing?.status || "sent",
           };
-        })
+        }),
       );
-
     } catch (error) {
-
-      console.log(
-        "❌ FETCH ERROR:",
-        error
-      );
+      console.log("❌ FETCH ERROR:", error);
     }
   };
 
-  // 🔥 SEND
+  // SEND
   const sendMessage = async () => {
-
     if (!text.trim()) return;
 
     const tempId = Date.now();
 
     const messageToSend = text;
 
-    // 🔥 INSTANT UI
+    // INSTANT UI
     setMessages((prev) => [
       ...prev,
       {
@@ -137,153 +113,118 @@ export default function Chat() {
     setInputHeight(45);
 
     try {
-
-      await api.post("/messages", {
-
+      const res = await api.post("/messages", {
         sender_id: user.id,
-
         content: messageToSend,
-
         targets: [
           {
-            target_id: otherUserId,
-            target_type:
-              "App\\Models\\User",
+            target_id: Number(otherUserId),
           },
         ],
       });
 
-      // ✅ SENT
+      const messageData = res.data.data;
+      const realTarget = messageData.targets[0];
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
             ? {
-              ...m,
-              status: "sent",
-            }
-            : m
-        )
+                ...m,
+                id: realTarget.id,
+                is_read: realTarget.is_read,
+                message: {
+                  message: messageData.message,
+                  sender_id: messageData.sender_id,
+                },
+                status: "sent",
+              }
+            : m,
+        ),
       );
-
     } catch (err) {
-
       console.log(err);
 
-      // ❌ FAILED
+      // FAILED
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
             ? {
-              ...m,
-              status: "failed",
-            }
-            : m
-        )
+                ...m,
+                status: "failed",
+              }
+            : m,
+        ),
       );
     }
   };
 
-  // 🔥 INITIAL LOAD ONLY
+  // INITIAL LOAD ONLY
   useFocusEffect(
     useCallback(() => {
-
       const load = async () => {
-
         await fetchMessages();
 
-        await api.put(
-          `/messages/read/${user.id}/${otherUserId}`
-        );
+        await api.put(`/messages/read/${user.id}/${otherUserId}`);
       };
 
       load();
-
-    }, [otherUserId])
+    }, [otherUserId]),
   );
 
-  // 🔥 REALTIME
+  // REALTIME
   useEffect(() => {
-
     if (!user?.id) return;
 
-    console.log(
-      "📱 MOBILE REALTIME READY"
+    console.log("📱 MOBILE REALTIME READY");
+
+    const disconnect = connectRealtime(
+      user.id,
+
+      () => {},
+
+      () => {},
+
+      (payload) => {
+        console.log("🔥 MOBILE CHAT REALTIME:", payload);
+
+        const raw = payload.message;
+
+        const incoming = {
+          id: raw.id,
+          is_read: raw.is_read,
+          status: "sent" as const,
+          message: raw.message,
+        };
+
+        setMessages((prev) => {
+          if (!incoming?.id) {
+            return prev;
+          }
+
+          const exists = prev.some((m) => m.id === incoming.id);
+
+          if (exists) return prev;
+
+          return [...prev, incoming];
+        });
+      },
+
+      () => {},
     );
-
-    const disconnect =
-      connectRealtime(
-
-        user.id,
-
-        () => { },
-
-        () => { },
-
-        (payload) => {
-
-          console.log(
-            "🔥 MOBILE CHAT REALTIME:",
-            payload
-          );
-
-          const raw =
-            payload.message ||
-            payload;
-
-          const incoming = {
-
-            id: raw?.id,
-
-            is_read: false,
-
-            status: "sent" as const,
-
-            message: {
-              message: raw?.message,
-              sender_id: raw?.sender_id,
-            }
-          };
-
-          setMessages((prev) => {
-
-            if (!incoming?.id) {
-              return prev;
-            }
-
-            const exists = prev.some(
-              (m) => m.id === incoming.id
-            );
-
-            if (exists) return prev;
-
-            return [
-              ...prev,
-              incoming
-            ];
-          });
-        },
-
-        () => { }
-      );
 
     return () => {
       disconnect?.();
     };
-
   }, []);
 
-  // 🔥 AUTO SCROLL
+  // AUTO SCROLL
   useEffect(() => {
-
     setTimeout(() => {
-
-      flatListRef.current
-        ?.scrollToEnd({
-          animated: true,
-        });
-
+      flatListRef.current?.scrollToEnd({
+        animated: true,
+      });
     }, 100);
-
   }, [messages]);
 
   const dismissKeyboard = () => {
@@ -291,19 +232,11 @@ export default function Chat() {
   };
 
   return (
-    <TouchableWithoutFeedback
-      onPress={dismissKeyboard}
-    >
-
+    <TouchableWithoutFeedback onPress={dismissKeyboard}>
       <View className="flex-1 bg-white">
-
-        {/* 🔥 GRADIENT */}
+        {/* GRADIENT */}
         <LinearGradient
-          colors={[
-            "#d1fae5",
-            "#a7f3d0",
-            "#ffffff",
-          ]}
+          colors={["#d1fae5", "#a7f3d0", "#ffffff"]}
           locations={[0, 0.3, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -314,111 +247,72 @@ export default function Chat() {
             left: 0,
             right: 0,
 
-            height:
-              insets.top + 120,
+            height: insets.top + 120,
           }}
         />
 
-        {/* 🔥 HEADER */}
+        {/*EADER */}
         <View
           style={{
-            paddingTop:
-              insets.top + 10,
+            paddingTop: insets.top + 10,
 
             paddingBottom: 10,
 
             paddingHorizontal: 16,
 
-            backgroundColor:
-              "transparent",
+            backgroundColor: "transparent",
           }}
         >
-
           <View className="flex-row items-center">
-
             <TouchableOpacity
               onPress={() => {
-
-                if (
-                  router.canGoBack()
-                ) {
+                if (router.canGoBack()) {
                   router.back();
                 }
               }}
             >
-
-              <Ionicons
-                name="chevron-back"
-                size={28}
-                color="#065f46"
-              />
-
+              <Ionicons name="chevron-back" size={28} color="#065f46" />
             </TouchableOpacity>
 
             <View className="ml-3">
-
               <Text className="text-lg font-bold text-emerald-800">
                 {name || "Agent"}
               </Text>
 
-              <Text className="text-xs text-green-600">
-                Online
-              </Text>
-
+              <Text className="text-xs text-green-600">Online</Text>
             </View>
-
           </View>
-
         </View>
 
-        {/* 🔥 CHAT LIST */}
+        {/* CHAT LIST */}
         <FlatList
           ref={flatListRef}
           data={messages}
-          keyExtractor={(item) =>
-            item.id.toString()
-          }
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{
             padding: 16,
             paddingBottom: 90,
           }}
-          showsVerticalScrollIndicator={
-            false
-          }
+          showsVerticalScrollIndicator={false}
           onLayout={() => {
-
-            flatListRef.current
-              ?.scrollToEnd({
-                animated: false,
-              });
+            flatListRef.current?.scrollToEnd({
+              animated: false,
+            });
           }}
-          renderItem={({
-            item,
-            index,
-          }) => {
+          renderItem={({ item, index }) => {
+            const isMe = item.message.sender_id === user.id;
 
-            const isMe =
-              item.message.sender_id ===
-              user.id;
-
-            const isLast =
-              index ===
-              messages.length - 1;
+            const isLast = index === messages.length - 1;
 
             return (
-              <View
-                className={`mb-3 ${isMe
-                  ? "items-end"
-                  : "items-start"
-                  }`}
-              >
-
+              <View className={`mb-3 ${isMe ? "items-end" : "items-start"}`}>
                 {/* 🔥 MESSAGE */}
                 <View
-                  className={`px-4 py-3 rounded-3xl max-w-[80%] ${isMe
-                    ? "bg-emerald-500 rounded-br-none"
-                    : "bg-white border border-gray-200 rounded-bl-none"
-                    }`}
+                  className={`px-4 py-3 rounded-3xl max-w-[80%] ${
+                    isMe
+                      ? "bg-emerald-500 rounded-br-none"
+                      : "bg-white border border-gray-200 rounded-bl-none"
+                  }`}
                   style={{
                     shadowColor: "#000",
 
@@ -434,64 +328,38 @@ export default function Chat() {
                     elevation: 1,
                   }}
                 >
-
-                  <Text
-                    className={
-                      isMe
-                        ? "text-white"
-                        : "text-gray-800"
-                    }
-                  >
+                  <Text className={isMe ? "text-white" : "text-gray-800"}>
                     {item.message.message}
                   </Text>
-
                 </View>
 
-                {/* 🔥 STATUS */}
+                {/* STATUS */}
                 {isMe && isLast && (
-
                   <View className="flex-row items-center mt-1 mr-1">
-
                     <Text className="text-[11px] text-gray-400">
+                      {item.status === "sending" && "Sending..."}
 
-                      {item.status ===
-                        "sending" &&
-                        "Sending..."}
+                      {item.status === "failed" && "Failed ❌"}
 
-                      {item.status ===
-                        "failed" &&
-                        "Failed ❌"}
-
-                      {item.status ===
-                        "sent" &&
-                        (
-                          item.is_read
-                            ? "Seen"
-                            : "Sent"
-                        )}
-
+                      {item.status === "sent" &&
+                        (item.is_read ? "Seen" : "Sent")}
                     </Text>
-
                   </View>
                 )}
-
               </View>
             );
           }}
         />
 
-        {/* 🔥 INPUT */}
+        {/* INPUT */}
         <View
           className="px-3 py-3 bg-white border-t border-gray-200"
           style={{
-            paddingBottom:
-              insets.bottom + 5,
+            paddingBottom: insets.bottom + 5,
           }}
         >
-
           <View className="flex-row items-end">
-
-            {/* 🔥 AUTO HEIGHT INPUT */}
+            {/* AUTO HEIGHT INPUT */}
             <TextInput
               ref={inputRef}
               value={text}
@@ -500,58 +368,37 @@ export default function Chat() {
               placeholderTextColor="#9ca3af"
               multiline
               maxLength={500}
-
               onContentSizeChange={(e) => {
-
-                const height =
-                  e.nativeEvent
-                    .contentSize.height;
+                const height = e.nativeEvent.contentSize.height;
 
                 if (height < 140) {
-
-                  setInputHeight(
-                    Math.max(
-                      45,
-                      height
-                    )
-                  );
+                  setInputHeight(Math.max(45, height));
                 }
               }}
-
               style={{
                 height: inputHeight,
                 maxHeight: 140,
                 textAlignVertical: "top",
               }}
-
               className="flex-1 bg-gray-100 rounded-3xl px-4 py-3 mr-2 text-base"
             />
 
-            {/* 🔥 SEND */}
+            {/* SEND */}
             <TouchableOpacity
               onPress={sendMessage}
               disabled={!text.trim()}
-              className={`px-5 rounded-full justify-center items-center ${text.trim()
-                ? "bg-emerald-500"
-                : "bg-gray-300"
-                }`}
+              className={`px-5 rounded-full justify-center items-center ${
+                text.trim() ? "bg-emerald-500" : "bg-gray-300"
+              }`}
               style={{
                 height: 45,
               }}
             >
-
-              <Text className="text-white font-semibold">
-                Send
-              </Text>
-
+              <Text className="text-white font-semibold">Send</Text>
             </TouchableOpacity>
-
           </View>
-
         </View>
-
       </View>
-
     </TouchableWithoutFeedback>
   );
 }

@@ -191,8 +191,8 @@ const RoleBadge = ({ role }: { role: keyof typeof roleConfig }) => {
 // Status Badge Component
 const StatusBadge = ({ active }: { active: boolean }) => (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${active
-            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            : 'bg-slate-50 text-slate-500 border-slate-200'
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : 'bg-slate-50 text-slate-500 border-slate-200'
         }`}>
         <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
         {active ? 'Active' : 'Inactive'}
@@ -592,8 +592,8 @@ export default function Users() {
                         <button
                             onClick={() => setShowFilters(!showFilters)}
                             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium transition-all shadow-sm ${showFilters
-                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-200'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-200'
+                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                                 }`}
                         >
                             <FilterOutlined />
@@ -694,7 +694,11 @@ export default function Users() {
                     title="Cashiers"
                     value={stats.cashiers}
                     subtitle="Handle payments"
-                    icon={<DollarOutlined className="text-xl text-emerald-600" />}
+                    icon={
+                        <span className="text-xl font-bold text-emerald-600">
+                            ₱
+                        </span>
+                    }
                     gradient="bg-emerald-500"
                     iconBg="bg-emerald-50"
                 />
@@ -709,25 +713,29 @@ export default function Users() {
             </div>
 
             {/* ── Search ──────────────────────────────────────── */}
-            <div className="mb-5 relative">
-                <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none">
-                    <SearchOutlined className="text-slate-400 text-base" />
+            <div className="mb-5 flex justify-end">
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none">
+                        <SearchOutlined className="text-slate-400 text-base" />
+                        <div className="mx-3 h-5 border-l border-slate-300" />
+                    </div>
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search users by name, email, or phone number..."
+                        className="w-[400px] pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder-slate-400 shadow-sm outline-none transition-all
+                        focus:border-mint-500 focus:ring-2 focus:ring-green-500/20"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute inset-y-0 right-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                        >
+                            <CloseOutlined className="text-xs" />
+                        </button>
+                    )}
                 </div>
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); }}
-                    placeholder="Search users by name, email, or phone number..."
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-                />
-                {searchQuery && (
-                    <button
-                        onClick={() => setSearchQuery('')}
-                        className="absolute inset-y-0 right-3.5 flex items-center text-slate-400 hover:text-slate-600"
-                    >
-                        <CloseOutlined className="text-xs" />
-                    </button>
-                )}
             </div>
 
             {/* ── Table Card ──────────────────────────────────── */}
@@ -794,6 +802,9 @@ export default function Users() {
                     <div className="grid grid-cols-2 gap-4">
                         <Form.Item name="first_name" label="First Name" rules={[{ required: true, message: 'Required' }]}>
                             <AntInput placeholder="First name" className="rounded-xl" />
+                        </Form.Item>
+                        <Form.Item name="middle_name" label="Middle Name">
+                            <AntInput placeholder="Middle name" className="rounded-xl" />
                         </Form.Item>
                         <Form.Item name="last_name" label="Last Name" rules={[{ required: true, message: 'Required' }]}>
                             <AntInput placeholder="Last name" className="rounded-xl" />
@@ -1065,8 +1076,8 @@ export default function Users() {
                         <button
                             onClick={() => selectedUser && handleToggleStatus(selectedUser, newStatus)}
                             className={`px-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all shadow-lg ${newStatus
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
-                                    : 'bg-orange-500 hover:bg-orange-600 shadow-orange-200'
+                                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                : 'bg-orange-500 hover:bg-orange-600 shadow-orange-200'
                                 }`}>
                             {newStatus ? 'Activate' : 'Deactivate'}
                         </button>

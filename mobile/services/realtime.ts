@@ -1,4 +1,3 @@
-// services/realtime.ts
 import "react-native-url-polyfill/auto";
 import { getWsUrl } from "@/services/config";
 

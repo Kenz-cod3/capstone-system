@@ -11,8 +11,10 @@ class BookingPayment extends Model
     protected $fillable = [
         'booking_id',
         'shift_id',
+        'receipt_number',
         'amount',
         'payment_method',
+        'payment_status',
         'gcash_reference',
         'bank_reference',
         'received_by',

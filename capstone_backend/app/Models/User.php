@@ -13,13 +13,16 @@ class User extends Authenticatable
 
     protected $fillable = [
         'first_name',
+        'middle_name',
         'last_name',
         'email',
         'password',
         'contact_number',
         'address',
         'role',
-        'is_active'
+        'is_active',
+        'is_verified',
+        'email_verified_at',
     ];
 
     protected $hidden = [
@@ -31,8 +34,9 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
             'is_active' => 'boolean',
+            'is_verified' => 'boolean',
+            'last_login' => 'datetime',
         ];
     }
 
@@ -105,6 +109,6 @@ class User extends Authenticatable
 
     public function messageTargets()
     {
-        return $this->morphMany(MessageTarget::class, 'target');
+        return $this->hasMany(MessageTarget::class, 'target_id');
     }
 }

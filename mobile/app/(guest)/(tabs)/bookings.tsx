@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import api, { getImageUrl } from "@/services/api";
+import api from "@/services/api";
 
 const STATUS_CONFIG = {
   pending: {
@@ -22,28 +22,24 @@ const STATUS_CONFIG = {
     dot: "#fff",
     label: "Pending",
   },
-
   checked_in: {
     bg: "rgba(37,99,235,0.85)",
     text: "#fff",
     dot: "#fff",
     label: "Checked In",
   },
-
   checked_out: {
     bg: "rgba(22,163,74,0.85)",
     text: "#fff",
     dot: "#fff",
     label: "Checked Out",
   },
-
   cancelled: {
     bg: "rgba(220,38,38,0.85)",
     text: "#fff",
     dot: "#fff",
     label: "Cancelled",
   },
-
   refunded: {
     bg: "rgba(126,34,206,0.85)",
     text: "#fff",
@@ -65,7 +61,6 @@ export default function Bookings() {
 
   const fetchBookings = async (currentPage = 1, isRefreshing = false) => {
     try {
-      // Don't show contentLoading when refreshing
       if (!isRefreshing) {
         if (data.length === 0) {
           setLoading(true);
@@ -87,7 +82,6 @@ export default function Bookings() {
       } else {
         setData(res.data);
       }
-
     } catch (e: any) {
       console.log("❌ FETCH ERROR:", e?.response || e);
     } finally {
@@ -99,7 +93,7 @@ export default function Bookings() {
   const onRefresh = async () => {
     try {
       setRefreshing(true);
-      await fetchBookings(page, true); 
+      await fetchBookings(page, true);
     } catch (e) {
       console.log(e);
     } finally {
@@ -115,7 +109,6 @@ export default function Bookings() {
     if (filter === "active") {
       return !["checked_out", "refunded"].includes(item.booking_status);
     }
-
     return ["checked_out", "refunded"].includes(item.booking_status);
   });
 
@@ -236,6 +229,7 @@ export default function Bookings() {
           </View>
         </View>
       )}
+
       <FlatList
         data={filteredData}
         keyExtractor={(item) => item.id.toString()}
@@ -247,8 +241,6 @@ export default function Bookings() {
             colors={["#1a4a35"]}
             tintColor="#1a4a35"
           />
-
-
         }
         contentContainerStyle={{
           padding: 20,
@@ -278,18 +270,17 @@ export default function Bookings() {
             </Text>
           </View>
         }
-
         renderItem={({ item }) => {
-          const room =
-            item.booked_rooms?.[0]?.room ||
-            item.rooms?.[0];
-          console.log("ROOM DATA:", JSON.stringify(room, null, 2));
+          // Support both response shapes: booked_rooms[0].room or rooms[0]
+          const room = item.booked_rooms?.[0]?.room || item.rooms?.[0];
 
           const normalImage = room?.image_url
             ? `${room.image_url}?t=${new Date().getTime()}`
             : null;
 
-          const statusKey = item.booking_status?.toLowerCase().replace("-", "_");
+          const statusKey = item.booking_status
+            ?.toLowerCase()
+            .replace("-", "_");
 
           const s =
             STATUS_CONFIG[statusKey as keyof typeof STATUS_CONFIG] ?? {
@@ -308,6 +299,14 @@ export default function Bookings() {
             return Math.round(diff);
           })();
 
+          const handleViewDetails = () => {
+            if (!room) return;
+            router.push({
+              pathname: "/bookings/details",
+              params: { room: JSON.stringify(room) },
+            });
+          };
+
           return (
             <View
               className="bg-white rounded-3xl overflow-hidden"
@@ -315,16 +314,14 @@ export default function Bookings() {
                 shadowColor: "#000",
                 shadowOpacity: 0.05,
                 shadowRadius: 10,
-                elevation: 3, // Android
+                elevation: 3,
               }}
             >
               {/* Room image */}
               <View className="relative">
                 <Image
                   source={{
-                    uri:
-                      normalImage ||
-                      "https://picsum.photos/seed/booking/400/250",
+                    uri: normalImage || "https://picsum.photos/seed/booking/400/250",
                   }}
                   style={{ width: "100%", height: 180 }}
                 />
@@ -335,7 +332,7 @@ export default function Bookings() {
                   className="absolute bottom-0 left-0 right-0 h-24"
                 />
 
-                {/* Status pill on image */}
+                {/* Status pill */}
                 <View
                   className="absolute top-4 left-4 flex-row items-center gap-1.5 px-3 py-1 rounded-full"
                   style={{ backgroundColor: s.bg }}
@@ -352,7 +349,7 @@ export default function Bookings() {
                   </Text>
                 </View>
 
-                {/* Room number on image */}
+                {/* Room number + price */}
                 <View className="absolute bottom-4 left-4 right-4 flex-row justify-between items-end">
                   <View>
                     <Text className="text-white/60 text-[10px] tracking-widest uppercase mb-0.5">
@@ -415,10 +412,10 @@ export default function Bookings() {
                 <View className="h-px bg-[#1a4a35]/06 mb-4" />
 
                 <View className="flex-row gap-2">
-
                   {/* VIEW DETAILS */}
                   <TouchableOpacity
                     activeOpacity={0.85}
+                    onPress={handleViewDetails}
                     className="rounded-xl overflow-hidden flex-1"
                   >
                     <LinearGradient
@@ -433,75 +430,35 @@ export default function Bookings() {
                       >
                         View Details
                       </Text>
-
-                      <Ionicons
-                        name="arrow-forward"
-                        size={13}
-                        color="#c9a96e"
-                      />
+                      <Ionicons name="arrow-forward" size={13} color="#c9a96e" />
                     </LinearGradient>
                   </TouchableOpacity>
 
-                  {/* CANCEL BUTTON */}
+                  {/* CANCEL — only for pending */}
                   {item.booking_status === "pending" && (
                     <TouchableOpacity
                       activeOpacity={0.85}
                       onPress={async () => {
                         try {
-
                           await api.put(`/bookings/${item.id}`, {
                             booking_status: "cancelled",
                           });
-
                           fetchBookings(page);
-
                         } catch (e) {
                           console.log(e);
                         }
                       }}
                       className="bg-red-600 px-4 rounded-xl justify-center items-center"
                     >
-                      <Ionicons
-                        name="close"
-                        size={18}
-                        color="#fff"
-                      />
+                      <Ionicons name="close" size={18} color="#fff" />
                     </TouchableOpacity>
                   )}
-
                 </View>
               </View>
             </View>
           );
         }}
       />
-      {/* {filter === "history" && (
-        <View className="flex-row justify-center items-center gap-4 pb-10">
-
-          <TouchableOpacity
-            disabled={page === 1}
-            onPress={() => setPage((p) => p - 1)}
-            className={`px-4 py-2 rounded-xl ${page === 1 ? "bg-gray-300" : "bg-[#1a4a35]"
-              }`}
-          >
-            <Text className="text-white">Previous</Text>
-          </TouchableOpacity>
-
-          <Text className="text-[#1a4a35] font-semibold">
-            {page} / {lastPage}
-          </Text>
-
-          <TouchableOpacity
-            disabled={page === lastPage}
-            onPress={() => setPage((p) => p + 1)}
-            className={`px-4 py-2 rounded-xl ${page === lastPage ? "bg-gray-300" : "bg-[#1a4a35]"
-              }`}
-          >
-            <Text className="text-white">Next</Text>
-          </TouchableOpacity>
-
-        </View>
-      )} */}
     </View>
   );
 }

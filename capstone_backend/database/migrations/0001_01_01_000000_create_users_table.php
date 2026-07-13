@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('first_name');
+            $table->string('middle_name')->nullable();
             $table->string('last_name');
             $table->string('email')->unique();
             $table->string('password');
@@ -22,6 +23,7 @@ return new class extends Migration
             $table->string('profile_image')->nullable();
             $table->enum('role', ['admin', 'staff', 'guest', 'cashier', 'housekeeper']);
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_verified')->default(false);
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('last_login')->nullable();
             $table->rememberToken();

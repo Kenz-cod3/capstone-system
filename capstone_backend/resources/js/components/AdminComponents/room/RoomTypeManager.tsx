@@ -1,657 +1,741 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Input, Button, message, Table, Popconfirm, Space, Card, Tag, Form, Spin, Alert, Typography, Modal, Select, Divider } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined, ArrowLeftOutlined, PlusCircleOutlined } from "@ant-design/icons";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { ArrowLeft, Plus, Pencil, Trash2, Loader2, ChevronsUpDown, Check } from "lucide-react";
+
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
+import Amenities from "./Amenities";
+import AddOnsPage from "./AddOnsPage";
 import api from "@/services/api";
 
-const { Title } = Typography;
-const { Option } = Select;
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface RoomType {
-    id: number;
-    type_name: string;
-    description: string;
-    max_occupancy: number;
-    base_price: number;
-    short_stay_price: number;
-    amenities: Amenity[];
+  id: number;
+  type_name: string;
+  description: string | null;
+  max_occupancy: number;
+  base_price: number;
+  short_stay_price: number | null;
 }
 
-interface Amenity {
-    id: number;
-    name: string;
+interface RoomTypePayload {
+  type_name: string;
+  description: string | null;
+  max_occupancy: number;
+  base_price: number;
+  short_stay_price: number | null;
+}
+
+interface PaginationMeta {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number;
+  to: number;
+}
+
+interface PaginatedResponse {
+  data: RoomType[];
+  meta: PaginationMeta;
 }
 
 interface RoomTypeManagerProps {
-    onClose: () => void;
-    onRefresh?: () => void;
+  onClose: () => void;
+  onRefresh?: () => void;
 }
 
+interface FormValues {
+  type_name: string;
+  description?: string;
+  max_occupancy: number;
+  base_price: number;
+  short_stay_price?: number | string;
+}
+
+// ─── Table Columns Configuration ──────────────────────────────────────────
+
+const TABLE_COLUMNS = [
+  { key: "type_name", label: "Type Name" },
+  { key: "description", label: "Description", noSort: true },
+  { key: "max_occupancy", label: "Occupancy", center: true },
+  { key: "base_price", label: "Base Price" },
+  { key: "short_stay_price", label: "Short Stay" },
+  { key: "actions", label: "Actions", noSort: true, center: true },
+];
+
+// ─── Component ──────────────────────────────────────────────────────────────
+
 export default function RoomTypeManager({ onClose, onRefresh }: RoomTypeManagerProps) {
-    const queryClient = useQueryClient();
-    const [editingRoomType, setEditingRoomType] = useState<RoomType | null>(null);
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [isAmenityModalVisible, setIsAmenityModalVisible] = useState(false);
-    const [isVisible, setIsVisible] = useState(false);
-    const [form] = Form.useForm();
-    const [amenityForm] = Form.useForm();
+  const [isVisible, setIsVisible] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRoomType, setEditingRoomType] = useState<RoomType | null>(null);
 
-    // Trigger entrance animation
-    useEffect(() => {
-        document.body.style.overflow = 'hidden';
-        const timer = setTimeout(() => {
-            setIsVisible(true);
-        }, 10);
-        return () => {
-            document.body.style.overflow = 'unset';
-            clearTimeout(timer);
-        };
-    }, []);
+  const [sortKey, setSortKey] = useState("type_name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-    const handleClose = () => {
-        setIsVisible(false);
-        setTimeout(() => {
-            onClose();
-        }, 300);
+  const [activeTab, setActiveTab] = useState<
+    "roomTypes" | "amenities" | "addons"
+  >("roomTypes");
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormValues>();
+
+  // Slide-in animation for the main panel only
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const t = setTimeout(() => setIsVisible(true), 10);
+    return () => {
+      document.body.style.overflow = "";
+      clearTimeout(t);
     };
+  }, []);
 
-    const { data: roomTypes = [], isLoading, error, refetch } = useQuery<RoomType[]>({
-        queryKey: ["roomTypes"],
-        queryFn: async () => {
-            const response = await api.get("/room-types");
-            return response.data;
-        },
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(onClose, 300);
+  };
+
+  // ── Query ──────────────────────────────────────────────────────────────────
+
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PaginatedResponse>({
+    queryKey: ["roomTypes", currentPage, itemsPerPage, sortKey, sortDir],
+    queryFn: async () => {
+      const res = await api.get("/room-types", {
+        params: { page: currentPage, per_page: itemsPerPage, sort_by: sortKey, sort_dir: sortDir },
+      });
+      return res.data;
+    },
+    placeholderData: (prev) => prev,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const roomTypes = data?.data ?? [];
+  const meta = data?.meta;
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
+
+  const createMutation = useMutation({
+    mutationFn: (values: RoomTypePayload) => api.post("/room-types", values),
+    onSuccess: () => {
+      toast.success("Room type created");
+      refetch();
+      onRefresh?.();
+      closeDialog();
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message ?? "Failed to create room type"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, values }: { id: number; values: RoomTypePayload }) =>
+      api.put(`/room-types/${id}`, values),
+    onSuccess: () => {
+      toast.success("Room type updated");
+      refetch();
+      onRefresh?.();
+      closeDialog();
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message ?? "Failed to update room type"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/room-types/${id}`),
+    onSuccess: () => {
+      toast.success("Room type deleted");
+      refetch();
+      onRefresh?.();
+    },
+    onError: (e: any) => {
+      if (e.response?.status === 400)
+        toast.error("Cannot delete: this room type is assigned to existing rooms");
+      else toast.error(e.response?.data?.message ?? "Failed to delete room type");
+    },
+  });
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  // ── Dialog helpers ─────────────────────────────────────────────────────────
+
+  const openCreate = () => {
+    setEditingRoomType(null);
+    reset({});
+    setDialogOpen(true);
+  };
+
+  const openEdit = (rt: RoomType) => {
+    setEditingRoomType(rt);
+    reset({
+      type_name: rt.type_name,
+      description: rt.description ?? "",
+      max_occupancy: rt.max_occupancy,
+      base_price: rt.base_price,
+      short_stay_price: rt.short_stay_price ?? "",
     });
+    setDialogOpen(true);
+  };
 
-    const { data: amenities = [], refetch: refetchAmenities } = useQuery<Amenity[]>({
-        queryKey: ["amenities"],
-        queryFn: async () => {
-            const response = await api.get("/amenities");
-            return response.data;
-        },
-    });
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setEditingRoomType(null);
+    reset({});
+  };
 
-    const createMutation = useMutation({
-        mutationFn: async (values: any) => {
-            const response = await api.post("/room-types", values);
-            return response.data;
-        },
-        onSuccess: () => {
-            message.success("Room type created successfully");
-            refetch();
-            onRefresh?.();
-            handleModalClose();
-        },
-        onError: (error: any) => {
-            message.error(error.response?.data?.message || "Failed to create room type");
-        },
-    });
+  // ── Form submit ────────────────────────────────────────────────────────────
 
-    const updateMutation = useMutation({
-        mutationFn: async ({ id, values }: { id: number; values: any }) => {
-            const response = await api.put(`/room-types/${id}`, values);
-            return response.data;
-        },
-        onSuccess: () => {
-            message.success("Room type updated successfully");
-            refetch();
-            onRefresh?.();
-            handleModalClose();
-        },
-        onError: (error: any) => {
-            message.error(error.response?.data?.message || "Failed to update room type");
-        },
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: async (id: number) => {
-            await api.delete(`/room-types/${id}`);
-        },
-        onSuccess: () => {
-            message.success("Room type deleted successfully");
-            refetch();
-            onRefresh?.();
-        },
-        onError: (error: any) => {
-            if (error.response?.status === 409) {
-                message.error("Cannot delete: This room type is in use by existing rooms");
-            } else {
-                message.error(error.response?.data?.message || "Failed to delete room type");
-            }
-        },
-    });
-
-    // New mutation for creating amenities
-    const createAmenityMutation = useMutation({
-        mutationFn: async (values: { name: string }) => {
-            const response = await api.post("/amenities", values);
-            return response.data;
-        },
-        onSuccess: () => {
-            message.success("Amenity created successfully");
-            refetchAmenities();
-            queryClient.invalidateQueries({ queryKey: ["amenities"] });
-            handleAmenityModalClose();
-        },
-        onError: (error: any) => {
-            message.error(error.response?.data?.message || "Failed to create amenity");
-        },
-    });
-
-    const handleSubmit = async (values: any) => {
-        try {
-            const formatted = {
-                type_name: values.type_name,
-                description: values.description?.trim() || null,
-                max_occupancy: Number(values.max_occupancy),
-                base_price: Number(values.base_price),
-                short_stay_price:
-                    values.short_stay_price !== undefined &&
-                    values.short_stay_price !== ""
-                        ? Number(values.short_stay_price)
-                        : null,
-                amenities: values.amenities || [],
-            };
-
-            if (editingRoomType) {
-                await updateMutation.mutateAsync({
-                    id: editingRoomType.id,
-                    values: formatted,
-                });
-            } else {
-                await createMutation.mutateAsync(formatted);
-            }
-        } catch (error: any) {
-            message.error(
-                error.response?.data?.message || "Failed to save room type."
-            );
-        }
+  const onSubmit = (values: FormValues) => {
+    const payload: RoomTypePayload = {
+      type_name: values.type_name,
+      description: values.description?.trim() || null,
+      max_occupancy: Number(values.max_occupancy),
+      base_price: Number(values.base_price),
+      short_stay_price:
+        values.short_stay_price !== "" && values.short_stay_price !== undefined
+          ? Number(values.short_stay_price)
+          : null,
     };
 
-    const handleEdit = (roomType: RoomType) => {
-        setEditingRoomType(roomType);
-
-        form.setFieldsValue({
-            type_name: roomType.type_name,
-            description: roomType.description,
-            max_occupancy: roomType.max_occupancy,
-            base_price: roomType.base_price,
-            short_stay_price: roomType.short_stay_price,
-            amenities:roomType.amenities?.map(a => a.id) || [],
-        });
-
-        setIsModalVisible(true);
-    };
-
-    const handleCreate = () => {
-        setEditingRoomType(null);
-        form.resetFields();
-        setIsModalVisible(true);
-    };
-
-    const handleModalClose = () => {
-        setIsModalVisible(false);
-        setEditingRoomType(null);
-        form.resetFields();
-    };
-
-    const handleAmenityModalOpen = () => {
-        setIsAmenityModalVisible(true);
-        amenityForm.resetFields();
-    };
-
-    const handleAmenityModalClose = () => {
-        setIsAmenityModalVisible(false);
-        amenityForm.resetFields();
-    };
-
-    const handleAmenitySubmit = async (values: { name: string }) => {
-        try {
-            await createAmenityMutation.mutateAsync(values);
-        } catch (error) {
-            // Error handled in mutation
-        }
-    };
-
-    const columns = [
-        {
-            title: "Type Name",
-            dataIndex: "type_name",
-            key: "type_name",
-            sorter: (a: RoomType, b: RoomType) => a.type_name.localeCompare(b.type_name),
-        },
-        {
-            title: "Amenities",
-            key: "amenities",
-            render: (_: any, record: RoomType) =>
-                record.amenities?.length ? (
-                    <Tag color="green">
-                        {record.amenities.map(a => a.name).join(", ")}
-                    </Tag>
-                ) : (
-                    "-"
-                )
-        },
-        {
-            title: "Description",
-            dataIndex: "description",
-            key: "description",
-            render: (text: string) => text || "—",
-        },
-        {
-            title: "Max Occupancy",
-            dataIndex: "max_occupancy",
-            key: "max_occupancy",
-            align: "center" as const,
-            sorter: (a: RoomType, b: RoomType) => a.max_occupancy - b.max_occupancy,
-            render: (value: number) => (
-                <Tag color="blue">{value} {value === 1 ? "person" : "persons"}</Tag>
-            ),
-        },
-        {
-            title: "Base Price",
-            dataIndex: "base_price",
-            key: "base_price",
-            sorter: (a: RoomType, b: RoomType) => a.base_price - b.base_price,
-            render: (value: number) => `₱${value?.toLocaleString()} / night`,
-        },
-        {
-            title: "Short Stay",
-            dataIndex: "short_stay_price",
-            key: "short_stay_price",
-            sorter: (a: RoomType, b: RoomType) => (a.short_stay_price || 0) - (b.short_stay_price || 0),
-            render: (value: number | null) =>
-                value !== null && value !== undefined
-                    ? `₱${value.toLocaleString()} / 3hrs`
-                    : "—",
-        },
-        {
-            title: "Actions",
-            key: "actions",
-            align: "center" as const,
-            render: (_: any, record: RoomType) => (
-                <Space>
-                    <Button
-                        type="primary"
-                        ghost
-                        icon={<EditOutlined />}
-                        onClick={() => handleEdit(record)}
-                        size="small"
-                    >
-                        Edit
-                    </Button>
-                    <Popconfirm
-                        title={`Delete "${record.type_name}"?`}
-                        description="This action cannot be undone."
-                        onConfirm={() => deleteMutation.mutate(record.id)}
-                        okText="Delete"
-                        cancelText="Cancel"
-                        okButtonProps={{ danger: true }}
-                    >
-                        <Button icon={<DeleteOutlined />} danger size="small">
-                            Delete
-                        </Button>
-                    </Popconfirm>
-                </Space>
-            ),
-        },
-    ];
-
-    if (error) {
-        return (
-            <div className="fixed inset-0 bg-white z-50 flex items-center justify-center p-4">
-                <Card className="max-w-md w-full">
-                    <Alert
-                        message="Error Loading Data"
-                        description={error.message || "Failed to load room types"}
-                        type="error"
-                        showIcon
-                    />
-                    <div className="mt-4 flex gap-2 justify-end">
-                        <Button onClick={handleClose}>Go Back</Button>
-                        <Button onClick={() => refetch()} type="primary">Retry</Button>
-                    </div>
-                </Card>
-            </div>
-        );
+    if (editingRoomType) {
+      updateMutation.mutate({ id: editingRoomType.id, values: payload });
+    } else {
+      createMutation.mutate(payload);
     }
+  };
 
+  // ── Sort ───────────────────────────────────────────────────────────────────
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ col }: { col: string }) =>
+    sortKey === col ? (
+      <span className="ml-1 text-xs">{sortDir === "asc" ? "▲" : "▼"}</span>
+    ) : (
+      <span className="ml-1 text-xs opacity-30">⇅</span>
+    );
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
+
+  const getPageNumbers = (): (number | "…")[] => {
+    if (!meta) return [];
+    const total = meta.last_page;
+    const cur = meta.current_page;
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const pages: (number | "…")[] = [1];
+    if (cur > 3) pages.push("…");
+    for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i);
+    if (cur < total - 2) pages.push("…");
+    pages.push(total);
+    return pages;
+  };
+
+  // ── Skeleton Row ──────────────────────────────────────────────────────────
+
+  const SkeletonRow = () => (
+    <tr className="border-b border-slate-100">
+      <td className="px-4 py-3"><Skeleton className="h-4 w-28 bg-slate-200" /></td>
+      <td className="px-4 py-3"><Skeleton className="h-4 w-44 bg-slate-200" /></td>
+      <td className="px-4 py-3 text-center"><Skeleton className="mx-auto h-5 w-16 rounded-full bg-slate-200" /></td>
+      <td className="px-4 py-3"><Skeleton className="h-4 w-20 bg-slate-200" /></td>
+      <td className="px-4 py-3"><Skeleton className="h-4 w-20 bg-slate-200" /></td>
+      <td className="px-4 py-3">
+        <div className="flex justify-center gap-2">
+          <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
+          <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
+        </div>
+      </td>
+    </tr>
+  );
+
+  // ── Empty State ───────────────────────────────────────────────────────────
+
+  const EmptyState = () => (
+    <tr>
+      <td colSpan={6} className="px-4 py-16 text-center">
+        <div className="text-3xl">🏨</div>
+        <p className="mt-2 font-semibold text-slate-600">No room types yet</p>
+        <p className="mt-1 text-xs text-slate-400">Click "Add Room Type" to get started</p>
+      </td>
+    </tr>
+  );
+
+  // ── Error state ────────────────────────────────────────────────────────────
+
+  if (error) {
     return (
-        <>
-            {/* Backdrop with fade animation */}
-            <div
-                className={`fixed inset-0 bg-black transition-all duration-300 ease-out z-50 ${isVisible ? 'bg-opacity-50' : 'bg-opacity-0 pointer-events-none'
-                    }`}
-                onClick={handleClose}
-            />
-
-            {/* Main Panel - Full Screen with slide-up animation */}
-            <div
-                className={`fixed bottom-0 left-0 right-0 top-0 bg-gray-50 z-50 transition-transform duration-300 ease-out ${isVisible ? 'transform translate-y-0' : 'transform translate-y-full'
-                    }`}
-                style={{
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white p-4">
+        <div className="w-full max-w-sm rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <p className="font-semibold text-red-700">Failed to load room types</p>
+          <p className="mt-1 text-sm text-red-500">{(error as Error).message}</p>
+          <div className="mt-4 flex justify-center gap-2">
+            <button
+              onClick={handleClose}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
-                {/* Header */}
-                <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm flex-shrink-0">
-                    <div className="px-4 sm:px-6 lg:px-8">
-                        <div className="flex items-center justify-between h-16">
-                            <div className="flex items-center gap-4">
-                                <Button
-                                    type="text"
-                                    icon={<ArrowLeftOutlined />}
-                                    onClick={handleClose}
-                                    className="hover:bg-gray-100"
-                                    size="large"
-                                >
-                                    Back to Rooms
-                                </Button>
-                                <div className="h-6 w-px bg-gray-300"></div>
-                                <Title level={4} className="!mb-0 text-gray-800">
-                                    Management Room Types
-                                </Title>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <Tag color="purple" className="text-sm px-3 py-1">
-                                    Total: {roomTypes.length} types
-                                </Tag>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+              Go back
+            </button>
+            <button
+              onClick={() => refetch()}
+              className="rounded-lg bg-mint-600 px-4 py-2 text-sm font-medium text-white hover:bg-mint-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-                {/* Main Content - Scrollable */}
-                <div className="flex-1 overflow-y-auto">
-                    <div className="px-4 sm:px-6 lg:px-8 py-6">
-                        <Spin spinning={isLoading}>
-                            <div className="space-y-6 max-w-7xl mx-auto">
-                                {/* Room Types List */}
-                                <Card
-                                    className="shadow-sm"
-                                    title={
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg font-semibold">Room Types List</span>
-                                            <Tag color="blue">{roomTypes.length} total</Tag>
-                                        </div>
-                                    }
-                                    extra={
-                                        <Button
-                                            type="primary"
-                                            icon={<PlusOutlined />}
-                                            onClick={handleCreate}
-                                            size="middle"
-                                        >
-                                            Add Room Type
-                                        </Button>
-                                    }
-                                >
-                                    <Table
-                                        columns={columns}
-                                        dataSource={roomTypes}
-                                        rowKey="id"
-                                        loading={isLoading}
-                                        pagination={{
-                                            pageSize: 10,
-                                            showSizeChanger: true,
-                                            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-                                            pageSizeOptions: ['10', '20', '50', '100']
-                                        }}
-                                        size="middle"
-                                        scroll={{ x: 800 }}
-                                        bordered
-                                    />
-                                </Card>
-                            </div>
-                        </Spin>
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={handleClose}
+        className={`fixed inset-0 z-50 bg-black transition-opacity duration-300 ${isVisible ? "opacity-40" : "pointer-events-none opacity-0"
+          }`}
+      />
+
+      {/* Panel */}
+      <div
+        className={`fixed inset-0 z-50 flex flex-col overflow-hidden bg-slate-50 transition-transform duration-300 ease-out ${isVisible ? "translate-y-0" : "translate-y-full"
+          }`}
+      >
+        {/* Header */}
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm" style={{ height: 64 }}>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleClose}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              <ArrowLeft className="size-4" />
+              Back to Rooms
+            </button>
+            <div className="h-6 w-px bg-slate-200" />
+            <h1 className="text-base font-bold text-slate-900">Manage Room</h1>
+          </div>
+          <span className="rounded-full border border-mint-200 bg-mint-50 px-3 py-1 text-xs font-semibold text-mint-600">
+            {meta?.total ?? 0} types
+          </span>
+        </header>
+
+        <div className="border-b bg-white px-6">
+          <div className="flex gap-2 py-3">
+
+            <button
+              onClick={() => setActiveTab("roomTypes")}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "roomTypes"
+                ? "bg-mint-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+            >
+              Room Types
+            </button>
+
+            <button
+              onClick={() => setActiveTab("amenities")}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "amenities"
+                ? "bg-mint-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+            >
+              Amenities
+            </button>
+
+            <button
+              onClick={() => setActiveTab("addons")}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "addons"
+                ? "bg-mint-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+            >
+              Add-ons
+            </button>
+
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {activeTab === "roomTypes" ? (
+            <>
+              <div className="mx-auto max-w-7xl">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+
+                  {/* Card header */}
+                  <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800">Room Types</span>
+                      {/* <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
+                    {meta?.total ?? 0}
+                  </span> */}
                     </div>
+                    <button
+                      onClick={openCreate}
+                      className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-sm font-semibold text-white hover:bg-mint-700 active:scale-95 transition-all"
+                    >
+                      <Plus className="size-4" />
+                      Add Room Type
+                    </button>
+                  </div>
+
+                  {/* Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-left">
+                          {TABLE_COLUMNS.map(({ key, label, noSort, center }) => (
+                            <th
+                              key={key}
+                              onClick={() => !noSort && handleSort(key)}
+                              className={`border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 ${center ? "text-center" : ""
+                                } ${!noSort ? "cursor-pointer select-none hover:bg-slate-100" : ""}`}
+                            >
+                              {label}
+                              {!noSort && <SortIcon col={key} />}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const isLoadingState = isLoading || isFetching;
+                          const rowCount = isLoadingState ? itemsPerPage : Math.max(roomTypes.length, 1);
+
+                          return Array.from({ length: rowCount }).map((_, i) => {
+                            if (isLoadingState) {
+                              return <SkeletonRow key={`skeleton-${i}`} />;
+                            }
+
+                            if (roomTypes.length === 0) {
+                              return i === 0 ? <EmptyState key="empty" /> : null;
+                            }
+
+                            const rt = roomTypes[i];
+                            if (!rt) return null;
+
+                            return (
+                              <tr
+                                key={rt.id}
+                                className="border-b border-slate-100 transition-colors hover:bg-slate-50"
+                              >
+                                <td className="px-4 py-3 font-semibold text-slate-900">{rt.type_name}</td>
+                                <td className="max-w-xs truncate px-4 py-3 text-slate-500">
+                                  {rt.description || <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="rounded-full border border-mint-200 bg-mint-50 px-2.5 py-0.5 text-xs font-semibold text-mint-700">
+                                    {rt.max_occupancy} {rt.max_occupancy === 1 ? "person" : "persons"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-medium text-slate-800">
+                                  ₱{rt.base_price?.toLocaleString()}
+                                  <span className="ml-1 text-xs text-slate-400">/ night</span>
+                                </td>
+                                <td className="px-4 py-3 font-medium text-slate-800">
+                                  {rt.short_stay_price != null ? (
+                                    <>
+                                      ₱{rt.short_stay_price.toLocaleString()}
+                                      <span className="ml-1 text-xs text-slate-400">/ 3hrs</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => openEdit(rt)}
+                                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all"
+                                    >
+                                      <Pencil className="size-3" />
+                                      Edit
+                                    </button>
+
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <button className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 active:scale-95 transition-all">
+                                          <Trash2 className="size-3" />
+                                          Delete
+                                        </button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent className="bg-white ring-0 border border-gray-200 shadow-lg">
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Delete "{rt.type_name}"?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            This action cannot be undone. The room type will be permanently removed.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => deleteMutation.mutate(rt.id)}
+                                            className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                                          >
+                                            {deleteMutation.isPending ? (
+                                              <Loader2 className="size-4 animate-spin" />
+                                            ) : "Delete"}
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {meta && meta.total > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
+                      <p className="text-xs text-slate-500">
+                        Showing <span className="font-semibold text-slate-700">{meta.from}–{meta.to}</span> of{" "}
+                        <span className="font-semibold text-slate-700">{meta.total}</span> entries
+                      </p>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          disabled={meta.current_page === 1}
+                          onClick={() => setCurrentPage((p) => p - 1)}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          ← Prev
+                        </button>
+
+                        {getPageNumbers().map((p, i) =>
+                          p === "…" ? (
+                            <span key={`e-${i}`} className="px-1 text-slate-400">…</span>
+                          ) : (
+                            <button
+                              key={p}
+                              onClick={() => setCurrentPage(p as number)}
+                              className={`min-w-[32px] rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${p === meta.current_page
+                                ? "border-mint-500 bg-mint-50 text-mint-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                            >
+                              {p}
+                            </button>
+                          )
+                        )}
+
+                        <button
+                          disabled={meta.current_page === meta.last_page}
+                          onClick={() => setCurrentPage((p) => p + 1)}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Next →
+                        </button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                              {itemsPerPage} / page
+                              <ChevronsUpDown className="size-3 opacity-50" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-[130px] bg-white border border-gray-200 shadow-md ring-0">
+                            {[10, 20, 30, 50].map((v) => (
+                              <DropdownMenuItem
+                                key={v}
+                                onClick={() => { setItemsPerPage(v); setCurrentPage(1); }}
+                                className="flex items-center justify-between"
+                              >
+                                {v} per page
+                                {itemsPerPage === v && <Check className="size-3.5 text-mint-600" />}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  )}
                 </div>
+              </div>
+            </>
+          ) : activeTab === "amenities" ? (
+            <Amenities />
+          ) : (
+            <AddOnsPage />
+          )}
+        </div>
+      </div>
+
+      {/* ── Create / Edit Dialog ── */}
+      <Dialog open={dialogOpen} onOpenChange={closeDialog}>
+        <DialogContent
+          className="max-w-lg bg-white border border-gray-200 shadow-lg outline-none ring-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 [&>button]:hidden transition-none data-open:animate-none data-closed:animate-none"
+          onPointerDownOutside={(e) => {
+            closeDialog();
+          }}
+          onFocusOutside={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {editingRoomType ? "Edit Room Type" : "Create New Room Type"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-2 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Type Name */}
+              <div className="col-span-2 space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Room Type Name</label>
+                <input
+                  {...register("type_name", {
+                    required: "Required",
+                    minLength: { value: 2, message: "At least 2 characters" },
+                    maxLength: { value: 50, message: "Max 50 characters" },
+                  })}
+                  placeholder="e.g. Standard, Deluxe, Suite"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                />
+                {errors.type_name && (
+                  <p className="text-xs text-red-500">{errors.type_name.message}</p>
+                )}
+              </div>
+
+              {/* Max Occupancy */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Max Occupancy</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  {...register("max_occupancy", {
+                    required: "Required",
+                    min: { value: 1, message: "At least 1" },
+                    max: { value: 20, message: "Max 20" },
+                  })}
+                  placeholder="e.g. 2"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                />
+                {errors.max_occupancy && (
+                  <p className="text-xs text-red-500">{errors.max_occupancy.message}</p>
+                )}
+              </div>
+
+              {/* Base Price */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Base Price / Night</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₱</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={100}
+                    {...register("base_price", {
+                      required: "Required",
+                      min: { value: 0, message: "Must be positive" },
+                    })}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                  />
+                </div>
+                {errors.base_price && (
+                  <p className="text-xs text-red-500">{errors.base_price.message}</p>
+                )}
+              </div>
+
+              {/* Short Stay */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Short Stay / 3hrs</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₱</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    {...register("short_stay_price", {
+                      min: { value: 0, message: "Must be positive" },
+                    })}
+                    placeholder="Optional"
+                    className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                  />
+                </div>
+                {errors.short_stay_price && (
+                  <p className="text-xs text-red-500">{errors.short_stay_price.message}</p>
+                )}
+              </div>
+
+              {/* Description */}
+              <div className="col-span-2 space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Description <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea
+                  {...register("description", { maxLength: { value: 500, message: "Max 500 characters" } })}
+                  rows={3}
+                  placeholder="Describe the room type features and amenities…"
+                  className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 transition-none"
+                />
+                {errors.description && (
+                  <p className="text-xs text-red-500">{errors.description.message}</p>
+                )}
+              </div>
             </div>
 
-            {/* Create/Edit Room Type Modal */}
-            <Modal
-                title={
-                    <div className="flex items-center gap-2">
-                        {editingRoomType ? (
-                            <EditOutlined className="text-blue-500" />
-                        ) : (
-                            <PlusOutlined className="text-green-500" />
-                        )}
-                        <span className="text-lg font-semibold">
-                            {editingRoomType ? "Edit Room Type" : "Create New Room Type"}
-                        </span>
-                    </div>
-                }
-                open={isModalVisible}
-                onCancel={handleModalClose}
-                width={700}
-                footer={null}
-                maskClosable={false}
-                destroyOnClose
-                className="room-type-modal"
-            >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    onFinish={handleSubmit}
-                    className="mt-4"
-                >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-                        <Form.Item
-                            name="type_name"
-                            label="Room Type Name"
-                            rules={[
-                                { required: true, message: "Please enter room type name" },
-                                { min: 2, message: "At least 2 characters" },
-                                { max: 50, message: "Max 50 characters" },
-                            ]}
-                        >
-                            <Input
-                                placeholder="e.g. Standard, Deluxe, Suite"
-                                size="large"
-                                autoFocus
-                            />
-                        </Form.Item>
-
-                        <Form.Item
-                            name="max_occupancy"
-                            label="Maximum Occupancy"
-                            rules={[
-                                { required: true, message: "Please enter max occupancy" },
-                                {
-                                    validator: (_, value) => {
-                                        const num = Number(value);
-                                        if (!value && value !== 0) return Promise.reject("Required");
-                                        if (num < 1) return Promise.reject("Must be at least 1");
-                                        if (num > 20) return Promise.reject("Maximum is 20");
-                                        return Promise.resolve();
-                                    },
-                                },
-                            ]}
-                        >
-                            <Input
-                                type="number"
-                                placeholder="Number of persons"
-                                min={1}
-                                max={20}
-                                size="large"
-                            />
-                        </Form.Item>
-
-                        <Form.Item
-                            name="base_price"
-                            label="Base Price (Overnight)"
-                            rules={[
-                                { required: true, message: "Please enter base price" },
-                                {
-                                    validator: (_, value) => {
-                                        const num = Number(value);
-                                        if (!value && value !== 0) return Promise.reject("Required");
-                                        if (num < 0) return Promise.reject("Price must be positive");
-                                        return Promise.resolve();
-                                    },
-                                },
-                            ]}
-                        >
-                            <Input
-                                type="number"
-                                placeholder="Price per night"
-                                prefix="₱"
-                                min={0}
-                                step={100}
-                                size="large"
-                            />
-                        </Form.Item>
-
-                        <Form.Item
-                            name="short_stay_price"
-                            label="Short Stay Price (3 hours)"
-                            rules={[
-                                { required: true, message: "Please enter short stay price" },
-                                {
-                                    validator: (_, value) => {
-                                        const num = Number(value);
-                                        if (!value && value !== 0) return Promise.reject("Required");
-                                        if (num < 0) return Promise.reject("Price must be positive");
-                                        return Promise.resolve();
-                                    },
-                                },
-                            ]}
-                        >
-                            <Input
-                                type="number"
-                                placeholder="Price for 3 hours"
-                                prefix="₱"
-                                min={0}
-                                step={50}
-                                size="large"
-                            />
-                        </Form.Item>
-
-                        <Form.Item
-                            name="amenities"
-                            label="Amenities"
-                            rules={[
-                                { required: true, message: "Please select at least one amenity" },
-                            ]}
-                            className="md:col-span-2"
-                        >
-                            <Select
-                                mode="multiple"
-                                placeholder="Select amenities"
-                                size="large"
-                                optionFilterProp="children"
-                                dropdownRender={(menu) => (
-                                    <>
-                                        {menu}
-                                        <Divider style={{ margin: '8px 0' }} />
-                                        <Button
-                                            type="text"
-                                            icon={<PlusCircleOutlined />}
-                                            onClick={handleAmenityModalOpen}
-                                            style={{ width: '100%', textAlign: 'left' }}
-                                        >
-                                            Add New Amenity
-                                        </Button>
-                                    </>
-                                )}
-                            >
-                                {amenities.map((amenity) => (
-                                    <Option key={amenity.id} value={amenity.id}>
-                                        {amenity.name}
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-
-                        <Form.Item name="description" label="Description" className="md:col-span-2">
-                            <Input.TextArea
-                                rows={3}
-                                placeholder="Describe the room type features and amenities..."
-                                maxLength={500}
-                                showCount
-                            />
-                        </Form.Item>
-                    </div>
-
-                    <div className="flex justify-end gap-2 mt-6 border-t pt-4">
-                        <Button
-                            onClick={handleModalClose}
-                            size="large"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            icon={editingRoomType ? <SaveOutlined /> : <PlusOutlined />}
-                            loading={createMutation.isPending || updateMutation.isPending}
-                            size="large"
-                        >
-                            {editingRoomType ? "Update Room Type" : "Create Room Type"}
-                        </Button>
-                    </div>
-                </Form>
-            </Modal>
-
-            {/* Create Amenity Modal */}
-            <Modal
-                title={
-                    <div className="flex items-center gap-2">
-                        <PlusCircleOutlined className="text-green-500" />
-                        <span className="text-lg font-semibold">Add New Amenity</span>
-                    </div>
-                }
-                open={isAmenityModalVisible}
-                onCancel={handleAmenityModalClose}
-                width={500}
-                footer={null}
-                maskClosable={false}
-                destroyOnClose
-            >
-                <Form
-                    form={amenityForm}
-                    layout="vertical"
-                    onFinish={handleAmenitySubmit}
-                    className="mt-4"
-                >
-                    <Form.Item
-                        name="name"
-                        label="Amenity Name"
-                        rules={[
-                            { required: true, message: "Please enter amenity name" },
-                            { min: 2, message: "At least 2 characters" },
-                            { max: 255, message: "Max 255 characters" },
-                        ]}
-                    >
-                        <Input
-                            placeholder="e.g. Free WiFi, Air Conditioning, TV"
-                            size="large"
-                            autoFocus
-                        />
-                    </Form.Item>
-
-                    <div className="flex justify-end gap-2 mt-4 border-t pt-4">
-                        <Button
-                            onClick={handleAmenityModalClose}
-                            size="large"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            icon={<PlusOutlined />}
-                            loading={createAmenityMutation.isPending}
-                            size="large"
-                        >
-                            Add Amenity
-                        </Button>
-                    </div>
-                </Form>
-            </Modal>
-        </>
-    );
+            {/* Footer */}
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-sm font-semibold text-white hover:bg-mint-700 disabled:opacity-60 disabled:cursor-not-allowed transition-none"
+              >
+                {isSaving && <Loader2 className="size-4 animate-spin" />}
+                {editingRoomType ? "Update Room Type" : "Create Room Type"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }

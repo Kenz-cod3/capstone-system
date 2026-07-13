@@ -45,7 +45,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -58,17 +58,10 @@ export default function Home() {
           "Exit App",
           "Are you sure you want to exit the app?",
           [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Exit",
-              onPress: () => BackHandler.exitApp(),
-            },
+            { text: "Cancel", style: "cancel" },
+            { text: "Exit", onPress: () => BackHandler.exitApp() },
           ]
         );
-
         return true;
       };
 
@@ -97,10 +90,11 @@ export default function Home() {
 
   const checkUnreadNotifications = async () => {
     try {
-      const res = await api.get(`/notifications/user/${user?.id}`);
-      const result = res.data?.data || res.data;
-      const notifications = Array.isArray(result) ? result : [];
-      setHasUnreadNotifications(notifications.some((n: any) => !n.is_read));
+      const res = await api.get(
+        `/notifications/user/${user?.id}/unread-count`
+      );
+
+      setUnreadNotificationCount(res.data.count ?? 0);
     } catch (e) {
       console.log("Error checking notifications:", e);
     }
@@ -111,9 +105,7 @@ export default function Home() {
       const res = await api.get(`/messages/user/${user?.id}`);
       const messages = res.data?.data ?? res.data ?? [];
       const hasUnread = messages.some(
-        (m: any) =>
-          !m.is_read &&
-          m.message?.sender_id !== user?.id
+        (m: any) => !m.is_read && m.message?.sender_id !== user?.id
       );
       setHasUnreadMessages(hasUnread);
     } catch (e) {
@@ -127,6 +119,18 @@ export default function Home() {
     const interval = setInterval(() => {
       checkUnreadMessages();
     }, 3000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    checkUnreadNotifications();
+
+    const interval = setInterval(() => {
+      checkUnreadNotifications();
+    }, 3000);
+
     return () => clearInterval(interval);
   }, [user]);
 
@@ -221,7 +225,6 @@ export default function Home() {
 
   return (
     <View className="flex-1 bg-[#faf8f3]">
-      {/* Status bar - light content for dark gradient header, dark content for rest of the screen */}
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <ScrollView
@@ -271,26 +274,20 @@ export default function Home() {
                   </Text>
                 </View>
                 <Text className="text-white/50 text-xs tracking-widest uppercase">
-                  Inn
+                  YN
                 </Text>
               </View>
 
               {/* Action icons */}
               <View className="flex-row gap-3">
-                {/* 💬 Chat icon with red dot if unread */}
+                {/* Chat */}
                 <TouchableOpacity
                   onPress={() => {
                     if (isNavigating) return;
-
                     setIsNavigating(true);
-
                     setHasUnreadMessages(false);
-
                     router.push("/chat/1");
-
-                    setTimeout(() => {
-                      setIsNavigating(false);
-                    }, 1000);
+                    setTimeout(() => setIsNavigating(false), 1000);
                   }}
                   activeOpacity={0.7}
                   className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
@@ -301,35 +298,47 @@ export default function Home() {
                   )}
                 </TouchableOpacity>
 
-                {/* 🔔 Notification icon with gold dot if unread */}
+                {/* Notifications */}
                 <TouchableOpacity
-                  onPress={async () => {
-                    if (isNavigating) return;
-
-                    setIsNavigating(true);
-
-                    try {
-                      await api.put(`/notifications/user/${user?.id}/read-all`);
-
-                      setHasUnreadNotifications(false);
-
-                      router.push("/notifications/notification");
-
-                      setTimeout(() => {
-                        setIsNavigating(false);
-                      }, 1000);
-
-                    } catch (e) {
-                      console.log("Error marking notifications as read:", e);
-                      setIsNavigating(false);
-                    }
+                  onPress={() => {
+                    router.push("/notifications/notification");
                   }}
                   activeOpacity={0.7}
                   className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
                 >
-                  <Ionicons name="notifications-outline" size={16} color="#fff" />
-                  {hasUnreadNotifications && (
-                    <View className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+                  <Ionicons
+                    name="notifications-outline"
+                    size={16}
+                    color="#fff"
+                  />
+
+                  {unreadNotificationCount > 0 && (
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: -5,
+                        right: -5,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: "#ef4444",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        paddingHorizontal: 4,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontSize: 10,
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {unreadNotificationCount > 99
+                          ? "99+"
+                          : unreadNotificationCount}
+                      </Text>
+                    </View>
                   )}
                 </TouchableOpacity>
               </View>
@@ -477,7 +486,7 @@ export default function Home() {
                           </Text>
                         </View>
 
-                        {/* Price on image */}
+                        {/* Price + room number on image */}
                         <View className="absolute bottom-4 left-4 right-4 flex-row justify-between items-end">
                           <View>
                             <Text className="text-white/60 text-[10px] tracking-widest uppercase mb-0.5">
@@ -510,7 +519,8 @@ export default function Home() {
                           <View className="flex-row items-center gap-1.5">
                             <Ionicons name="people-outline" size={13} color="#1a4a35" />
                             <Text className="text-[#1a4a35]/60 text-xs">
-                              {item.room_type?.capacity || 2} guests
+                              {/* max_occupancy is the correct DB column */}
+                              {item.room_type?.max_occupancy || 2} guests
                             </Text>
                           </View>
                           <View className="w-px h-3 bg-[#1a4a35]/15" />
@@ -586,7 +596,6 @@ export default function Home() {
         >
           <Ionicons name="layers-outline" size={28} color="#c9a96e" />
         </LinearGradient>
-        {/* Optional: Add a badge for multiple bookings count */}
         <View
           style={{
             position: "absolute",

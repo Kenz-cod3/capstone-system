@@ -2,7 +2,7 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const api = axios.create({
-  baseURL: "http://10.99.189.76:8000/api",
+  baseURL: "http://192.168.8.117:8000/api",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 // STORAGE BASE (ADD THIS)
-const STORAGE_BASE = "http://10.99.189.76:8000/storage/";
+const STORAGE_BASE = "http://192.168.8.117:8000/storage/";
 
 // IMAGE HELPER (ADD THIS)
 export const getImageUrl = (path?: string | null) => {
@@ -39,13 +39,13 @@ export const loadToken = async () => {
   return token;
 };
 
-// ✅ CLEAR TOKEN (LOGOUT)
+// CLEAR TOKEN (LOGOUT)
 export const clearToken = async () => {
   delete api.defaults.headers.common["Authorization"];
   await AsyncStorage.removeItem("token");
 };
 
-// 🔥 REQUEST INTERCEPTOR
+//  REQUEST INTERCEPTOR
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem("token");
 
@@ -56,7 +56,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// 🔥 RESPONSE INTERCEPTOR (FIXED + BULLETPROOF)
+//  RESPONSE INTERCEPTOR (FIXED + BULLETPROOF)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -70,21 +70,21 @@ api.interceptors.response.use(
     try {
       const { useAuthStore } = require("../store/authStore");
 
-      // ✅ 401 → TOKEN INVALID → FORCE LOGOUT
+      //  401 → TOKEN INVALID → FORCE LOGOUT
       if (status === 401 && token) {
         console.log("🚪 401 → Auto logout");
 
         await useAuthStore.getState().logout();
       }
 
-      // ✅ 403 → ACCOUNT INACTIVE (FIXED CONDITION)
+      // 403 → ACCOUNT INACTIVE (FIXED CONDITION)
       if (status === 403 && message?.toLowerCase().includes("inactive")) {
         console.log("⛔ Account inactive detected");
 
-        // 🔥 OPTION A: FORCE LOGOUT (RECOMMENDED)
+        // OPTION A: FORCE LOGOUT (RECOMMENDED)
         await useAuthStore.getState().logout();
 
-        // 🔥 OPTION B (if you want screen instead)
+        //  OPTION B (if you want screen instead)
         // useAuthStore.getState().setInactive(true);
       }
 

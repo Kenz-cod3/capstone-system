@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import {
+    useQuery,
+    useQueryClient,
+    keepPreviousData,
+} from "@tanstack/react-query";
+import debounce from "lodash/debounce";
 import {
     MoreOutlined,
     CloseOutlined,
@@ -6,7 +12,6 @@ import {
     PhoneOutlined,
     EnvironmentOutlined,
     CalendarOutlined,
-    DollarOutlined,
     TagOutlined,
     ClockCircleOutlined,
     HistoryOutlined,
@@ -31,19 +36,18 @@ import {
     Divider,
     Card,
     Badge,
-    Timeline
+    Timeline,
 } from "antd";
 import type { MenuProps, TabsProps } from "antd";
 import api from "@/services/api";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const { Title, Text } = Typography;
-// const { Search } = Input;
 
 interface AddOn {
     id: number;
     add_on_name: string;
     price: number;
-
     pivot?: {
         quantity: number;
         subtotal: number;
@@ -62,7 +66,147 @@ interface Room {
         subtotal: number;
         price_at_time_of_booking: number;
         stay_type?: "short_stay" | "overnight";
+        check_in_date?: string;
+        check_out_date?: string;
         check_out_time?: string;
+    };
+}
+
+interface BookingPayment {
+    id: number;
+    amount: number;
+    payment_method: "cash" | "gcash" | "bank";
+    payment_status: "pending" | "paid" | "refunded" | "failed";
+    gcash_reference?: string;
+    bank_reference?: string;
+    receipt_number?: string;
+    payment_date: string;
+    received_by?: number;
+    receiver?: {
+        id: number;
+        first_name: string;
+        last_name: string;
+    };
+}
+
+interface BookedRoom {
+    id: number;
+    room: Room;
+    status:
+        | "pending"
+        | "confirmed"
+        | "checked_in"
+        | "checked_out"
+        | "cancelled"
+        | "refunded";
+    stay_type: "overnight" | "short_stay";
+    check_in_date: string;
+    check_out_date: string;
+    check_in_time?: string | null;
+    check_out_time?: string | null;
+    subtotal: number;
+    price_at_time_of_booking: number;
+    is_extended: boolean;
+    booking_add_ons?: {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: {
+            id: number;
+            add_on_name: string;
+            price: number;
+        };
+    }[];
+    booking?: {
+        id: number;
+        booking_reference: string;
+        booking_type: "online" | "walk_in";
+        booking_status: string;
+        stay_type: string;
+        check_in_date: string;
+        check_out_date: string;
+        total_price: number;
+        created_at?: string;
+        deleted_at?: string | null;
+        user?: {
+            id: number;
+            first_name?: string;
+            last_name?: string;
+            email?: string;
+            phone?: string;
+            address?: string;
+        };
+        walk_in_guest?: {
+            id: number;
+            first_name: string;
+            last_name: string;
+            full_name?: string;
+            contact_number?: string;
+            address?: string;
+        };
+        payments?: BookingPayment[];
+        histories?: {
+            id: number;
+            old_status: string;
+            new_status: string;
+            change_note: string;
+            override_reason?: string;
+            is_override?: boolean;
+            changed_at: string;
+            changed_by?: number;
+            user?: {
+                first_name?: string;
+                last_name?: string;
+            };
+        }[];
+        created_by?: {
+            id: number;
+            first_name?: string;
+            last_name?: string;
+            role?: string;
+        };
+    };
+    booking_reference?: string;
+    booking_type?: "online" | "walk_in";
+    total_price?: number;
+    created_at?: string;
+    deleted_at?: string | null;
+    user?: {
+        id: number;
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        phone?: string;
+        address?: string;
+    };
+    walk_in_guest?: {
+        id: number;
+        first_name: string;
+        last_name: string;
+        full_name?: string;
+        contact_number?: string;
+        address?: string;
+    };
+    payments?: BookingPayment[];
+    histories?: {
+        id: number;
+        old_status: string;
+        new_status: string;
+        change_note: string;
+        override_reason?: string;
+        is_override?: boolean;
+        changed_at: string;
+        changed_by?: number;
+        user?: {
+            first_name?: string;
+            last_name?: string;
+        };
+    }[];
+    created_by?: {
+        id: number;
+        first_name?: string;
+        last_name?: string;
+        role?: string;
     };
 }
 
@@ -84,6 +228,7 @@ interface History {
 interface User {
     id: number;
     first_name?: string;
+    middle_name?: string;
     last_name?: string;
     email?: string;
     phone?: string;
@@ -115,7 +260,13 @@ interface Booking {
     add_ons?: AddOn[];
     booking_reference: string;
     booking_type: "online" | "walk_in";
-    booking_status: "pending" | "confirmed" | "checked_in" | "checked_out" | "cancelled" | "refunded";
+    booking_status:
+        | "pending"
+        | "confirmed"
+        | "checked_in"
+        | "checked_out"
+        | "cancelled"
+        | "refunded";
     stay_type: "short_stay" | "overnight";
     check_in_date: string;
     check_out_date: string;
@@ -126,22 +277,26 @@ interface Booking {
     deleted_at?: string | null;
     user?: User;
     walk_in_guest?: WalkInGuest;
-    rooms?: Room[];
+    booked_rooms?: BookedRoom[];
     histories?: History[];
     created_by?: CreatedByUser;
-    payments?: {
-        payment_method?: string;
-        gcash_reference?: string;
-        bank_reference?: string;
-    }[];
+    payments?: BookingPayment[];
 }
 
-interface PaginatedResponse {
-    data: Booking[];
-    current_page: number;
-    last_page: number;
-    total: number;
-    per_page: number;
+interface BookingRow extends Booking {
+    booked_room_id: number;
+    room?: Room;
+    status: string;
+    stay_type: "overnight" | "short_stay";
+    subtotal: number;
+    is_extended: boolean;
+    check_in_date: string;
+    check_out_date: string;
+}
+
+interface ExtendResponse {
+    total_price: number;
+    booked_room: BookedRoom;
 }
 
 interface GuestDetails {
@@ -151,124 +306,335 @@ interface GuestDetails {
     address?: string | undefined;
 }
 
+interface PaginatedResponse {
+    data: BookedRoom[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+}
+
+// Helper function to check if object is BookedRoom
+const isBookedRoom = (obj: any): obj is BookedRoom => {
+    return obj && typeof obj === "object" && "room" in obj && "status" in obj;
+};
+
+// Helper function to convert BookedRoom to Booking
+const bookedRoomToBooking = (bookedRoom: BookedRoom): Booking => {
+    const bookingData = bookedRoom.booking;
+
+    return {
+        id: bookingData?.id || bookedRoom.id,
+        booking_reference:
+            bookingData?.booking_reference || `BR-${bookedRoom.id}`,
+        booking_type:
+            (bookingData?.booking_type as "online" | "walk_in") || "walk_in",
+        booking_status:
+            (bookingData?.booking_status as Booking["booking_status"]) ||
+            bookedRoom.status,
+        stay_type:
+            (bookingData?.stay_type as "short_stay" | "overnight") ||
+            bookedRoom.stay_type,
+        check_in_date: bookingData?.check_in_date || bookedRoom.check_in_date,
+        check_out_date:
+            bookingData?.check_out_date || bookedRoom.check_out_date,
+        total_price:
+            bookingData?.total_price ||
+            bookedRoom.total_price ||
+            bookedRoom.subtotal ||
+            0,
+        created_at: bookingData?.created_at || bookedRoom.created_at,
+        deleted_at: bookingData?.deleted_at || bookedRoom.deleted_at || null,
+        user: bookingData?.user || bookedRoom.user,
+        walk_in_guest: bookingData?.walk_in_guest || bookedRoom.walk_in_guest,
+        payments: bookingData?.payments || bookedRoom.payments || [],
+        histories: bookingData?.histories || bookedRoom.histories || [],
+        created_by: bookingData?.created_by || bookedRoom.created_by,
+        booked_rooms: [bookedRoom],
+    };
+};
+
 export default function Bookings() {
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [pageSize, setPageSize] = useState<number>(10);
     const [total, setTotal] = useState<number>(0);
-    const [active, setActive] = useState<Booking[]>([]);
-    const [history, setHistory] = useState<Booking[]>([]);
-    const [trash, setTrash] = useState<Booking[]>([]);
     const [activeTab, setActiveTab] = useState<string>("active");
-    const [loading, setLoading] = useState<boolean>(false);
-    const [searchText, setSearchText] = useState<string>("");
+    const [searchInput, setSearchInput] = useState("");
+    const [searchText, setSearchText] = useState("");
     const [detailsVisible, setDetailsVisible] = useState<boolean>(false);
-    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(
+        null,
+    );
+    const [selectedBookingRow, setSelectedBookingRow] =
+        useState<BookingRow | null>(null);
+    const [selectedBookedRoomId, setSelectedBookedRoomId] = useState<
+        number | null
+    >(null);
     const [userRole, setUserRole] = useState<string>("staff");
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    const bookingId = location.state?.bookingId;
+    const bookedRoomId = location.state?.bookedRoomId;
 
     useEffect(() => {
         setCurrentPage(1);
         setSearchText("");
     }, [activeTab]);
 
-    useEffect(() => {
-        fetchAll(currentPage, pageSize);
-    }, [activeTab, currentPage, pageSize]);
-
     // Get user role on mount
     useEffect(() => {
         const getUserRole = async () => {
             try {
-                const response = await api.get('/user');
+                const response = await api.get("/user");
                 setUserRole(response.data.role);
             } catch (error) {
-                console.error('Failed to get user role:', error);
+                console.error("Failed to get user role:", error);
             }
         };
         getUserRole();
     }, []);
 
-    const fetchAll = async (page: number = currentPage, perPage: number = pageSize) => {
-        setLoading(true);
+    const queryClient = useQueryClient();
 
-        try {
-            let endpoint = "/bookings/active";
+    // Fetch all booked rooms based on active tab using the booked-rooms endpoints
+    const bookingQuery = useQuery({
+        queryKey: ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+        queryFn: async () => {
+            let endpoint = "/booked-rooms";
 
-            if (activeTab === "history") endpoint = "/bookings/history";
-            if (activeTab === "trash") endpoint = "/bookings/trash";
-
-            const res = await api.get<PaginatedResponse>(`${endpoint}?page=${page}&per_page=${perPage}`);
-
-            const response = res.data;
-
-            if (response.current_page > response.last_page) {
-                setCurrentPage(response.last_page || 1);
-                return;
+            if (activeTab === "history") {
+                endpoint = "/booked-rooms/history";
             }
 
-            const data = response.data || [];
-
-            if (activeTab === "active") {
-                setActive(data);
-            } else if (activeTab === "history") {
-                setHistory(data);
-            } else if (activeTab === "trash") {
-                setTrash(data);
+            if (activeTab === "trash") {
+                endpoint = "/booked-rooms/trash";
             }
 
-            setTotal(response.total ?? 0);
+            // Add pagination and search parameters
+            const params = new URLSearchParams({
+                page: currentPage.toString(),
+                per_page: pageSize.toString(),
+            });
 
-        } catch (err) {
-            console.error(err);
-            message.error("Failed to load bookings");
-        } finally {
-            setLoading(false);
+            if (searchText.trim()) {
+                params.append('search', searchText.trim());
+            }
+
+            const { data } = await api.get<PaginatedResponse>(`${endpoint}?${params.toString()}`);
+            
+            // Update total from response
+            setTotal(data.total || 0);
+            
+            return data.data || [];
+        },
+        staleTime: 30000,
+        gcTime: 300000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        placeholderData: keepPreviousData,
+    });
+
+    const bookings = bookingQuery.data ?? [];
+
+    // Remove client-side filtering since we're doing server-side pagination
+    const filteredData = bookings;
+
+    // Remove client-side pagination since we're doing server-side pagination
+    const paginatedData = filteredData;
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchText, activeTab]);
+
+    // Transform BookedRoom data to BookingRow for table display
+    const tableData: BookingRow[] = paginatedData.map((bookedRoom) => {
+        const bookingData = bookedRoom.booking;
+
+        if (!bookingData) {
+            return {
+                id: bookedRoom.id,
+                booked_room_id: bookedRoom.id,
+                room: bookedRoom.room,
+                status: bookedRoom.status,
+                stay_type: bookedRoom.stay_type,
+                subtotal: Number(bookedRoom.subtotal ?? 0),
+                is_extended: bookedRoom.is_extended,
+                check_in_date: bookedRoom.check_in_date,
+                check_out_date: bookedRoom.check_out_date,
+                booking_reference: `BR-${bookedRoom.id}`,
+                booking_type: "walk_in" as const,
+                booking_status: bookedRoom.status as Booking["booking_status"],
+                total_price: Number(bookedRoom.subtotal ?? 0),
+                payments: [],
+                histories: [],
+                created_at: undefined,
+                deleted_at: null,
+            } as BookingRow;
         }
-    };
 
-    const filterData = (data: Booking[]): Booking[] => {
-        if (!searchText) return data;
-        if (!Array.isArray(data)) return [];
+        return {
+            id: bookingData.id || bookedRoom.id,
+            booking_reference: bookingData.booking_reference,
+            booking_type: bookingData.booking_type,
+            booking_status: bookingData.booking_status,
 
-        return data.filter((b) => {
-            const name = b.booking_type === "online"
-                ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`.trim()
-                : b.walk_in_guest?.full_name ?? "";
+            stay_type: bookedRoom.stay_type,
 
-            return (
-                name.toLowerCase().includes(searchText.toLowerCase()) ||
-                b.booking_type?.toLowerCase().includes(searchText.toLowerCase()) ||
-                String(b.id).includes(searchText)
+            check_in_date: bookedRoom.check_in_date,
+            check_out_date: bookedRoom.check_out_date,
+
+            total_price: bookingData.total_price || bookedRoom.subtotal,
+
+            created_at: bookingData.created_at,
+            deleted_at: bookingData.deleted_at,
+
+            user: bookingData.user,
+            walk_in_guest: bookingData.walk_in_guest,
+            payments: bookingData.payments || [],
+            histories: bookingData.histories || [],
+            created_by: bookingData.created_by,
+
+            booked_room_id: bookedRoom.id,
+            room: bookedRoom.room,
+            status: bookedRoom.status,
+            subtotal: Number(bookedRoom.subtotal),
+            is_extended: bookedRoom.is_extended,
+        } as BookingRow;
+    });
+
+    // Get the selected booked room
+    const selectedBookedRoom = (() => {
+        if (selectedBooking?.booked_rooms) {
+            const found = selectedBooking.booked_rooms.find(
+                (br) => br.id === selectedBookedRoomId,
             );
-        });
+            if (found) return found;
+        }
+        const row = tableData.find(
+            (r) => r.booked_room_id === selectedBookedRoomId,
+        );
+        if (row && isBookedRoom(row)) {
+            return row;
+        }
+        return bookings.find((b) => b.id === selectedBookedRoomId);
+    })();
+
+    // Safely get booking_add_ons
+    const getBookingAddOns = (): {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: { id: number; add_on_name: string; price: number };
+    }[] => {
+        if (!selectedBookedRoom) return [];
+        if (isBookedRoom(selectedBookedRoom)) {
+            return (selectedBookedRoom as any).booking_add_ons || [];
+        }
+        return [];
     };
+
+    // Safely get payments
+    const getPayments = (): BookingPayment[] => {
+        if (selectedBooking?.payments) {
+            return selectedBooking.payments;
+        }
+        if (
+            selectedBookedRoom &&
+            isBookedRoom(selectedBookedRoom) &&
+            (selectedBookedRoom as any).payments
+        ) {
+            return (selectedBookedRoom as any).payments;
+        }
+        return [];
+    };
+
+    const roomCharges = Number((selectedBookedRoom as any)?.subtotal ?? 0);
+
+    const addOnTotal = getBookingAddOns().reduce(
+        (total, addon) => total + Number(addon.subtotal ?? 0),
+        0,
+    );
+
+    const paymentSubtotal = roomCharges + addOnTotal;
+
+    const firstPayment = getPayments()[0];
+
+    const hasOpenedFromNavigation = useRef(false);
+
+    useEffect(() => {
+        if (hasOpenedFromNavigation.current) return;
+
+        if (!bookingId || !bookedRoomId) return;
+
+        const row = tableData.find(
+            (r) => r.id === bookingId && r.booked_room_id === bookedRoomId,
+        );
+
+        if (!row) return;
+
+        hasOpenedFromNavigation.current = true;
+
+        setSelectedBookedRoomId(bookedRoomId);
+
+        showDetails(row);
+
+        navigate(location.pathname, {
+            replace: true,
+            state: null,
+        });
+    }, [bookingId, bookedRoomId, tableData]);
+
+    const totalRows = total;
+
+    const debouncedSearch = useMemo(
+        () =>
+            debounce((value: string) => {
+                setSearchText(value);
+            }, 500),
+        [],
+    );
+
+    useEffect(() => {
+        return () => {
+            debouncedSearch.cancel();
+        };
+    }, [debouncedSearch]);
 
     // Reusable function for actions with admin override
     const handleActionWithOverride = (
         action: (reason?: string) => Promise<void>,
         actionName: string,
         bookingId?: number,
-        requiresReason: boolean = true
+        requiresReason: boolean = true,
     ) => {
-        // For staff: execute directly
         if (userRole === "staff") {
             action();
             return;
         }
 
-        // For admin: show confirmation modal
         let reason = "";
 
         const modalContent = (
             <div>
-                <Text style={{ fontSize: "13px" }}>You are about to perform an override action: <strong>{actionName}</strong></Text>
+                <Text style={{ fontSize: "13px" }}>
+                    You are about to perform an override action:{" "}
+                    <strong>{actionName}</strong>
+                </Text>
                 {requiresReason && (
                     <div style={{ marginTop: 16 }}>
-                        <Text style={{ fontSize: "13px" }}>Reason for override (optional):</Text>
+                        <Text style={{ fontSize: "13px" }}>
+                            Reason for override (optional):
+                        </Text>
                         <Input.TextArea
                             rows={3}
                             placeholder="Enter reason for this override action..."
-                            onChange={(e) => reason = e.target.value}
+                            onChange={(e) => (reason = e.target.value)}
                             style={{ marginTop: 8, fontSize: "13px" }}
                         />
                     </div>
@@ -285,135 +651,83 @@ export default function Bookings() {
             centered: true,
             width: 500,
             onOk: async () => {
-                // Log the override reason
                 if (reason) {
-                    console.log(`[ADMIN OVERRIDE] ${actionName} on booking #${bookingId}: ${reason}`);
-                    // You can also send this to your API
+                    console.log(
+                        `[ADMIN OVERRIDE] ${actionName} on booking #${bookingId}: ${reason}`,
+                    );
                     try {
-                        await api.post(`/bookings/${bookingId}/log-override`, {
-                            action: actionName,
-                            reason: reason,
-                            timestamp: new Date().toISOString(),
-                            user_role: userRole
-                        }).catch(() => { }); // Silent fail for logging
+                        await api
+                            .post(`/bookings/${bookingId}/log-override`, {
+                                action: actionName,
+                                reason: reason,
+                                timestamp: new Date().toISOString(),
+                                user_role: userRole,
+                            })
+                            .catch(() => {});
                     } catch (error) {
                         console.error("Failed to log override:", error);
                     }
                 }
 
-                // Execute the action
                 await action(reason);
 
                 if (reason) {
-                    message.success(`${actionName} completed with override reason logged`);
+                    message.success(
+                        `${actionName} completed with override reason logged`,
+                    );
                 } else {
                     message.success(`${actionName} completed`);
                 }
-            }
+            },
         });
     };
 
-    const handleUpdateStatus = async (id: number, status: string, actionName: string) => {
+    const handleUpdateStatus = async (
+        id: number,
+        status: string,
+        actionName: string,
+    ) => {
         const action = async (reason?: string) => {
-            // ✅ OPTIMISTIC UPDATE FIRST — instant UI change
-            setActive((prev: Booking[]) =>
-                prev.map((booking): Booking => {
-                    if (booking.id !== id) return booking;
-                    return {
-                        ...booking,
-                        booking_status: status as Booking["booking_status"],
-                        ...(status === "checked_in"
-                            ? { check_in_time: new Date().toISOString() }
-                            : {})
-                    };
-                })
-            );
-
-            // Update drawer if open
-            if (selectedBooking && selectedBooking.id === id) {
-                setSelectedBooking((prev) =>
-                    prev
-                        ? {
-                            ...prev,
-                            booking_status: status as Booking["booking_status"],
-                            ...(status === "checked_in" && !prev.check_in_time
-                                ? { check_in_time: new Date().toISOString() }
-                                : {})
-                        }
-                        : null
-                );
-            }
-
             try {
-                const response = await api.put(`/bookings/${id}`, {
-
-                    booking_status: status,
-
-                    payment_method:
-                        selectedBooking?.payment_method,
-
-                    gcash_reference:
-                        selectedBooking?.gcash_reference,
-
-                    bank_reference:
-                        selectedBooking?.bank_reference,
-
-                    override_reason: reason
+                const response = await api.put(`/booked-rooms/${id}`, {
+                    status: status,
+                    override_reason: reason,
                 });
 
-                const updatedBooking: Booking = {
-                    ...(response.data.data as Booking),
-                    booking_status: status as Booking["booking_status"],
-                    check_in_time:
-                        response.data.data?.check_in_time
-                };
-
-                // Sync with real server data after API resolves
-                setActive((prev: Booking[]) => {
-                    const updated = prev.map((booking): Booking => {
-                        if (booking.id !== id) return booking;
-                        return {
-                            ...booking,
-                            ...updatedBooking,
-                            histories: updatedBooking.histories ?? booking.histories ?? []
-                        };
-                    });
-
-                    // Move to history if checked_out or refunded
-                    if (status === "checked_out" || status === "refunded") {
-
-                        const moved = updated.find((b) => b.id === id);
-
-                        if (moved) {
-
-                            setHistory((prev) => [
-                                {
-                                    ...moved,
-                                    booking_status: status as Booking["booking_status"]
-                                },
-                                ...prev
-                            ]);
-                        }
-
-                        return updated.filter((b) => b.id !== id);
-                    }
-
-                    return updated;
-                });
-
-                if (selectedBooking && selectedBooking.id === id) {
-                    setSelectedBooking(updatedBooking);
-                }
+                // Update local state
+                queryClient.setQueryData(
+                    ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                    (old: BookedRoom[] | undefined) => {
+                        if (!old) return old;
+                        return old.map((bookedRoom) =>
+                            bookedRoom.id === id
+                                ? {
+                                      ...bookedRoom,
+                                      status: status as BookedRoom["status"],
+                                      ...(status === "checked_in"
+                                          ? {
+                                                check_in_time:
+                                                    new Date().toISOString(),
+                                            }
+                                          : {}),
+                                      ...(status === "checked_out"
+                                          ? {
+                                                check_out_time:
+                                                    new Date().toISOString(),
+                                            }
+                                          : {}),
+                                      ...response.data.data,
+                                  }
+                                : bookedRoom,
+                        );
+                    },
+                );
 
                 message.success(`${actionName} successful`);
-
-                // Sync in background (no await — non-blocking)
-                setTimeout(() => fetchAll(), 800);
+                queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
             } catch (err) {
-                // ✅ ROLLBACK on error — revert optimistic update
                 console.error(err);
-                message.error(`${actionName} failed, reverting...`);
-                fetchAll(); // re-fetch to restore correct state
+                message.error(`${actionName} failed`);
             }
         };
 
@@ -421,6 +735,10 @@ export default function Bookings() {
             let overrideReason = "";
             Modal.confirm({
                 title: `Admin Override: ${actionName}`,
+                centered: true,
+                width: 500,
+                okText: "Proceed",
+                cancelText: "Cancel",
                 content: (
                     <Input.TextArea
                         rows={3}
@@ -429,7 +747,7 @@ export default function Bookings() {
                         style={{ fontSize: "13px" }}
                     />
                 ),
-                onOk: () => action(overrideReason)
+                onOk: () => action(overrideReason),
             });
         } else {
             await action();
@@ -437,125 +755,90 @@ export default function Bookings() {
     };
 
     const handleCheckoutAction = async (bookingId: number) => {
+        console.log("Checkout clicked:", bookingId);
         const action = async (reason?: string) => {
-
-            const booking = active.find(b => b.id === bookingId);
+            const booking = bookings.find((b) => b.id === bookingId);
 
             if (!booking) return;
 
-            if (booking.booking_type === "walk_in") {
+            const bookingType =
+                booking.booking_type ||
+                (booking.booking?.booking_type as "online" | "walk_in") ||
+                "walk_in";
+
+            if (bookingType === "walk_in") {
                 await api.post(`/walk-in-guests/${bookingId}/checkout`, {
-                    override_reason: reason
+                    override_reason: reason,
                 });
             } else {
                 await api.put(`/bookings/${bookingId}`, {
                     booking_status: "checked_out",
-                    override_reason: reason
+                    override_reason: reason,
                 });
             }
 
-            setActive((prev) =>
-                prev.filter((b) => b.id !== bookingId)
+            // Update local state
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== bookingId);
+                },
             );
 
-            const checkedOutBooking = active.find(
-                (b) => b.id === bookingId
-            );
-
+            // Move to history tab
+            const checkedOutBooking = bookings.find((b) => b.id === bookingId);
             if (checkedOutBooking) {
-
-                const historyBooking: Booking = {
+                const updatedBookedRoom: BookedRoom = {
                     ...checkedOutBooking,
-                    booking_status: "checked_out"
+                    status: "checked_out" as BookedRoom["status"],
                 };
-
-                setHistory((prev) => [
-                    historyBooking,
-                    ...prev
-                ]);
-            }
-
-            if (
-                selectedBooking &&
-                selectedBooking.id === bookingId
-            ) {
-                setSelectedBooking((prev) =>
-                    prev
-                        ? {
-                            ...prev,
-                            booking_status: "checked_out"
-                        }
-                        : null
+                queryClient.setQueryData(
+                    ["booked-rooms", "history", currentPage, pageSize, searchText],
+                    (old: BookedRoom[] | undefined) => {
+                        return [updatedBookedRoom, ...(old || [])];
+                    },
                 );
             }
 
             message.success("Check Out successful");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+        };
 
-            setTimeout(() => {
-                fetchAll();
-            }, 800);
+        await handleActionWithOverride(action, "Check Out", bookingId, true);
+    };
+
+    const handleExtendAction = async (booking: BookingRow) => {
+        const action = async () => {
+            const res = await api.post<ExtendResponse>(
+                `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
+            );
+
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.map((b) =>
+                        b.id === booking.id
+                            ? { ...b, total_price: res.data.total_price }
+                            : b,
+                    );
+                },
+            );
+
+            message.success("Stay extended successfully");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
         };
 
         await handleActionWithOverride(
             action,
-            "Check Out",
-            bookingId,
-            true
+            "Extend Stay",
+            booking.id,
+            false,
         );
     };
 
-    // const handleCheckoutAction = async (bookingId: number) => {
-
-    //     const action = async (reason?: string) => {
-    //         await api.post(`/walk-in-guests/${bookingId}/checkout`, {
-    //             override_reason: reason
-    //         });
-
-    //         const checkedOutBooking = active.find(b => b.id === bookingId);
-
-    //         if (checkedOutBooking) {
-    //             const updatedBooking: Booking = { ...checkedOutBooking, booking_status: "checked_out" };
-    //             setHistory((prev: Booking[]) => [updatedBooking, ...prev]);
-    //             setActive((prev: Booking[]) => prev.filter(b => b.id !== bookingId));
-    //         }
-
-    //         if (selectedBooking && selectedBooking.id === bookingId) {
-    //             setSelectedBooking((prev: Booking | null) =>
-    //                 prev ? { ...prev, booking_status: "checked_out" } : null
-    //             );
-    //         }
-    //     };
-
-    //     await handleActionWithOverride(action, "Check Out", bookingId, true);
-    // };
-
-    const handleExtendAction = async (booking: Booking) => {
-        const action = async () => {
-            const res = await api.post<{ total_price: number }>(`/bookings/${booking.id}/extend`);
-
-            setActive((prev: Booking[]) =>
-                prev.map(b =>
-                    b.id === booking.id
-                        ? { ...b, total_price: res.data.total_price }
-                        : b
-                )
-            );
-
-            const updatedBooking = await api.get(`/bookings`);
-
-            const latest = updatedBooking.data.find(
-                (b: Booking) => b.id === booking.id
-            );
-
-            if (latest) {
-                setSelectedBooking(latest);
-            }
-        };
-
-        await handleActionWithOverride(action, "Extend Stay", booking.id, false);
-    };
-
-    const handleExtend = (booking: Booking) => {
+    const handleExtend = (booking: BookingRow) => {
         if (userRole === "staff") {
             Modal.confirm({
                 title: "Extend Stay",
@@ -565,112 +848,173 @@ export default function Bookings() {
                 centered: true,
                 onOk: async () => {
                     try {
-                        const res = await api.post<{ total_price: number }>(`/bookings/${booking.id}/extend`);
-                        await fetchAll();
-
-                        setActive((prev: Booking[]) =>
-                            prev.map(b =>
-                                b.id === booking.id
-                                    ? { ...b, total_price: res.data.total_price }
-                                    : b
-                            )
+                        const res = await api.post<ExtendResponse>(
+                            `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
                         );
 
-                        const updatedBooking = await api.get(`/bookings`);
-
-                        const latest = updatedBooking.data.find(
-                            (b: Booking) => b.id === booking.id
+                        queryClient.setQueryData(
+                            ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                            (old: BookedRoom[] | undefined) => {
+                                if (!old) return old;
+                                return old.map((b) =>
+                                    b.id === booking.id
+                                        ? {
+                                              ...b,
+                                              total_price: res.data.total_price,
+                                          }
+                                        : b,
+                                );
+                            },
                         );
-
-                        if (latest) {
-                            setSelectedBooking(latest);
-                        }
 
                         message.success("Stay extended successfully");
+                        queryClient.invalidateQueries({
+                            queryKey: ["booked-rooms"],
+                        });
                     } catch (err) {
                         console.error(err);
                         message.error("Failed to extend stay");
                     }
-                }
+                },
             });
         } else {
             handleExtendAction(booking);
         }
     };
 
-    const handleDeleteAction = async (id: number) => {
+    const handleRefund = async (record: BookingRow) => {
+        Modal.confirm({
+            title: "Refund Room",
+            content:
+                "Are you sure you want to refund this room? This action cannot be undone.",
+            okText: "Refund",
+            okButtonProps: {
+                danger: true,
+            },
+            cancelText: "Cancel",
+            centered: true,
+            onOk: async () => {
+                try {
+                    await api.post("/booking-payments/refund", {
+                        booking_id: record.id,
+                        booked_room_id: record.booked_room_id,
+                    });
+
+                    message.success("Room refunded successfully");
+
+                    queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    });
+                } catch (error) {
+                    console.error(error);
+                    message.error("Failed to refund room");
+                }
+            },
+        });
+    };
+
+    const handleDeleteAction = async (record: BookingRow) => {
         const action = async (reason?: string) => {
-            await api.delete(`/bookings/${id}`, {
-                data: { override_reason: reason }
+            await api.delete(`/bookings/${record.id}`, {
+                data: {
+                    booked_room_id: record.booked_room_id,
+                    override_reason: reason,
+                },
             });
 
-            const deleted = active.find(b => b.id === id) || history.find(b => b.id === id);
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== record.id);
+                },
+            );
 
-            setActive((prev: Booking[]) => prev.filter(b => b.id !== id));
-            setHistory((prev: Booking[]) => prev.filter(b => b.id !== id));
-
-            if (deleted) {
-                const deletedBooking: Booking = { ...deleted, deleted_at: new Date().toISOString() };
-                setTrash((prev: Booking[]) => [deletedBooking, ...prev]);
+            const deletedItem = bookings.find((b) => b.id === record.id);
+            if (deletedItem) {
+                queryClient.setQueryData(
+                    ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                    (old: BookedRoom[] | undefined) => {
+                        return [deletedItem, ...(old || [])];
+                    },
+                );
             }
 
-            if (selectedBooking && selectedBooking.id === id) {
+            if (selectedBooking && selectedBooking.id === record.id) {
                 setDetailsVisible(false);
                 setSelectedBooking(null);
             }
+
+            message.success("Booking moved to trash");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
         };
 
         if (userRole === "staff") {
-
             Modal.warning({
                 title: "Access Restricted",
                 content: "Only administrators can move bookings to trash.",
                 okText: "OK",
                 centered: true,
             });
-
             return;
         }
 
         await handleActionWithOverride(
             action,
             "Move to Trash",
-            id,
-            true
+            record.id,
+            true,
         );
     };
 
-    const handleRestore = async (id: number) => {
+    const handleRestore = async (record: BookingRow) => {
         try {
-            await api.post(`/bookings/${id}/restore`);
+            await api.post(`/booked-rooms/${record.booked_room_id}/restore`);
 
-            const restored = trash.find(b => b.id === id);
-            setTrash((prev: Booking[]) => prev.filter(b => b.id !== id));
+            queryClient.setQueryData(
+                ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== record.id);
+                },
+            );
 
-            if (restored) {
-                const { deleted_at, ...cleanRestored } = restored;
-                if (restored.booking_status === "checked_out" || restored.booking_status === "cancelled") {
-                    setHistory((prev: Booking[]) => [cleanRestored as Booking, ...prev]);
-                } else {
-                    setActive((prev: Booking[]) => [cleanRestored as Booking, ...prev]);
-                }
+            const restoredItem = bookings.find((b) => b.id === record.id);
+            if (restoredItem) {
+                const cleanRestored = {
+                    ...restoredItem,
+                    deleted_at: undefined,
+                };
+                delete cleanRestored.deleted_at;
+                queryClient.setQueryData(
+                    ["booked-rooms", "active", currentPage, pageSize, searchText],
+                    (old: BookedRoom[] | undefined) => {
+                        return [cleanRestored, ...(old || [])];
+                    },
+                );
             }
 
             message.success("Booking restored successfully");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
         } catch (err) {
             console.error(err);
             message.error("Failed to restore booking");
         }
     };
 
-    const handleForceDelete = async (id: number) => {
+    const handleForceDelete = async (record: BookingRow) => {
         Modal.confirm({
             title: "Permanent Deletion",
             content: (
                 <div>
-                    <Text type="danger" style={{ fontSize: "13px" }}>⚠️ This action cannot be undone!</Text>
+                    <Text type="danger" style={{ fontSize: "13px" }}>
+                        ⚠️ This action cannot be undone!
+                    </Text>
                     <br />
-                    <Text style={{ fontSize: "13px" }}>Are you sure you want to permanently delete this booking?</Text>
+                    <Text style={{ fontSize: "13px" }}>
+                        Are you sure you want to permanently delete this
+                        booking?
+                    </Text>
                 </div>
             ),
             okText: "Delete Forever",
@@ -678,25 +1022,86 @@ export default function Bookings() {
             okButtonProps: { danger: true },
             onOk: async () => {
                 try {
-                    await api.delete(`/bookings/${id}/force-delete`);
-                    setTrash((prev: Booking[]) => prev.filter(b => b.id !== id));
+                    await api.delete(
+                        `/booked-rooms/${record.booked_room_id}/force-delete`,
+                    );
 
-                    if (selectedBooking && selectedBooking.id === id) {
+                    queryClient.setQueryData(
+                        ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                        (old: BookedRoom[] | undefined) => {
+                            if (!old) return old;
+                            return old.filter((b) => b.id !== record.id);
+                        },
+                    );
+
+                    if (selectedBooking && selectedBooking.id === record.id) {
                         setDetailsVisible(false);
                         setSelectedBooking(null);
                     }
 
-                    message.success(`Booking #${id} permanently deleted`);
+                    message.success(`Booking permanently deleted`);
+                    queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    });
                 } catch (err) {
                     console.error(err);
                     message.error("Failed to delete booking permanently");
                 }
-            }
+            },
         });
     };
 
-    const showDetails = (record: Booking) => {
-        setSelectedBooking(record);
+    const showDetails = (record: BookingRow) => {
+        const bookedRoom = bookings.find((b) => b.id === record.booked_room_id);
+
+        if (bookedRoom && bookedRoom.booking) {
+            const fullBooking: Booking = {
+                ...bookedRoom.booking,
+                booked_rooms: [bookedRoom],
+                id: bookedRoom.booking.id || bookedRoom.id,
+            } as Booking;
+            setSelectedBooking(fullBooking);
+        } else if (bookedRoom) {
+            const fullBooking = bookedRoomToBooking(bookedRoom);
+            setSelectedBooking(fullBooking);
+        } else {
+            const minimalBooking: Booking = {
+                id: record.id,
+                booking_reference:
+                    record.booking_reference || `BR-${record.id}`,
+                booking_type: record.booking_type || "walk_in",
+                booking_status: record.status as Booking["booking_status"],
+                stay_type: record.stay_type as Booking["stay_type"],
+                check_in_date: record.check_in_date,
+                check_out_date: record.check_out_date,
+                total_price: record.total_price || record.subtotal,
+                created_at: record.created_at,
+                deleted_at: record.deleted_at || null,
+                user: record.user,
+                walk_in_guest: record.walk_in_guest,
+                booked_rooms: [
+                    {
+                        id: record.booked_room_id,
+                        room: record.room!,
+                        status: record.status as BookedRoom["status"],
+                        stay_type: record.stay_type,
+                        check_in_date: record.check_in_date,
+                        check_out_date: record.check_out_date,
+                        subtotal: record.subtotal,
+                        price_at_time_of_booking: record.subtotal,
+                        is_extended: record.is_extended,
+                        booking_add_ons: [],
+                    },
+                ],
+                payments: record.payments || [],
+                histories: record.histories || [],
+                created_by: record.created_by,
+            };
+            setSelectedBooking(minimalBooking);
+        }
+
+        setSelectedBookingRow(record);
+        setSelectedBookedRoomId(record.booked_room_id);
         setDetailsVisible(true);
     };
 
@@ -705,7 +1110,7 @@ export default function Bookings() {
         return new Date(date).toLocaleDateString("en-PH", {
             year: "numeric",
             month: "short",
-            day: "numeric"
+            day: "numeric",
         });
     };
 
@@ -716,7 +1121,7 @@ export default function Bookings() {
             month: "short",
             day: "numeric",
             hour: "2-digit",
-            minute: "2-digit"
+            minute: "2-digit",
         });
     };
 
@@ -724,35 +1129,15 @@ export default function Bookings() {
         if (!datetime) return "-";
         return new Date(datetime).toLocaleTimeString("en-PH", {
             hour: "2-digit",
-            minute: "2-digit"
+            minute: "2-digit",
         });
     };
 
-    const getExpectedCheckoutDate = (booking: Booking): string => {
-        if (!booking.check_in_date) return "-";
-
-        const date = new Date(booking.check_in_date);
-        date.setDate(date.getDate() + 1);
-
-        return formatDate(date.toISOString());
-    };
-
-    const getCheckoutTime = (booking: Booking): string => {
-        // 🔥 PRIORITY: booking table (ONLINE)
-        if (booking.check_out_time) {
-            return formatTime(booking.check_out_time);
+    const getExpectedCheckoutDate = (bookedRoom?: BookedRoom): string => {
+        if (!bookedRoom?.check_out_date) {
+            return "-";
         }
-
-        // 🔥 FALLBACK: pivot (WALK-IN)
-        if (booking.rooms && booking.rooms.length > 0) {
-            const room = booking.rooms[0];
-
-            if (room?.pivot?.check_out_time) {
-                return formatTime(room.pivot.check_out_time);
-            }
-        }
-
-        return "-";
+        return formatDate(bookedRoom.check_out_date);
     };
 
     const getStatusColor = (status: string): string => {
@@ -762,7 +1147,7 @@ export default function Bookings() {
             checked_in: "blue",
             checked_out: "default",
             cancelled: "red",
-            refunded: "purple"
+            refunded: "purple",
         };
         return colors[status] || "default";
     };
@@ -774,33 +1159,37 @@ export default function Bookings() {
             checked_in: "#1890ff",
             checked_out: "#8c8c8c",
             cancelled: "#ff4d4f",
-            refunded: "#722ed1"
+            refunded: "#722ed1",
         };
         return colors[status] || "#8c8c8c";
     };
 
-    const getOverdueDays = (booking: Booking) => {
+    const getPaymentStatusColor = (status: string): string => {
+        const colors: Record<string, string> = {
+            paid: "green",
+            pending: "orange",
+            refunded: "purple",
+            failed: "red",
+        };
+        return colors[status] || "default";
+    };
 
-        if (booking.booking_status !== "checked_in") {
+    const getOverdueDays = (bookedRoom?: BookedRoom): number => {
+        if (
+            !bookedRoom ||
+            bookedRoom.status !== "checked_in" ||
+            !bookedRoom.check_out_date
+        ) {
             return 0;
         }
 
-        const checkoutDate = new Date(
-            booking.check_out_date
-        );
-
+        const checkoutDate = new Date(bookedRoom.check_out_date);
         const today = new Date();
-
         checkoutDate.setHours(0, 0, 0, 0);
         today.setHours(0, 0, 0, 0);
 
-        const diff =
-            today.getTime() -
-            checkoutDate.getTime();
-
-        const days = Math.floor(
-            diff / (1000 * 60 * 60 * 24)
-        );
+        const diff = today.getTime() - checkoutDate.getTime();
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
         return days > 0 ? days : 0;
     };
@@ -818,103 +1207,135 @@ export default function Bookings() {
     const getGuestDetails = (booking: Booking): GuestDetails => {
         if (booking.booking_type === "online") {
             const result: GuestDetails = {
-                name: `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim()
+                name: `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim(),
             };
-            if (booking.user?.email !== undefined) result.email = booking.user.email;
-            if (booking.user?.phone !== undefined) result.phone = booking.user.phone;
-            if (booking.user?.address !== undefined) result.address = booking.user.address;
+            if (booking.user?.email !== undefined)
+                result.email = booking.user.email;
+            if (booking.user?.phone !== undefined)
+                result.phone = booking.user.phone;
+            if (booking.user?.address !== undefined)
+                result.address = booking.user.address;
             return result;
         } else {
             const result: GuestDetails = {
-                name: booking.walk_in_guest?.full_name || "Guest"
+                name: booking.walk_in_guest?.full_name || "Guest",
             };
-            if (booking.walk_in_guest?.contact_number !== undefined) result.phone = booking.walk_in_guest.contact_number;
-            if (booking.walk_in_guest?.address !== undefined) result.address = booking.walk_in_guest.address;
+            if (booking.walk_in_guest?.contact_number !== undefined)
+                result.phone = booking.walk_in_guest.contact_number;
+            if (booking.walk_in_guest?.address !== undefined)
+                result.address = booking.walk_in_guest.address;
             return result;
         }
     };
 
-    const getRoomPrice = (room: Room, stayType: string): number => {
-        if (room.pivot?.subtotal != null) {
-            return Number(room.pivot.subtotal);
-        }
-
-        if (room.pivot?.price_at_time_of_booking != null) {
-            if (stayType === "short_stay") {
-                return Number(room.pivot.price_at_time_of_booking) / 2;
-            }
-            return Number(room.pivot.price_at_time_of_booking);
-        }
-
-        if (room.room_type) {
-            if (stayType === "short_stay" && room.room_type.short_stay_price) {
-                return room.room_type.short_stay_price;
-            }
-            return room.room_type.base_price || 0;
-        }
-
-        return 0;
-    };
-
-    const getActionMenu = (record: Booking, type: string): MenuProps => {
+    const getActionMenu = (record: BookingRow, type: string): MenuProps => {
         const items: MenuProps["items"] = [];
 
         if (type === "active") {
-            if (record.booking_status === "pending") {
+            // Pending
+            if (record.status === "pending") {
+                items.push(
+                    {
+                        key: "confirm",
+                        label: "Confirm",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "confirmed",
+                                "Confirm Booking",
+                            ),
+                    },
+                    {
+                        key: "cancel",
+                        label: "Cancel Booking",
+                        danger: true,
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "cancelled",
+                                "Cancel Booking",
+                            ),
+                    },
+                );
+            }
+
+            // Confirmed
+            if (record.status === "confirmed") {
+                items.push(
+                    {
+                        key: "checkin",
+                        label: "Check In",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "checked_in",
+                                "Check In",
+                            ),
+                    },
+                    {
+                        key: "cancel",
+                        label: "Cancel Booking",
+                        danger: true,
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "cancelled",
+                                "Cancel Booking",
+                            ),
+                    },
+                );
+            }
+
+            // Checked In
+            if (record.status === "checked_in") {
+                items.push(
+                    {
+                        key: "checkout",
+                        label: "Check Out",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "checked_out",
+                                "Check Out",
+                            ),
+                    },
+                    {
+                        key: "extend",
+                        label: "Extend Stay",
+                        onClick: () => handleExtend(record),
+                    },
+                    {
+                        key: "refund",
+                        label: "Refund Room",
+                        danger: true,
+                        onClick: () => handleRefund(record),
+                    },
+                );
+            }
+
+            // Cancelled
+            if (record.status === "cancelled") {
                 items.push({
-                    key: "confirm",
-                    label: "Confirm",
-                    onClick: () => handleUpdateStatus(record.id, "confirmed", "Confirm Booking")
+                    key: "refund",
+                    label: "Refund Room",
+                    danger: true,
+                    onClick: () => handleRefund(record),
                 });
             }
 
-            if (record.booking_status === "confirmed") {
-                items.push({
-                    key: "checkin",
-                    label: "Check In",
-                    onClick: () => handleUpdateStatus(record.id, "checked_in", "Check In")
-                });
-            }
-
-            if (record.booking_status === "checked_in") {
-                items.push({
-                    key: "extend",
-                    label: "Extend Stay",
-                    onClick: () => handleExtend(record)
-                });
-                items.push({
-                    key: "checkout",
-                    label: "Check Out",
-                    onClick: () => {
-                        handleCheckoutAction(record.id);
-                    }
-                });
-            }
-
+            // Move to Trash
             items.push({
                 key: "trash",
                 label: "Move to Trash",
                 danger: true,
-                onClick: () => handleDeleteAction(record.id)
+                onClick: () => handleDeleteAction(record),
             });
-            if (record.booking_status === "cancelled") {
-                items.push({
-                    key: "refunded",
-                    label: "Mark as Refunded",
-                    onClick: () =>
-                        handleUpdateStatus(
-                            record.id,
-                            "refunded",
-                            "Refund Booking"
-                        )
-                });
-            }
         } else if (type === "history") {
             items.push({
                 key: "trash",
                 label: "Move to Trash",
                 danger: true,
-                onClick: () => handleDeleteAction(record.id)
+                onClick: () => handleDeleteAction(record),
             });
         } else if (type === "trash") {
             items.push(
@@ -922,43 +1343,39 @@ export default function Bookings() {
                     key: "restore",
                     label: "Restore",
                     onClick: () => {
-
                         if (userRole === "staff") {
-
                             Modal.warning({
                                 title: "Access Restricted",
-                                content: "Only administrators can restore bookings.",
+                                content:
+                                    "Only administrators can restore bookings.",
                                 okText: "OK",
                                 centered: true,
                             });
-
                             return;
                         }
 
-                        handleRestore(record.id);
-                    }
+                        handleRestore(record);
+                    },
                 },
                 {
                     key: "delete",
                     label: "Delete Forever",
                     danger: true,
                     onClick: () => {
-
                         if (userRole === "staff") {
-
                             Modal.warning({
                                 title: "Access Restricted",
-                                content: "Only administrators can permanently delete bookings.",
+                                content:
+                                    "Only administrators can permanently delete bookings.",
                                 okText: "OK",
                                 centered: true,
                             });
-
                             return;
                         }
 
-                        handleForceDelete(record.id);
-                    }
-                }
+                        handleForceDelete(record);
+                    },
+                },
             );
         }
 
@@ -969,110 +1386,111 @@ export default function Bookings() {
         e.stopPropagation();
     };
 
-    const rowSelection = {
-        selectedRowKeys,
-        onChange: (newSelectedRowKeys: React.Key[]) => {
-            setSelectedRowKeys(newSelectedRowKeys);
-        },
-        columnWidth: 40,
-        fixed: true,
-    };
-
     const columns = [
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Booking Reference ID</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Booking Reference
+                </span>
+            ),
             key: "booking_id",
-            width: "15%",
-            render: (_: any, record: Booking) => (
+            width: "12%",
+            render: (_: any, record: BookingRow) => (
                 <Text style={{ fontSize: "13px", fontWeight: 500 }}>
-                    {record.booking_reference}-{record.id}
+                    {record.booking_reference}
                 </Text>
-            )
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Guest Name</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Guest Name
+                </span>
+            ),
             key: "guest_name",
-            width: "15%",
-            render: (_: any, record: Booking) => (
+            width: "13%",
+            align: "left" as const,
+            render: (_: any, record: BookingRow) => (
                 <Button
                     type="link"
-                    style={{ color: "black", padding: 0, fontSize: "13px", fontWeight: 400 }}
+                    style={{
+                        color: "black",
+                        padding: 0,
+                        fontSize: "13px",
+                        fontWeight: 400,
+                    }}
                     onClick={() => showDetails(record)}
                 >
                     {getGuestName(record)}
                 </Button>
-            )
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Room</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>Room</span>
+            ),
             key: "room",
-            width: "8%",
+            width: "5%",
             align: "center" as const,
-            render: (_: any, record: Booking) => (
-                <Text style={{ fontSize: "13px" }}>{record.rooms?.length ? record.rooms.map((r: Room) => r.room_number).join(", ") : "N/A"}</Text>
-            )
+            render: (_: any, record: BookingRow) => (
+                <Text style={{ fontSize: "13px" }}>
+                    {record.room?.room_number ?? "N/A"}
+                </Text>
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Type</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>Type</span>
+            ),
             key: "type",
             width: "8%",
-            render: (_: any, record: Booking) => (
-                <Tag color={record.booking_type === "walk_in" ? "blue" : "green"} style={{ fontSize: "12px", padding: "4px 12px", borderRadius: "6px" }}>
+            align: "center" as const,
+            render: (_: any, record: BookingRow) => (
+                <Tag
+                    color={record.booking_type === "walk_in" ? "blue" : "green"}
+                    style={{
+                        fontSize: "12px",
+                        padding: "4px 12px",
+                        borderRadius: "6px",
+                    }}
+                >
                     {record.booking_type === "walk_in" ? "Walk-in" : "Online"}
                 </Tag>
-            )
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Status</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Status
+                </span>
+            ),
             key: "status",
             width: "10%",
-            render: (_: any, record: Booking) => {
-
-                const wasExtended =
-                    record.histories?.some(h =>
-                        h.change_note?.toLowerCase().includes("extended")
-                    );
-
-                return (
-                    <Space size={4} wrap>
-
-                        <Tag
-                            color={getStatusColor(record.booking_status)}
-                            style={{
-                                fontSize: "12px",
-                                padding: "4px 12px",
-                                borderRadius: "6px"
-                            }}
-                        >
-                            {record.booking_status
-                                ?.replace(/_/g, " ")
-                                .toUpperCase()}
-                        </Tag>
-
-                        {wasExtended && (
-                            <Tag
-                                color="purple"
-                                style={{
-                                    fontSize: "11px",
-                                    borderRadius: "6px"
-                                }}
-                            >
-                                EXTENDED
-                            </Tag>
-                        )}
-
-                    </Space>
-                );
-            }
+            align: "center" as const,
+            render: (_: any, record: BookingRow) => (
+                <Tag
+                    color={getStatusColor(record.status)}
+                    style={{
+                        fontSize: "12px",
+                        padding: "4px 12px",
+                        borderRadius: "6px",
+                    }}
+                >
+                    {record.status?.replace(/_/g, " ").toUpperCase()}
+                </Tag>
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Stay Type</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Stay Type
+                </span>
+            ),
             key: "stay_type",
             width: "12%",
-            render: (_: any, record: Booking) => {
-                const type =
-                    record.rooms?.[0]?.pivot?.stay_type || record.stay_type;
-
+            align: "center" as const,
+            render: (_: any, record: BookingRow) => {
+                const type = record.room?.pivot?.stay_type ?? record.stay_type;
                 return (
                     <Tag
                         color={type === "short_stay" ? "purple" : "cyan"}
@@ -1081,172 +1499,228 @@ export default function Bookings() {
                         {type === "short_stay" ? "Short Stay" : "Overnight"}
                     </Tag>
                 );
-            }
+            },
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Check In</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Check In
+                </span>
+            ),
             key: "check_in",
             width: "8%",
-            render: (_: any, record: Booking) => (
-                <Text style={{ fontSize: "13px" }}>{formatDate(record.check_in_date)}</Text>
-            )
+            render: (_: any, record: BookingRow) => (
+                <Text style={{ fontSize: "13px" }}>
+                    {formatDate(record.check_in_date)}
+                </Text>
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Check-In Time</span>,
-            key: "check_in_time",
-            width: "8%",
-            align: "center" as const,
-            render: (_: any, record: Booking) => (
-                <Text style={{ fontSize: "13px" }}>{formatTime(record.check_in_time || "")}</Text>
-            )
-        },
-        {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Check Out</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Check Out
+                </span>
+            ),
             key: "check_out",
             width: "8%",
-            render: (_: any, record: Booking) => (
-                <Text style={{ fontSize: "13px" }}>{formatDate(record.check_out_date)}</Text>
-            )
-        },
-        {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Total</span>,
-            key: "total",
-            width: "8%",
-            render: (_: any, record: Booking) => (
-                <Text strong style={{ color: "#52c41a", fontSize: "13px", fontWeight: 600 }}>
-                    ₱{record.total_price?.toLocaleString()}
+            render: (_: any, record: BookingRow) => (
+                <Text style={{ fontSize: "13px" }}>
+                    {formatDate(record.check_out_date)}
                 </Text>
-            )
+            ),
         },
         {
-            title: <span style={{ fontSize: "13px", fontWeight: 600 }}>Action</span>,
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Payment
+                </span>
+            ),
+            key: "payment_status",
+            width: "9%",
+            align: "center" as const,
+            render: (_: any, record: BookingRow) => {
+                const payment = record.payments?.[0];
+                const status = payment?.payment_status ?? "pending";
+                return (
+                    <Tag
+                        color={getPaymentStatusColor(status)}
+                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                    >
+                        {status.toUpperCase()}
+                    </Tag>
+                );
+            },
+        },
+        {
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Amount
+                </span>
+            ),
+            key: "subtotal",
+            width: "8%",
+            render: (_: any, record: BookingRow) => {
+                const addOnTotal =
+                    record.booked_rooms
+                        ?.find((br) => br.id === record.booked_room_id)
+                        ?.booking_add_ons?.reduce(
+                            (sum, addon) => sum + Number(addon.subtotal ?? 0),
+                            0,
+                        ) ?? 0;
+
+                const total = Number(record.subtotal) + addOnTotal;
+
+                return (
+                    <Text
+                        strong
+                        style={{
+                            color: "#52c41a",
+                            fontSize: "13px",
+                            fontWeight: 600,
+                        }}
+                    >
+                        ₱
+                        {total.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })}
+                    </Text>
+                );
+            },
+        },
+        {
+            title: (
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                    Action
+                </span>
+            ),
             key: "action",
             width: "5%",
             align: "center" as const,
-            render: (_: any, record: Booking) => (
+            render: (_: any, record: BookingRow) => (
                 <div onClick={(e) => handleActionClick(e, record)}>
-                    <Dropdown menu={getActionMenu(record, activeTab)} trigger={["click"]}>
-                        <Button type="text" icon={<MoreOutlined />} size="small" />
+                    <Dropdown
+                        menu={getActionMenu(record, activeTab)}
+                        trigger={["click"]}
+                    >
+                        <Button
+                            type="text"
+                            icon={<MoreOutlined />}
+                            size="small"
+                        />
                     </Dropdown>
                 </div>
-            )
-        }
+            ),
+        },
     ];
 
-    const rowProps = (record: Booking) => {
-
-        const overdueDays =
-            getOverdueDays(record);
+    const rowProps = (record: BookingRow) => {
+        const bookedRoom = record.booked_rooms?.find(
+            (br) => br.id === record.booked_room_id,
+        );
+        const overdueDays = getOverdueDays(bookedRoom);
 
         return {
             onClick: () => showDetails(record),
-
-            style: {
-                cursor: "pointer"
-            },
-
             className:
-                overdueDays >= 3
-                    ? "critical-overdue-row"
-                    : overdueDays >= 1
+                selectedBookedRoomId === record.booked_room_id
+                    ? "selected-booking-row"
+                    : overdueDays >= 3
+                      ? "critical-overdue-row"
+                      : overdueDays >= 1
                         ? "warning-overdue-row"
-                        : "clickable-row"
+                        : "clickable-row",
         };
     };
 
-    const getTableData = (): Booking[] => {
-        switch (activeTab) {
-            case "active":
-                return filterData(active);
-            case "history":
-                return filterData(history);
-            case "trash":
-                return filterData(trash);
-            default:
-                return [];
-        }
-    };
-
     const renderTable = () => (
-        <Table<Booking>
-            className="no-border-table clickable-rows mint-selection-table premium-table"
+        <Table<BookingRow>
+            className="premium-table"
             columns={columns}
-            dataSource={getTableData()}
-            rowKey="id"
-            loading={loading}
+            dataSource={tableData}
+            rowKey={(record) => record.booked_room_id}
+            loading={bookingQuery.isLoading}
             size="middle"
             bordered={false}
             pagination={false}
-            // scroll={{ x: "max-content" }}
             onRow={rowProps}
         />
     );
 
-    const renderPagination = () => (
-        <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 20,
-            flexWrap: "wrap",
-            gap: 16,
-            padding: "12px 0"
-        }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <Button
-                    size="small"
-                    disabled={currentPage === 1 || loading}
-                    onClick={() => setCurrentPage((prev: number) => prev - 1)}
-                    style={{ borderRadius: "8px" }}
-                >
-                    Prev
-                </Button>
-
-                <Text style={{ fontSize: "12px" }}>
-                    Page {currentPage} of {Math.ceil(total / pageSize) || 1}
-                </Text>
-
-                <Button
-                    size="small"
-                    disabled={currentPage >= Math.ceil(total / pageSize) || loading}
-                    onClick={() => setCurrentPage((prev: number) => prev + 1)}
-                    style={{ borderRadius: "8px" }}
-                >
-                    Next
-                </Button>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <Text style={{ fontSize: "13px" }}>Total: {total}</Text>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Text style={{ fontSize: "13px" }}>Rows:</Text>
-                    <select
-                        value={pageSize}
-                        onChange={(e) => {
-                            setPageSize(Number(e.target.value));
-                            setCurrentPage(1);
-                        }}
-                        style={{
-                            padding: "6px 12px",
-                            borderRadius: "8px",
-                            border: "1px solid #e5e7eb",
-                            fontSize: "13px",
-                            backgroundColor: "white",
-                            cursor: "pointer",
-                            outline: "none"
-                        }}
+    const renderPagination = () => {
+        const totalPages = Math.ceil(totalRows / pageSize) || 1;
+        
+        return (
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: 20,
+                    flexWrap: "wrap",
+                    gap: 16,
+                    padding: "12px 0",
+                }}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <Button
+                        size="small"
+                        disabled={currentPage === 1 || bookingQuery.isLoading}
+                        onClick={() => setCurrentPage((prev: number) => prev - 1)}
+                        style={{ borderRadius: "8px" }}
                     >
-                        <option value={10}>10</option>
-                        <option value={20}>20</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                    </select>
-                    <Text style={{ fontSize: "13px" }}>/ page</Text>
+                        Prev
+                    </Button>
+
+                    <Text style={{ fontSize: "12px" }}>
+                        Page {currentPage} of {totalPages}
+                    </Text>
+
+                    <Button
+                        size="small"
+                        disabled={
+                            currentPage >= totalPages ||
+                            bookingQuery.isLoading
+                        }
+                        onClick={() => setCurrentPage((prev: number) => prev + 1)}
+                        style={{ borderRadius: "8px" }}
+                    >
+                        Next
+                    </Button>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <Text style={{ fontSize: "13px" }}>Total: {totalRows}</Text>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: "13px" }}>Rows:</Text>
+                        <select
+                            value={pageSize}
+                            onChange={(e) => {
+                                setPageSize(Number(e.target.value));
+                                setCurrentPage(1);
+                            }}
+                            style={{
+                                padding: "6px 12px",
+                                borderRadius: "8px",
+                                border: "1px solid #e5e7eb",
+                                fontSize: "13px",
+                                backgroundColor: "white",
+                                cursor: "pointer",
+                                outline: "none",
+                            }}
+                        >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
+                        <Text style={{ fontSize: "13px" }}>/ page</Text>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const tabItems: TabsProps["items"] = [
         {
@@ -1254,7 +1728,9 @@ export default function Bookings() {
             label: (
                 <Space size={6}>
                     <CheckCircleOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>Active</span>
+                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
+                        Active
+                    </span>
                 </Space>
             ),
             children: (
@@ -1262,14 +1738,16 @@ export default function Bookings() {
                     {renderTable()}
                     {renderPagination()}
                 </>
-            )
+            ),
         },
         {
             key: "history",
             label: (
                 <Space size={6}>
                     <HistoryOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>History</span>
+                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
+                        History
+                    </span>
                 </Space>
             ),
             children: (
@@ -1277,33 +1755,39 @@ export default function Bookings() {
                     {renderTable()}
                     {renderPagination()}
                 </>
-            )
+            ),
         },
         {
             key: "trash",
             label: (
                 <Space size={6}>
                     <DeleteOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>Trash</span>
+                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
+                        Trash
+                    </span>
                 </Space>
             ),
             children: (
                 <>
-                    {trash.length > 0 && (
+                    {bookings.length > 0 && (
                         <Alert
                             message="Warning"
                             description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
                             type="warning"
                             showIcon
                             closable
-                            style={{ marginBottom: 16, fontSize: "12px", borderRadius: "10px" }}
+                            style={{
+                                marginBottom: 16,
+                                fontSize: "12px",
+                                borderRadius: "10px",
+                            }}
                         />
                     )}
                     {renderTable()}
                     {renderPagination()}
                 </>
-            )
-        }
+            ),
+        },
     ];
 
     const renderBookingDetails = () => {
@@ -1311,36 +1795,75 @@ export default function Bookings() {
 
         const guestDetails = getGuestDetails(selectedBooking);
         const guestName = getGuestName(selectedBooking);
-        const statusColor = getStatusBadgeColor(selectedBooking.booking_status);
-
+        const status =
+            (selectedBookedRoom as any)?.status ??
+            selectedBooking?.booking_status ??
+            "pending";
+        const statusColor = getStatusBadgeColor(status);
         const histories = selectedBooking.histories || [];
 
-        const confirmedBy = histories.find(h => h.new_status === "confirmed");
-        const checkedInBy = histories.find(h => h.new_status === "checked_in");
-        const checkedOutBy = histories.find(h => h.new_status === "checked_out");
-        const override = histories.find(h => h.is_override);
+        const confirmedBy = histories.find((h) => h.new_status === "confirmed");
+        const checkedInBy = histories.find(
+            (h) => h.new_status === "checked_in",
+        );
+        const checkedOutBy = histories.find(
+            (h) => h.new_status === "checked_out",
+        );
+        const override = histories.find((h) => h.is_override);
+
         const overdueDays =
-            getOverdueDays(selectedBooking);
+            selectedBookedRoom && isBookedRoom(selectedBookedRoom)
+                ? getOverdueDays(selectedBookedRoom)
+                : 0;
+
+        const displayAddOns = getBookingAddOns();
+        const displayPayments = getPayments();
+        const firstPayment = displayPayments[0];
 
         return (
             <Drawer
                 title={
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                        }}
+                    >
                         <Space size={8}>
-                            <Tag color="blue" style={{ fontSize: "12px", borderRadius: "6px" }}>#{selectedBooking.id}</Tag>
-                            <Text strong style={{ fontSize: "14px", fontWeight: 600 }}>{guestName}</Text>
+                            <Text
+                                strong
+                                style={{ fontSize: "14px", fontWeight: 600 }}
+                            >
+                                {guestName}
+                            </Text>
                         </Space>
                     </div>
                 }
                 placement="right"
                 open={detailsVisible}
-                onClose={() => setDetailsVisible(false)}
+                onClose={() => {
+                    setDetailsVisible(false);
+                    setSelectedBookedRoomId(null);
+                }}
                 width={500}
                 closable={true}
                 closeIcon={<CloseOutlined style={{ fontSize: "14px" }} />}
                 extra={
-                    <Dropdown menu={getActionMenu(selectedBooking, activeTab)} trigger={["click"]}>
-                        <Button type="primary" icon={<MoreOutlined />} size="middle" style={{ borderRadius: "8px" }}>
+                    <Dropdown
+                        menu={
+                            selectedBookingRow
+                                ? getActionMenu(selectedBookingRow, activeTab)
+                                : { items: [] }
+                        }
+                        trigger={["click"]}
+                    >
+                        <Button
+                            type="primary"
+                            icon={<MoreOutlined />}
+                            size="middle"
+                            style={{ borderRadius: "8px" }}
+                        >
                             Actions
                         </Button>
                     </Dropdown>
@@ -1350,52 +1873,21 @@ export default function Bookings() {
                     <Badge
                         color={statusColor}
                         text={
-                            <Text strong style={{ fontSize: "14px", color: statusColor, fontWeight: 600 }}>
-                                {selectedBooking.booking_status?.replace(/_/g, " ").toUpperCase()}
+                            <Text
+                                strong
+                                style={{
+                                    fontSize: "14px",
+                                    color: statusColor,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                {status.replace(/_/g, " ").toUpperCase()}
                             </Text>
                         }
                     />
                 </div>
 
-                <Card
-                    title={
-                        <Space size={6}>
-                            <UserOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>Guest Information</span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{ marginBottom: 16, borderRadius: "12px", border: "1px solid #f0f0f0" }}
-                >
-                    <Descriptions column={1} size="small">
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Name</span>}>
-                            <Text strong style={{ fontSize: "13px" }}>{guestDetails.name}</Text>
-                        </Descriptions.Item>
-                        {guestDetails.email !== undefined && (
-                            <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Email</span>}>
-                                <Text style={{ fontSize: "13px" }}>{guestDetails.email}</Text>
-                            </Descriptions.Item>
-                        )}
-                        {guestDetails.phone !== undefined && (
-                            <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Phone</span>}>
-                                <Space size={4}>
-                                    <PhoneOutlined style={{ fontSize: "12px" }} />
-                                    <Text style={{ fontSize: "13px" }}>{guestDetails.phone}</Text>
-                                </Space>
-                            </Descriptions.Item>
-                        )}
-                        {guestDetails.address !== undefined && (
-                            <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Address</span>}>
-                                <Space size={4}>
-                                    <EnvironmentOutlined style={{ fontSize: "12px" }} />
-                                    <Text style={{ fontSize: "13px" }}>{guestDetails.address}</Text>
-                                </Space>
-                            </Descriptions.Item>
-                        )}
-                    </Descriptions>
-                </Card>
                 {overdueDays > 0 && (
-
                     <Alert
                         type="error"
                         showIcon
@@ -1407,56 +1899,218 @@ export default function Bookings() {
                         message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
                         description="Guest exceeded expected checkout date."
                     />
-
                 )}
 
                 <Card
                     title={
                         <Space size={6}>
-                            <CalendarOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>Booking Details</span>
+                            <UserOutlined style={{ fontSize: "13px" }} />
+                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                                Guest Information
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: "12px", border: "1px solid #f0f0f0" }}
+                    style={{
+                        marginBottom: 16,
+                        borderRadius: "12px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
                     <Descriptions column={1} size="small">
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Booking Type</span>}>
-                            <Tag color={selectedBooking.booking_type === "walk_in" ? "blue" : "green"} style={{ fontSize: "12px", borderRadius: "6px" }}>
-                                {selectedBooking.booking_type === "walk_in" ? "Walk-in" : "Online"}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Name
+                                </span>
+                            }
+                        >
+                            <Text strong style={{ fontSize: "13px" }}>
+                                {guestDetails.name}
+                            </Text>
+                        </Descriptions.Item>
+                        {guestDetails.email !== undefined && (
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "12px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Email
+                                    </span>
+                                }
+                            >
+                                <Text style={{ fontSize: "13px" }}>
+                                    {guestDetails.email}
+                                </Text>
+                            </Descriptions.Item>
+                        )}
+                        {guestDetails.phone !== undefined && (
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "12px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Phone
+                                    </span>
+                                }
+                            >
+                                <Space size={4}>
+                                    <PhoneOutlined
+                                        style={{ fontSize: "12px" }}
+                                    />
+                                    <Text style={{ fontSize: "13px" }}>
+                                        {guestDetails.phone}
+                                    </Text>
+                                </Space>
+                            </Descriptions.Item>
+                        )}
+                        {guestDetails.address !== undefined && (
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "12px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Address
+                                    </span>
+                                }
+                            >
+                                <Space size={4}>
+                                    <EnvironmentOutlined
+                                        style={{ fontSize: "12px" }}
+                                    />
+                                    <Text style={{ fontSize: "13px" }}>
+                                        {guestDetails.address}
+                                    </Text>
+                                </Space>
+                            </Descriptions.Item>
+                        )}
+                    </Descriptions>
+                </Card>
+
+                <Card
+                    title={
+                        <Space size={6}>
+                            <CalendarOutlined style={{ fontSize: "13px" }} />
+                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                                Booking Details
+                            </span>
+                        </Space>
+                    }
+                    size="small"
+                    style={{
+                        marginBottom: 16,
+                        borderRadius: "12px",
+                        border: "1px solid #f0f0f0",
+                    }}
+                >
+                    <Descriptions column={1} size="small">
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Booking Type
+                                </span>
+                            }
+                        >
+                            <Tag
+                                color={
+                                    selectedBooking.booking_type === "walk_in"
+                                        ? "blue"
+                                        : "green"
+                                }
+                                style={{
+                                    fontSize: "12px",
+                                    borderRadius: "6px",
+                                }}
+                            >
+                                {selectedBooking.booking_type === "walk_in"
+                                    ? "Walk-in"
+                                    : "Online"}
                             </Tag>
                         </Descriptions.Item>
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Stay Type</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Stay Type
+                                </span>
+                            }
+                        >
                             {(() => {
                                 const type =
-                                    selectedBooking.rooms?.[0]?.pivot?.stay_type ||
+                                    (selectedBookedRoom as any)?.stay_type ??
                                     selectedBooking.stay_type;
-
                                 return (
                                     <Tag
-                                        color={type === "short_stay" ? "purple" : "cyan"}
-                                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                                        color={
+                                            type === "short_stay"
+                                                ? "purple"
+                                                : "cyan"
+                                        }
+                                        style={{
+                                            fontSize: "12px",
+                                            borderRadius: "6px",
+                                        }}
                                     >
-                                        {type === "short_stay" ? "Short Stay" : "Overnight"}
+                                        {type === "short_stay"
+                                            ? "Short Stay"
+                                            : "Overnight"}
                                     </Tag>
                                 );
                             })()}
                         </Descriptions.Item>
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Booking Reference</span>}>
-                            <Text code style={{ fontSize: "12px" }}>{selectedBooking.booking_reference}</Text>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Booking Reference
+                                </span>
+                            }
+                        >
+                            <Text code style={{ fontSize: "12px" }}>
+                                {selectedBooking.booking_reference}
+                            </Text>
                         </Descriptions.Item>
 
                         {(() => {
-                            const isWalkIn = selectedBooking.booking_type === "walk_in";
-
+                            const isWalkIn =
+                                selectedBooking.booking_type === "walk_in";
                             const formatUser = (user: any) => {
                                 if (!user) return "N/A";
-
                                 return (
                                     <>
                                         {user.first_name} {user.last_name}
                                         {user.role && (
-                                            <Text type="secondary" style={{ marginLeft: 6 }}>
+                                            <Text
+                                                type="secondary"
+                                                style={{ marginLeft: 6 }}
+                                            >
                                                 ({user.role})
                                             </Text>
                                         )}
@@ -1466,43 +2120,42 @@ export default function Bookings() {
 
                             return (
                                 <>
-                                    {/* WALK-IN */}
                                     {isWalkIn ? (
                                         <Descriptions.Item label="Handled By">
-                                            {formatUser(selectedBooking.created_by)}
+                                            {formatUser(
+                                                selectedBooking.created_by,
+                                            )}
                                         </Descriptions.Item>
                                     ) : (
                                         <>
-                                            {/* ONLINE */}
                                             <Descriptions.Item label="Created By">
                                                 {selectedBooking.created_by
-                                                    ? formatUser(selectedBooking.created_by)
+                                                    ? formatUser(
+                                                          selectedBooking.created_by,
+                                                      )
                                                     : "Customer"}
                                             </Descriptions.Item>
-
                                             <Descriptions.Item label="Confirmed By">
-                                                {confirmedBy?.user
-                                                    ? formatUser(confirmedBy.user)
-                                                    : <Text type="secondary">Not confirmed</Text>}
+                                                {confirmedBy?.user ? (
+                                                    formatUser(confirmedBy.user)
+                                                ) : (
+                                                    <Text type="secondary">
+                                                        Not confirmed
+                                                    </Text>
+                                                )}
                                             </Descriptions.Item>
                                         </>
                                     )}
-
-                                    {/* CHECK-IN */}
                                     {checkedInBy?.user && (
                                         <Descriptions.Item label="Checked-in By">
                                             {formatUser(checkedInBy.user)}
                                         </Descriptions.Item>
                                     )}
-
-                                    {/* CHECK-OUT */}
                                     {checkedOutBy?.user && (
                                         <Descriptions.Item label="Checked-out By">
                                             {formatUser(checkedOutBy.user)}
                                         </Descriptions.Item>
                                     )}
-
-                                    {/* OVERRIDE */}
                                     {override?.user && (
                                         <Descriptions.Item label="Override By">
                                             <Text type="danger">
@@ -1514,35 +2167,123 @@ export default function Bookings() {
                             );
                         })()}
 
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Created At</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Created At
+                                </span>
+                            }
+                        >
                             <Space size={4}>
-                                <CalendarOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>{formatDateTime(selectedBooking.created_at || "")}</Text>
+                                <CalendarOutlined
+                                    style={{ fontSize: "12px" }}
+                                />
+                                <Text style={{ fontSize: "13px" }}>
+                                    {formatDateTime(
+                                        selectedBooking.created_at || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Check-in Date</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-in Date
+                                </span>
+                            }
+                        >
                             <Space size={4}>
-                                <CalendarOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>{formatDate(selectedBooking.check_in_date)}</Text>
+                                <CalendarOutlined
+                                    style={{ fontSize: "12px" }}
+                                />
+                                <Text style={{ fontSize: "13px" }}>
+                                    {formatDate(
+                                        (selectedBookedRoom as any)
+                                            ?.check_in_date || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Check-in Time</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Expected Check-out
+                                </span>
+                            }
+                        >
                             <Space size={4}>
-                                <ClockCircleOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>{formatTime(selectedBooking.check_in_time || "")}</Text>
+                                <CalendarOutlined
+                                    style={{ fontSize: "12px" }}
+                                />
+                                <Text style={{ fontSize: "13px" }}>
+                                    {formatDate(
+                                        (selectedBookedRoom as any)
+                                            ?.check_out_date || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Expected Check-out</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-in Time
+                                </span>
+                            }
+                        >
                             <Space size={4}>
-                                <CalendarOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>{getExpectedCheckoutDate(selectedBooking)}</Text>
+                                <ClockCircleOutlined
+                                    style={{ fontSize: "12px" }}
+                                />
+                                <Text style={{ fontSize: "13px" }}>
+                                    {formatTime(
+                                        (selectedBookedRoom as any)
+                                            ?.check_in_time || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label={<span style={{ fontSize: "12px", fontWeight: 500 }}>Check-out Time</span>}>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "12px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-out Time
+                                </span>
+                            }
+                        >
                             <Space size={4}>
-                                <ClockCircleOutlined style={{ fontSize: "12px" }} />
-                                <Text style={{ fontSize: "13px" }}>{getCheckoutTime(selectedBooking)}</Text>
+                                <ClockCircleOutlined
+                                    style={{ fontSize: "12px" }}
+                                />
+                                <Text style={{ fontSize: "13px" }}>
+                                    {formatTime(
+                                        (selectedBookedRoom as any)
+                                            ?.check_out_time || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
                     </Descriptions>
@@ -1552,49 +2293,96 @@ export default function Bookings() {
                     title={
                         <Space size={6}>
                             <TagOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>Rooms</span>
+                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                                Rooms
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: "12px", border: "1px solid #f0f0f0" }}
+                    style={{
+                        marginBottom: 16,
+                        borderRadius: "12px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
-                    {selectedBooking.rooms && selectedBooking.rooms.length > 0 ? (
-                        selectedBooking.rooms.map((room: Room, index: number) => {
-                            const roomStayType = room.pivot?.stay_type || selectedBooking.stay_type;
-                            const roomPrice = getRoomPrice(room, roomStayType);
-                            return (
-                                <div key={room.id} style={{ marginBottom: index === (selectedBooking.rooms?.length ?? 0) - 1 ? 0 : 12 }}>
-                                    <div style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        padding: "10px 14px",
-                                        background: "#f8fafc",
-                                        borderRadius: "10px",
-                                        border: "1px solid #e2e8f0"
-                                    }}>
-                                        <Space size={8}>
-                                            <Tag color="blue" style={{ fontSize: "12px", borderRadius: "6px" }}>Room {room.room_number}</Tag>
-                                            <Text type="secondary" style={{ fontSize: "12px" }}>
-                                                {room.room_type?.type_name ?? "-"}
-                                            </Text>
-                                        </Space>
-                                        <Space direction="vertical" size={0} align="end">
-                                            {room.room_type?.base_price && (
-                                                <Text type="secondary" style={{ fontSize: "11px" }}>
-                                                    Original: ₱{room.room_type.base_price.toLocaleString()}
-                                                </Text>
-                                            )}
-                                            <Text strong style={{ color: "#52c41a", fontSize: "13px", fontWeight: 600 }}>
-                                                {roomStayType === "short_stay" ? "Short Stay" : "Overnight"}: ₱{roomPrice.toLocaleString()}
-                                            </Text>
-                                        </Space>
-                                    </div>
-                                </div>
-                            );
-                        })
+                    {selectedBookedRoom ? (
+                        <div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "10px 14px",
+                                    background: "#f8fafc",
+                                    borderRadius: "10px",
+                                    border: "1px solid #e2e8f0",
+                                }}
+                            >
+                                <Space size={8}>
+                                    <Tag
+                                        color="blue"
+                                        style={{
+                                            fontSize: "12px",
+                                            borderRadius: "6px",
+                                        }}
+                                    >
+                                        Room{" "}
+                                        {(selectedBookedRoom as any).room
+                                            ?.room_number || "N/A"}
+                                    </Tag>
+                                    <Text
+                                        type="secondary"
+                                        style={{ fontSize: "12px" }}
+                                    >
+                                        {(selectedBookedRoom as any).room
+                                            ?.room_type?.type_name ?? "-"}
+                                    </Text>
+                                </Space>
+                                <Space
+                                    direction="vertical"
+                                    size={0}
+                                    align="end"
+                                >
+                                    {(selectedBookedRoom as any).room?.room_type
+                                        ?.base_price && (
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "11px" }}
+                                        >
+                                            Original: ₱
+                                            {Number(
+                                                (selectedBookedRoom as any).room
+                                                    .room_type.base_price ?? 0,
+                                            ).toLocaleString()}
+                                        </Text>
+                                    )}
+                                    <Text
+                                        strong
+                                        style={{
+                                            color: "#52c41a",
+                                            fontSize: "13px",
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        {(selectedBookedRoom as any)
+                                            .stay_type === "short_stay"
+                                            ? "Short Stay"
+                                            : "Overnight"}
+                                        : ₱
+                                        {Number(
+                                            (selectedBookedRoom as any)
+                                                .subtotal ??
+                                                (selectedBookedRoom as any)
+                                                    .price_at_time_of_booking,
+                                        ).toLocaleString()}
+                                    </Text>
+                                </Space>
+                            </div>
+                        </div>
                     ) : (
-                        <Text type="secondary" style={{ fontSize: "13px" }}>No rooms assigned</Text>
+                        <Text type="secondary" style={{ fontSize: "13px" }}>
+                            No rooms assigned
+                        </Text>
                     )}
                 </Card>
 
@@ -1602,10 +2390,7 @@ export default function Bookings() {
                     title={
                         <Space size={6}>
                             <TagOutlined style={{ fontSize: "13px" }} />
-                            <span style={{
-                                fontSize: "13px",
-                                fontWeight: 600
-                            }}>
+                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
                                 Add-ons
                             </span>
                         </Space>
@@ -1614,14 +2399,11 @@ export default function Bookings() {
                     style={{
                         marginBottom: 16,
                         borderRadius: "12px",
-                        border: "1px solid #f0f0f0"
+                        border: "1px solid #f0f0f0",
                     }}
                 >
-                    {selectedBooking.add_ons &&
-                        selectedBooking.add_ons.length > 0 ? (
-
-                        selectedBooking.add_ons.map((addon) => (
-
+                    {displayAddOns.length > 0 ? (
+                        displayAddOns.map((addon) => (
                             <div
                                 key={addon.id}
                                 style={{
@@ -1632,153 +2414,347 @@ export default function Bookings() {
                                     background: "#f8fafc",
                                     borderRadius: "10px",
                                     border: "1px solid #e2e8f0",
-                                    marginBottom: 10
+                                    marginBottom: 10,
                                 }}
                             >
                                 <div>
                                     <div
                                         style={{
                                             fontWeight: 600,
-                                            fontSize: "13px"
+                                            fontSize: "13px",
                                         }}
                                     >
-                                        {addon.add_on_name}
+                                        {addon.add_on?.add_on_name}
                                     </div>
-
                                     <div
                                         style={{
                                             color: "#64748b",
-                                            fontSize: "12px"
+                                            fontSize: "12px",
                                         }}
                                     >
-                                        ₱{addon.price} × {addon.pivot?.quantity}
+                                        ₱
+                                        {Number(
+                                            addon.add_on?.price ?? 0,
+                                        ).toLocaleString()}{" "}
+                                        × {addon.quantity}
                                     </div>
                                 </div>
-
                                 <div
                                     style={{
                                         color: "#52c41a",
                                         fontWeight: 700,
-                                        fontSize: "13px"
+                                        fontSize: "13px",
                                     }}
                                 >
-                                    ₱{addon.pivot?.subtotal}
+                                    ₱{Number(addon.subtotal).toLocaleString()}
                                 </div>
                             </div>
-
                         ))
-
                     ) : (
-
-                        <Text type="secondary">
-                            No add-ons purchased
-                        </Text>
-
+                        <Text type="secondary">No add-ons purchased</Text>
                     )}
                 </Card>
 
                 <Card
                     title={
                         <Space size={6}>
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>Payment Summary</span>
+                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                                Payment Summary
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: "12px", border: "1px solid #f0f0f0" }}
+                    style={{
+                        marginBottom: 16,
+                        borderRadius: "12px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
                     <div style={{ marginBottom: 16 }}>
                         <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary">
-                                Payment Method:
-                            </Text>
+                            <Text type="secondary">Payment Method:</Text>
                             <Tag color="green" style={{ marginLeft: 8 }}>
-                                {selectedBooking.payments?.[0]?.payment_method
-                                    ?.toUpperCase() || "N/A"}
-
+                                {firstPayment?.payment_method?.toUpperCase() ||
+                                    "N/A"}
                             </Tag>
                         </div>
-
-                        {selectedBooking.payments?.[0]?.payment_method !== "cash" && (
-
+                        <div style={{ marginBottom: 8 }}>
+                            <Text type="secondary">Payment Status:</Text>
+                            <Tag
+                                color={getPaymentStatusColor(
+                                    firstPayment?.payment_status ?? "pending",
+                                )}
+                                style={{ marginLeft: 8 }}
+                            >
+                                {(firstPayment?.payment_status ?? "pending")
+                                    .replace(/_/g, " ")
+                                    .toUpperCase()}
+                            </Tag>
+                        </div>
+                        {firstPayment?.payment_method !== "cash" && (
                             <div>
-
-                                <Text type="secondary">
-                                    Reference:
-                                </Text>
-
+                                <Text type="secondary">Reference:</Text>
                                 <Text strong style={{ marginLeft: 8 }}>
-
-                                    {selectedBooking.payments?.[0]?.gcash_reference ||
-
-                                        selectedBooking.payments?.[0]?.bank_reference ||
-
+                                    {firstPayment?.gcash_reference ||
+                                        firstPayment?.bank_reference ||
                                         "N/A"}
-
                                 </Text>
-
                             </div>
-
                         )}
-
+                        {firstPayment?.receipt_number && (
+                            <div style={{ marginTop: 8 }}>
+                                <Text type="secondary">Receipt Number:</Text>
+                                <Text strong style={{ marginLeft: 8 }}>
+                                    {firstPayment.receipt_number}
+                                </Text>
+                            </div>
+                        )}
+                        {firstPayment?.payment_date && (
+                            <div style={{ marginTop: 8 }}>
+                                <Text type="secondary">Payment Date:</Text>
+                                <Text strong style={{ marginLeft: 8 }}>
+                                    {formatDateTime(firstPayment.payment_date)}
+                                </Text>
+                            </div>
+                        )}
+                        {firstPayment?.receiver && (
+                            <div style={{ marginTop: 8 }}>
+                                <Text type="secondary">Received By:</Text>
+                                <Text strong style={{ marginLeft: 8 }}>
+                                    {firstPayment.receiver.first_name}{" "}
+                                    {firstPayment.receiver.last_name}
+                                </Text>
+                            </div>
+                        )}
+                        {displayPayments.length > 1 && (
+                            <div style={{ marginTop: 8 }}>
+                                <Text type="secondary">Total Payments:</Text>
+                                <Text
+                                    strong
+                                    style={{ marginLeft: 8, color: "#52c41a" }}
+                                >
+                                    ₱
+                                    {displayPayments
+                                        .reduce(
+                                            (sum, p) => sum + Number(p.amount),
+                                            0,
+                                        )
+                                        .toLocaleString(undefined, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                        })}
+                                </Text>
+                            </div>
+                        )}
                     </div>
                     <div style={{ textAlign: "right" }}>
                         <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary" style={{ fontSize: "12px" }}>Subtotal:</Text>
-                            <Text style={{ marginLeft: 16, fontSize: "13px" }}>₱{selectedBooking.total_price?.toLocaleString()}</Text>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginBottom: 6,
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "12px" }}
+                                >
+                                    Room Charges
+                                </Text>
+                                <Text style={{ fontSize: "13px" }}>
+                                    ₱
+                                    {roomCharges.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginBottom: 6,
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "12px" }}
+                                >
+                                    Add-ons
+                                </Text>
+                                <Text style={{ fontSize: "13px" }}>
+                                    ₱
+                                    {addOnTotal.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
+                            {(selectedBookedRoom as any)?.is_extended && (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        marginBottom: 6,
+                                    }}
+                                >
+                                    <Text
+                                        type="secondary"
+                                        style={{ fontSize: "12px" }}
+                                    >
+                                        Extended
+                                    </Text>
+                                    <Text
+                                        strong
+                                        style={{
+                                            fontSize: "13px",
+                                            color: "#52c41a",
+                                        }}
+                                    >
+                                        Yes
+                                    </Text>
+                                </div>
+                            )}
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "12px" }}
+                                >
+                                    Subtotal:
+                                </Text>
+                                <Text
+                                    strong
+                                    style={{
+                                        fontSize: "14px",
+                                        color: "#52c41a",
+                                        marginLeft: 16,
+                                        fontWeight: 700,
+                                    }}
+                                >
+                                    ₱
+                                    {paymentSubtotal.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
                         </div>
                         <Divider style={{ margin: "8px 0" }} />
                         <div>
-                            <Text strong style={{ fontSize: "13px", fontWeight: 600 }}>Total:</Text>
-                            <Text strong style={{ fontSize: "14px", color: "#52c41a", marginLeft: 16, fontWeight: 700 }}>
-                                ₱{selectedBooking.total_price?.toLocaleString()}
+                            <Text
+                                strong
+                                style={{ fontSize: "13px", fontWeight: 600 }}
+                            >
+                                Total:
+                            </Text>
+                            <Text
+                                strong
+                                style={{
+                                    fontSize: "14px",
+                                    color: "#52c41a",
+                                    marginLeft: 16,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                ₱
+                                {paymentSubtotal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
                             </Text>
                         </div>
                     </div>
                 </Card>
 
-                {selectedBooking.histories && selectedBooking.histories.length > 0 && (
-                    <Card
-                        title={<span style={{ fontSize: "13px", fontWeight: 600 }}>Activity Log</span>}
-                        size="small"
-                        style={{ borderRadius: "12px", border: "1px solid #f0f0f0" }}
-                    >
-                        <Timeline
-                            items={selectedBooking.histories.map((history: History) => ({
-                                color: history.new_status === "checked_out" ? "green" : "blue",
-                                children: (
-                                    <div>
-                                        <Text strong style={{
-                                            fontSize: "12px",
-                                            color: history.is_override ? "red" : undefined,
-                                            fontWeight: 600
-                                        }}>
-                                            {history.change_note || "Status Updated"}
-                                        </Text>
-
-                                        {history.is_override && history.override_reason && (
-                                            <>
-                                                <br />
-                                                <Text type="danger" style={{ fontSize: "11px" }}>
-                                                    Override Reason: {history.override_reason}
+                {selectedBooking.histories &&
+                    selectedBooking.histories.length > 0 && (
+                        <Card
+                            title={
+                                <span
+                                    style={{
+                                        fontSize: "13px",
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    Activity Log
+                                </span>
+                            }
+                            size="small"
+                            style={{
+                                borderRadius: "12px",
+                                border: "1px solid #f0f0f0",
+                            }}
+                        >
+                            <Timeline
+                                items={selectedBooking.histories.map(
+                                    (history: History) => ({
+                                        color:
+                                            history.new_status === "checked_out"
+                                                ? "green"
+                                                : "blue",
+                                        children: (
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "12px",
+                                                        color: history.is_override
+                                                            ? "red"
+                                                            : undefined,
+                                                        fontWeight: 600,
+                                                    }}
+                                                >
+                                                    {history.change_note ||
+                                                        "Status Updated"}
                                                 </Text>
-                                            </>
-                                        )}
-
-                                        <br />
-                                        <Text type="secondary" style={{ fontSize: "11px" }}>
-                                            From: {history.old_status} → To: {history.new_status}
-                                        </Text>
-
-                                        <br />
-                                        <Text type="secondary" style={{ fontSize: "11px" }}>
-                                            {formatDateTime(history.changed_at)}
-                                        </Text>
-                                    </div>
-                                )
-                            }))}
-                        />
-                    </Card>
-                )}
+                                                {history.is_override &&
+                                                    history.override_reason && (
+                                                        <>
+                                                            <br />
+                                                            <Text
+                                                                type="danger"
+                                                                style={{
+                                                                    fontSize:
+                                                                        "11px",
+                                                                }}
+                                                            >
+                                                                Override Reason:{" "}
+                                                                {
+                                                                    history.override_reason
+                                                                }
+                                                            </Text>
+                                                        </>
+                                                    )}
+                                                <br />
+                                                <Text
+                                                    type="secondary"
+                                                    style={{ fontSize: "11px" }}
+                                                >
+                                                    From: {history.old_status} →
+                                                    To: {history.new_status}
+                                                </Text>
+                                                <br />
+                                                <Text
+                                                    type="secondary"
+                                                    style={{ fontSize: "11px" }}
+                                                >
+                                                    {formatDateTime(
+                                                        history.changed_at,
+                                                    )}
+                                                </Text>
+                                            </div>
+                                        ),
+                                    }),
+                                )}
+                            />
+                        </Card>
+                    )}
             </Drawer>
         );
     };
@@ -1787,68 +2763,18 @@ export default function Bookings() {
         <div className="space-y-1 pb-6">
             <style>
                 {`
-                    .clickable-rows tbody tr:hover {
-                        background-color: #f9fafb !important;
-                        cursor: pointer;
-                        transition: all 0.3s ease;
-                    }
-                    .clickable-row {
-                        cursor: pointer;
-                    }
-                        .warning-overdue-row td:first-child {
-                        border-left: 4px solid #faad14 !important;
-                    }
-
-                    .critical-overdue-row td:first-child {
-                        border-left: 4px solid #ff4d4f !important;
-                    }
-                    .tabs-right .ant-tabs-nav {
-                        justify-content: flex-end !important;
-                    }
-                    .tabs-right .ant-tabs-nav-list {
-                        justify-content: flex-end;
-                    }
-                    .mint-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-                        color: #10b981 !important;
-                    }
-                    .mint-tabs .ant-tabs-ink-bar {
-                        background: #10b981 !important;
-                    }
-                    .mint-tabs .ant-tabs-tab {
-                        font-size: 13px !important;
-                        padding: 12px 0 !important;
-                    }
+                    .clickable-row { cursor: pointer; }
+                    .selected-booking-row td { background: #ecfdf5 !important; }
+                    .selected-booking-row:hover td { background: #d1fae5 !important; }
+                    .selected-booking-row td:first-child { border-left: 4px solid #10b981 !important; }
+                    .warning-overdue-row td:first-child { border-left: 4px solid #faad14 !important; }
+                    .critical-overdue-row td:first-child { border-left: 4px solid #ff4d4f !important; }
                     
-                    /* Mint green table row selection */
-                    .mint-selection-table .ant-table-tbody > tr.ant-table-row-selected > td {
-                        background-color: #ecfdf5 !important;
-                    }
+                    .mint-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { color: #10b981 !important; }
+                    .mint-tabs .ant-tabs-ink-bar { background: #10b981 !important; }
+                    .mint-tabs .ant-tabs-tab { font-size: 13px !important; padding: 12px 0 !important; }
                     
-                    .mint-selection-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
-                        background-color: #d1fae5 !important;
-                    }
-                    
-                    /* Mint green checkbox when selected */
-                    .mint-selection-table .ant-checkbox-checked .ant-checkbox-inner {
-                        background-color: #10b981 !important;
-                        border-color: #10b981 !important;
-                    }
-                    
-                    .mint-selection-table .ant-checkbox-checked .ant-checkbox-inner::after {
-                        border-color: white !important;
-                    }
-                    
-                    .mint-selection-table .ant-checkbox:hover .ant-checkbox-inner {
-                        border-color: #10b981 !important;
-                    }
-                    
-                    /* Premium table styling */
-                    .premium-table .ant-table {
-                        background: white;
-                        border-radius: 16px;
-                        overflow: visible; /* 🔥 FIX */
-                    }
-                    
+                    .premium-table .ant-table { background: white; border-radius: 16px; overflow: visible; }
                     .premium-table .ant-table-thead > tr > th {
                         font-size: 13px !important;
                         font-weight: 600 !important;
@@ -1857,122 +2783,111 @@ export default function Bookings() {
                         border-bottom: 1px solid #e2e8f0 !important;
                         color: #1e293b !important;
                     }
-                    
                     .premium-table .ant-table-tbody > tr > td {
                         font-size: 13px !important;
                         padding: 12px 8px !important;
                         border-bottom: 1px solid #f1f5f9 !important;
                         color: #334155 !important;
                     }
+                    .premium-table .ant-table-tbody > tr:last-child > td { border-bottom: none !important; }
                     
-                    .premium-table .ant-table-tbody > tr:last-child > td {
-                        border-bottom: none !important;
-                    }
-                    
-                    /* Card and component styling */
-                    .ant-descriptions-item-label {
-                        font-size: 12px !important;
-                        font-weight: 500 !important;
-                        color: #64748b !important;
-                    }
-                    .ant-descriptions-item-content {
-                        font-size: 13px !important;
-                        color: #1e293b !important;
-                    }
-                    .ant-card-head-title {
-                        font-size: 13px !important;
-                        font-weight: 600 !important;
-                        color: #1e293b !important;
-                    }
-                    .ant-timeline-item-content {
-                        font-size: 12px !important;
-                    }
-                    .ant-tag {
-                        font-size: 12px !important;
-                        border-radius: 6px !important;
-                        padding: 4px 12px !important;
-                    }
-                    .ant-btn {
-                        font-size: 13px !important;
-                        border-radius: 8px !important;
-                    }
-                    
-                    /* Modal styling */
-                    .ant-modal-content {
-                        border-radius: 16px !important;
-                    }
-                    
-                    .ant-modal-header {
-                        border-radius: 16px 16px 0 0 !important;
-                    }
+                    .ant-descriptions-item-label { font-size: 12px !important; font-weight: 500 !important; color: #64748b !important; }
+                    .ant-descriptions-item-content { font-size: 13px !important; color: #1e293b !important; }
+                    .ant-card-head-title { font-size: 13px !important; font-weight: 600 !important; color: #1e293b !important; }
+                    .ant-timeline-item-content { font-size: 12px !important; }
+                    .ant-tag { font-size: 12px !important; border-radius: 6px !important; padding: 4px 12px !important; }
+                    .ant-btn { font-size: 13px !important; border-radius: 8px !important; }
+                    .ant-modal-content { border-radius: 16px !important; }
+                    .ant-modal-header { border-radius: 16px 16px 0 0 !important; }
                     
                     @media (max-width: 768px) {
-                        .ant-table {
-                            font-size: 12px;
-                        }
-                        .ant-table-thead > tr > th {
-                            font-size: 12px !important;
-                        }
-                        .ant-table-tbody > tr > td {
-                            font-size: 12px !important;
-                        }
+                        .ant-table { font-size: 12px; }
+                        .ant-table-thead > tr > th { font-size: 12px !important; }
+                        .ant-table-tbody > tr > td { font-size: 12px !important; }
                     }
                 `}
             </style>
-            <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+            <div
+                style={{
+                    marginBottom: 24,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 16,
+                }}
+            >
                 <div>
-                    <Title level={5} style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "#0f172a" }}>Booking List</Title>
-                    <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>Manage and track all reservations</Text>
+                    <Title
+                        level={5}
+                        style={{
+                            margin: 0,
+                            fontSize: "24px",
+                            fontWeight: 700,
+                            color: "#0f172a",
+                        }}
+                    >
+                        Booking List
+                    </Title>
+                    <Text
+                        type="secondary"
+                        style={{ fontSize: "12px", color: "#64748b" }}
+                    >
+                        Manage and track all reservations
+                    </Text>
                 </div>
-                <Input
-                    className="mint-search-input"
-                    placeholder="Search by name, ID, or type..."
-                    allowClear
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    prefix={
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                            }}
-                        >
-                            <SearchOutlined
-                                style={{
-                                    color: "#94a3b8",
-                                    fontSize: 16,
-                                }}
-                            />
-
-                            <div
-                                style={{
-                                    width: 1,
-                                    height: 18,
-                                    background: "#d1d5db",
-                                    borderRadius: 999,
-                                }}
-                            />
-                        </div>
-                    }
-                    style={{
-                        width: 320,
-                        height: 42,
-                        borderRadius: 12,
-                    }}
-                />
             </div>
 
             <Tabs
-                className="tabs-right mint-tabs"
+                className="mint-tabs"
                 activeKey={activeTab}
                 onChange={setActiveTab}
                 items={tabItems}
                 size="middle"
                 centered={false}
+                tabBarExtraContent={
+                    <Input
+                        className="mint-search-input"
+                        placeholder="Search by name, ID, or type..."
+                        allowClear
+                        value={searchInput}
+                        onChange={(e) => {
+                            const value = e.target.value;
+                            setSearchInput(value);
+                            debouncedSearch(value);
+                        }}
+                        prefix={
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                }}
+                            >
+                                <SearchOutlined
+                                    style={{ color: "#94a3b8", fontSize: 16 }}
+                                />
+                                <div
+                                    style={{
+                                        width: 2,
+                                        height: 18,
+                                        background: "#d1d5db",
+                                        borderRadius: 999,
+                                    }}
+                                />
+                            </div>
+                        }
+                        style={{
+                            width: 300,
+                            height: 40,
+                            borderRadius: 10,
+                            bottom: 10,
+                        }}
+                    />
+                }
             />
 
             {renderBookingDetails()}
         </div>
     );
-}
+}   

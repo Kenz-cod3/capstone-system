@@ -10,7 +10,7 @@ export default function TabsLayout() {
   const { user, isLoaded, setInactive } = useAuthStore();
   const router = useRouter();
   const disconnectRef = useRef<(() => void) | null>(null);
-  const hasNavigated = useRef(false); // 👈 Add this flag
+  const hasNavigated = useRef(false);
 
   useEffect(() => {
     if (!isLoaded || !user) return;

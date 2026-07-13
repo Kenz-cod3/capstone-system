@@ -13,7 +13,7 @@ class MessageController extends Controller
     public function index()
     {
         return response()->json(
-            Message::with(['targets.target'])->get(),
+            Message::with(['targets.user'])->get(),
             200
         );
     }
@@ -25,7 +25,6 @@ class MessageController extends Controller
             'content' => 'required|string',
             'targets' => 'required|array',
             'targets.*.target_id' => 'required|integer|exists:users,id',
-            'targets.*.target_type' => 'required|string'
         ]);
 
         $sender = \App\Models\User::findOrFail($validated['sender_id']);
@@ -74,32 +73,37 @@ class MessageController extends Controller
         // CREATE TARGETS
         foreach ($validated['targets'] as $target) {
 
-            MessageTarget::create([
+            $messageTarget = MessageTarget::create([
                 'message_id' => $message->id,
                 'target_id' => $target['target_id'],
-                'target_type' => $target['target_type'],
-                'is_read' => false
+                'is_read' => false,
             ]);
 
-            // REALTIME RECEIVER
-            $message->receiver_id = $target['target_id'];
+            $messageTarget->load([
+                'message.sender',
+                'user'
+            ]);
 
-            // BROADCAST
-            broadcast(new MessageSent($message));
+            $messageTarget->receiver_id = $target['target_id'];
+
+            broadcast(new MessageSent($messageTarget));
         }
+
+        $message->load([
+            'sender',
+            'targets.user',
+            'targets.message'
+        ]);
 
         return response()->json([
             'message' => 'Message sent successfully',
-            'data' => $message->load([
-                'targets.target',
-                'sender'
-            ])
+            'data' => $message
         ], 201);
     }
 
     public function show($id)
     {
-        $message = Message::with(['targets.target'])
+        $message = Message::with(['targets.user'])
             ->findOrFail($id);
 
         return response()->json($message, 200);
@@ -159,7 +163,6 @@ class MessageController extends Controller
                 'role',
                 'admin'
             )->get();
-
         } elseif ($currentUser->role === 'admin') {
 
             // admin → guest + staff
@@ -167,7 +170,6 @@ class MessageController extends Controller
                 'role',
                 ['guest', 'staff']
             )->get();
-
         } elseif ($currentUser->role === 'staff') {
 
             // staff → admin only
@@ -175,7 +177,6 @@ class MessageController extends Controller
                 'role',
                 'admin'
             )->get();
-
         } else {
             $users = [];
         }
@@ -195,9 +196,8 @@ class MessageController extends Controller
 
         $messages = MessageTarget::with([
             'message.sender',
-            'target'
+            'user'
         ])
-            ->where('target_type', 'App\\Models\\User')
             ->where(function ($q) use ($currentUserId) {
 
                 // RECEIVED
@@ -233,17 +233,16 @@ class MessageController extends Controller
             $lastMessage = $sorted->first();
 
             $otherUser =
-                $lastMessage->message->sender_id
-                == $currentUserId
-                    ? $lastMessage->target
-                    : $lastMessage->message->sender;
+                $lastMessage->message->sender_id == $currentUserId
+                ? $lastMessage->user
+                : $lastMessage->message->sender;
 
             return [
                 'user' => $otherUser,
                 'last_message' =>
-                    $lastMessage->message->message,
+                $lastMessage->message->message,
                 'last_sender_id' =>
-                    $lastMessage->message->sender_id,
+                $lastMessage->message->sender_id,
                 'unread' => $group
                     ->where(
                         'target_id',
@@ -252,7 +251,7 @@ class MessageController extends Controller
                     ->where('is_read', false)
                     ->count(),
                 'created_at' =>
-                    $lastMessage->message->created_at
+                $lastMessage->message->created_at
             ];
         })
             ->sortByDesc('created_at')

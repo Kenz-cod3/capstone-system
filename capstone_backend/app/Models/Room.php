@@ -30,6 +30,7 @@ class Room extends Model
 
     // ROOM STATUS
     const STATUS_AVAILABLE = 'available';
+    const STATUS_RESERVED = 'reserved';
     const STATUS_OCCUPIED = 'occupied';
     const STATUS_MAINTENANCE = 'maintenance';
     const STATUS_DIRTY = 'dirty';
@@ -54,20 +55,9 @@ class Room extends Model
         return $this->hasMany(RoomImage::class, 'room_id');
     }
 
-    // BOOKINGS
-    public function bookings()
+    public function bookedRooms()
     {
-        return $this->belongsToMany(
-            Booking::class,
-            'booked_rooms',
-            'room_id',
-            'booking_id'
-        )->withPivot(
-            'price_at_time_of_booking',
-            'subtotal',
-            'stay_type',
-            'check_out_time'
-        );
+        return $this->hasMany(BookedRoom::class);
     }
 
     // CLEANER
@@ -80,6 +70,12 @@ class Room extends Model
     public function damageReports()
     {
         return $this->hasMany(RoomIncident::class);
+    }
+
+    // AMENITIES
+    public function amenities()
+    {
+        return $this->belongsToMany(Amenity::class, 'amenity_room');
     }
 
     /*
@@ -111,7 +107,6 @@ class Room extends Model
             $guestName =
                 $latestReport->booking->user->first_name . ' ' .
                 $latestReport->booking->user->last_name;
-
         } elseif ($latestReport->booking?->walkInGuest) {
 
             $guestName =
@@ -136,13 +131,13 @@ class Room extends Model
 
             'reported_by' => $latestReport->cleaner
                 ? $latestReport->cleaner->first_name . ' ' .
-                  $latestReport->cleaner->last_name
+                $latestReport->cleaner->last_name
                 : null,
 
             'booking_id' => $latestReport->booking_id,
 
             'booking_reference' =>
-                $latestReport->booking?->booking_reference,
+            $latestReport->booking?->booking_reference,
 
             'guest' => $guestName,
         ];

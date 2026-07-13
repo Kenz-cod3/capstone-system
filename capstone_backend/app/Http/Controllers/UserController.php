@@ -53,6 +53,7 @@ class UserController extends Controller
     {
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
             'last_name'  => 'required|string|max:255',
             'email'      => 'required|email|unique:users,email',
             'password'   => 'required|min:6',
@@ -96,6 +97,7 @@ class UserController extends Controller
 
         $validated = $request->validate([
             'first_name' => 'sometimes|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
             'last_name'  => 'sometimes|string|max:255',
             'email'      => 'sometimes|email|unique:users,email,' . $id,
             'password'   => 'nullable|min:8|confirmed',

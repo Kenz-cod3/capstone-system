@@ -14,7 +14,7 @@ class NotificationService
 
         foreach ($users as $user) {
 
-            // 🔥 CREATE NOTIFICATION
+            // CREATE NOTIFICATION
             $notification = Notification::create([
                 'user_id' => $user->id,
                 'title' => $title,
@@ -23,7 +23,7 @@ class NotificationService
                 'created_at' => now()
             ]);
 
-            // 🔥 REALTIME BROADCAST
+            // REALTIME BROADCAST
             broadcast(new NotificationCreated($notification));
         }
     }

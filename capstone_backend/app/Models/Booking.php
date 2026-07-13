@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Models\Room;
 use DateTimeInterface;
 
 class Booking extends Model
@@ -16,23 +15,19 @@ class Booking extends Model
         'walk_in_guest_id',
         'created_by',
         'booking_type',
-        'stay_type',
-        'check_in_date',
-        'check_out_date',
-        'check_in_time',
         'booking_reference',
         'total_price',
-        'booking_status',
-        'overdue_started_at'
+        'archived_at',
     ];
 
-    protected $appends = ['guest_name'];
-
     protected $casts = [
-        'check_in_date' => 'date',
-        'check_out_date' => 'date',
-        'check_in_time' => 'datetime',
-        'overdue_started_at' => 'datetime',
+        'archived_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'guest_name',
+        'check_in_date',
+        'check_out_date',
     ];
 
     protected function serializeDate(DateTimeInterface $date)
@@ -52,44 +47,16 @@ class Booking extends Model
         return $this->belongsTo(WalkInGuest::class);
     }
 
-    // CREATED BY USER (WHO CREATED THIS BOOKING)
-    public function createdBy() 
+    // CREATED BY USER
+    public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // BOOKED ROOMS (PIVOT TABLE)
+    // BOOKED ROOMS
     public function bookedRooms()
     {
         return $this->hasMany(BookedRoom::class);
-    }
-
-    // ROOMS (MAIN RELATION - IMPORTANT)
-    public function rooms()
-    {
-        return $this->belongsToMany(
-            Room::class,
-            'booked_rooms',
-            'booking_id',
-            'room_id'
-        )->withPivot('price_at_time_of_booking', 'subtotal', 'stay_type', 'check_out_time');
-    }
-
-    // ADD ONS (HAS MANY)
-    public function bookingAddOns()
-    {
-        return $this->hasMany(BookingAddOn::class);
-    }
-
-    // ADD ONS (MANY TO MANY)
-    public function addOns()
-    {
-        return $this->belongsToMany(
-            AddOn::class,
-            'booking_add_ons',
-            'booking_id',
-            'add_on_id'
-        )->withPivot('quantity', 'subtotal');
     }
 
     // PAYMENTS
@@ -104,13 +71,13 @@ class Booking extends Model
         return $this->hasOne(BookingInvoice::class);
     }
 
-    // RELATION: ORDERS (restaurant orders)
+    // ORDERS
     public function orders()
     {
         return $this->hasMany(Order::class);
     }
 
-    // HISTORY (VERY IMPORTANT)
+    // HISTORY
     public function histories()
     {
         return $this->hasMany(BookingHistory::class)
@@ -123,18 +90,39 @@ class Booking extends Model
         return $this->hasOne(Review::class);
     }
 
+    // GUEST NAME
     public function getGuestNameAttribute()
     {
-        // ONLINE USER
         if ($this->user) {
             return $this->user->first_name . ' ' . $this->user->last_name;
         }
 
-        //  WALK-IN GUEST
         if ($this->walkInGuest) {
             return $this->walkInGuest->full_name;
         }
 
         return null;
+    }
+
+    // CHECK-IN DATE
+    public function getCheckInDateAttribute()
+    {
+        return $this->bookedRooms()
+            ->orderBy('check_in_date')
+            ->value('check_in_date');
+    }
+
+    // CHECK-OUT DATE
+    public function getCheckOutDateAttribute()
+    {
+        return $this->bookedRooms()
+            ->orderByDesc('check_out_date')
+            ->value('check_out_date');
+    }
+
+    public function latestPayment()
+    {
+        return $this->hasOne(BookingPayment::class)
+            ->latestOfMany('payment_date');
     }
 }

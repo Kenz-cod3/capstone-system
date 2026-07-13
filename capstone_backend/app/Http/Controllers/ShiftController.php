@@ -36,7 +36,7 @@ class ShiftController extends Controller
             ->first();
 
         $startingCash = $lastShift
-            ? $lastShift->closed_cash
+            ? $lastShift->expected_cash
             : $request->starting_cash;
 
         // ─── CREATE NEW SHIFT ──────────────────────────────────────────────────────
@@ -79,11 +79,21 @@ class ShiftController extends Controller
             ->where('type', 'pay_out')
             ->sum('amount');
 
-        $bookingPayments = \App\Models\BookingPayment::where('shift_id', $id)
+        $payments = \App\Models\BookingPayment::where('shift_id', $id)
+            ->where('payment_status', 'paid')
+            ->where('payment_method', 'cash')
             ->sum('amount');
 
-        // ─── CALCULATE EXPECTED CASH ───────────────────────────────────────────────
-        $expected = $shift->starting_cash + $bookingPayments + $payIn - $payOut;
+        $refunds = \App\Models\BookingPayment::where('shift_id', $id)
+            ->where('payment_status', 'refunded')
+            ->where('payment_method', 'cash')
+            ->sum('amount');
+
+        $expected = $shift->starting_cash
+            + $payments
+            + $payIn
+            - $payOut
+            - $refunds;
 
         // ─── UPDATE SHIFT WITH CLOSING DETAILS ─────────────────────────────────────
         $shift->update([
@@ -125,17 +135,15 @@ class ShiftController extends Controller
         }
 
         // ─── CALCULATE SHIFT METRICS ───────────────────────────────────────────────
-        $bookingPayments = \App\Models\BookingPayment::where('shift_id', $shift->id)
-            ->sum('amount');
-
         $bookingCount = \App\Models\BookingPayment::where('shift_id', $shift->id)
+            ->where('payment_status', 'paid')
             ->count();
 
         return response()->json([
             'id' => $shift->id,
             'shift_number' => $shift->shift_number,
             'opened_at' => $shift->opened_at,
-            'expected_cash' => $shift->starting_cash + $bookingPayments,
+            'expected_cash' => $shift->expected_cash,
             'handled_bookings' => $bookingCount,
         ]);
     }
@@ -160,9 +168,12 @@ class ShiftController extends Controller
         // ─── TRANSFORM SHIFT DATA ──────────────────────────────────────────────────
         $shifts->getCollection()->transform(function ($shift) {
             $payments = \App\Models\BookingPayment::where('shift_id', $shift->id)
+                ->where('payment_status', 'paid')
+                ->where('payment_method', 'cash')
                 ->sum('amount');
 
             $bookings = \App\Models\BookingPayment::where('shift_id', $shift->id)
+                ->where('payment_status', 'paid')
                 ->count();
 
             return [
@@ -172,7 +183,8 @@ class ShiftController extends Controller
                 'opened_at' => $shift->opened_at,
                 'closed_at' => $shift->closed_at,
                 'cash_payments' => $payments,
-                'expected_cash' => $shift->starting_cash + $payments,
+                'starting_cash' => $shift->starting_cash,
+                'expected_cash' => $shift->expected_cash,
                 'handled_bookings' => $bookings,
             ];
         });

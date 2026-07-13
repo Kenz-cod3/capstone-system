@@ -16,14 +16,41 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
-const AMENITIES = [
-    { icon: "wifi-outline", label: "Free WiFi" },
-    { icon: "snow-outline", label: "Air Con" },
-    { icon: "tv-outline", label: "Smart TV" },
-    { icon: "water-outline", label: "Hot Water" },
-    { icon: "cafe-outline", label: "Minibar" },
-    { icon: "shield-checkmark-outline", label: "Safe Box" },
-];
+// Maps amenity names from DB to Ionicons
+const AMENITY_ICON_MAP: Record<string, string> = {
+    "tv":             "tv-outline",
+    "wifi":           "wifi-outline",
+    "aircon":         "snow-outline",
+    "air con":        "snow-outline",
+    "air conditioning": "snow-outline",
+    "hot water":      "water-outline",
+    "minibar":        "cafe-outline",
+    "safe":           "shield-checkmark-outline",
+    "safe box":       "shield-checkmark-outline",
+    "parking":        "car-outline",
+    "pool":           "water-outline",
+    "gym":            "barbell-outline",
+    "restaurant":     "restaurant-outline",
+    "breakfast":      "cafe-outline",
+    "balcony":        "sunny-outline",
+    "kitchen":        "restaurant-outline",
+    "refrigerator":   "thermometer-outline",
+    "room service":   "call-outline",
+    "laundry":        "shirt-outline",
+};
+
+const getAmenityIcon = (name: string): string => {
+    const lower = name.toLowerCase();
+    for (const [key, icon] of Object.entries(AMENITY_ICON_MAP)) {
+        if (lower.includes(key)) return icon;
+    }
+    return "checkmark-circle-outline";
+};
+
+interface Amenity {
+    id: number;
+    name: string;
+}
 
 export default function BookingDetails() {
     const { room } = useLocalSearchParams();
@@ -43,6 +70,13 @@ export default function BookingDetails() {
         );
     }
 
+    // Amenities come from the eager-loaded room.amenities (amenity_room pivot)
+    const amenities: Amenity[] = parsedRoom.amenities ?? [];
+
+    // Description comes from room_type.description
+    const roomDescription =
+        parsedRoom.room_type?.description;
+
     const handleBook = () => {
         if (loading) return;
         setLoading(true);
@@ -55,21 +89,21 @@ export default function BookingDetails() {
 
     const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
         available: {
-            bg: "rgba(22,163,74,0.12)",   // green-600
-            text: "#15803d",               // green-700
-            dot: "#16a34a",                // green-600
+            bg: "rgba(22,163,74,0.12)",
+            text: "#15803d",
+            dot: "#16a34a",
             label: "Available",
         },
         occupied: {
-            bg: "rgba(37,99,235,0.10)",   // blue-600
-            text: "#1d4ed8",               // blue-700
-            dot: "#2563eb",                // blue-600
+            bg: "rgba(37,99,235,0.10)",
+            text: "#1d4ed8",
+            dot: "#2563eb",
             label: "Occupied",
         },
         maintenance: {
-            bg: "rgba(220,38,38,0.10)",   // red-600
-            text: "#b91c1c",               // red-700
-            dot: "#dc2626",                // red-600
+            bg: "rgba(220,38,38,0.10)",
+            text: "#b91c1c",
+            dot: "#dc2626",
             label: "Maintenance",
         },
     };
@@ -97,7 +131,6 @@ export default function BookingDetails() {
                         className="bg-[#e8e4d9]"
                     />
 
-                    {/* Layered gradients */}
                     <LinearGradient
                         colors={["rgba(13,46,31,0.55)", "transparent"]}
                         style={{ position: "absolute", top: 0, left: 0, right: 0, height: 160 }}
@@ -213,7 +246,7 @@ export default function BookingDetails() {
                             <View className="flex-row items-center gap-1.5 bg-[#1a4a35]/06 px-3 py-1.5 rounded-full">
                                 <Ionicons name="people-outline" size={13} color="#1a4a35" />
                                 <Text className="text-[#1a4a35] text-xs">
-                                    {parsedRoom.room_type?.capacity || 2} guests
+                                    {parsedRoom.room_type?.max_occupancy || 2} guests
                                 </Text>
                             </View>
                             <View className="flex-row items-center gap-1.5 bg-[#1a4a35]/06 px-3 py-1.5 rounded-full">
@@ -227,36 +260,45 @@ export default function BookingDetails() {
 
                     <View className="h-px bg-[#1a4a35]/08 mb-6" />
 
-                    {/* Description */}
+                    {/* Description — from room_types.description */}
                     <Text className="text-[#1a4a35]/50 text-xs tracking-[3px] uppercase mb-3">
-                        About this room
+                        About This Room
                     </Text>
                     <Text
                         className="text-[#2c2c2c] text-base leading-7 mb-8"
                         style={{ fontFamily: "Georgia" }}
                     >
-                        A thoughtfully appointed retreat offering comfort and elegance.
-                        Each detail has been curated to ensure a restful and memorable stay
-                        at Lyn Enia's Travelers' Inn.
+                        {roomDescription}
                     </Text>
 
                     <View className="h-px bg-[#1a4a35]/08 mb-6" />
 
-                    {/* Amenities */}
+                    {/* Amenities — from amenity_room pivot via room.amenities */}
                     <Text className="text-[#1a4a35]/50 text-xs tracking-[3px] uppercase mb-4">
                         Amenities
                     </Text>
-                    <View className="flex-row flex-wrap gap-3 mb-8">
-                        {AMENITIES.map((a) => (
-                            <View
-                                key={a.label}
-                                className="flex-row items-center gap-2 px-3.5 py-2 rounded-full border border-[#1a4a35]/12 bg-white"
-                            >
-                                <Ionicons name={a.icon as any} size={13} color="#c9a96e" />
-                                <Text className="text-[#1a4a35] text-xs">{a.label}</Text>
-                            </View>
-                        ))}
-                    </View>
+
+                    {amenities.length > 0 ? (
+                        <View className="flex-row flex-wrap gap-3 mb-8">
+                            {amenities.map((amenity) => (
+                                <View
+                                    key={amenity.id}
+                                    className="flex-row items-center gap-2 px-3.5 py-2 rounded-full border border-[#1a4a35]/12 bg-white"
+                                >
+                                    <Ionicons
+                                        name={getAmenityIcon(amenity.name) as any}
+                                        size={13}
+                                        color="#c9a96e"
+                                    />
+                                    <Text className="text-[#1a4a35] text-xs">{amenity.name}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    ) : (
+                        <Text className="text-[#1a4a35]/30 text-sm mb-8" style={{ fontFamily: "Georgia" }}>
+                            No amenities listed for this room.
+                        </Text>
+                    )}
 
                     <View className="h-px bg-[#1a4a35]/08 mb-6" />
 

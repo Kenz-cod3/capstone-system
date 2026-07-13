@@ -7,15 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 class BookingAddOn extends Model
 {
     protected $fillable = [
-        'booking_id',
+        'booked_room_id',
         'add_on_id',
         'quantity',
-        'subtotal'
+        'subtotal',
     ];
 
-    public function booking()
+    public function bookedRoom()
     {
-        return $this->belongsTo(Booking::class);
+        return $this->belongsTo(BookedRoom::class);
     }
 
     public function addOn()

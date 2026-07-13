@@ -13,10 +13,19 @@ return new class extends Migration
     {
         Schema::create('booking_add_ons', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_id')->constrained('bookings')->cascadeOnDelete();
-            $table->foreignId('add_on_id')->constrained('add_ons');
-            $table->integer('quantity');
+
+            $table->foreignId('booked_room_id')
+                ->constrained('booked_rooms')
+                ->cascadeOnDelete();
+
+            $table->foreignId('add_on_id')
+                ->constrained('add_ons');
+
+            $table->unsignedInteger('quantity');
+
             $table->decimal('subtotal', 10, 2);
+
+            $table->timestamps();
         });
     }
 

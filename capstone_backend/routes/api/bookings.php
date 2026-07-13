@@ -8,6 +8,7 @@ use App\Http\Controllers\{
     BookingPaymentController,
     BookingInvoiceController,
     BookingHistoryController,
+    ReceiptController,
     WalkInGuestController
 };
 
@@ -20,42 +21,67 @@ Route::prefix('bookings')->group(function () {
     // Route::get('/all', [BookingController::class, 'all']);
 
     Route::post('/', [BookingController::class, 'store']);
+    Route::get('/{id}', [BookingController::class, 'show']);
     Route::put('/{id}', [BookingController::class, 'update']);
     Route::delete('/{id}', [BookingController::class, 'destroy']);
 
     Route::post('/{id}/restore', [BookingController::class, 'restore']);
     Route::delete('/{id}/force-delete', [BookingController::class, 'forceDelete']);
 
-    Route::post('/{id}/extend', [BookingController::class, 'extend']);
+    Route::post(
+        '/{bookingId}/extend/{bookedRoomId}',
+        [BookingController::class, 'extend']
+    );
+});
+
+Route::prefix('booked-rooms')->group(function () {
+
+    Route::get('/history', [BookedRoomController::class, 'history']);
+
+    Route::get('/trash', [BookedRoomController::class, 'trash']);
+
+    Route::post('/{id}/restore', [BookedRoomController::class, 'restore']);
+
+    Route::delete('/{id}/force-delete', [BookedRoomController::class, 'forceDelete']);
 });
 
 // BOOKING DETAILS
 Route::apiResource('booked-rooms', BookedRoomController::class);
 Route::apiResource('booking-addons', BookingAddOnController::class);
+Route::post(
+    'booking-payments/refund',
+    [BookingPaymentController::class, 'refund']
+);
 Route::apiResource('booking-payments', BookingPaymentController::class);
 Route::apiResource('booking-invoices', BookingInvoiceController::class);
 Route::apiResource('booking-histories', BookingHistoryController::class);
+
+
+// RECEIPTS (WEB)
+Route::get('/receipts/{payment}', [ReceiptController::class, 'show']);
+// RECEIPTS (MOBILE)
+Route::get('/bookings/{bookingId}/receipt', [ReceiptController::class, 'bookingReceipt']);
 
 // WALK-IN GUESTS
 Route::prefix('walk-in-guests')->group(function () {
     // Existing routes
     Route::get('/', [WalkInGuestController::class, 'index']);
     Route::post('/', [WalkInGuestController::class, 'store']); // Keep original for backward compatibility if needed
-    
+
     // New routes for guest search and management
     Route::get('/search', [WalkInGuestController::class, 'search']);           // Search existing guests
     Route::post('/guest', [WalkInGuestController::class, 'storeGuest']);      // Create guest only (no booking)
     Route::post('/checkin', [WalkInGuestController::class, 'checkin']);       // Check-in with existing or new guest
-    
+
     // Checkout route
     Route::post('/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);
-    
+
     // GET GUEST DETAILS WITH BOOKINGS AND TOTAL SPENT
     Route::get('/{id}/details', [WalkInGuestController::class, 'getGuestDetails']); // NEW: Get guest with booking history and total spent
-    
+
     // Get booking details with add-ons (for viewing inside modal)
     Route::get('/bookings/{bookingId}', [WalkInGuestController::class, 'getBookingDetails']);
-    
+
     // Delete guest
     Route::delete('/{id}', [WalkInGuestController::class, 'destroy']);
 });

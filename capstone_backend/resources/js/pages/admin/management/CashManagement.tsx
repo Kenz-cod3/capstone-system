@@ -1,18 +1,9 @@
 import React, { useState, useEffect } from "react";
-import {
-    message,
-    Spin,
-    Row,
-    Col,
-    Pagination,
-} from "antd";
+import { message, Spin, Row, Col, Pagination } from "antd";
 
 import dayjs from "dayjs";
 
-import {
-    UserOutlined,
-    WalletOutlined,
-} from "@ant-design/icons";
+import { UserOutlined, WalletOutlined } from "@ant-design/icons";
 
 import api from "@/services/api";
 
@@ -38,6 +29,7 @@ interface Shift {
     opened_at: string;
     closed_at?: string | null;
     expected_cash?: number;
+    starting_cash?: number;
     cash_payments?: number;
     handled_bookings?: number;
     staff_name?: string;
@@ -53,7 +45,6 @@ interface PaginatedShiftsResponse {
 
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────────────────
 export default function CashManagement() {
-
     // ─── STATE DECLARATIONS ──────────────────────────────────────────────────────
     const [payments, setPayments] = useState<Payment[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
@@ -61,7 +52,7 @@ export default function CashManagement() {
     const [staffSummary, setStaffSummary] = useState<StaffCashSummary[]>([]);
     const [currentShift, setCurrentShift] = useState<Shift | null>(null);
     const [allShifts, setAllShifts] = useState<Shift[]>([]);
-    
+
     // ─── PAGINATION STATE ────────────────────────────────────────────────────────
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [totalShifts, setTotalShifts] = useState<number>(0);
@@ -94,7 +85,7 @@ export default function CashManagement() {
         try {
             const response = await api.get(`/shifts?page=${page}`);
             const paginatedData = response.data as PaginatedShiftsResponse;
-            
+
             setAllShifts(paginatedData.data || []);
             setTotalShifts(paginatedData.total || 0);
             setCurrentPage(paginatedData.current_page || 1);
@@ -117,7 +108,7 @@ export default function CashManagement() {
             console.error(error);
             message.error(
                 error.response?.data?.message ||
-                "Failed to load cash management"
+                    "Failed to load cash management",
             );
         } finally {
             setLoading(false);
@@ -128,7 +119,7 @@ export default function CashManagement() {
     const calculateTotals = (data: Payment[]) => {
         const total = data.reduce(
             (sum, payment) => sum + Number(payment.amount),
-            0
+            0,
         );
         setTotalIncome(total);
     };
@@ -189,7 +180,6 @@ export default function CashManagement() {
     // ─── RENDER COMPONENT ────────────────────────────────────────────────────────
     return (
         <div className="min-h-screen font-['DM_Sans',sans-serif]">
-
             {/* ─── HEADER SECTION ─────────────────────────────────────────────── */}
             <div className="mb-5">
                 <h1 className="text-[26px] font-bold text-gray-900 mb-1">
@@ -202,7 +192,6 @@ export default function CashManagement() {
 
             {/* ─── TOP CARDS SECTION ──────────────────────────────────────────── */}
             <Row gutter={[16, 16]} className="mb-5">
-
                 {/* TOTAL INCOME CARD */}
                 <Col xs={24} sm={12} lg={8}>
                     <div className="bg-[#fffdf7] rounded-xl border border-amber-100 px-5 py-4">
@@ -247,19 +236,20 @@ export default function CashManagement() {
                             {Number(
                                 userRole === "admin"
                                     ? activeShifts.reduce(
-                                        (sum, shift) =>
-                                            sum + Number(shift.expected_cash || 0),
-                                        0
-                                    )
-                                    : currentShift?.expected_cash || 0
+                                          (sum, shift) =>
+                                              sum +
+                                              Number(shift.expected_cash || 0),
+                                          0,
+                                      )
+                                    : currentShift?.expected_cash || 0,
                             ).toLocaleString()}
                         </div>
                         <div className="text-xs text-stone-500 mt-1">
                             {userRole === "admin"
                                 ? `${activeShifts.length} active shift(s)`
                                 : currentShift?.id
-                                ? `Shift #${currentShift.id}`
-                                : "No Active Shift"}
+                                  ? `Shift #${currentShift.id}`
+                                  : "No Active Shift"}
                         </div>
                     </div>
                 </Col>
@@ -293,7 +283,8 @@ export default function CashManagement() {
                                                 {staff.staff}
                                             </div>
                                             <div className="text-xs text-stone-500">
-                                                {staff.transactions} transaction(s)
+                                                {staff.transactions}{" "}
+                                                transaction(s)
                                             </div>
                                         </div>
                                     </div>
@@ -332,7 +323,7 @@ export default function CashManagement() {
                                     <div className="text-xs text-stone-500 mt-1">
                                         Opened:{" "}
                                         {dayjs(shift.opened_at).format(
-                                            "MMM DD, YYYY hh:mm A"
+                                            "MMM DD, YYYY hh:mm A",
                                         )}
                                     </div>
                                 </div>
@@ -340,7 +331,7 @@ export default function CashManagement() {
                                     <div className="font-bold text-emerald-600 text-lg">
                                         ₱
                                         {Number(
-                                            shift.expected_cash || 0
+                                            shift.expected_cash || 0,
                                         ).toLocaleString()}
                                     </div>
                                     <div className="text-xs text-stone-500">
@@ -372,13 +363,16 @@ export default function CashManagement() {
                                     Staff
                                 </th>
                                 <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
-                                    Shift
+                                    Shift No.
                                 </th>
                                 <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Opened
                                 </th>
                                 <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Closed
+                                </th>
+                                <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                    Starting Cash
                                 </th>
                                 <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Cash Payments
@@ -405,26 +399,32 @@ export default function CashManagement() {
                                     </td>
                                     <td className="px-5 py-4 text-sm text-stone-600">
                                         {dayjs(shift.opened_at).format(
-                                            "MMM DD, YYYY hh:mm A"
+                                            "MMM DD, YYYY hh:mm A",
                                         )}
                                     </td>
                                     <td className="px-5 py-4 text-sm text-stone-600">
                                         {shift.closed_at
                                             ? dayjs(shift.closed_at).format(
-                                                "MMM DD, YYYY hh:mm A"
-                                            )
+                                                  "MMM DD, YYYY hh:mm A",
+                                              )
                                             : "-"}
+                                    </td>
+                                    <td className="px-5 py-4 text-right font-bold text-emerald-600">
+                                        ₱
+                                        {Number(
+                                            shift.starting_cash || 0,
+                                        ).toLocaleString()}
                                     </td>
                                     <td className="px-5 py-4 text-right font-semibold text-blue-600">
                                         ₱
                                         {Number(
-                                            shift.cash_payments || 0
+                                            shift.cash_payments || 0,
                                         ).toLocaleString()}
                                     </td>
                                     <td className="px-5 py-4 text-right font-bold text-emerald-600">
                                         ₱
                                         {Number(
-                                            shift.expected_cash || 0
+                                            shift.expected_cash || 0,
                                         ).toLocaleString()}
                                     </td>
                                     <td className="px-5 py-4 text-center">

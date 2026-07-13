@@ -155,9 +155,8 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                         <input
                             ref={nameRef}
                             type="text"
-                            className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${
-                                errors.add_on_name ? "border-red-400 bg-red-50" : "border-gray-200"
-                            }`}
+                            className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${errors.add_on_name ? "border-red-400 bg-red-50" : "border-gray-200"
+                                }`}
                             placeholder="e.g., Extra Towel, Foam, Transportation"
                             value={form.add_on_name}
                             onChange={(e) => {
@@ -186,9 +185,8 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                className={`w-full pl-7 pr-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${
-                                    errors.price ? "border-red-400 bg-red-50" : "border-gray-200"
-                                }`}
+                                className={`w-full pl-7 pr-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${errors.price ? "border-red-400 bg-red-50" : "border-gray-200"
+                                    }`}
                                 placeholder="0.00"
                                 value={form.price}
                                 onChange={(e) => {
@@ -268,7 +266,7 @@ function DeleteModal({ addOn, onClose, onDeleted }: DeleteModalProps) {
         } catch (err: any) {
             setError(
                 err?.response?.data?.message ??
-                    "Failed to delete. It may be linked to existing bookings."
+                "Failed to delete. It may be linked to existing bookings."
             );
         } finally {
             setLoading(false);
@@ -410,23 +408,27 @@ export default function AddOnsPage() {
                 </div>
 
                 {/* Search */}
-                <div className="relative mb-4">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none shadow-sm transition-all"
-                        placeholder="Search add-ons..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                    />
-                    {search && (
-                        <button
-                            onClick={() => setSearch("")}
-                            className="absolute right-3 top-1/2 -translate-y-1/2"
-                        >
-                            <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-                        </button>
-                    )}
+                <div className="mb-4 flex justify-end">
+                    <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
+                        <input
+                            type="text"
+                            className="w-[250px] pl-10 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none shadow-sm transition-all"
+                            placeholder="Search add-ons..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+
+                        {search && (
+                            <button
+                                onClick={() => setSearch("")}
+                                className="absolute right-3 top-1/2 -translate-y-1/2"
+                            >
+                                <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Table Card */}

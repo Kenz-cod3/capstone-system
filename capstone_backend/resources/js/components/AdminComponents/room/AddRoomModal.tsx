@@ -2,9 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import { createRoom, uploadRoomImage } from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
 import { X, Upload, AlertCircle, CheckCircle } from "lucide-react";
+import api from "@/services/api";
 
 export default function AddRoomModal({ onClose, refresh }: any) {
     const [roomTypes, setRoomTypes] = useState<any[]>([]);
+    const [amenities, setAmenities] = useState<any[]>([]);
     const [file, setFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -21,10 +23,19 @@ export default function AddRoomModal({ onClose, refresh }: any) {
         room_number: "",
         room_type_id: "",
         status: "available",
+        amenities: [] as number[],
     });
+
+
 
     useEffect(() => {
         getRoomTypesCached().then(setRoomTypes);
+
+        api.get("/amenities").then((res) => {
+            console.log("Amenities Response:", res.data);
+
+            setAmenities(res.data.data);
+        });
     }, []);
 
     // Cleanup preview URLs on unmount
@@ -60,9 +71,9 @@ export default function AddRoomModal({ onClose, refresh }: any) {
         // Validate file type
         const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
         if (!validTypes.includes(file.type)) {
-            setErrors({ 
-                ...errors, 
-                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)" 
+            setErrors({
+                ...errors,
+                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)"
             });
             return false;
         }
@@ -70,9 +81,9 @@ export default function AddRoomModal({ onClose, refresh }: any) {
         // Validate file size (5MB for panorama, 2MB for regular images)
         const maxSize = isPanorama ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
         if (file.size > maxSize) {
-            setErrors({ 
-                ...errors, 
-                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}` 
+            setErrors({
+                ...errors,
+                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}`
             });
             return false;
         }
@@ -179,6 +190,7 @@ export default function AddRoomModal({ onClose, refresh }: any) {
             const res = await createRoom({
                 ...form,
                 room_type_id: Number(form.room_type_id),
+                amenities: form.amenities,
             });
 
             const roomId = res.data.data.id;
@@ -307,6 +319,44 @@ export default function AddRoomModal({ onClose, refresh }: any) {
                         )}
                     </div>
 
+                    {/* Amenities */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Amenities
+                        </label>
+
+                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                            {amenities.map((amenity) => (
+                                <label
+                                    key={amenity.id}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={form.amenities.includes(amenity.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    amenities: [...prev.amenities, amenity.id],
+                                                }));
+                                            } else {
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    amenities: prev.amenities.filter(
+                                                        id => id !== amenity.id
+                                                    ),
+                                                }));
+                                            }
+                                        }}
+                                    />
+
+                                    <span>{amenity.name}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Status */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -340,10 +390,10 @@ export default function AddRoomModal({ onClose, refresh }: any) {
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
                             className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDragging
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : errors.image
-                                        ? 'border-red-500 bg-red-50'
-                                        : 'border-gray-300 hover:border-blue-500'
+                                ? 'border-blue-500 bg-blue-50'
+                                : errors.image
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-gray-300 hover:border-blue-500'
                                 }`}
                             onClick={() => fileInputRef.current?.click()}
                         >
@@ -408,10 +458,10 @@ export default function AddRoomModal({ onClose, refresh }: any) {
                             onDragOver={handlePanoramaDragOver}
                             onDrop={handlePanoramaDrop}
                             className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDraggingPanorama
-                                    ? 'border-purple-500 bg-purple-50'
-                                    : errors.panorama
-                                        ? 'border-red-500 bg-red-50'
-                                        : 'border-gray-300 hover:border-purple-500'
+                                ? 'border-purple-500 bg-purple-50'
+                                : errors.panorama
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-gray-300 hover:border-purple-500'
                                 }`}
                             onClick={() => panoramaInputRef.current?.click()}
                         >

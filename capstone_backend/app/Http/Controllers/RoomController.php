@@ -11,8 +11,9 @@ class RoomController extends Controller
     public function index()
     {
         $rooms = Room::with([
-            'roomType:id,type_name,base_price,short_stay_price',
-            'images'
+            'roomType:id,type_name,description,base_price,short_stay_price,max_occupancy',
+            'images',
+            'amenities:id,name'
         ])
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
@@ -20,35 +21,37 @@ class RoomController extends Controller
         return response()->json(
             $rooms->map(function ($room) {
 
-                // 📷 NORMAL IMAGE
+                // NORMAL IMAGE
                 $normalImage = $room->images
                     ->where('image_type', 'normal')
                     ->sortByDesc('created_at')
                     ->first();
 
-                // 👁️ 360 IMAGE
+                // 360 IMAGE
                 $panoramaImage = $room->images
                     ->where('image_type', '360')
                     ->sortByDesc('created_at')
                     ->first();
 
                 return [
-                    'id' => $room->id,
+                    'id'          => $room->id,
                     'room_number' => $room->room_number,
-                    'status' => $room->status,
-                    'is_deleted' => $room->deleted_at !== null,
+                    'status'      => $room->status,
+                    'is_deleted'  => $room->deleted_at !== null,
 
                     'images' => $room->images,
 
                     'room_type_id' => $room->room_type_id,
-                    'room_type' => $room->roomType,
+                    'room_type'    => $room->roomType,
 
-                    // 📷 CARD IMAGE
+                    'amenities' => $room->amenities,
+
+                    // CARD IMAGE
                     'image_url' => $normalImage
                         ? asset('storage/' . $normalImage->image_path)
                         : null,
 
-                    // 👁️ POV IMAGE
+                    // POV IMAGE
                     'panorama_url' => $panoramaImage
                         ? asset('storage/' . $panoramaImage->image_path)
                         : null,
@@ -76,31 +79,74 @@ class RoomController extends Controller
     {
         $validated = $request->validate([
             'room_type_id' => 'required|exists:room_types,id',
-            'room_number' => 'required|string|unique:rooms,room_number',
-            'status' => 'required|in:available,occupied,maintenance,dirty,cleaning'
+            'room_number'  => 'required|string|unique:rooms,room_number',
+            'status'       => 'required|in:available,reserved,occupied,maintenance,dirty,cleaning',
+
+            'amenities'   => 'nullable|array',
+            'amenities.*' => 'exists:amenities,id',
         ]);
+
+        $amenities = $validated['amenities'] ?? [];
+        unset($validated['amenities']);
 
         $room = Room::create($validated);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        $room->amenities()->sync($amenities);
+
+        $room->load([
+            'roomType',
+            'images',
+            'amenities',
+        ]);
+
         broadcast(new DashboardUpdated());
 
         return response()->json([
             'message' => 'Room created successfully',
-            'data' => $room
+            'data'    => $room
         ], 201);
     }
 
     // SHOW ROOM
     public function show($id)
     {
-        $room = Room::with(['roomType', 'images'])->findOrFail($id);
+        $room = Room::with([
+            'roomType',
+            'images',
+            'amenities'
+        ])->findOrFail($id);
 
-        $room->image_url = $room->images->count()
-            ? asset('storage/' . $room->images[0]->image_path)
-            : null;
+        // NORMAL IMAGE
+        $normalImage = $room->images
+            ->where('image_type', 'normal')
+            ->sortByDesc('created_at')
+            ->first();
 
-        return response()->json($room, 200);
+        // 360 IMAGE
+        $panoramaImage = $room->images
+            ->where('image_type', '360')
+            ->sortByDesc('created_at')
+            ->first();
+
+        return response()->json([
+            'id'          => $room->id,
+            'room_number' => $room->room_number,
+            'status'      => $room->status,
+
+            'room_type_id' => $room->room_type_id,
+            'room_type'    => $room->roomType,
+
+            'amenities' => $room->amenities,
+            'images'    => $room->images,
+
+            'image_url'    => $normalImage
+                ? asset('storage/' . $normalImage->image_path)
+                : null,
+
+            'panorama_url' => $panoramaImage
+                ? asset('storage/' . $panoramaImage->image_path)
+                : null,
+        ], 200);
     }
 
     // UPDATE ROOM
@@ -110,18 +156,33 @@ class RoomController extends Controller
 
         $validated = $request->validate([
             'room_type_id' => 'sometimes|exists:room_types,id',
-            'room_number' => 'sometimes|string|unique:rooms,room_number,' . $id,
-            'status' => 'sometimes|in:available,occupied,maintenance,dirty,cleaning'
+            'room_number'  => 'sometimes|string|unique:rooms,room_number,' . $id,
+            'status'       => 'sometimes|in:available,reserved,occupied,maintenance,dirty,cleaning',
+
+            'amenities'   => 'nullable|array',
+            'amenities.*' => 'exists:amenities,id',
         ]);
+
+        $amenities = $validated['amenities'] ?? null;
+        unset($validated['amenities']);
 
         $room->update($validated);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        if ($amenities !== null) {
+            $room->amenities()->sync($amenities);
+        }
+
+        $room->load([
+            'roomType',
+            'images',
+            'amenities',
+        ]);
+
         broadcast(new DashboardUpdated());
 
         return response()->json([
             'message' => 'Room updated successfully',
-            'data' => $room
+            'data'    => $room
         ], 200);
     }
 
@@ -132,7 +193,6 @@ class RoomController extends Controller
 
         // DO NOT DELETE OCCUPIED ROOM
         if ($room->status === 'occupied') {
-
             return response()->json([
                 'message' => 'The room is occupied and cannot be deleted.'
             ], 400);
@@ -150,7 +210,6 @@ class RoomController extends Controller
 
         $room->delete();
 
-        // 🔥 REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated());
 
         return response()->json([
@@ -171,7 +230,6 @@ class RoomController extends Controller
 
         $room->restore();
 
-        // 🔥 REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated());
 
         return response()->json([
@@ -186,7 +244,6 @@ class RoomController extends Controller
 
         $room->forceDelete();
 
-        // 🔥 REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated());
 
         return response()->json([
@@ -197,26 +254,25 @@ class RoomController extends Controller
     // ROOM OCCUPANCY SUMMARY
     public function occupancy()
     {
-        $totalRooms = Room::count();
-
-        $occupiedRooms = Room::where('status', 'occupied')->count();
-        $availableRooms = Room::where('status', 'available')->count();
+        $totalRooms      = Room::count();
+        $occupiedRooms   = Room::where('status', 'occupied')->count();
+        $availableRooms  = Room::where('status', 'available')->count();
         $maintenanceRooms = Room::where('status', 'maintenance')->count();
-        $dirtyRooms = Room::where('status', 'dirty')->count();
-        $cleaningRooms = Room::where('status', 'cleaning')->count();
+        $dirtyRooms      = Room::where('status', 'dirty')->count();
+        $cleaningRooms   = Room::where('status', 'cleaning')->count();
 
         $occupancyRate = $totalRooms > 0
             ? round(($occupiedRooms / $totalRooms) * 100, 2)
             : 0;
 
         return response()->json([
-            'total_rooms' => $totalRooms,
-            'occupied_rooms' => $occupiedRooms,
-            'available_rooms' => $availableRooms,
+            'total_rooms'       => $totalRooms,
+            'occupied_rooms'    => $occupiedRooms,
+            'available_rooms'   => $availableRooms,
             'maintenance_rooms' => $maintenanceRooms,
-            'dirty_rooms' => $dirtyRooms,
-            'cleaning_rooms' => $cleaningRooms,
-            'occupancy_rate' => $occupancyRate
+            'dirty_rooms'       => $dirtyRooms,
+            'cleaning_rooms'    => $cleaningRooms,
+            'occupancy_rate'    => $occupancyRate
         ]);
     }
 
@@ -248,7 +304,7 @@ class RoomController extends Controller
                 : 0;
 
             $data[] = [
-                'day' => \Carbon\Carbon::parse($date)->format('D'),
+                'day'       => \Carbon\Carbon::parse($date)->format('D'),
                 'occupancy' => $rate
             ];
         }

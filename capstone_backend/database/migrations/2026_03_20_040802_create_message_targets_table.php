@@ -15,7 +15,6 @@ return new class extends Migration
             $table->id();
             $table->foreignId('message_id')->constrained('messages')->cascadeOnDelete();
             $table->unsignedBigInteger('target_id');
-            $table->string('target_type');
             $table->boolean('is_read')->default(false);
             $table->timestamp('read_at')->nullable();
         });

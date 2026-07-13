@@ -15,6 +15,9 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
             case "available":
                 return "bg-emerald-100 text-emerald-700";
 
+            case "reserved":
+                return "bg-amber-100 text-amber-700";
+
             case "occupied":
                 return "bg-blue-100 text-blue-700";
 
@@ -48,15 +51,32 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                     Room Status Panel
                 </h2>
 
-                <div className="flex gap-4 text-sm">
+                <div className="flex gap-4 text-sm flex-wrap">
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
                         Available
                     </span>
+
+                    <span className="flex items-center gap-2 text-gray-600">
+                        <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
+                        Reserved
+                    </span>
+
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                         Occupied
                     </span>
+
+                    <span className="flex items-center gap-2 text-gray-600">
+                        <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                        Cleaning
+                    </span>
+
+                    <span className="flex items-center gap-2 text-gray-600">
+                        <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                        Dirty
+                    </span>
+
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                         Maintenance

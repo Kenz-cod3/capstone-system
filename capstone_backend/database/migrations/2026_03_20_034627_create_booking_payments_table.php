@@ -13,14 +13,35 @@ return new class extends Migration
     {
         Schema::create('booking_payments', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_id')->constrained('bookings');
+
+            $table->foreignId('booking_id') 
+                ->constrained('bookings');
+
+            $table->foreignId('shift_id')
+                ->nullable()
+                ->constrained('shifts')
+                ->nullOnDelete();
+
+            $table->string('receipt_number')->unique();
+
             $table->decimal('amount', 10, 2);
+
             $table->string('payment_method');
+
+             $table->enum('payment_status', [
+                'pending',
+                'paid',
+                'refunded',
+                'failed'
+            ])->default('pending');
+
             $table->string('gcash_reference')->nullable();
             $table->string('bank_reference')->nullable();
+
             $table->foreignId('received_by')
                 ->nullable()
                 ->constrained('users');
+
             $table->timestamp('payment_date');
         });
     }

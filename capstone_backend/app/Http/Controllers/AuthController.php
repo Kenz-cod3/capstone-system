@@ -2,23 +2,107 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\EmailVerification;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use App\Models\Shift;
 
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
 
 class AuthController extends Controller
 {
+
+
+    private function sendOtpEmail(User $user, string $subject = 'Your OTP Code', ?string $bodyOverride = null): bool
+    {
+        $otp = rand(100000, 999999);
+
+        EmailVerification::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'verification_code' => $otp,
+                'verified_at' => null,
+                'expires_at' => now()->addSeconds(100),
+            ]
+        );
+
+        $mail = new PHPMailer(true);
+
+        try {
+            $mail->isSMTP();
+            $mail->Host = config('mail.mailers.smtp.host', env('MAIL_HOST'));
+            $mail->SMTPAuth = true;
+
+            $mail->Username = env('MAIL_USERNAME');
+            $mail->Password = env('MAIL_PASSWORD');
+
+            $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
+            $mail->Port = env('MAIL_PORT', 587);
+
+            $mail->setFrom(
+                env('MAIL_FROM_ADDRESS'),
+                env('MAIL_FROM_NAME')
+            );
+            $mail->addAddress($user->email);
+
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body = $bodyOverride ?? "
+            <div style='font-family: Arial, sans-serif; max-width:600px; margin:auto; padding:20px; border:1px solid #e5e7eb; border-radius:10px;'>
+
+                    <h2 style='color:#16a34a; text-align:center;'>
+                        Lynn Ennia's Travelers Inn
+                    </h2>
+
+                    <p>Hello,</p>
+
+                    <p>Your One-Time Password (OTP) for email verification is:</p>
+
+                <div style='
+                    text-align:center;
+                    font-size:36px;
+                    font-weight:bold;
+                    letter-spacing:8px;
+                    color:#16a34a;
+                    margin:25px 0;
+                '>
+                    {$otp}
+                </div>
+
+                <p>
+                    This OTP will expire in
+                    <strong>100 seconds</strong>.
+                </p>
+
+                <p>
+                    If you did not request this verification, you can safely ignore this email.
+                </p>
+
+                <hr>
+
+                <small style='color:#6b7280;'>
+                    Please do not share this code with anyone.
+                </small>
+
+            </div> ";
+            $mail->send();
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Mail Error: " . $mail->ErrorInfo);
+
+            return false;
+        }
+    }
+
     //REGISTER
     public function register(Request $request)
     {
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
             'last_name'  => 'required|string|max:255',
             'email'      => 'required|email',
             'password'   => 'required|string|min:8|confirmed',
@@ -45,85 +129,39 @@ class AuthController extends Controller
                 ], 400);
             }
 
-            // IF NOT VERIFIED → RESEND OTP
-            $otp = rand(100000, 999999);
+            $verification = EmailVerification::where('user_id', $existingUser->id)->first();
 
-            $existingUser->otp = $otp;
-            $existingUser->save();
-
-            $mail = new PHPMailer(true);
-
-            try {
-                $mail->isSMTP();
-                $mail->Host = 'smtp.gmail.com';
-                $mail->SMTPAuth = true;
-
-                $mail->Username = 'sipralim105@gmail.com';
-                $mail->Password = 'cvaw bwzw emjm bzif';
-
-                $mail->SMTPSecure = 'tls';
-                $mail->Port = 587;
-
-                $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers Inn");
-                $mail->addAddress($existingUser->email);
-
-                $mail->isHTML(true);
-                $mail->Subject = 'Your OTP Code';
-                $mail->Body = "<h1>$otp</h1>";
-
-                $mail->send();
-            } catch (\Exception $e) {
-                Log::error("Mail Error: " . $mail->ErrorInfo);
+            if (
+                $verification &&
+                now()->lessThan($verification->expires_at)
+            ) {
+                return response()->json([
+                    'message' => 'OTP is still active. Please wait until it expires.',
+                    'expires_at' => $verification->expires_at,
+                    'email' => $existingUser->email,
+                ], 429);
             }
 
+            $sent = $this->sendOtpEmail($existingUser);
+
             return response()->json([
-                'message' => 'Account not verified. OTP resent.',
+                'message' => $sent
+                    ? 'Account not verified. OTP resent.'
+                    : 'Account not verified. We could not send the OTP email, please try again shortly.',
                 'email' => $existingUser->email
-            ], 200);
+            ], $sent ? 200 : 502);
         }
 
         $user = User::create($validated);
 
-        $otp = rand(100000, 999999);
-
-        $user->otp = $otp;
-        $user->save();
-
-        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
-
-        try {
-            $mail->isSMTP();
-            $mail->Host = 'smtp.gmail.com';
-            $mail->SMTPAuth = true;
-
-            $mail->Username = 'sipralim105@gmail.com';
-            $mail->Password = 'cvaw bwzw emjm bzif';
-
-            $mail->SMTPSecure = 'tls';
-            $mail->Port = 587;
-
-            $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers' Inn");
-            $mail->addAddress($user->email);
-
-            $mail->isHTML(true);
-            $mail->Subject = 'Welcome!';
-            $mail->Body = "
-                        <h2>Your OTP Code</h2>
-                        <p>Your verification code is:</p>
-                        <h1>$otp</h1>
-                        <p>Do not share this code.</p>
-                    ";
-
-            $mail->send();
-        } catch (\Exception $e) {
-            Log::error("Mail Error: " . $mail->ErrorInfo);
-        }
-
+        $sent = $this->sendOtpEmail($user, 'Welcome!');
 
         return response()->json([
-            'message' => 'OTP sent to email',
+            'message' => $sent
+                ? 'OTP sent to email'
+                : 'Account created, but the OTP email failed to send. Please request a new code.',
             'email'   => $user->email
-        ], 201);
+        ], $sent ? 201 : 502);
     }
 
     public function verifyOtp(Request $request)
@@ -141,17 +179,34 @@ class AuthController extends Controller
             ], 404);
         }
 
-        if ($user->otp != $request->otp) {
+        $verification = EmailVerification::where('user_id', $user->id)->first();
+
+        if (!$verification) {
+            return response()->json([
+                'message' => 'OTP not found'
+            ], 404);
+        }
+
+        if ($verification->verification_code != $request->otp) {
             return response()->json([
                 'message' => 'Invalid OTP'
             ], 400);
         }
 
-        // SUCCESS
-        $user->otp = null;
-        $user->is_verified = true;
-        $user->email_verified_at = now();
-        $user->save();
+        if (now()->greaterThan($verification->expires_at)) {
+            return response()->json([
+                'message' => 'OTP expired'
+            ], 400);
+        }
+
+        $verification->update([
+            'verified_at' => now(),
+        ]);
+
+        $user->update([
+            'is_verified' => true,
+            'email_verified_at' => now(),
+        ]);
 
         $token = $user->createToken('mobile')->plainTextToken;
 
@@ -162,43 +217,47 @@ class AuthController extends Controller
         ]);
     }
 
-    // public function login(Request $request)
-    // {
-    //     $request->validate([
-    //         'email'    => 'required',
-    //         'password' => 'required'
-    //     ]);
+    public function resendOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
 
-    //     $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
-    //     if (!$user || !Hash::check($request->password, $user->password)) {
-    //         return response()->json([
-    //             'message' => 'Invalid email or password'
-    //         ], 401);
-    //     }
+        if (!$user) {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
 
-    //     // ✅ ALLOW ADMIN + STAFF
-    //     if (!in_array($user->role, ['admin', 'staff', 'guest'])) {
-    //         return response()->json([
-    //             'message' => 'Access denied.'
-    //         ], 403);
-    //     }
+        if ($user->is_verified) {
+            return response()->json([
+                'message' => 'Account already verified'
+            ], 400);
+        }
 
-    //     if (!$user->is_active) {
-    //         return response()->json([
-    //             'message' => 'Account inactive'
-    //         ], 403);
-    //     }
+        $verification = EmailVerification::where('user_id', $user->id)->first();
 
-    //     $user->tokens()->delete();
+        if (
+            $verification &&
+            now()->lessThan($verification->expires_at)
+        ) {
+            return response()->json([
+                'message' => 'OTP is still active. Please wait until it expires.',
+                'expires_at' => $verification->expires_at,
+            ], 429);
+        }
 
-    //     $token = $user->createToken('auth_token')->plainTextToken;
+        $sent = $this->sendOtpEmail($user);
 
-    //     return response()->json([
-    //         'user' => $user,
-    //         'token' => $token
-    //     ]);
-    // }
+        return response()->json([
+            'message' => $sent
+                ? 'OTP has been resent to your email'
+                : 'We could not send the OTP email, please try again shortly.',
+            'email' => $user->email
+        ], $sent ? 200 : 502);
+    }
 
     public function adminLogin(Request $request)
     {
@@ -228,29 +287,18 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // $user->tokens()->delete();
-
-        // ADD THIS
         $user->last_login = now();
         $user->save();
 
-        if (
-            strtolower($user->role) === 'staff'
-        ) {
+        if (strtolower($user->role) === 'staff') {
 
-            $existingShift = Shift::where(
-                'opened_by',
-                $user->id
-            )
+            $existingShift = Shift::where('opened_by', $user->id)
                 ->whereNull('closed_at')
                 ->first();
 
             if (!$existingShift) {
 
-                $lastShift = Shift::where(
-                    'opened_by',
-                    $user->id
-                )
+                $lastShift = Shift::where('opened_by', $user->id)
                     ->whereNotNull('closed_at')
                     ->latest('closed_at')
                     ->first();
@@ -260,18 +308,10 @@ class AuthController extends Controller
                     : 0;
 
                 Shift::create([
-                    'shift_number' =>
-                    'SHIFT-' . now()->format('Ymd-His'),
-
-                    'opened_by' =>
-                    $user->id,
-
-                    'starting_cash' =>
-                    $startingCash,
-
-                    'expected_cash' =>
-                    $startingCash,
-
+                    'shift_number' => 'SHIFT-' . now()->format('Ymd-His'),
+                    'opened_by' => $user->id,
+                    'starting_cash' => $startingCash,
+                    'expected_cash' => $startingCash,
                     'opened_at' => now(),
                 ]);
             }
@@ -298,71 +338,47 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        // if ($user->role !== 'guest') {
-        //     return response()->json([
-        //         'message' => 'Access Denied'
-        //     ], 403);
-        // }
         if (!in_array($user->role, ['guest', 'housekeeper'])) {
             return response()->json([
                 'message' => 'Access Denied'
             ], 403);
         }
 
-        // ADD THIS (CRITICAL FIX)
         if (!$user->is_active) {
             return response()->json([
                 'message' => 'Account inactive'
             ], 403);
         }
 
-        // $user->tokens()->delete();
-
-        // ADD THIS
         $user->last_login = now();
         $user->save();
 
-
         if (!$user->is_verified && $user->role === 'guest') {
 
-            $otp = rand(100000, 999999);
-            $user->otp = $otp;
-            $user->save();
+            $verification = EmailVerification::where('user_id', $user->id)->first();
 
-            // SEND EMAIL
-            $mail = new PHPMailer(true);
-
-            try {
-                $mail->isSMTP();
-                $mail->Host = 'smtp.gmail.com';
-                $mail->SMTPAuth = true;
-
-                $mail->Username = 'sipralim105@gmail.com';
-                $mail->Password = 'cvaw bwzw emjm bzif';
-
-                $mail->SMTPSecure = 'tls';
-                $mail->Port = 587;
-
-                $mail->setFrom('sipralim105@gmail.com', "Lynn Ennia's Travelers Inn");
-                $mail->addAddress($user->email);
-
-                $mail->isHTML(true);
-                $mail->Subject = 'Your OTP Code';
-                $mail->Body = "<h1>$otp</h1>";
-
-                $mail->send();
-            } catch (\Exception $e) {
-                Log::error("Mail Error: " . $mail->ErrorInfo);
+            if (
+                $verification &&
+                now()->lessThan($verification->expires_at)
+            ) {
+                return response()->json([
+                    'message' => 'Account not verified. Your current OTP is still valid.',
+                    'expires_at' => $verification->expires_at,
+                    'email' => $user->email,
+                ], 403);
             }
 
+            $sent = $this->sendOtpEmail($user);
+
             return response()->json([
-                'message' => 'OTP sent. Please verify your account',
+                'message' => $sent
+                    ? 'OTP sent. Please verify your account'
+                    : 'Account not verified, and the OTP email failed to send. Please try again shortly.',
                 'email' => $user->email
             ], 403);
         }
 
         $token = $user->createToken('mobile')->plainTextToken;
-
 
         return response()->json([
             'user' => $user,
@@ -370,91 +386,33 @@ class AuthController extends Controller
         ]);
     }
 
-    // //LOGIN
-    // public function login(Request $request)
-    // {
-    //     $credentials = $request->validate([
-    //         'email'    => 'required|email',
-    //         'password' => 'required'
-    //     ]);
-
-    //     if (!Auth::attempt($credentials)) {
-    //         return response()->json([
-    //             'error' => 'Unauthorized'
-    //         ], 401);
-    //     }
-
-    //     /** @var \App\Models\User $user */
-    //     $user = Auth::user();
-
-    //     //Check if inactive
-    //     if (!$user->is_active) {
-    //         return response()->json([
-    //             'message' => 'Account is inactive'
-    //         ], 403);
-    //     }
-
-    //     //UPDATE LAST LOGIN
-    //     $user->last_login = now();
-    //     $user->save();
-
-    //     //CREATE TOKEN
-    //     $token = $user->createToken('auth_token')->plainTextToken;
-
-    //     return response()->json([
-    //         'user'  => $user,
-    //         'token' => $token
-    //     ]);
-    // }
-
     //LOGOUT
     public function logout(Request $request)
     {
         $user = $request->user();
-        $shift = Shift::where(
-            'opened_by',
-            $user->id
-        )
+        $shift = Shift::where('opened_by', $user->id)
             ->whereNull('closed_at')
             ->latest('opened_at')
             ->first();
 
         if ($shift) {
 
-            $payIn = \App\Models\CashTransaction::where(
-                'shift_id',
-                $shift->id
-            )
+            $payIn = \App\Models\CashTransaction::where('shift_id', $shift->id)
                 ->where('type', 'pay_in')
                 ->sum('amount');
 
-            $payOut = \App\Models\CashTransaction::where(
-                'shift_id',
-                $shift->id
-            )
+            $payOut = \App\Models\CashTransaction::where('shift_id', $shift->id)
                 ->where('type', 'pay_out')
                 ->sum('amount');
 
-            $bookingPayments =
-                \App\Models\BookingPayment::where(
-                    'shift_id',
-                    $shift->id
-                )->sum('amount');
+            $bookingPayments = \App\Models\BookingPayment::where('shift_id', $shift->id)
+                ->sum('amount');
 
-            $expected =
-                $shift->starting_cash +
-                $bookingPayments +
-                $payIn -
-                $payOut;
+            $expected = $shift->starting_cash + $bookingPayments + $payIn - $payOut;
 
             $shift->update([
-
-                'expected_cash' =>
-                $expected,
-
-                'closed_cash' =>
-                $expected,
-
+                'expected_cash' => $expected,
+                'closed_cash' => $expected,
                 'closed_at' => now(),
             ]);
         }
@@ -462,8 +420,7 @@ class AuthController extends Controller
         $user->tokens()->delete();
 
         return response()->json([
-            'message' =>
-            'Logged out successfully'
+            'message' => 'Logged out successfully'
         ]);
     }
 

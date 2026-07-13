@@ -10,12 +10,14 @@ class AmenityController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(
-            Amenity::all(),
-            200
-        );
+        $perPage = $request->get('per_page', 10);
+
+        $amenities = Amenity::orderBy('id', 'desc')
+            ->paginate($perPage);
+
+        return response()->json($amenities);
     }
 
     /**
@@ -72,9 +74,9 @@ class AmenityController extends Controller
     {
         $amenity = Amenity::findOrFail($id);
 
-        if ($amenity->roomTypes()->exists()) {
+        if ($amenity->rooms()->exists()) {
             return response()->json([
-                'message' => 'Cannot delete amenity because it is assigned to one or more room types.'
+                'message' => 'Cannot delete amenity because it is assigned to one or more rooms.'
             ], 400);
         }
 

@@ -13,10 +13,16 @@ return new class extends Migration
     {
         Schema::create('email_verifications', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->string('verification_code');
+
+            $table->foreignId('user_id')
+                ->constrained('users')
+                ->cascadeOnDelete();
+
+            $table->string('verification_code', 6);
+
+            $table->timestamp('expires_at');
             $table->timestamp('verified_at')->nullable();
-            $table->timestamp('expires_at')->nullable();
+
             $table->timestamps();
         });
     }

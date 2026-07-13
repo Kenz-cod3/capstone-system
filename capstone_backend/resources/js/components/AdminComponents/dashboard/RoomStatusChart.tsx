@@ -2,13 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
-import {
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-    Tooltip,
-} from "recharts";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
 interface RoomStatusItem {
     name: string;
@@ -53,7 +47,6 @@ export default function RoomStatusChart({
     const totalRooms = data.reduce((sum, item) => sum + item.value, 0);
     return (
         <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col h-full">
-
             {/* HEADER */}
             <div className="flex justify-between items-center mb-3">
                 <h2 className="text-lg font-semibold">
@@ -71,7 +64,6 @@ export default function RoomStatusChart({
 
             {/* CONTENT */}
             <div className="flex items-center justify-between gap-4 flex-1">
-
                 {/* CHART LEFT */}
                 <div className="w-1/2 h-[220px] flex items-center justify-center">
                     <ResponsiveContainer width="100%" height="100%">
@@ -94,9 +86,19 @@ export default function RoomStatusChart({
                             </Pie>
 
                             <Tooltip
-                                formatter={(value: any, name: any, props: any) => {
-                                    const total = data.reduce((sum, item) => sum + item.value, 0);
-                                    const percent = ((value / total) * 100).toFixed(0);
+                                formatter={(
+                                    value: any,
+                                    name: any,
+                                    props: any,
+                                ) => {
+                                    const total = data.reduce(
+                                        (sum, item) => sum + item.value,
+                                        0,
+                                    );
+                                    const percent = (
+                                        (value / total) *
+                                        100
+                                    ).toFixed(0);
 
                                     return [`${percent}%`, name];
                                 }}
@@ -113,7 +115,6 @@ export default function RoomStatusChart({
                 </div>
 
                 <div className="w-1/2 flex flex-col justify-between">
-
                     {/* LEGEND LIST */}
                     <div className="grid gap-2">
                         {data.map((item) => (
@@ -121,7 +122,6 @@ export default function RoomStatusChart({
                                 key={item.name}
                                 className="flex items-center justify-between"
                             >
-                                {/* LEFT */}
                                 <div className="flex items-center gap-2">
                                     <div
                                         className="w-2 h-2 rounded-sm"
@@ -132,9 +132,9 @@ export default function RoomStatusChart({
                                     </span>
                                 </div>
 
-                                {/* RIGHT */}
                                 <span className="text-sm font-semibold text-gray-800">
-                                    {item.value} {item.value === 1 ? "room" : "rooms"}
+                                    {item.value}{" "}
+                                    {item.value <= 1 ? "room" : "rooms"}
                                 </span>
                             </div>
                         ))}
@@ -145,12 +145,12 @@ export default function RoomStatusChart({
                         <span className="text-sm font-medium text-gray-600">
                             Total Rooms :
                         </span>
+
                         <span className="text-sm font-semibold text-gray-900">
-                            {totalRooms} {totalRooms === 1 ? "room" : "rooms"}
+                            {totalRooms} {totalRooms <= 1 ? "room" : "rooms"}
                         </span>
                     </div>
                 </div>
-
             </div>
         </div>
     );

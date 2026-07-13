@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\NotificationCreated;
 use App\Models\Notification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class NotificationController extends Controller
 {
@@ -79,6 +80,11 @@ class NotificationController extends Controller
     // MARK SINGLE AS READ
     public function markAsRead($id)
     {
+        Log::info("MARK AS READ CALLED", [
+            'notification_id' => $id,
+            'time' => now(),
+        ]);
+
         $notification = Notification::findOrFail($id);
 
         $notification->update([
@@ -101,22 +107,43 @@ class NotificationController extends Controller
     }
 
     // GET NOTIFICATIONS OF CURRENT USER
-    public function getByUser(Request $request)
+    public function getByUser(Request $request, $id)
     {
-        $user = $request->user();
+        $limit = (int) $request->query('limit', 10);
+        $offset = (int) $request->query('offset', 0);
 
-        $limit = $request->query('limit', 10);
-        $offset = $request->query('offset', 0);
+        $notifications = Notification::select([
+            'id',
+            'title',
+            'message',
+            'is_read',
+            'created_at',
+        ])
+            ->where('user_id', $id)
+            ->latest('created_at')
+            ->skip($offset)
+            ->take($limit)
+            ->get();
 
-        return response()->json(
-            Notification::where('user_id', $user->id)
-                ->latest()
-                ->skip($offset)
-                ->take($limit)
-                ->get(),
-            200
-        );
+        return response()->json($notifications);
     }
+
+    // public function getByUser(Request $request)
+    // {
+    //     $user = $request->user();
+
+    //     $limit = $request->query('limit', 10);
+    //     $offset = $request->query('offset', 0);
+
+    //     return response()->json(
+    //         Notification::where('user_id', $user->id)
+    //             ->latest()
+    //             ->skip($offset)
+    //             ->take($limit)
+    //             ->get(),
+    //         200
+    //     );
+    // }
 
     // GET ALL CURRENT USER NOTIFICATIONS
     public function getCurrentUserNotifications(Request $request)

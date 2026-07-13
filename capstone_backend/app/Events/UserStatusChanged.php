@@ -25,13 +25,13 @@ class UserStatusChanged implements ShouldBroadcastNow
         return new Channel('users');
     }
 
-    // 🔥 IMPORTANT (event name)
+    // IMPORTANT (event name)
     public function broadcastAs()
     {
         return 'UserStatusChanged';
     }
 
-    // 🔥 OPTIONAL but clearer payload
+    // OPTIONAL but clearer payload
     public function broadcastWith()
     {
         return [

@@ -25,7 +25,7 @@ export default function AdminOrdersReport() {
     const fetchOrders = async () => {
         try {
             const res = await api.get("/orders");
-            const paidOrders = res.data.filter(
+            const paidOrders = res.data.data.filter(
                 (o: any) => o.order_status === "paid"
             );
             setOrders(paidOrders);

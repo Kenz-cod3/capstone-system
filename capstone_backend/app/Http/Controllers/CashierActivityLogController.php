@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\StaffActivityLog;
 use Illuminate\Http\Request;
 
-class StaffActivityLogController extends Controller
+class CashierActivityLogController extends Controller
 {
     //  GET ALL LOGS
     public function index()

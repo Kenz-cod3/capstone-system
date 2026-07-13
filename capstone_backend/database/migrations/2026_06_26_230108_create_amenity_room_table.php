@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('otp')->nullable();
-            $table->boolean('is_verified')->default(false); 
+        Schema::create('amenity_room', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('room_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('amenity_id')->constrained()->cascadeOnDelete();
+            $table->timestamps();
         });
     }
 
@@ -22,8 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['otp', 'is_verified']); 
-        });
+        Schema::dropIfExists('amenity_room');
     }
 };

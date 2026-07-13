@@ -9,7 +9,7 @@
     // Strict mode
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+    "exactOptionalPropertyTypes": false,
     // Output
     "sourceMap": true,
     "declaration": true,
@@ -18,7 +18,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-    // 🔥 IMPORTANT (SHADCN FIX)
+    // IMPORTANT (SHADCN FIX)
     "baseUrl": ".",
     "paths": {
       "@/*": [

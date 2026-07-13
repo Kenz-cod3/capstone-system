@@ -3,10 +3,10 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\NotificationController;
 
-// 🔹 BASIC CRUD
+// BASIC CRUD
 Route::apiResource('notifications', NotificationController::class);
 
-// 🔹 CUSTOM ROUTES (GROUPED)
+// CUSTOM ROUTES (GROUPED)
 Route::prefix('notifications')->group(function () {
 
     // per user

@@ -10,16 +10,11 @@ class AddOn extends Model
 
     protected $fillable = [
         'add_on_name',
-        'price'
+        'price',
     ];
 
     public function bookingAddOns()
     {
         return $this->hasMany(BookingAddOn::class);
-    }
-
-    public function bookings()
-    {
-        return $this->belongsToMany(Booking::class,'booking_add_ons')->withPivot('quantity', 'subtotal');
     }
 }

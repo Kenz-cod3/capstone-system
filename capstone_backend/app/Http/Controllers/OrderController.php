@@ -13,14 +13,13 @@ use Illuminate\Support\Facades\Auth;
 class OrderController extends Controller
 {
     // GET ALL ORDERS
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(
-            Order::with(['items.menuItem', 'cashier'])
-                ->orderBy('id', 'desc')
-                ->get(),
-            200
-        );
+        $perPage = $request->input('per_page', 10);
+
+        return Order::with(['items.menuItem', 'cashier'])
+            ->latest()
+            ->paginate($perPage);
     }
 
     // CREATE ORDER (POS)

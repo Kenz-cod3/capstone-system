@@ -11,7 +11,7 @@ class MessageTargetController extends Controller
     public function index()
     {
         return response()->json(
-            MessageTarget::with(['message', 'target'])->get(),
+            MessageTarget::with(['message', 'user'])->get(),
             200
         );
     }
@@ -21,8 +21,7 @@ class MessageTargetController extends Controller
     {
         $validated = $request->validate([
             'message_id' => 'required|exists:messages,id',
-            'target_id' => 'required|integer',
-            'target_type' => 'required|string',
+            'target_id' => 'required|exists:users,id',
         ]);
 
         $validated['is_read'] = false;
@@ -31,14 +30,14 @@ class MessageTargetController extends Controller
 
         return response()->json([
             'message' => 'Target created',
-            'data' => $target->load(['message', 'target'])
+            'data' => $target->load(['message', 'user'])
         ], 201);
     }
 
     // GET SINGLE TARGET
     public function show($id)
     {
-        $target = MessageTarget::with(['message', 'target'])->findOrFail($id);
+        $target = MessageTarget::with(['message', 'user'])->findOrFail($id);
 
         return response()->json($target, 200);
     }
@@ -77,10 +76,9 @@ class MessageTargetController extends Controller
     }
 
     // CUSTOM: GET MESSAGES FOR A SPECIFIC TARGET (VERY IMPORTANT)
-    public function getByTarget($target_id, $target_type)
+    public function getByTarget($target_id)
     {
         $messages = MessageTarget::where('target_id', $target_id)
-            ->where('target_type', $target_type)
             ->with('message')
             ->get();
 
@@ -91,7 +89,6 @@ class MessageTargetController extends Controller
     {
         return response()->json(
             MessageTarget::where('target_id', $id)
-                ->where('target_type', 'App\\Models\\User')
                 ->with(['message.sender'])
                 ->join('messages', 'messages.id', '=', 'message_targets.message_id')
                 ->orderBy('messages.created_at', 'desc')
@@ -104,7 +101,6 @@ class MessageTargetController extends Controller
     public function getConversation($user1, $user2)
     {
         $messages = MessageTarget::with(['message.sender'])
-            ->where('target_type', 'App\\Models\\User')
             ->where(function ($query) use ($user1, $user2) {
 
                 $query->where(function ($q) use ($user1, $user2) {
@@ -133,10 +129,6 @@ class MessageTargetController extends Controller
     public function markAsRead($user1, $user2)
     {
         MessageTarget::where('target_id', $user1)
-            ->whereIn('target_type', [
-                'App\\Models\\User',
-                'App\Models\\User'
-            ])
             ->whereHas('message', function ($q) use ($user2) {
                 $q->where('sender_id', $user2);
             })

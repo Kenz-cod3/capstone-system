@@ -13,14 +13,41 @@ return new class extends Migration
     {
         Schema::create('booked_rooms', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_id')->constrained('bookings')->cascadeOnDelete();
-            $table->foreignId('room_id')->constrained('rooms');
-            $table->decimal('price_at_time_of_booking', 10, 2);
 
-            $table->decimal('subtotal', 10, 2)->nullable();
-            $table->string('stay_type')->nullable();
-            $table->dateTime('check_out_time')->nullable();
+            $table->foreignId('booking_id')
+                ->constrained('bookings')
+                ->cascadeOnDelete();
+
+            $table->foreignId('room_id')
+                ->constrained('rooms');
+
+            $table->enum('stay_type', [
+                'short_stay',
+                'overnight'
+            ]);
+
+            $table->date('check_in_date');
+            $table->date('check_out_date')->nullable();
+
+            $table->decimal('price_at_time_of_booking', 10, 2);
+            $table->decimal('subtotal', 10, 2);
+            $table->boolean('is_extended')
+                ->default(false);
+
+            $table->enum('status', [
+                'pending',
+                'confirmed',
+                'checked_in',
+                'checked_out',
+                'cancelled',
+                'refunded'
+            ])->default('pending');
+
+            $table->timestamp('check_in_time')->nullable();
+            $table->timestamp('check_out_time')->nullable();
+            $table->timestamp('overdue_started_at')->nullable();
             $table->timestamps();
+            $table->timestamp('archived_at')->nullable();
             $table->softDeletes();
         });
     }

@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Room;
 use App\Models\Booking;
+use App\Models\BookingPayment;
 use App\Models\CashTransaction;
 use App\Models\WalkInGuest;
-use App\Models\BookedRoom;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
-    // ============================================
-    // FAST STATS — realtime trigger gamitin ito
-    // ============================================
+    /**
+     * Get basic dashboard stats (fast endpoint)
+     */
     public function stats()
     {
         $user = Auth::user();
@@ -46,6 +46,7 @@ class DashboardController extends Controller
 
         $occupied    = $roomCounts['occupied']    ?? 0;
         $available   = $roomCounts['available']   ?? 0;
+        $reserved    = $roomCounts['reserved']    ?? 0;
         $maintenance = $roomCounts['maintenance'] ?? 0;
         $cleaning    = $roomCounts['cleaning']    ?? 0;
         $dirty       = $roomCounts['dirty']       ?? 0;
@@ -55,30 +56,64 @@ class DashboardController extends Controller
             ? round(($occupied / $totalActiveRooms) * 100, 2)
             : 0;
 
-        // BOOKINGS
+        // BOOKINGS - using booked_rooms status (FIXED)
         if ($isStaff) {
             $activeBookings = Booking::whereNull('deleted_at')
-                ->whereNotIn('booking_status', ['checked_out', 'cancelled'])
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereNotIn('status', [
+                        'checked_out',
+                        'cancelled',
+                        'refunded'
+                    ]);
+                })
                 ->count();
         } else {
             $activeBookings = Booking::whereNull('deleted_at')->count();
         }
 
-        // REVENUE
-        $totalRevenueQuery = Booking::whereIn(
-            'booking_status',
-            [
-                'confirmed',
-                'checked_in',
-                'checked_out'
-            ]
-        )
-            ->whereNull('deleted_at')
-            ->whereYear('created_at', $currentYear);
+        // REVENUE - using booked_rooms status
+
+        // REVENUE - based on actual successful payments
+        // $totalRevenueQuery = BookingPayment::where('payment_status', 'paid');
+
+        // if ($isStaff) {
+        //     $totalRevenueQuery->whereBetween('payment_date', [$todayStart, $todayEnd]);
+        // } else {
+        //     $totalRevenueQuery->whereYear('payment_date', $currentYear);
+        // }
+
+        // $totalRevenue = $totalRevenueQuery->sum('amount');
+
+        $payments = BookingPayment::query();
+
         if ($isStaff) {
-            $totalRevenueQuery->whereBetween('updated_at', [$todayStart, $todayEnd]);
+            $payments->whereBetween('payment_date', [$todayStart, $todayEnd]);
+        } else {
+            $payments->whereYear('payment_date', $currentYear);
         }
-        $totalRevenue = $totalRevenueQuery->sum('total_price');
+
+        $totalPaid = (clone $payments)
+            ->where('payment_status', 'paid')
+            ->sum('amount');
+
+        $totalRefunded = (clone $payments)
+            ->where('payment_status', 'refunded')
+            ->sum('amount');
+
+        $totalRevenue = $totalPaid - $totalRefunded;
+        // $totalRevenueQuery = Booking::whereNull('deleted_at')
+        //     ->whereYear('created_at', $currentYear)
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', [
+        //             'confirmed',
+        //             'checked_in',
+        //             'checked_out'
+        //         ]);
+        //     });
+        // if ($isStaff) {
+        //     $totalRevenueQuery->whereBetween('updated_at', [$todayStart, $todayEnd]);
+        // }
+        // $totalRevenue = $totalRevenueQuery->sum('total_price');
 
         // EXPENSES
         $totalExpensesQuery = CashTransaction::where('type', 'pay_out');
@@ -93,13 +128,32 @@ class DashboardController extends Controller
         $startOfLastWeek = Carbon::now()->subWeek()->startOfWeek();
         $endOfLastWeek   = Carbon::now()->subWeek()->endOfWeek();
 
-        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])->sum('total_price');
-        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])->sum('total_price');
+        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
+            ->sum('total_price');
+
+        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
+            ->sum('total_price');
 
         if ($isStaff) {
-            $todayRevenue     = Booking::whereDate('updated_at', $today)->whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])->sum('total_price');
-            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)->sum('total_price');
-            $revenueChange    = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
+            $todayRevenue = Booking::whereDate('updated_at', $today)
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+                })
+                ->sum('total_price');
+
+            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+                })
+                ->sum('total_price');
+
+            $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
         } else {
             $revenueChange = $lastWeekRevenue > 0 ? min((($thisWeekRevenue - $lastWeekRevenue) / $lastWeekRevenue) * 100, 100) : ($thisWeekRevenue > 0 ? 100 : 0);
         }
@@ -128,9 +182,24 @@ class DashboardController extends Controller
         }
 
         // RECENT BOOKINGS
-        $recentBookings = Booking::with(['user', 'walkInGuest', 'rooms' => function ($q) {
-            $q->whereNull('deleted_at');
-        }])->latest()->limit(5)->get();
+        $recentBookings = Booking::with([
+            'user',
+            'walkInGuest',
+            'bookedRooms.room',
+            'payments',
+        ])->latest()->limit(5)->get();
+
+        $recentBookings->each(function ($booking) {
+
+            // $booking->booking_status =
+            //     $booking->bookedRooms->first()?->status ?? 'pending';
+            $latestPayment = $booking->payments
+                ->sortByDesc('payment_date')
+                ->first();
+
+            $booking->booking_status =
+                $latestPayment?->payment_status ?? 'pending';
+        });
 
         // OCCUPANCY STATUS
         $occupancyStatus = 'normal';
@@ -170,6 +239,7 @@ class DashboardController extends Controller
             ],
             'roomStatus' => [
                 ['name' => 'Available',   'value' => $available,   'color' => '#2e7d64'],
+                ['name' => 'Reserved',    'value' => $reserved,    'color' => '#fbbf24'],
                 ['name' => 'Occupied',    'value' => $occupied,    'color' => '#3b82f6'],
                 ['name' => 'Maintenance', 'value' => $maintenance, 'color' => '#ef4444'],
                 ['name' => 'Dirty',       'value' => $dirty,       'color' => '#8b5cf6'],
@@ -178,9 +248,9 @@ class DashboardController extends Controller
         ]);
     }
 
-    // ============================================
-    // FULL DASHBOARD — charts + trends (slower)
-    // ============================================
+    /**
+     * Get full dashboard with charts and trends (slower endpoint)
+     */
     public function index()
     {
         $user = Auth::user();
@@ -219,26 +289,23 @@ class DashboardController extends Controller
             ? round(($occupied / $totalActiveRooms) * 100, 2)
             : 0;
 
-        // BOOKINGS
+        // BOOKINGS - using booked_rooms status (FIXED)
         if ($isStaff) {
             $activeBookings = Booking::whereNull('deleted_at')
-                ->whereNotIn('booking_status', ['checked_out', 'cancelled'])
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereNotIn('status', ['checked_out', 'cancelled', 'refunded']);
+                })
                 ->count();
         } else {
             $activeBookings = Booking::whereNull('deleted_at')->count();
         }
 
-        // REVENUE
-        $totalRevenueQuery = Booking::whereIn(
-            'booking_status',
-            [
-                'confirmed',
-                'checked_in',
-                'checked_out'
-            ]
-        )
-            ->whereNull('deleted_at')
-            ->whereYear('created_at', $currentYear);
+        // REVENUE - using booked_rooms status (FIXED)
+        $totalRevenueQuery = Booking::whereNull('deleted_at')
+            ->whereYear('created_at', $currentYear)
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            });
         if ($isStaff) {
             $totalRevenueQuery->whereBetween('updated_at', [$todayStart, $todayEnd]);
         }
@@ -257,13 +324,32 @@ class DashboardController extends Controller
         $startOfLastWeek = Carbon::now()->subWeek()->startOfWeek();
         $endOfLastWeek   = Carbon::now()->subWeek()->endOfWeek();
 
-        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])->sum('total_price');
-        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])->sum('total_price');
+        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
+            ->sum('total_price');
+
+        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
+            ->sum('total_price');
 
         if ($isStaff) {
-            $todayRevenue     = Booking::whereDate('updated_at', $today)->whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])->sum('total_price');
-            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)->sum('total_price');
-            $revenueChange    = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
+            $todayRevenue = Booking::whereDate('updated_at', $today)
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+                })
+                ->sum('total_price');
+
+            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
+                ->whereHas('bookedRooms', function ($q) {
+                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+                })
+                ->sum('total_price');
+
+            $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
         } else {
             $revenueChange = $lastWeekRevenue > 0 ? min((($thisWeekRevenue - $lastWeekRevenue) / $lastWeekRevenue) * 100, 100) : ($thisWeekRevenue > 0 ? 100 : 0);
         }
@@ -292,13 +378,20 @@ class DashboardController extends Controller
         }
 
         // RECENT BOOKINGS
-        $recentBookings = Booking::with(['user', 'walkInGuest', 'rooms' => function ($q) {
-            $q->whereNull('deleted_at');
-        }])->latest()->limit(5)->get();
+        $recentBookings = Booking::with([
+            'user',
+            'walkInGuest',
+            'bookedRooms.room',
+        ])->latest()->limit(5)->get();
 
-        // OCCUPANCY TREND
+        $recentBookings->each(function ($booking) {
+
+            $booking->booking_status =
+                $booking->bookedRooms->first()?->status ?? 'pending';
+        });
+
+        // OCCUPANCY TREND - FIXED to use booked_rooms status
         $allBookings = Booking::whereNull('deleted_at')
-            ->whereNotIn('booking_status', ['cancelled'])
             ->with(['bookedRooms' => function ($q) {
                 $q->with('room:id,status,deleted_at');
             }])
@@ -314,19 +407,25 @@ class DashboardController extends Controller
             $occupiedRoomIds = [];
 
             foreach ($allBookings as $booking) {
-                $checkInDate  = Carbon::parse($booking->check_in_date);
-                $checkOutDate = $booking->check_out_date ? Carbon::parse($booking->check_out_date) : null;
+
                 $isActive = false;
 
-                if ($booking->booking_status === 'checked_in') {
-                    $isActive = $targetDate->gte($checkInDate);
-                    foreach ($booking->bookedRooms as $br) {
+                foreach ($booking->bookedRooms as $br) {
+
+                    $checkInDate = Carbon::parse($br->check_in_date);
+
+                    $checkOutDate = $br->check_out_date
+                        ? Carbon::parse($br->check_out_date)
+                        : null;
+
+                    $status = $br->status;
+
+                    if ($status === 'checked_in') {
+                        $isActive = $targetDate->gte($checkInDate);
                         if ($br->check_out_time && $targetDate->gt(Carbon::parse($br->check_out_time))) {
                             $isActive = false;
                         }
-                    }
-                } elseif ($booking->booking_status === 'checked_out') {
-                    foreach ($booking->bookedRooms as $br) {
+                    } elseif ($status === 'checked_out') {
                         if ($br->check_out_time) {
                             $co = Carbon::parse($br->check_out_time);
                             if ($targetDate->gte($checkInDate) && $targetDate->lte($co)) {
@@ -334,11 +433,11 @@ class DashboardController extends Controller
                                 break;
                             }
                         }
-                    }
-                } elseif ($booking->booking_status === 'confirmed') {
-                    if ($checkOutDate && $targetDate->gte($checkInDate) && $targetDate->lte($checkOutDate)) {
-                        if ($targetDate->gt($today) || ($targetDate->eq($today) && $booking->check_in_time)) {
-                            $isActive = true;
+                    } elseif ($status === 'confirmed') {
+                        if ($checkOutDate && $targetDate->gte($checkInDate) && $targetDate->lte($checkOutDate)) {
+                            if ($targetDate->gt($today) || ($targetDate->eq($today) && $br->check_in_time)) {
+                                $isActive = true;
+                            }
                         }
                     }
                 }
@@ -421,11 +520,13 @@ class DashboardController extends Controller
             ];
         }
 
-        // FINANCIAL TREND — bulk queries
+        // FINANCIAL TREND — bulk queries (FIXED)
         $thirtyDaysAgo = Carbon::today()->subDays(29)->startOfDay();
 
-        $dailyRevenueRaw = Booking::whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])
-            ->where('created_at', '>=', $thirtyDaysAgo)
+        $dailyRevenueRaw = Booking::where('created_at', '>=', $thirtyDaysAgo)
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
             ->selectRaw('DATE(created_at) as date, SUM(total_price) as total')
             ->groupBy('date')
             ->pluck('total', 'date');
@@ -451,9 +552,12 @@ class DashboardController extends Controller
             ];
         }
 
-        // YEARLY TREND
-        $yearlyRevenueRaw = Booking::whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])
-            ->whereNull('deleted_at')->whereYear('created_at', $currentYear)
+        // YEARLY TREND (FIXED)
+        $yearlyRevenueRaw = Booking::whereNull('deleted_at')
+            ->whereYear('created_at', $currentYear)
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
             ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
             ->groupBy('month')->pluck('total', 'month');
 
@@ -475,9 +579,12 @@ class DashboardController extends Controller
             ];
         }
 
-        // LAST YEAR TREND
-        $lastYearRevenueRaw = Booking::whereIn('booking_status', ['confirmed', 'checked_in', 'checked_out'])
-            ->whereNull('deleted_at')->whereYear('created_at', $lastYear)
+        // LAST YEAR TREND (FIXED)
+        $lastYearRevenueRaw = Booking::whereNull('deleted_at')
+            ->whereYear('created_at', $lastYear)
+            ->whereHas('bookedRooms', function ($q) {
+                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            })
             ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
             ->groupBy('month')->pluck('total', 'month');
 

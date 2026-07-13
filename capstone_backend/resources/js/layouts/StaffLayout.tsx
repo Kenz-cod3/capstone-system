@@ -882,7 +882,7 @@ const StaffLayout = ({
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
+                                {/* <DropdownMenuItem
                                     asChild
                                     className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
                                 >
@@ -890,7 +890,7 @@ const StaffLayout = ({
                                         <LifeBuoy className="h-4 w-4 text-emerald-400" />
                                         <span>Help Center</span>
                                     </div>
-                                </DropdownMenuItem>
+                                </DropdownMenuItem> */}
                                 <DropdownMenuItem
                                     onClick={handleLogout}
                                     className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white select-none"

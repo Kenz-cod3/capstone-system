@@ -5,13 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 class MessageTarget extends Model
-{   
+{
     public $timestamps = false;
-    
+
     protected $fillable = [
         'message_id',
         'target_id',
-        'target_type',
         'is_read',
         'read_at'
     ];
@@ -26,8 +25,8 @@ class MessageTarget extends Model
         return $this->belongsTo(Message::class);
     }
 
-    public function target()
+    public function user()
     {
-        return $this->morphTo();
+        return $this->belongsTo(User::class, 'target_id');
     }
 }

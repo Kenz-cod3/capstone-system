@@ -8,74 +8,75 @@ use Illuminate\Http\Request;
 
 class BookingAddOnController extends Controller
 {
-    //GET ALL
+    // GET ALL BOOKING ADD-ONS
     public function index()
     {
         return response()->json(
-            BookingAddOn::with(['booking', 'addOn'])->get(),
+            BookingAddOn::with(['bookedRoom', 'addOn'])->get(),
             200
         );
     }
 
-    //ADD ADD-ON TO BOOKING
+    // ADD ADD-ON TO A BOOKED ROOM
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'booking_id' => 'required|exists:bookings,id',
+            'booked_room_id' => 'required|exists:booked_rooms,id',
             'add_on_id' => 'required|exists:add_ons,id',
-            'quantity' => 'required|integer|min:1'
+            'quantity' => 'required|integer|min:1',
         ]);
 
-        //Get add-on price
+        // Get add-on price
         $addOn = AddOn::findOrFail($validated['add_on_id']);
 
-        $validated['price'] = $addOn->price;
+        // Compute subtotal
         $validated['subtotal'] = $addOn->price * $validated['quantity'];
 
         $bookingAddOn = BookingAddOn::create($validated);
 
         return response()->json([
-            'message' => 'Add-on added to booking',
-            'data' => $bookingAddOn->load(['booking', 'addOn'])
+            'message' => 'Add-on added successfully.',
+            'data' => $bookingAddOn->load(['bookedRoom', 'addOn']),
         ], 201);
     }
 
-    //GET SINGLE
+    // GET SINGLE BOOKING ADD-ON
     public function show($id)
     {
-        $data = BookingAddOn::with(['booking', 'addOn'])->findOrFail($id);
+        $bookingAddOn = BookingAddOn::with(['bookedRoom', 'addOn'])->findOrFail($id);
 
-        return response()->json($data, 200);
+        return response()->json($bookingAddOn, 200);
     }
 
-    //UPDATE (CHANGE QUANTITY)
+    // UPDATE QUANTITY
     public function update(Request $request, $id)
     {
-        $bookingAddOn = BookingAddOn::findOrFail($id);
+        $bookingAddOn = BookingAddOn::with('addOn')->findOrFail($id);
 
         $validated = $request->validate([
-            'quantity' => 'required|integer|min:1'
+            'quantity' => 'required|integer|min:1',
         ]);
 
-        //Recalculate subtotal
-        $validated['subtotal'] = $bookingAddOn->price * $validated['quantity'];
+        // Recalculate subtotal using current add-on price
+        $validated['subtotal'] = $bookingAddOn->addOn->price * $validated['quantity'];
 
         $bookingAddOn->update($validated);
 
         return response()->json([
-            'message' => 'Booking add-on updated',
-            'data' => $bookingAddOn
+            'message' => 'Booking add-on updated successfully.',
+            'data' => $bookingAddOn->fresh()->load(['bookedRoom', 'addOn']),
         ], 200);
     }
 
-    //REMOVE ADD-ON
+    // DELETE BOOKING ADD-ON
     public function destroy($id)
     {
         $bookingAddOn = BookingAddOn::findOrFail($id);
+
         $bookingAddOn->delete();
 
         return response()->json([
-            'message' => 'Booking add-on deleted'
+            'message' => 'Booking add-on deleted successfully.',
         ], 200);
     }
 }

@@ -13,18 +13,32 @@ return new class extends Migration
     {
         Schema::create('bookings', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->nullable()->constrained('users');
-            $table->foreignId('walk_in_guest_id')->nullable()->constrained('walk_in_guests');
-            $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null'); 
-            $table->enum('booking_type', ['online', 'walk_in']);
-            $table->enum('stay_type', ['short_stay', 'overnight']);
-            $table->date('check_in_date');
-            $table->date('check_out_date')->nullable();
-            $table->timestamp('check_in_time')->nullable();
+
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users');
+
+            $table->foreignId('walk_in_guest_id')
+                ->nullable()
+                ->constrained('walk_in_guests');
+
+            $table->foreignId('created_by')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+
             $table->string('booking_reference')->unique();
+
+            $table->enum('booking_type', [
+                'online',
+                'walk_in'
+            ]);
+
+            // Total amount of all booked rooms
             $table->decimal('total_price', 10, 2)->default(0);
-            $table->enum('booking_status', ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'refunded']);
+
             $table->timestamps();
+            $table->timestamp('archived_at')->nullable();
             $table->softDeletes();
         });
     }

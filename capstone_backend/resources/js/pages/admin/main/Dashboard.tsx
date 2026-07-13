@@ -29,7 +29,7 @@ import {
     CartesianGrid,
     PieChart,
     Pie,
-    Cell
+    Cell,
 } from "recharts";
 import RoomStatusGrid from "@/components/AdminComponents/dashboard/RoomStatusGrid";
 import StatCardsGrid from "@/components/AdminComponents/dashboard/StatCardsGrid";
@@ -70,9 +70,22 @@ interface Booking {
         last_name?: string;
         email?: string;
     };
-    rooms?: Array<{ room_number: string }>;
+    booked_rooms?: {
+        room: {
+            room_number: string;
+        };
+    }[];
+    payments?: {
+        id: number;
+        payment_status: string;
+        payment_date: string;
+        amount: number;
+    }[];
     created_at: string;
     booking_status: string;
+    // latestPayment?: {
+    //     payment_status: string;
+    // };
     total_price?: number;
 }
 
@@ -126,22 +139,22 @@ interface AnimatedCounterProps {
     value: number | string;
     isCurrency?: boolean;
     duration?: number;
-    dataKey: string; // 🔥 REQUIRED
+    dataKey: string;
 }
 
 const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
     value,
     isCurrency = false,
     duration = 600,
-    dataKey
+    dataKey,
 }) => {
     const [displayValue, setDisplayValue] = React.useState(0);
 
     const getNumericValue = (val: number | string): number => {
-        if (typeof val === 'number') return val;
+        if (typeof val === "number") return val;
 
         if (isCurrency) {
-            const numeric = val.replace(/[^0-9.-]/g, '');
+            const numeric = val.replace(/[^0-9.-]/g, "");
             return parseFloat(numeric) || 0;
         }
 
@@ -184,8 +197,7 @@ const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
             const progress = Math.min((timestamp - startTime) / duration, 1);
             const easeOut = 1 - Math.pow(1 - progress, 3);
 
-            const current =
-                startValue + (targetValue - startValue) * easeOut;
+            const current = startValue + (targetValue - startValue) * easeOut;
 
             setDisplayValue(current);
 
@@ -205,15 +217,15 @@ const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
 
     const formatDisplay = (val: number): string => {
         if (isCurrency) {
-            return new Intl.NumberFormat('en-PH', {
-                style: 'currency',
-                currency: 'PHP',
+            return new Intl.NumberFormat("en-PH", {
+                style: "currency",
+                currency: "PHP",
                 minimumFractionDigits: 0,
-                maximumFractionDigits: 0
+                maximumFractionDigits: 0,
             }).format(Math.round(val));
         }
 
-        if (value.toString().includes('%')) {
+        if (value.toString().includes("%")) {
             return `${Math.round(val)}%`;
         }
 
@@ -224,11 +236,7 @@ const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
         return val.toFixed(1);
     };
 
-    return (
-        <span className="tabular-nums">
-            {formatDisplay(displayValue)}
-        </span>
-    );
+    return <span className="tabular-nums">{formatDisplay(displayValue)}</span>;
 };
 
 // ============================================
@@ -241,10 +249,14 @@ const getStatusColor = (status?: string): string => {
         pending: "bg-amber-50 text-amber-700 border-amber-200",
         cancelled: "bg-rose-50 text-rose-700 border-rose-200",
         checked_in: "bg-blue-50 text-blue-700 border-blue-200",
-        checked_out: "bg-gray-50 text-gray-600 border-gray-200"
+        checked_out: "bg-gray-50 text-gray-600 border-gray-200",
+        refunded: "bg-red-50 text-red-700 border-red-200",
+        paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
     };
 
-    return colors[(status || "pending") as keyof typeof colors] || colors.pending;
+    return (
+        colors[(status || "pending") as keyof typeof colors] || colors.pending
+    );
 };
 
 const getStatusText = (status?: string): string => {
@@ -253,18 +265,20 @@ const getStatusText = (status?: string): string => {
         pending: "Pending",
         cancelled: "Cancelled",
         checked_in: "Checked In",
-        checked_out: "Checked Out"
+        checked_out: "Checked Out",
+        refunded: "Refunded",
+        paid: "Paid",
     };
 
     return texts[(status || "pending") as keyof typeof texts] || texts.pending;
 };
 
 const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('en-PH', {
-        style: 'currency',
-        currency: 'PHP',
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
         minimumFractionDigits: 0,
-        maximumFractionDigits: 0
+        maximumFractionDigits: 0,
     }).format(amount);
 };
 
@@ -285,7 +299,11 @@ const renderCustomizedLabel = (props: any) => {
             fill="white"
             textAnchor="middle"
             dominantBaseline="central"
-            style={{ fontSize: "12px", fontWeight: "500", textShadow: "0 1px 2px rgba(0,0,0,0.1)" }}
+            style={{
+                fontSize: "12px",
+                fontWeight: "500",
+                textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+            }}
         >
             {`${Math.round(percent * 100)}%`}
         </text>
@@ -327,26 +345,23 @@ const renderCustomizedLabel = (props: any) => {
 const RecentBookingsTable = ({
     bookings,
     isLoading,
-    navigateTo
+    navigateTo,
 }: {
     bookings: Booking[];
     isLoading: boolean;
     navigateTo: (path: string) => void;
 }) => (
     <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col mb-6">
-
         {/* HEADER */}
         <div className="flex justify-between items-center mb-3">
-            <h2 className="text-lg font-semibold">
-                Recent Bookings
-            </h2>
+            <h2 className="text-lg font-semibold">Recent Bookings</h2>
 
             <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="gap-1 text-gray-500 text-xs hover:text-gray-700"
-                onClick={() => navigateTo('/bookings')}
+                onClick={() => navigateTo("/bookings")}
             >
                 View All
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -365,17 +380,33 @@ const RecentBookingsTable = ({
                 </div>
             ) : (
                 <table className="w-full text-sm">
-
                     {/* HEADER */}
                     <thead>
                         <tr className="text-gray-500 text-xs border-b border-gray-100">
-                            <th className="text-left py-3 px-3 font-medium">Booking ID</th>
-                            <th className="text-left py-3 px-3 font-medium">Guest</th>
-                            <th className="text-left py-3 px-3 font-medium">Room</th>
-                            <th className="text-left py-3 px-3 font-medium">Date</th>
-                            <th className="text-left py-3 px-3 font-medium">Status</th>
-                            <th className="text-right py-3 px-3 font-medium">Amount</th>
-                            <th className="text-center py-3 px-3 font-medium">Action</th>
+                            <th className="text-left py-3 px-3 font-medium">
+                                Booking ID
+                            </th>
+                            <th className="text-left py-3 px-3 font-medium">
+                                Guest
+                            </th>
+                            <th className="text-left py-3 px-3 font-medium">
+                                Room
+                            </th>
+                            <th className="text-left py-3 px-3 font-medium">
+                                Date
+                            </th>
+                            {/* <th className="text-left py-3 px-3 font-medium">
+                                Status
+                            </th> */}
+                            <th className="text-right py-3 px-3 font-medium">
+                                Amount
+                            </th>
+                            {/* <th className="text-center py-3 px-3 font-medium">
+                                Action
+                            </th> */}
+                            <th className="text-center py-3 px-3 font-medium">
+                                Status
+                            </th>
                         </tr>
                     </thead>
 
@@ -388,7 +419,8 @@ const RecentBookingsTable = ({
                             >
                                 {/* ID */}
                                 <td className="py-3 px-3 font-mono text-gray-500">
-                                    {booking.booking_reference || `#${booking.id}`}
+                                    {booking.booking_reference ||
+                                        `#${booking.id}`}
                                 </td>
 
                                 {/* GUEST */}
@@ -402,45 +434,78 @@ const RecentBookingsTable = ({
 
                                 {/* ROOM */}
                                 <td className="py-3 px-3 text-gray-600">
-                                    {booking.rooms?.map((r: any) => r.room_number).join(", ") || "-"}
+                                    {booking.booked_rooms
+                                        ?.map((br) => br.room?.room_number)
+                                        .filter(Boolean)
+                                        .join(", ") || "-"}
                                 </td>
 
                                 {/* DATE */}
-                                <td className="py-3 px-3 text-gray-500">
-                                    {new Date(booking.created_at).toLocaleDateString("en-US", {
+                                <td className="py-3 px-2 text-gray-500">
+                                    {new Date(
+                                        booking.created_at,
+                                    ).toLocaleDateString("en-US", {
                                         month: "short",
                                         day: "numeric",
                                         year: "numeric",
                                     })}
                                 </td>
 
-                                {/* STATUS */}
+                                {/* STATUS
                                 <td className="py-3 px-3">
                                     <span
                                         className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusColor(
-                                            booking.booking_status
+                                            booking.booking_status,
                                         )}`}
                                     >
                                         {getStatusText(booking.booking_status)}
                                     </span>
-                                </td>
+                                </td> */}
 
                                 {/* AMOUNT */}
-                                <td className="py-3 px-3 text-right font-semibold text-gray-700">
+                                {/* <td className="py-3 px-3 text-right font-semibold text-gray-700">
                                     {formatCurrency(booking.total_price || 0)}
+                                </td> */}
+                                <td className="py-3 px-3 text-right font-semibold text-gray-700">
+                                    {formatCurrency(
+                                        Number(
+                                            booking.payments?.[
+                                                booking.payments.length - 1
+                                            ]?.amount ?? 0,
+                                        ),
+                                    )}
                                 </td>
 
                                 {/* ACTION */}
-                                <td className="py-3 px-3 text-center">
+                                {/* <td className="py-3 px-3 text-center">
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
                                         className="h-7 w-7 p-0 text-gray-400 hover:text-emerald-600"
-                                        onClick={() => navigateTo(`/bookings/${booking.id}`)}
+                                        onClick={() =>
+                                            navigateTo(
+                                                `/bookings/${booking.id}`,
+                                            )
+                                        }
                                     >
                                         <Eye className="h-3.5 w-3.5" />
                                     </Button>
+                                </td> */}
+                                <td className="py-3 px-3 text-center">
+                                    <Badge
+                                        className={getStatusColor(
+                                            booking.payments?.[
+                                                booking.payments.length - 1
+                                            ]?.payment_status,
+                                        )}
+                                    >
+                                        {getStatusText(
+                                            booking.payments?.[
+                                                booking.payments.length - 1
+                                            ]?.payment_status,
+                                        )}
+                                    </Badge>
                                 </td>
                             </tr>
                         ))}
@@ -498,14 +563,10 @@ export default function Dashboard() {
         refetchOnWindowFocus: false,
 
         retry: 2,
-        retryDelay: (attemptIndex) =>
-            Math.min(1000 * 2 ** attemptIndex, 30000),
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
-    const {
-        data: statsData,
-        refetch: refetchStats,
-    } = useQuery({
+    const { data: statsData, refetch: refetchStats } = useQuery({
         queryKey: ["dashboard-stats"],
         queryFn: async () => {
             const res = await api.get("/dashboard/stats");
@@ -516,16 +577,12 @@ export default function Dashboard() {
         refetchOnWindowFocus: true,
 
         retry: 2,
-        retryDelay: (attemptIndex) =>
-            Math.min(1000 * 2 ** attemptIndex, 30000),
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
 
-        notifyOnChangeProps: ['data'],
+        notifyOnChangeProps: ["data"],
     });
 
-    const {
-        data: roomsData,
-        refetch: refetchRooms,
-    } = useQuery({
+    const { data: roomsData, refetch: refetchRooms } = useQuery({
         queryKey: ["rooms-status-grid"],
         queryFn: async () => {
             const res = await api.get("/rooms/status-grid");
@@ -539,15 +596,14 @@ export default function Dashboard() {
     React.useEffect(() => {
         console.log("Subscribing to dashboard channel...");
 
-        Echo.channel("dashboard")
-            .listen(".DashboardUpdated", async (e: any) => {
+        Echo.channel("dashboard").listen(
+            ".DashboardUpdated",
+            async (e: any) => {
                 console.log("✅ Realtime received!", e);
 
-                await Promise.all([
-                    refetchStats(),
-                    refetchRooms(),
-                ]);
-            });
+                await Promise.all([refetchStats(), refetchRooms()]);
+            },
+        );
 
         return () => {
             Echo.leave("dashboard");
@@ -562,8 +618,12 @@ export default function Dashboard() {
                 {/* <PageHeader user={user} /> */}
                 <div className="text-center py-12">
                     <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
-                        <p className="text-red-600 mb-4 font-medium">Failed to load dashboard data</p>
-                        <p className="text-sm text-gray-600 mb-4">Please check your connection and try again.</p>
+                        <p className="text-red-600 mb-4 font-medium">
+                            Failed to load dashboard data
+                        </p>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Please check your connection and try again.
+                        </p>
                         <Button
                             onClick={() => window.location.reload()}
                             variant="outline"
@@ -585,17 +645,16 @@ export default function Dashboard() {
 
     const occupancyTrend = dashboardData?.trend ?? [];
 
+    console.log(JSON.stringify(recentBookings[0], null, 2));
+
     const navigateTo = (path: string) => {
         navigate(path);
     };
-
-
 
     // Show loading skeleton only on initial load
     if (isLoading) {
         return (
             <div className="space-y-3">
-
                 {/* TOP STATS */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
                     {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -616,10 +675,8 @@ export default function Dashboard() {
 
                 {/* ROOM STATUS + PIE */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-
                     {/* ROOM GRID */}
                     <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
-
                         <div className="flex justify-between items-center mb-5">
                             <div className="w-44 h-6 bg-gray-100 rounded"></div>
 
@@ -649,7 +706,6 @@ export default function Dashboard() {
 
                     {/* PIE CHART */}
                     <div className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
-
                         {/* HEADER */}
                         <div className="flex justify-between items-center mb-6">
                             <div className="w-52 h-7 bg-gray-100 rounded"></div>
@@ -658,13 +714,11 @@ export default function Dashboard() {
 
                         {/* CHART + LEGEND */}
                         <div className="flex items-center justify-between gap-6 mt-8">
-
                             {/* DONUT */}
                             <div className="w-44 h-44 rounded-full border-[28px] border-gray-100 shrink-0"></div>
 
                             {/* LEGEND */}
                             <div className="flex-1 space-y-4">
-
                                 {[1, 2, 3, 4, 5].map((i) => (
                                     <div
                                         key={i}
@@ -675,7 +729,6 @@ export default function Dashboard() {
                                 <div className="h-px bg-gray-100 my-2"></div>
 
                                 <div className="h-5 bg-gray-100 rounded w-32"></div>
-
                             </div>
                         </div>
                     </div>
@@ -688,7 +741,11 @@ export default function Dashboard() {
         <div className="space-y-3 -mt-1">
             {/* <PageHeader user={user} /> */}
 
-            <StatCardsGrid stats={stats} occupancy={occupancy} role={user?.role ?? "staff"} />
+            <StatCardsGrid
+                stats={stats}
+                occupancy={occupancy}
+                role={user?.role ?? "staff"}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch">
                 <div className="lg:col-span-2">
@@ -698,6 +755,12 @@ export default function Dashboard() {
                     <RoomStatusChart data={roomStatus} />
                 </div>
             </div>
+
+            <RecentBookingsTable
+                bookings={recentBookings}
+                isLoading={false}
+                navigateTo={navigateTo}
+            />
 
             {/*---------REVENUE CHART---->*/}
             <div className="mt-8">
@@ -712,12 +775,6 @@ export default function Dashboard() {
             <div className="mt-8">
                 <OccupancyTrendChart data={occupancyTrend} />
             </div>
-
-            <RecentBookingsTable
-                bookings={recentBookings}
-                isLoading={false}
-                navigateTo={navigateTo}
-            />
         </div>
     );
 }

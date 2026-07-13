@@ -28,7 +28,7 @@ import {
     X,
     Package,
     TrendingUp,
-    TrendingDown
+    TrendingDown,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -41,18 +41,21 @@ import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
 import Echo from "@/services/echo";
+import NProgress from "nprogress";
+import "nprogress/nprogress.css";
 
 const AdminLayout = ({
     children,
-    pageTitle
+    pageTitle,
 }: {
     children?: React.ReactNode;
     pageTitle?: string;
 }) => {
     const [isSidebarOpen, setSidebarOpen] = useState(() => {
-        const savedState = localStorage.getItem('adminSidebarOpen');
+        const savedState = localStorage.getItem("adminSidebarOpen");
         // On mobile, default to closed
-        const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+        const isMobile =
+            typeof window !== "undefined" && window.innerWidth < 1024;
         if (isMobile) return false;
         return savedState !== null ? JSON.parse(savedState) : true;
     });
@@ -61,7 +64,9 @@ const AdminLayout = ({
     const [isTransitioning, setIsTransitioning] = useState(false);
 
     const [messages, setMessages] = useState<any[]>([]);
-    const [chatFilter, setChatFilter] = useState<"all" | "guest" | "staff">("all");
+    const [chatFilter, setChatFilter] = useState<"all" | "guest" | "staff">(
+        "all",
+    );
     const [unreadMessages, setUnreadMessages] = useState(0);
     const [isChatOpen, setIsChatOpen] = useState(false);
 
@@ -97,21 +102,27 @@ const AdminLayout = ({
     const [offset, setOffset] = useState(0);
 
     // State for dropdown toggles
-    const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>(() => {
+    const [openDropdowns, setOpenDropdowns] = useState<{
+        [key: string]: boolean;
+    }>(() => {
         const saved = localStorage.getItem("adminDropdowns");
         return saved
             ? JSON.parse(saved)
             : {
-                bookings: false,
-                users: false,
-            };
+                  bookings: false,
+                  users: false,
+              };
     });
 
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "null") : null;
+    const user =
+        typeof window !== "undefined"
+            ? JSON.parse(localStorage.getItem("user") || "null")
+            : null;
     const location = useLocation();
 
     const routesMap: any = {
         "/dashboard": "Dashboard",
+        "/reservation-monitor": "Reservation Monitor",
         "/bookings": "Bookings",
         "/booking-management": "Booking List",
         "/booking-transaction": "Booking Transaction",
@@ -136,7 +147,10 @@ const AdminLayout = ({
     useEffect(() => {
         const isMobile = window.innerWidth < 1024;
         if (!isMobile) {
-            localStorage.setItem('adminSidebarOpen', JSON.stringify(isSidebarOpen));
+            localStorage.setItem(
+                "adminSidebarOpen",
+                JSON.stringify(isSidebarOpen),
+            );
         }
     }, [isSidebarOpen]);
 
@@ -145,7 +159,7 @@ const AdminLayout = ({
             const isMobile = window.innerWidth < 1024;
             if (!isMobile) {
                 setIsMobileMenuOpen(false);
-                const savedState = localStorage.getItem('adminSidebarOpen');
+                const savedState = localStorage.getItem("adminSidebarOpen");
                 if (savedState !== null) {
                     setSidebarOpen(JSON.parse(savedState));
                 } else {
@@ -156,8 +170,8 @@ const AdminLayout = ({
                 setIsMobileMenuOpen(false);
             }
         };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
     }, []);
 
     useEffect(() => {
@@ -172,8 +186,8 @@ const AdminLayout = ({
                 : prev.bookings,
             users:
                 location.pathname.includes("guest") ||
-                    location.pathname.includes("staff") ||
-                    location.pathname.includes("housekeeper")
+                location.pathname.includes("staff") ||
+                location.pathname.includes("housekeeper")
                     ? true
                     : prev.users,
         }));
@@ -188,16 +202,45 @@ const AdminLayout = ({
         }
     }, [navigate]);
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.shiftKey && e.key.toLowerCase() === "f") {
+                e.preventDefault();
+
+                setIsTransitioning(true);
+
+                setSidebarOpen((prev: boolean) => !prev);
+
+                setTimeout(() => {
+                    setIsTransitioning(false);
+                }, 300);
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, []);
+
     const handleLogout = async () => {
+        NProgress.start();
+
         try {
             await api.post("/auth/logout");
         } catch (err) {
             console.log("Logout API failed");
-        }
+        } finally {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
 
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        navigate("/login");
+            navigate("/login");
+
+            setTimeout(() => {
+                NProgress.done();
+            }, 200);
+        }
     };
 
     const handleNavigation = (href: string) => {
@@ -222,9 +265,9 @@ const AdminLayout = ({
 
     const toggleDropdown = (dropdownName: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        setOpenDropdowns(prev => ({
+        setOpenDropdowns((prev) => ({
             ...prev,
-            [dropdownName]: !prev[dropdownName]
+            [dropdownName]: !prev[dropdownName],
         }));
     };
 
@@ -241,7 +284,7 @@ const AdminLayout = ({
         if (user?.email) {
             return user.email[0].toUpperCase();
         }
-        return 'U';
+        return "U";
     };
 
     const getDisplayName = () => {
@@ -254,7 +297,7 @@ const AdminLayout = ({
         if (user?.name) {
             return user.name;
         }
-        return user?.email?.split('@')[0] || 'Admin';
+        return user?.email?.split("@")[0] || "Admin";
     };
 
     const isFetching = useRef(false);
@@ -268,7 +311,7 @@ const AdminLayout = ({
             const res = await api.get(`/messages/conversations`);
             const data = Array.isArray(res.data) ? res.data : [];
 
-            setMessages(prev => {
+            setMessages((prev) => {
                 if (prev.length === data.length) {
                     let same = true;
                     for (let i = 0; i < prev.length; i++) {
@@ -283,7 +326,7 @@ const AdminLayout = ({
             });
 
             const unread = data.reduce((sum, c) => sum + (c.unread || 0), 0);
-            setUnreadMessages(prev => prev === unread ? prev : unread);
+            setUnreadMessages((prev) => (prev === unread ? prev : unread));
         } catch (err) {
             console.error(err);
         } finally {
@@ -315,7 +358,7 @@ const AdminLayout = ({
             const prevHeight = notifRef.current?.scrollHeight || 0;
 
             const res = await api.get(
-                `/notifications/user/${user.id}?limit=10&offset=${offset}`
+                `/notifications/user/${user.id}?limit=10&offset=${offset}`,
             );
 
             const notificationsData = (res.data || []).map((n: any) => {
@@ -324,20 +367,22 @@ const AdminLayout = ({
                 }
                 return {
                     ...n,
-                    display_time: timeMapRef.current[n.id]
+                    display_time: timeMapRef.current[n.id],
                 };
             });
 
-            setNotifications(prev => {
+            setNotifications((prev) => {
                 if (offset === 0) {
                     return notificationsData;
                 }
 
-                const existingIds = new Set(prev.map(n => n.id));
+                const existingIds = new Set(prev.map((n) => n.id));
 
                 const merged = [
-                    ...notificationsData.filter((n: any) => !existingIds.has(n.id)),
-                    ...prev
+                    ...notificationsData.filter(
+                        (n: any) => !existingIds.has(n.id),
+                    ),
+                    ...prev,
                 ];
 
                 return merged.slice(0, 20);
@@ -346,12 +391,15 @@ const AdminLayout = ({
             setTimeout(() => {
                 if (notifRef.current && isClickingNotif.current) {
                     const newHeight = notifRef.current.scrollHeight;
-                    notifRef.current.scrollTop = scrollTop + (newHeight - prevHeight);
+                    notifRef.current.scrollTop =
+                        scrollTop + (newHeight - prevHeight);
                     isClickingNotif.current = false;
                 }
             }, 0);
 
-            const unreadRes = await api.get(`/notifications/user/${user.id}/unread-count`);
+            const unreadRes = await api.get(
+                `/notifications/user/${user.id}/unread-count`,
+            );
             setUnreadCount(unreadRes.data.count);
         } catch (err) {
             console.error("Failed to fetch notifications:", err);
@@ -369,22 +417,22 @@ const AdminLayout = ({
             await api.put(`/notifications/${id}/read`);
             const scrollTop = notifRef.current?.scrollTop || 0;
 
-            setNotifications(prev => {
+            setNotifications((prev) => {
                 const updated = [...prev];
 
-                const index = updated.findIndex(n => n.id === id);
+                const index = updated.findIndex((n) => n.id === id);
 
                 if (index !== -1) {
                     updated[index] = {
                         ...updated[index],
-                        is_read: true
+                        is_read: true,
                     };
                 }
 
                 return updated;
             });
 
-            setUnreadCount(prev => (prev > 0 ? prev - 1 : 0));
+            setUnreadCount((prev) => (prev > 0 ? prev - 1 : 0));
 
             requestAnimationFrame(() => {
                 if (notifRef.current) {
@@ -403,7 +451,9 @@ const AdminLayout = ({
     const markAllNotificationsAsRead = async () => {
         try {
             await api.put(`/notifications/user/${user.id}/read-all`);
-            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+            setNotifications((prev) =>
+                prev.map((n) => ({ ...n, is_read: true })),
+            );
             setUnreadCount(0);
         } catch (err) {
             console.error("Failed to mark all notifications as read:", err);
@@ -422,14 +472,17 @@ const AdminLayout = ({
         fetchNotifications();
 
         // 🔥 REALTIME NOTIFICATIONS
-        Echo.private(`notifications.${user.id}`)
-            .listen(".NotificationCreated", (e: any) => {
+        Echo.private(`notifications.${user.id}`).listen(
+            ".NotificationCreated",
+            (e: any) => {
                 console.log("🔔 REALTIME:", e);
 
                 const newNotification = e.notification;
 
                 setNotifications((prev) => {
-                    const exists = prev.some((n) => n.id === newNotification.id);
+                    const exists = prev.some(
+                        (n) => n.id === newNotification.id,
+                    );
 
                     if (exists) return prev;
 
@@ -443,7 +496,8 @@ const AdminLayout = ({
                 });
 
                 setUnreadCount((prev) => prev + 1);
-            });
+            },
+        );
 
         return () => {
             Echo.leave(`notifications.${user.id}`);
@@ -451,36 +505,22 @@ const AdminLayout = ({
     }, [user?.id]);
 
     useEffect(() => {
-
         if (!user?.id) return;
 
-        // 🔥 INITIAL LOAD
+        // INITIAL LOAD
         fetchMessages();
 
-        console.log(
-            "📩 LISTENING CHAT:",
-            `chat.${user.id}`
-        );
+        console.log("📩 LISTENING CHAT:", `chat.${user.id}`);
 
-        Echo.channel(`chat.${user.id}`)
-            .listen(".MessageSent", (e: any) => {
+        Echo.channel(`chat.${user.id}`).listen(".MessageSent", (e: any) => {
+            console.log("📩 REALTIME MESSAGE:", e);
 
-                console.log(
-                    "📩 REALTIME MESSAGE:",
-                    e
-                );
-
-                fetchMessages();
-
-            });
+            fetchMessages();
+        });
 
         return () => {
-
-            Echo.leaveChannel(
-                `chat.${user.id}`
-            );
+            Echo.leaveChannel(`chat.${user.id}`);
         };
-
     }, [user?.id]);
 
     if (!user) {
@@ -490,15 +530,26 @@ const AdminLayout = ({
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
-            const insideChatDropdown = chatDropdownRef.current?.contains(target);
+            const insideChatDropdown =
+                chatDropdownRef.current?.contains(target);
             const insideChatBox = chatBoxRef.current?.contains(target);
             const insideChatButton = chatButtonRef.current?.contains(target);
-            const insideNotifDropdown = notifDropdownRef.current?.contains(target);
+            const insideNotifDropdown =
+                notifDropdownRef.current?.contains(target);
             const insideNotifButton = notifButtonRef.current?.contains(target);
-            const insideMobileMenu = mobileMenuButtonRef.current?.contains(target);
-            const insideMobileSidebar = document.querySelector('.mobile-sidebar')?.contains(target);
+            const insideMobileMenu =
+                mobileMenuButtonRef.current?.contains(target);
+            const insideMobileSidebar = document
+                .querySelector(".mobile-sidebar")
+                ?.contains(target);
 
-            if (!insideChatDropdown && !insideChatBox && !insideChatButton && !insideNotifDropdown && !insideNotifButton) {
+            if (
+                !insideChatDropdown &&
+                !insideChatBox &&
+                !insideChatButton &&
+                !insideNotifDropdown &&
+                !insideNotifButton
+            ) {
                 setIsChatOpen(false);
                 setIsNotifOpen(false);
             }
@@ -506,15 +557,20 @@ const AdminLayout = ({
             // Only close mobile menu when clicking outside, not when clicking inside dropdown items
             if (!insideMobileMenu && !insideMobileSidebar && isMobileMenuOpen) {
                 // Check if click is on a dropdown item or navigation item
-                const isDropdownItem = (e.target as HTMLElement).closest('[data-dropdown-item]');
-                const isNavItem = (e.target as HTMLElement).closest('[data-nav-item]');
+                const isDropdownItem = (e.target as HTMLElement).closest(
+                    "[data-dropdown-item]",
+                );
+                const isNavItem = (e.target as HTMLElement).closest(
+                    "[data-nav-item]",
+                );
                 if (!isDropdownItem && !isNavItem) {
                     setIsMobileMenuOpen(false);
                 }
             }
         };
         window.addEventListener("mousedown", handleClickOutside);
-        return () => window.removeEventListener("mousedown", handleClickOutside);
+        return () =>
+            window.removeEventListener("mousedown", handleClickOutside);
     }, [isMobileMenuOpen]);
 
     const navigationGroups = [
@@ -525,7 +581,13 @@ const AdminLayout = ({
                     name: "Dashboard",
                     description: "Overview & Analytics",
                     href: "/dashboard",
-                    icon: LayoutDashboard
+                    icon: LayoutDashboard,
+                },
+                {
+                    name: "Reservation Monitor",
+                    description: "Live Room Reservation Calendar",
+                    href: "/reservation-monitor",
+                    icon: CalendarDays,
                 },
             ],
         },
@@ -543,34 +605,34 @@ const AdminLayout = ({
                             name: "Booking List",
                             description: "Manage booking list transactions",
                             href: "/booking-management",
-                            icon: CalendarDays
+                            icon: CalendarDays,
                         },
                         {
                             name: "Booking Transactions",
                             description: "View and print transaction",
                             href: "/booking-transaction",
-                            icon: ClipboardList
+                            icon: ClipboardList,
                         },
                         {
                             name: "Room Incidents",
                             description: "View reported Incidents",
                             href: "/incidents",
-                            icon: ClipboardList
-                        }
-                    ]
+                            icon: ClipboardList,
+                        },
+                    ],
                 },
                 {
                     name: "Rooms",
                     description: "Room Management",
                     href: "/rooms",
-                    icon: Key
+                    icon: Key,
                 },
-                {
-                    name: "Add-Ons",
-                    description: "Manage room add-ons",
-                    href: "/add-ons",
-                    icon: Package
-                },
+                // {
+                //     name: "Add-Ons",
+                //     description: "Manage room add-ons",
+                //     href: "/add-ons",
+                //     icon: Package
+                // },
                 {
                     name: "User & Guest",
                     description: "User & Guest Management",
@@ -582,19 +644,19 @@ const AdminLayout = ({
                             name: "Online Guest",
                             description: "Guest profiles and history",
                             href: "/guests",
-                            icon: Users
+                            icon: Users,
                         },
                         {
                             name: "Walk-in Guests",
                             description: "Manage walk-in guest records",
                             href: "/walkin-guest",
-                            icon: Users
+                            icon: Users,
                         },
                         {
                             name: "System Users",
                             description: "Admin & Employee accounts and roles",
                             href: "/staff",
-                            icon: Users
+                            icon: Users,
                         },
                         // {
                         //     name: "House Keeper",
@@ -602,7 +664,7 @@ const AdminLayout = ({
                         //     href: "/housekeepers",
                         //     icon: Users
                         // }
-                    ]
+                    ],
                 },
             ],
         },
@@ -630,13 +692,13 @@ const AdminLayout = ({
                     name: "Menu",
                     description: "Food & Beverage",
                     href: "/admin/menu",
-                    icon: ShoppingCart
+                    icon: ShoppingCart,
                 },
                 {
                     name: "Orders Report",
                     description: "Order Sales Management",
                     href: "/admin/orders",
-                    icon: UtensilsCrossed
+                    icon: UtensilsCrossed,
                 },
             ],
         },
@@ -647,7 +709,7 @@ const AdminLayout = ({
                     name: "Reports",
                     description: "Reports & Analytics",
                     href: "/reports",
-                    icon: ClipboardList
+                    icon: ClipboardList,
                 },
             ],
         },
@@ -659,24 +721,36 @@ const AdminLayout = ({
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
         if (seconds < 60) return "Just now";
         const minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`;
+        if (minutes < 60) return `${minutes} min${minutes > 1 ? "s" : ""} ago`;
         const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
+        if (hours < 24) return `${hours} hr${hours > 1 ? "s" : ""} ago`;
         const days = Math.floor(hours / 24);
-        if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+        if (days < 7) return `${days} day${days > 1 ? "s" : ""} ago`;
         const weeks = Math.floor(days / 7);
-        if (weeks < 4) return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
+        if (weeks < 4) return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
         const months = Math.floor(days / 30);
-        if (months < 12) return `${months} month${months > 1 ? 's' : ''} ago`;
+        if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`;
         const years = Math.floor(days / 365);
-        return `${years} year${years > 1 ? 's' : ''} ago`;
+        return `${years} year${years > 1 ? "s" : ""} ago`;
     };
 
     // Render navigation item with nested dropdown and vertical line indicators
-    const renderNavItem = (item: any, isSidebarOpen: boolean, depth: number = 0, isMobile: boolean = false) => {
-        const isActive = location.pathname === item.href ||
-            (item.dropdownItems && item.dropdownItems.some((subItem: any) => location.pathname === subItem.href));
-        const isOpen = openDropdowns[`${isMobile ? 'mobile_' : ''}${item.name.toLowerCase()}`];
+    const renderNavItem = (
+        item: any,
+        isSidebarOpen: boolean,
+        depth: number = 0,
+        isMobile: boolean = false,
+    ) => {
+        const isActive =
+            location.pathname === item.href ||
+            (item.dropdownItems &&
+                item.dropdownItems.some(
+                    (subItem: any) => location.pathname === subItem.href,
+                ));
+        const isOpen =
+            openDropdowns[
+                `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`
+            ];
 
         if (item.hasDropdown && (isSidebarOpen || isMobile)) {
             return (
@@ -684,17 +758,18 @@ const AdminLayout = ({
                     <div
                         onClick={(e) => {
                             e.stopPropagation();
-                            const dropdownKey = `${isMobile ? 'mobile_' : ''}${item.name.toLowerCase()}`;
-                            setOpenDropdowns(prev => ({
+                            const dropdownKey = `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`;
+                            setOpenDropdowns((prev) => ({
                                 ...prev,
-                                [dropdownKey]: !prev[dropdownKey]
+                                [dropdownKey]: !prev[dropdownKey],
                             }));
                         }}
                         className={`
                             flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
-                            ${isActive
-                                ? 'bg-emerald-500 text-white shadow-md'
-                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                            ${
+                                isActive
+                                    ? "bg-emerald-500 text-white shadow-md"
+                                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                             }
                         `}
                     >
@@ -704,22 +779,26 @@ const AdminLayout = ({
                                 <span className="text-xs font-medium truncate">
                                     {item.name}
                                 </span>
-                                <span className={`text-[8px] truncate ${isActive ? 'text-emerald-100' : 'text-gray-400'}`}>
+                                <span
+                                    className={`text-[8px] truncate ${isActive ? "text-emerald-100" : "text-gray-400"}`}
+                                >
                                     {item.description}
                                 </span>
                             </div>
                         </div>
                         <ChevronRight
-                            className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''} ${isActive ? 'text-white' : 'text-gray-400'}`}
+                            className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""} ${isActive ? "text-white" : "text-gray-400"}`}
                         />
                     </div>
 
                     {isOpen && (
                         <div className="relative ml-2 pl-4 select-none">
-                            <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div> {/*line for dropdown*/}
+                            <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div>{" "}
+                            {/*line for dropdown*/}
                             <div className="space-y-1">
                                 {item.dropdownItems.map((subItem: any) => {
-                                    const isSubActive = location.pathname === subItem.href;
+                                    const isSubActive =
+                                        location.pathname === subItem.href;
                                     return (
                                         <div
                                             key={subItem.name}
@@ -729,9 +808,10 @@ const AdminLayout = ({
                                             }}
                                             className={`
                                                 relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer
-                                                ${isSubActive
-                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                    : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700'
+                                                ${
+                                                    isSubActive
+                                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                        : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
                                                 }
                                             `}
                                         >
@@ -742,8 +822,11 @@ const AdminLayout = ({
                                                 </span>
                                                 {subItem.description && (
                                                     <p
-                                                        className={`text-[8px] truncate ${isSubActive ? 'text-emerald-600' : 'text-gray-400'
-                                                            }`}
+                                                        className={`text-[8px] truncate ${
+                                                            isSubActive
+                                                                ? "text-emerald-600"
+                                                                : "text-gray-400"
+                                                        }`}
                                                     >
                                                         {subItem.description}
                                                     </p>
@@ -767,20 +850,27 @@ const AdminLayout = ({
                 onClick={() => handleNavigation(item.href)}
                 className={`
                     flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer select-none
-                    ${isActive
-                        ? 'bg-emerald-500 text-white shadow-md'
-                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                    ${
+                        isActive
+                            ? "bg-emerald-500 text-white shadow-md"
+                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                     }
-                    ${!isSidebarOpen && !isMobile && 'justify-center'}
+                    ${!isSidebarOpen && !isMobile && "justify-center"}
                 `}
                 title={!isSidebarOpen && !isMobile ? item.name : undefined}
             >
-                <item.icon className={`h-4 w-4 shrink-0 transition-all duration-200 ${!isSidebarOpen && !isMobile ? 'mx-auto' : ''}`} />
-                <div className={`flex flex-col flex-1 min-w-0 transition-all duration-200 ${(!isSidebarOpen && !isMobile) ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
+                <item.icon
+                    className={`h-4 w-4 shrink-0 transition-all duration-200 ${!isSidebarOpen && !isMobile ? "mx-auto" : ""}`}
+                />
+                <div
+                    className={`flex flex-col flex-1 min-w-0 transition-all duration-200 ${!isSidebarOpen && !isMobile ? "opacity-0 w-0 hidden" : "opacity-100"}`}
+                >
                     <span className="text-xs font-medium truncate">
                         {item.name}
                     </span>
-                    <span className={`text-[8px] truncate ${isActive ? 'text-emerald-100' : 'text-gray-400'}`}>
+                    <span
+                        className={`text-[8px] truncate ${isActive ? "text-emerald-100" : "text-gray-400"}`}
+                    >
                         {item.description}
                     </span>
                 </div>
@@ -799,37 +889,51 @@ const AdminLayout = ({
                                 <button
                                     key={type}
                                     onClick={() => setChatFilter(type as any)}
-                                    className={`px-3 py-1 text-xs rounded-full capitalize transition ${chatFilter === type
-                                        ? "bg-emerald-500 text-white"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                        } select-none`}
+                                    className={`px-3 py-1 text-xs rounded-full capitalize transition ${
+                                        chatFilter === type
+                                            ? "bg-emerald-500 text-white"
+                                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                    } select-none`}
                                 >
                                     {type}
                                 </button>
                             ))}
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={refreshData} className="text-gray-500 hover:text-gray-700">
+                            <button
+                                onClick={refreshData}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
                                 <RefreshCw className="h-4 w-4" />
                             </button>
-                            <span className="text-xs text-gray-500">{unreadMessages} unread</span>
+                            <span className="text-xs text-gray-500">
+                                {unreadMessages} unread
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                <div ref={messageRef} data-scroll-area className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2">
+                <div
+                    ref={messageRef}
+                    data-scroll-area
+                    className="max-h-96 overflow-y-auto scrollbar-mint px-2 py-2"
+                >
                     {messagesLoading ? (
                         <div className="p-8 text-center text-gray-400 text-sm">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500 mx-auto mb-2"></div>
                             Loading messages...
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">No messages</div>
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                            No messages
+                        </div>
                     ) : (
                         messages
                             .filter((c) => {
                                 if (chatFilter === "all") return true;
-                                return c.user?.role?.toLowerCase() === chatFilter;
+                                return (
+                                    c.user?.role?.toLowerCase() === chatFilter
+                                );
                             })
                             .map((c) => {
                                 const chatUser = c.user;
@@ -840,14 +944,14 @@ const AdminLayout = ({
                                         onClick={() => {
                                             setActiveChatUser({
                                                 id: chatUser.id,
-                                                name: chatUser.first_name
+                                                name: chatUser.first_name,
                                             });
-                                            setMessages(prev =>
-                                                prev.map(msg =>
+                                            setMessages((prev) =>
+                                                prev.map((msg) =>
                                                     msg.user.id === chatUser.id
                                                         ? { ...msg, unread: 0 }
-                                                        : msg
-                                                )
+                                                        : msg,
+                                                ),
                                             );
                                             fetchMessages();
                                         }}
@@ -855,14 +959,19 @@ const AdminLayout = ({
                                     >
                                         <div className="flex items-center gap-3">
                                             <Avatar className="h-9 w-9 border-0 ring-0 shadow-none overflow-hidden">
-                                                <AvatarImage src={chatUser.avatar_url} className="h-full w-full object-cover border-0" />
+                                                <AvatarImage
+                                                    src={chatUser.avatar_url}
+                                                    className="h-full w-full object-cover border-0"
+                                                />
                                                 <AvatarFallback className="bg-emerald-500 text-white flex items-center justify-center w-full h-full border-0 ring-0 shadow-none">
                                                     {chatUser.first_name?.[0]}
                                                 </AvatarFallback>
                                             </Avatar>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-center">
-                                                    <p className="text-sm font-semibold text-gray-800 truncate">{chatUser.first_name}</p>
+                                                    <p className="text-sm font-semibold text-gray-800 truncate">
+                                                        {chatUser.first_name}
+                                                    </p>
                                                     {c.unread > 0 && (
                                                         <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
                                                             {c.unread}
@@ -870,7 +979,12 @@ const AdminLayout = ({
                                                     )}
                                                 </div>
                                                 <p className="text-xs text-gray-500 truncate">
-                                                    {c.last_sender_id === user?.id && <span className="text-gray-400">You: </span>}
+                                                    {c.last_sender_id ===
+                                                        user?.id && (
+                                                        <span className="text-gray-400">
+                                                            You:{" "}
+                                                        </span>
+                                                    )}
                                                     {c.last_message}
                                                 </p>
                                             </div>
@@ -882,7 +996,10 @@ const AdminLayout = ({
                 </div>
 
                 <div className="text-center py-3 border-t border-gray-100 select-none">
-                    <button onClick={() => handleNavigation('/messages')} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">
+                    <button
+                        onClick={() => handleNavigation("/messages")}
+                        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    >
                         View all messages
                     </button>
                 </div>
@@ -894,17 +1011,27 @@ const AdminLayout = ({
         return (
             <div className="chat-dropdown w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-gray-100 shadow-sm">
                 <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <h2 className="text-base font-bold text-gray-900">Notifications</h2>
+                    <h2 className="text-base font-bold text-gray-900">
+                        Notifications
+                    </h2>
                     <div className="flex items-center gap-3">
                         {unreadCount > 0 && (
-                            <button onClick={markAllNotificationsAsRead} className="text-xs text-emerald-600 hover:text-emerald-700 select-none">
+                            <button
+                                onClick={markAllNotificationsAsRead}
+                                className="text-xs text-emerald-600 hover:text-emerald-700 select-none"
+                            >
                                 Mark all
                             </button>
                         )}
-                        <button onClick={refreshData} className="text-gray-500 hover:text-gray-700">
+                        <button
+                            onClick={refreshData}
+                            className="text-gray-500 hover:text-gray-700"
+                        >
                             <RefreshCw className="h-4 w-4" />
                         </button>
-                        <span className="text-xs text-gray-500">{unreadCount} unread</span>
+                        <span className="text-xs text-gray-500">
+                            {unreadCount} unread
+                        </span>
                     </div>
                 </div>
 
@@ -919,7 +1046,7 @@ const AdminLayout = ({
                                 isScrolling.current = false;
                             }, 800);
                         }}
-                        className={`${expanded ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto scrollbar-mint px-2 py-2`}
+                        className={`${expanded ? "max-h-[600px]" : "max-h-96"} overflow-y-auto scrollbar-mint px-2 py-2`}
                     >
                         {notificationsLoading ? (
                             <div className="p-8 text-center text-gray-400 text-sm">
@@ -927,21 +1054,33 @@ const AdminLayout = ({
                                 Loading notifications...
                             </div>
                         ) : notifications.length === 0 ? (
-                            <div className="p-8 text-center text-gray-400 text-sm">No notifications</div>
+                            <div className="p-8 text-center text-gray-400 text-sm">
+                                No notifications
+                            </div>
                         ) : (
                             <>
                                 {notifications.map((n) => (
                                     <div
                                         key={n.id}
-                                        onClick={() => markNotificationAsRead(n.id)}
+                                        onClick={() =>
+                                            markNotificationAsRead(n.id)
+                                        }
                                         className={`px-4 py-3 cursor-pointer hover:bg-gray-50 rounded-lg mb-1 select-none ${!n.is_read ? "bg-emerald-50" : ""}`}
                                     >
                                         <div className="flex justify-between items-center">
-                                            <p className="text-sm font-semibold text-gray-800 truncate">{n.title}</p>
-                                            {!n.is_read && <div className="h-2 w-2 bg-emerald-500 rounded-full ml-2 flex-shrink-0"></div>}
+                                            <p className="text-sm font-semibold text-gray-800 truncate">
+                                                {n.title}
+                                            </p>
+                                            {!n.is_read && (
+                                                <div className="h-2 w-2 bg-emerald-500 rounded-full ml-2 flex-shrink-0"></div>
+                                            )}
                                         </div>
-                                        <p className="text-xs text-gray-500 truncate">{n.message}</p>
-                                        <p className="text-[10px] text-gray-400 mt-1">{timeAgo(n.created_at)}</p>
+                                        <p className="text-xs text-gray-500 truncate">
+                                            {n.message}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400 mt-1">
+                                            {timeAgo(n.created_at)}
+                                        </p>
                                     </div>
                                 ))}
                                 {!expanded && notifications.length >= 10 && (
@@ -952,10 +1091,15 @@ const AdminLayout = ({
                                                 const newOffset = offset + 10;
                                                 setOffset(newOffset);
                                                 setExpanded(true);
-                                                const res = await api.get(`/notifications/user/${user.id}?limit=10&offset=${newOffset}`);
+                                                const res = await api.get(
+                                                    `/notifications/user/${user.id}?limit=10&offset=${newOffset}`,
+                                                );
                                                 const data = res.data || [];
-                                                setNotifications(prev => {
-                                                    const merged = [...prev, ...data];
+                                                setNotifications((prev) => {
+                                                    const merged = [
+                                                        ...prev,
+                                                        ...data,
+                                                    ];
                                                     return merged.slice(0, 20);
                                                 });
                                             }}
@@ -1057,51 +1201,69 @@ const AdminLayout = ({
                 {/* Desktop Sidebar - White background with smooth transition */}
                 <aside
                     className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 text-gray-700 z-50 flex flex-col sidebar-transition
-                        ${isSidebarOpen ? 'w-64' : 'w-20'} 
+                        ${isSidebarOpen ? "w-64" : "w-20"} 
                         hidden lg:flex shadow-sm`}
                 >
                     {/* Logo Section - Centered when closed */}
-                    <div className={`h-20 flex items-center ${isSidebarOpen ? 'px-6' : 'justify-center'} shrink-0 border-b border-gray-200 transition-all duration-300`}>
+                    <div
+                        className={`h-20 flex items-center ${isSidebarOpen ? "px-6" : "justify-center"} shrink-0 border-b border-gray-200 transition-all duration-300`}
+                    >
                         <div
-                            onClick={() => handleNavigation('/dashboard')}
+                            onClick={() => handleNavigation("/dashboard")}
                             className={`
                                          flex items-center cursor-pointer hover:opacity-80 transition-all duration-300 select-none
-                                        ${isSidebarOpen ? 'gap-3' : 'justify-center w-full'}
+                                        ${isSidebarOpen ? "gap-3" : "justify-center w-full"}
                                     `}
                         >
-                            <div className={`
+                            <div
+                                className={`
                                             rounded-full overflow-hidden flex items-center justify-center flex-shrink-0
-                                            ${isSidebarOpen ? 'h-10 w-10' : 'h-12 w-12 mx-auto'}
-                                        `}>
+                                            ${isSidebarOpen ? "h-10 w-10" : "h-12 w-12 mx-auto"}
+                                        `}
+                            >
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
                                     className="h-full w-auto object-contain scale-125"
                                     onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                        const parent = e.currentTarget.parentElement;
+                                        e.currentTarget.style.display = "none";
+                                        const parent =
+                                            e.currentTarget.parentElement;
                                         if (parent) {
-                                            const fallbackIcon = document.createElement('div');
-                                            fallbackIcon.className = 'h-7 w-7 text-emerald-600 flex items-center justify-center';
-                                            fallbackIcon.innerHTML = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>';
+                                            const fallbackIcon =
+                                                document.createElement("div");
+                                            fallbackIcon.className =
+                                                "h-7 w-7 text-emerald-600 flex items-center justify-center";
+                                            fallbackIcon.innerHTML =
+                                                '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>';
                                             parent.appendChild(fallbackIcon);
                                         }
                                     }}
                                 />
                             </div>
-                            <div className={`flex flex-col transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'opacity-100 max-w-xs' : 'opacity-0 max-w-0 w-0'}`}>
-                                <span className="font-bold text-sm tracking-tight leading-tight text-gray-800 whitespace-nowrap">Lynn Ennia's</span>
-                                <span className="text-[10px] text-emerald-600/80 tracking-wide whitespace-nowrap">Traveler's Inn</span>
+                            <div
+                                className={`flex flex-col transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 max-w-xs" : "opacity-0 max-w-0 w-0"}`}
+                            >
+                                <span className="font-bold text-sm tracking-tight leading-tight text-gray-800 whitespace-nowrap">
+                                    Lyn Enia's
+                                </span>
+                                <span className="text-[10px] text-emerald-600/80 tracking-wide whitespace-nowrap">
+                                    Traveler's Inn
+                                </span>
                             </div>
                         </div>
                     </div>
 
                     {/* Navigation with Scrollbar - No blinking on icons */}
-                    <nav className={`flex-1 py-6 px-3 overflow-y-auto sidebar-scrollbar transition-all duration-300`}>
+                    <nav
+                        className={`flex-1 py-6 px-3 overflow-y-auto sidebar-scrollbar transition-all duration-300`}
+                    >
                         <div className="space-y-6">
                             {navigationGroups.map((group) => (
                                 <div key={group.label}>
-                                    <div className={`transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'opacity-100 h-auto mb-2' : 'opacity-0 h-0 mb-0'}`}>
+                                    <div
+                                        className={`transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 h-auto mb-2" : "opacity-0 h-0 mb-0"}`}
+                                    >
                                         {isSidebarOpen && (
                                             <p className="text-[9px] font-semibold tracking-wider text-gray-400 uppercase px-3 select-none">
                                                 {group.label}
@@ -1109,7 +1271,14 @@ const AdminLayout = ({
                                         )}
                                     </div>
                                     <div className="space-y-1">
-                                        {group.items.map((item) => renderNavItem(item, isSidebarOpen, 0, false))}
+                                        {group.items.map((item) =>
+                                            renderNavItem(
+                                                item,
+                                                isSidebarOpen,
+                                                0,
+                                                false,
+                                            ),
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -1117,27 +1286,40 @@ const AdminLayout = ({
                     </nav>
 
                     {/* User Menu - Avatar centered when closed */}
-                    <div className={`
+                    <div
+                        className={`
                                       border-t border-gray-200 py-3 shrink-0 mt-auto transition-all duration-300
-                                     ${isSidebarOpen ? 'px-3' : 'px-2'}
-                                `}>
+                                     ${isSidebarOpen ? "px-3" : "px-2"}
+                                `}
+                    >
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
                                     className={`
                                                 w-full flex items-center -px-2 -py-2 rounded-lg hover:bg-gray-50 transition-all duration-200 group
                                                 focus:outline-none focus:ring-0 cursor-pointer select-none
-                                                ${isSidebarOpen ? 'gap-3' : 'justify-center'}
+                                                ${isSidebarOpen ? "gap-3" : "justify-center"}
                                             `}
                                 >
-                                    <div className={`rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center flex-shrink-0 transition-all duration-200 ${isSidebarOpen ? 'h-10 w-10' : 'h-9 w-9'}`}>
+                                    <div
+                                        className={`rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center flex-shrink-0 transition-all duration-200 ${isSidebarOpen ? "h-10 w-10" : "h-9 w-9"}`}
+                                    >
                                         {user?.profile_image ? (
                                             <img
-                                                src={getImageUrl(user?.profile_image) || fallback}
+                                                src={
+                                                    getImageUrl(
+                                                        user?.profile_image,
+                                                    ) || fallback
+                                                }
                                                 className="w-full h-full object-cover block"
-                                                style={{ objectPosition: "center 20%", transform: "scale(1.1)" }}
+                                                style={{
+                                                    objectPosition:
+                                                        "center 20%",
+                                                    transform: "scale(1.1)",
+                                                }}
                                                 onError={(e) => {
-                                                    e.currentTarget.src = fallback;
+                                                    e.currentTarget.src =
+                                                        fallback;
                                                 }}
                                             />
                                         ) : (
@@ -1146,7 +1328,9 @@ const AdminLayout = ({
                                             </div>
                                         )}
                                     </div>
-                                    <div className={`flex-1 text-left transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'opacity-100 max-w-xs' : 'opacity-0 max-w-0 w-0'}`}>
+                                    <div
+                                        className={`flex-1 text-left transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 max-w-xs" : "opacity-0 max-w-0 w-0"}`}
+                                    >
                                         <p className="text-xs relative top-2 font-semibold text-gray-800 truncate leading-none select-none whitespace-nowrap">
                                             {getDisplayName()}
                                         </p>
@@ -1154,7 +1338,9 @@ const AdminLayout = ({
                                             {user.email}
                                         </p>
                                     </div>
-                                    <div className={`flex flex-col items-center justify-center leading-none text-gray-400 group-hover:text-gray-600 transition-all duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 w-0'}`}>
+                                    <div
+                                        className={`flex flex-col items-center justify-center leading-none text-gray-400 group-hover:text-gray-600 transition-all duration-300 ${isSidebarOpen ? "opacity-100" : "opacity-0 w-0"}`}
+                                    >
                                         <ChevronUp className="h-4 w-3 -mb-1" />
                                         <ChevronDown className="h-4 w-3 -mt-1" />
                                     </div>
@@ -1169,20 +1355,28 @@ const AdminLayout = ({
                                     asChild
                                     className="text-gray-700 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-900"
                                 >
-                                    <div onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-3 py-2 text-gray-700 cursor-pointer hover:bg-gray-50 select-none">
+                                    <div
+                                        onClick={() => setIsSettingsOpen(true)}
+                                        className="flex items-center gap-2 px-3 py-2 text-gray-700 cursor-pointer hover:bg-gray-50 select-none"
+                                    >
                                         <Settings className="h-4 w-4 text-gray-500" />
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
+                                {/* <DropdownMenuItem
                                     asChild
                                     className="text-gray-700 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-900"
                                 >
-                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-gray-700 cursor-pointer hover:bg-gray-50 select-none">
+                                    <div
+                                        onClick={() =>
+                                            handleNavigation("/help")
+                                        }
+                                        className="flex items-center gap-2 px-3 py-2 text-gray-700 cursor-pointer hover:bg-gray-50 select-none"
+                                    >
                                         <LifeBuoy className="h-4 w-4 text-gray-500" />
                                         <span>Help Center</span>
                                     </div>
-                                </DropdownMenuItem>
+                                </DropdownMenuItem> */}
                                 <DropdownMenuItem
                                     onClick={handleLogout}
                                     className="text-red-600 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700 select-none"
@@ -1200,7 +1394,7 @@ const AdminLayout = ({
                     className={`
                         fixed top-0 left-0 h-full w-72 bg-white border-r border-gray-200
                         text-gray-700 transition-transform duration-300 ease-out z-50 flex flex-col shadow-xl lg:hidden mobile-sidebar
-                        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+                        ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
                     `}
                 >
                     {/* Mobile Sidebar Header */}
@@ -1214,8 +1408,12 @@ const AdminLayout = ({
                                 />
                             </div>
                             <div className="flex flex-col">
-                                <span className="font-bold text-sm tracking-tight leading-tight text-gray-800">Lynn Ennia's</span>
-                                <span className="text-[10px] text-emerald-600/80 tracking-wide">Traveler's Inn</span>
+                                <span className="font-bold text-sm tracking-tight leading-tight text-gray-800">
+                                    Lynn Ennia's
+                                </span>
+                                <span className="text-[10px] text-emerald-600/80 tracking-wide">
+                                    Traveler's Inn
+                                </span>
                             </div>
                         </div>
                         <button
@@ -1235,7 +1433,9 @@ const AdminLayout = ({
                                         {group.label}
                                     </p>
                                     <div className="space-y-1">
-                                        {group.items.map((item) => renderNavItem(item, true, 0, true))}
+                                        {group.items.map((item) =>
+                                            renderNavItem(item, true, 0, true),
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -1248,9 +1448,15 @@ const AdminLayout = ({
                             <div className="h-10 w-10 rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center">
                                 {user?.profile_image ? (
                                     <img
-                                        src={getImageUrl(user?.profile_image) || fallback}
+                                        src={
+                                            getImageUrl(user?.profile_image) ||
+                                            fallback
+                                        }
                                         className="w-full h-full object-cover block"
-                                        style={{ objectPosition: "center 20%", transform: "scale(1.1)" }}
+                                        style={{
+                                            objectPosition: "center 20%",
+                                            transform: "scale(1.1)",
+                                        }}
                                         onError={(e) => {
                                             e.currentTarget.src = fallback;
                                         }}
@@ -1262,8 +1468,12 @@ const AdminLayout = ({
                                 )}
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm font-semibold text-gray-800">{getDisplayName()}</p>
-                                <p className="text-[10px] text-gray-400 truncate">{user.email}</p>
+                                <p className="text-sm font-semibold text-gray-800">
+                                    {getDisplayName()}
+                                </p>
+                                <p className="text-[10px] text-gray-400 truncate">
+                                    {user.email}
+                                </p>
                             </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
@@ -1289,7 +1499,9 @@ const AdminLayout = ({
                 </div>
 
                 {/* Main Content with smooth margin transition */}
-                <main className={`content-transition ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'} flex flex-col h-screen overflow-hidden`}>
+                <main
+                    className={`content-transition ${isSidebarOpen ? "lg:ml-64" : "lg:ml-20"} flex flex-col h-screen overflow-hidden`}
+                >
                     {/* Header */}
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
                         <div className="px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -1323,7 +1535,7 @@ const AdminLayout = ({
 
                                 <div className="relative right-2 flex items-center gap-1 text-sm select-none">
                                     <span className="text-gray-400">
-                                        Lynn Ennia's
+                                        Lyn Enia's
                                     </span>
 
                                     <ChevronRight className="h-3 w-3 text-gray-400" />
@@ -1342,19 +1554,25 @@ const AdminLayout = ({
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setIsNotifOpen(false);
-                                            setIsChatOpen(prev => !prev);
+                                            setIsChatOpen((prev) => !prev);
                                         }}
                                         className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
                                     >
                                         <MessageCircle className="h-4 w-4 text-gray-600" />
                                         {unreadMessages > 0 && (
                                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
-                                                {unreadMessages > 9 ? '9+' : unreadMessages}
+                                                {unreadMessages > 9
+                                                    ? "9+"
+                                                    : unreadMessages}
                                             </span>
                                         )}
                                     </button>
                                     {isChatOpen && (
-                                        <div ref={chatDropdownRef} className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+                                        <div
+                                            ref={chatDropdownRef}
+                                            className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
                                             <MessageDropdownContent />
                                         </div>
                                     )}
@@ -1367,7 +1585,7 @@ const AdminLayout = ({
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setIsChatOpen(false);
-                                            setIsNotifOpen(prev => {
+                                            setIsNotifOpen((prev) => {
                                                 const next = !prev;
                                                 if (next) {
                                                     setOffset(0);
@@ -1381,12 +1599,18 @@ const AdminLayout = ({
                                         <Bell className="h-4 w-4 text-gray-600" />
                                         {unreadCount > 0 && (
                                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
-                                                {unreadCount > 99 ? '99+' : unreadCount}
+                                                {unreadCount > 99
+                                                    ? "99+"
+                                                    : unreadCount}
                                             </span>
                                         )}
                                     </button>
                                     {isNotifOpen && (
-                                        <div ref={notifDropdownRef} className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+                                        <div
+                                            ref={notifDropdownRef}
+                                            className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
                                             <NotificationDropdownContent />
                                         </div>
                                     )}
@@ -1396,8 +1620,20 @@ const AdminLayout = ({
                     </header>
 
                     {/* Scrollable content */}
-                    <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50">
-                        <div className="px-4 sm:px-6 py-4 sm:py-6">
+                    <div
+                        className={`flex-1 bg-gray-50 ${
+                            location.pathname === "/reservation-monitor"
+                                ? "overflow-hidden"
+                                : "overflow-y-auto scrollbar-mint"
+                        }`}
+                    >
+                        <div
+                            className={
+                                location.pathname === "/reservation-monitor"
+                                    ? "h-full"
+                                    : "px-4 sm:px-6 py-4 sm:py-6"
+                            }
+                        >
                             <Outlet />
                         </div>
                     </div>
@@ -1412,23 +1648,33 @@ const AdminLayout = ({
                         userName={activeChatUser.name}
                         onClose={() => setActiveChatUser(null)}
                         onMessageSent={(msg) => {
-                            setMessages(prev => {
-                                const exists = prev.find(m => m.user.id === activeChatUser.id);
+                            setMessages((prev) => {
+                                const exists = prev.find(
+                                    (m) => m.user.id === activeChatUser.id,
+                                );
                                 if (exists) {
-                                    return prev.map(m =>
+                                    return prev.map((m) =>
                                         m.user.id === activeChatUser.id
-                                            ? { ...m, last_message: msg, last_sender_id: user.id, unread: 0 }
-                                            : m
+                                            ? {
+                                                  ...m,
+                                                  last_message: msg,
+                                                  last_sender_id: user.id,
+                                                  unread: 0,
+                                              }
+                                            : m,
                                     );
                                 }
                                 return [
                                     {
-                                        user: { id: activeChatUser.id, first_name: activeChatUser.name },
+                                        user: {
+                                            id: activeChatUser.id,
+                                            first_name: activeChatUser.name,
+                                        },
                                         last_message: msg,
                                         last_sender_id: user.id,
-                                        unread: 0
+                                        unread: 0,
                                     },
-                                    ...prev
+                                    ...prev,
                                 ];
                             });
                         }}

@@ -29,7 +29,7 @@ export default function RestaurantDashboard() {
                 api.get("/menu-items")
             ]);
 
-            setOrders(ordersRes.data);
+            setOrders(ordersRes.data.data);
             setMenu(menuRes.data);
         } catch (err) {
             console.error(err);
@@ -44,7 +44,7 @@ export default function RestaurantDashboard() {
         await fetchData();
     };
 
-    // 📊 COMPUTATIONS
+    // COMPUTATIONS
     const totalOrders = orders.length;
     const totalSales = orders.reduce(
         (sum, o) => sum + parseFloat(o.total_amount || 0),

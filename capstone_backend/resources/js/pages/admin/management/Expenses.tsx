@@ -292,9 +292,9 @@ export default function ExpensesPage() {
             <div className="bg-white rounded-2xl border border-stone-200 shadow-sm mb-6 overflow-hidden">
                 <div className="px-7 py-5 border-b border-stone-100 flex items-center justify-between flex-wrap gap-4">
                     <h2 className="text-base font-semibold text-gray-900 m-0">Transaction History</h2>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-xl bg-rose-600 text-white text-[11px] font-semibold tracking-wide">
+                    {/* <span className="inline-flex items-center px-2.5 py-0.5 rounded-xl bg-rose-600 text-white text-[11px] font-semibold tracking-wide">
                         {filteredTransactions.length} records
-                    </span>
+                    </span> */}
                 </div>
 
                 <div className="p-7">
@@ -355,7 +355,7 @@ export default function ExpensesPage() {
                                     showTotal: (total) => `${total} total transactions`,
                                     style: { padding: "16px 0 0 0", margin: 0 },
                                 }}
-                                scroll={{ x: 900 }}
+                                // scroll={{ x: 900 }}
                             />
                         )}
                     </Spin>

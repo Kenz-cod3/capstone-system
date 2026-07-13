@@ -787,7 +787,6 @@ export default function DamagedRooms() {
             </div>
           ) : rooms.length === 0 ? (
             <div className="dr-state">
-              <span className="dr-state-icon">📋</span>
               No room incidents found
             </div>
           ) : (

@@ -17,7 +17,7 @@ class RoomImageController extends Controller
                 'room_id' => $img->room_id,
                 'image_type' => $img->image_type,
 
-                // 🔥 FULL URL (IMPORTANT)
+                // FULL URL (IMPORTANT)
                 'image_url' => url('storage/' . $img->image_path),
 
                 'room' => $img->room
@@ -50,7 +50,7 @@ class RoomImageController extends Controller
         ], 201);
     }
 
-    // 📌 SHOW
+    // SHOW
     public function show($id)
     {
         $img = RoomImage::with('room')->findOrFail($id);
@@ -60,14 +60,14 @@ class RoomImageController extends Controller
             'room_id' => $img->room_id,
             'image_type' => $img->image_type,
 
-            // 🔥 FULL URL
+            //  FULL URL
             'image_url' => url('storage/' . $img->image_path),
 
             'room' => $img->room
         ]);
     }
 
-    // 📌 UPDATE
+    // UPDATE
     public function update(Request $request, $id)
     {
         $roomImage = RoomImage::findOrFail($id);
@@ -100,7 +100,7 @@ class RoomImageController extends Controller
         ]);
     }
 
-    // 📌 DELETE
+    // DELETE
     public function destroy($id)
     {
         $roomImage = RoomImage::findOrFail($id);

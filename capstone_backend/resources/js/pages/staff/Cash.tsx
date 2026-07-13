@@ -10,7 +10,6 @@ import {
     Popconfirm,
 } from "antd";
 import api from "@/services/api";
-import OpenShiftModal from "./OpenShiftModal";
 
 const { Option } = Select;
 
@@ -518,8 +517,6 @@ export default function StaffCash() {
     const [loading, setLoading] = useState<boolean>(false);
     const [submitting, setSubmitting] = useState<boolean>(false);
     const [deletingId, setDeletingId] = useState<number | null>(null);
-    const [openShiftModal, setOpenShiftModal] = useState(false);
-    const [hasOpenShift, setHasOpenShift] = useState(false);
 
     const fetchAll = async () => {
         setLoading(true);
@@ -539,25 +536,8 @@ export default function StaffCash() {
         }
     };
 
-    const checkCurrentShift = async () => {
-        try {
-            const res = await api.get("/shift/current");
-
-            if (res.data) {
-                setHasOpenShift(true);
-                setOpenShiftModal(false);
-            } else {
-                setHasOpenShift(false);
-                setOpenShiftModal(true);
-            }
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
     useEffect(() => {
         fetchAll();
-        checkCurrentShift();
     }, []);
 
     // Auto-set category when type changes
@@ -744,19 +724,6 @@ export default function StaffCash() {
                             Record and track all cash transactions
                         </p>
                     </div>
-
-                    {!hasOpenShift && (
-                        <button
-                            className="sc-btn-primary"
-                            style={{
-                                minWidth: 140,
-                                height: 42,
-                            }}
-                            onClick={() => setOpenShiftModal(true)}
-                        >
-                            Open Shift
-                        </button>
-                    )}
                 </div>
 
                 {/* Form Card */}
@@ -947,21 +914,12 @@ export default function StaffCash() {
                                     showTotal: (total) => `${total} total transactions`,
                                     style: { padding: "16px 24px", margin: 0 },
                                 }}
-                                scroll={{ x: 800 }}
+                                // scroll={{ x: 800 }}
                             />
                         </Spin>
                     </div>
                 </div>
             </div>
-
-            <OpenShiftModal
-                open={openShiftModal}
-                onSuccess={() => {
-                    setOpenShiftModal(false);
-                    setHasOpenShift(true);
-                    fetchAll();
-                }}
-            />
         </>
     );
 }

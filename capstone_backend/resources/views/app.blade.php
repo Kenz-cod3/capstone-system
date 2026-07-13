@@ -4,7 +4,7 @@
     @viteReactRefresh
     @vite(['resources/js/main.tsx'])
 
-    <!-- ✅ ITO -->
+    <!-- ITO -->
     <link rel="icon" href="/asset/images/logo.png">
 
     <!-- Google Fonts - DM Sans -->

@@ -17,26 +17,40 @@ class BookingHistoryController extends Controller
             'booking.user',
             'booking.walkInGuest',
             'booking.addOns',
-            'booking.rooms' => function ($q) {
-                //  withTrashed() — rooms may be soft-deleted after checkout
-                //  roomType     — needed for type_name, base_price, short_stay_price
-                //  images       — needed to resolve image_url
-                $q->withTrashed()->with(['roomType', 'images']);
+            'booking.bookedRooms.room' => function ($q) {
+                $q->withTrashed()->with([
+                    'roomType',
+                    'images',
+                ]);
             },
         ])
             ->orderByDesc('changed_at')
             ->get();
 
-        //  Attach image_url to each room (consistent with BookingController::index)
+        // Attach image_url to each booked room
         $histories->each(function ($history) {
-            if (!$history->booking) return;
 
-            foreach ($history->booking->rooms as $room) {
-                $validImages = $room->images->filter(function ($img) {
-                    return Storage::disk('public')->exists($img->image_path);
-                })->values();
+            if (!$history->booking) {
+                return;
+            }
 
-                $bestImage = $validImages->sortByDesc('id')->first();
+            foreach ($history->booking->bookedRooms as $bookedRoom) {
+
+                $room = $bookedRoom->room;
+
+                if (!$room) {
+                    continue;
+                }
+
+                $validImages = $room->images
+                    ->filter(function ($img) {
+                        return Storage::disk('public')->exists($img->image_path);
+                    })
+                    ->values();
+
+                $bestImage = $validImages
+                    ->sortByDesc('id')
+                    ->first();
 
                 $room->image_url = $bestImage
                     ? asset('storage/' . $bestImage->image_path)
@@ -57,19 +71,35 @@ class BookingHistoryController extends Controller
             'booking.user',
             'booking.walkInGuest',
             'booking.addOns',
-            'booking.rooms' => function ($q) {
-                $q->withTrashed()->with(['roomType', 'images']);
+            'booking.bookedRooms.room' => function ($q) {
+                $q->withTrashed()->with([
+                    'roomType',
+                    'images',
+                ]);
             },
         ])->findOrFail($id);
 
-        // Same image_url resolution for single record
+        // Resolve image_url for every booked room
         if ($history->booking) {
-            foreach ($history->booking->rooms as $room) {
-                $validImages = $room->images->filter(function ($img) {
-                    return Storage::disk('public')->exists($img->image_path);
-                })->values();
 
-                $bestImage = $validImages->sortByDesc('id')->first();
+            foreach ($history->booking->bookedRooms as $bookedRoom) {
+
+                $room = $bookedRoom->room;
+
+                if (!$room) {
+                    continue;
+                }
+
+                $validImages = $room->images
+                    ->filter(function ($img) {
+                        return Storage::disk('public')
+                            ->exists($img->image_path);
+                    })
+                    ->values();
+
+                $bestImage = $validImages
+                    ->sortByDesc('id')
+                    ->first();
 
                 $room->image_url = $bestImage
                     ? asset('storage/' . $bestImage->image_path)
@@ -108,9 +138,14 @@ class BookingHistoryController extends Controller
 
         return response()->json([
             'message' => 'Booking history recorded',
-            'data'    => $history->load([
-                'booking.rooms' => fn ($q) => $q->withTrashed()->with('roomType'),
+            'data' => $history->load([
                 'booking.user',
+                'booking.walkInGuest',
+                'booking.addOns',
+                'booking.bookedRooms.room' => fn($q) => $q->withTrashed()->with([
+                    'roomType',
+                    'images',
+                ]),
                 'user',
             ]),
         ], 201);

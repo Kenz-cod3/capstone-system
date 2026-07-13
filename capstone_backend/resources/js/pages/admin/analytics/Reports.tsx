@@ -17,11 +17,18 @@ import {
     AlertCircle,
     Loader2,
     PieChart,
-    BarChart3
+    BarChart3,
+    FileSpreadsheet,
+    FileText,
+    FileDown
 } from "lucide-react";
-import { Table, Tag, Button, Space, Card, Row, Col, Statistic, Tabs, message } from 'antd';
+import { Table, Tag, Button, Space, Card, Row, Col, Statistic, Tabs, message, DatePicker, Dropdown, MenuProps } from 'antd';
 import { ReloadOutlined, ExportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Type definitions
 interface WalkInGuest {
@@ -71,6 +78,8 @@ interface ReportsData {
     recent_bookings: Booking[];
 }
 
+const { RangePicker } = DatePicker;
+
 export default function Reports() {
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [currentPage, setCurrentPage] = useState<number>(1);
@@ -79,6 +88,7 @@ export default function Reports() {
         start_date: "",
         end_date: "",
     });
+    const [exportLoading, setExportLoading] = useState<string | null>(null);
 
     // TanStack Query
     const { data, isLoading, refetch, isFetching } = useQuery<ReportsData>({
@@ -140,6 +150,7 @@ export default function Reports() {
         }).format(amount || 0);
     };
 
+    // Export functions
     const exportToCSV = () => {
         const transactions = getFilteredTransactions();
         if (transactions.length === 0) {
@@ -147,25 +158,162 @@ export default function Reports() {
             return;
         }
 
-        const headers = ["Guest", "Booking Type", "Status", "Check In Date", "Total Amount"];
-        const csvData = transactions.map((b: Booking) => [
-            b.walk_in_guest?.guest_name || b.user?.name || "Guest",
-            b.booking_type === "walk_in" ? "Walk-in" : "Online",
-            b.booking_status?.replace("_", " ").toUpperCase(),
-            formatDate(b.check_in_date),
-            b.total_price
-        ]);
+        setExportLoading('csv');
+        try {
+            const headers = ["Guest", "Booking Type", "Status", "Check In Date", "Total Amount"];
+            const csvData = transactions.map((b: Booking) => [
+                b.walk_in_guest?.guest_name || b.user?.name || "Guest",
+                b.booking_type === "walk_in" ? "Walk-in" : "Online",
+                b.booking_status?.replace("_", " ").toUpperCase(),
+                formatDate(b.check_in_date),
+                b.total_price
+            ]);
 
-        const csvContent = [headers, ...csvData].map(row => row.join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `reports_${new Date().toISOString().split("T")[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        message.success("Export successful!");
+            const csvContent = [headers, ...csvData].map(row => row.join(",")).join("\n");
+            const blob = new Blob([csvContent], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `reports_${new Date().toISOString().split("T")[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            message.success("CSV exported successfully!");
+        } catch (error) {
+            message.error("Failed to export CSV");
+        } finally {
+            setExportLoading(null);
+        }
     };
+
+    const exportToExcel = () => {
+        const transactions = getFilteredTransactions();
+        if (transactions.length === 0) {
+            message.warning("No transactions to export");
+            return;
+        }
+
+        setExportLoading('excel');
+        try {
+            const excelData = transactions.map((b: Booking) => ({
+                'Guest': b.walk_in_guest?.guest_name || b.user?.name || "Guest",
+                'Booking Type': b.booking_type === "walk_in" ? "Walk-in" : "Online",
+                'Status': b.booking_status?.replace("_", " ").toUpperCase(),
+                'Check In Date': formatDate(b.check_in_date),
+                'Total Amount': b.total_price
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(excelData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Reports");
+            
+            // Auto-size columns
+            const colWidths = [
+                { wch: 20 }, // Guest
+                { wch: 15 }, // Booking Type
+                { wch: 15 }, // Status
+                { wch: 20 }, // Check In Date
+                { wch: 15 }, // Total Amount
+            ];
+            ws['!cols'] = colWidths;
+
+            XLSX.writeFile(wb, `reports_${new Date().toISOString().split("T")[0]}.xlsx`);
+            message.success("Excel exported successfully!");
+        } catch (error) {
+            message.error("Failed to export Excel");
+        } finally {
+            setExportLoading(null);
+        }
+    };
+
+    const exportToPDF = () => {
+        const transactions = getFilteredTransactions();
+        if (transactions.length === 0) {
+            message.warning("No transactions to export");
+            return;
+        }
+
+        setExportLoading('pdf');
+        try {
+            const doc = new jsPDF();
+            
+            // Add title
+            doc.setFontSize(18);
+            doc.text('Reports Dashboard', 14, 22);
+            
+            // Add date range info
+            doc.setFontSize(10);
+            let dateInfo = 'All Transactions';
+            if (filters.start_date && filters.end_date) {
+                dateInfo = `Date Range: ${formatDate(filters.start_date)} - ${formatDate(filters.end_date)}`;
+            }
+            doc.text(dateInfo, 14, 30);
+            
+            // Add status filter info
+            const statusLabel = statusFilter === 'all' ? 'All Status' : statusFilter.replace('_', ' ').toUpperCase();
+            doc.text(`Status: ${statusLabel}`, 14, 36);
+            
+            // Add total count
+            doc.text(`Total Records: ${transactions.length}`, 14, 42);
+            
+            // Create table
+            const tableData = transactions.map((b: Booking) => [
+                b.walk_in_guest?.guest_name || b.user?.name || "Guest",
+                b.booking_type === "walk_in" ? "Walk-in" : "Online",
+                b.booking_status?.replace("_", " ").toUpperCase(),
+                formatDate(b.check_in_date),
+                `₱${b.total_price.toFixed(2)}`
+            ]);
+
+            (doc as any).autoTable({
+                head: [['Guest', 'Booking Type', 'Status', 'Check In Date', 'Total Amount']],
+                body: tableData,
+                startY: 48,
+                theme: 'grid',
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 2,
+                },
+                headStyles: {
+                    fillColor: [249, 115, 22],
+                    textColor: [255, 255, 255],
+                    fontSize: 9,
+                    fontStyle: 'bold',
+                },
+                alternateRowStyles: {
+                    fillColor: [245, 245, 245],
+                },
+            });
+
+            doc.save(`reports_${new Date().toISOString().split("T")[0]}.pdf`);
+            message.success("PDF exported successfully!");
+        } catch (error) {
+            message.error("Failed to export PDF");
+        } finally {
+            setExportLoading(null);
+        }
+    };
+
+    // Dropdown items for export
+    const exportMenuItems: MenuProps['items'] = [
+        {
+            key: 'csv',
+            label: 'CSV',
+            icon: <FileText className="w-4 h-4" />,
+            onClick: exportToCSV,
+        },
+        {
+            key: 'excel',
+            label: 'Excel',
+            icon: <FileSpreadsheet className="w-4 h-4" />,
+            onClick: exportToExcel,
+        },
+        {
+            key: 'pdf',
+            label: 'PDF',
+            icon: <FileDown className="w-4 h-4" />,
+            onClick: exportToPDF,
+        },
+    ];
 
     // Calculate additional stats
     const getAdditionalStats = () => {
@@ -191,6 +339,22 @@ export default function Reports() {
     const shouldShowPagination = () => {
         const totalRecords = data?.bookings?.total || 0;
         return totalRecords > perPage;
+    };
+
+    // Handle date range change
+    const handleDateRangeChange = (dates: any, dateStrings: [string, string]) => {
+        if (dates) {
+            setFilters({
+                start_date: dateStrings[0],
+                end_date: dateStrings[1],
+            });
+        } else {
+            setFilters({
+                start_date: "",
+                end_date: "",
+            });
+        }
+        setCurrentPage(1);
     };
 
     // Table columns definition
@@ -250,27 +414,6 @@ export default function Reports() {
         },
     ];
 
-    // Status filter tabs items
-    const filterItems = [
-        {
-            key: 'all',
-            label: 'All',
-        },
-        {
-            key: 'checked_out',
-            label: 'Checked Out',
-        },
-        {
-            key: 'checked_in',
-            label: 'Checked In',
-        },
-    ];
-
-    const handleTableChange = (pagination: any) => {
-        setCurrentPage(pagination.current);
-        setPerPage(pagination.pageSize);
-    };
-
     if (!data) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
@@ -306,63 +449,20 @@ export default function Reports() {
                             Refresh
                         </Button>
 
-                        <Button
-                            icon={<ExportOutlined />}
-                            onClick={exportToCSV}
+                        <Dropdown 
+                            menu={{ items: exportMenuItems }} 
+                            placement="bottomRight"
+                            trigger={['click']}
                         >
-                            Export CSV
-                        </Button>
+                            <Button 
+                                icon={<ExportOutlined />}
+                                loading={!!exportLoading}
+                            >
+                                Export {exportLoading && `(${exportLoading.toUpperCase()})`}
+                            </Button>
+                        </Dropdown>
                     </Space>
                 </div>
-
-                {/* Date Range Filter */}
-                <Card style={{ marginBottom: 24 }}>
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                            <Calendar className="w-5 h-5 text-gray-400" />
-                            <span className="font-medium text-gray-700">Date Range</span>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-3 flex-1 max-w-2xl">
-                            <div className="flex-1">
-                                <label className="block text-xs text-gray-500 mb-1">Start Date</label>
-                                <input
-                                    type="date"
-                                    value={filters.start_date}
-                                    onChange={(e) =>
-                                        setFilters({ ...filters, start_date: e.target.value })
-                                    }
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                                />
-                            </div>
-
-                            <div className="flex-1">
-                                <label className="block text-xs text-gray-500 mb-1">End Date</label>
-                                <input
-                                    type="date"
-                                    value={filters.end_date}
-                                    onChange={(e) =>
-                                        setFilters({ ...filters, end_date: e.target.value })
-                                    }
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                                />
-                            </div>
-
-                            <div className="flex items-end">
-                                <Button
-                                    type="primary"
-                                    onClick={() => {
-                                        setCurrentPage(1);
-                                        setFilters({ ...filters });
-                                    }}
-                                    style={{ backgroundColor: '#f97316', borderColor: '#f97316' }}
-                                >
-                                    Apply Filter
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </Card>
 
                 {/* Stats Cards */}
                 <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
@@ -492,27 +592,46 @@ export default function Reports() {
 
                 {/* Transactions Table */}
                 <Card>
-                    <div style={{ marginBottom: 16 }}>
-                        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-900">
-                                    All Transactions
-                                </h2>
-                                <p className="text-sm text-gray-500 mt-1">
-                                    Showing {data?.bookings?.data?.length || 0} of {data?.bookings?.total || 0} transactions
-                                </p>
+                    {/* Header with Title and Date Range Filter */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                All Transactions
+                            </h2>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Showing {data?.bookings?.data?.length || 0} of {data?.bookings?.total || 0} transactions
+                            </p>
+                        </div>
+
+                        {/* Date Range Filter - Ant Design RangePicker */}
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm font-medium text-gray-700">Date Range</span>
                             </div>
 
-                            <Tabs
-                                activeKey={statusFilter}
-                                onChange={setStatusFilter}
-                                items={[
-                                    { key: "all", label: "All" },
-                                    { key: "checked_out", label: "Checked Out" },
-                                    { key: "checked_in", label: "Checked In" },
-                                ]}
+                            <RangePicker
+                                onChange={handleDateRangeChange}
+                                format="YYYY-MM-DD"
+                                placeholder={['Start Date', 'End Date']}
+                                size="middle"
+                                style={{ minWidth: 240 }}
+                                allowClear={true}
                             />
-                        </Space>
+                        </div>
+                    </div>
+
+                    {/* Status Tabs */}
+                    <div style={{ marginBottom: 16 }}>
+                        <Tabs
+                            activeKey={statusFilter}
+                            onChange={setStatusFilter}
+                            items={[
+                                { key: "all", label: "All" },
+                                { key: "checked_out", label: "Checked Out" },
+                                { key: "checked_in", label: "Checked In" },
+                            ]}
+                        />
                     </div>
 
                     {/* TABLE */}

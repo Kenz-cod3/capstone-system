@@ -2,9 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import { updateRoom, uploadRoomImage, deleteRoomImage } from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
 import { X, Upload, AlertCircle, CheckCircle, Trash2 } from "lucide-react";
+import api from "@/services/api";
 
 export default function EditRoomModal({ room, onClose, refresh }: any) {
     const [roomTypes, setRoomTypes] = useState<any[]>([]);
+    const [amenities, setAmenities] = useState<any[]>([]);
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -21,33 +23,32 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         room_number: "",
         room_type_id: "",
         status: "available",
+        amenities: [] as number[],
     });
 
     useEffect(() => {
         getRoomTypesCached().then(setRoomTypes);
+        api.get("/amenities").then(res => setAmenities(res.data.data));
     }, []);
 
-    // Update form and preview when room changes
     useEffect(() => {
         if (room) {
             setForm({
                 room_number: room.room_number || "",
                 room_type_id: room.room_type_id?.toString() || "",
                 status: room.status || "available",
+                amenities: room.amenities?.map((a: any) => a.id) ?? [],
             });
 
-            // Handle image URL - if it's from backend, use as is
             if (room.image_url) {
                 setPreview(room.image_url);
             }
 
-            // Handle panorama image URL
             if (room.panorama_url) {
                 setPanoramaPreview(room.panorama_url);
             }
         }
 
-        // Cleanup function for object URLs
         return () => {
             if (preview && preview.startsWith('blob:')) {
                 URL.revokeObjectURL(preview);
@@ -76,7 +77,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     };
 
     const validateAndSetFile = (file: File, isPanorama: boolean = false) => {
-        // Validate file type
         const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
         if (!validTypes.includes(file.type)) {
             setErrors({
@@ -86,7 +86,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
             return false;
         }
 
-        // Validate file size (5MB for panorama, 2MB for regular images)
         const maxSize = isPanorama ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
         if (file.size > maxSize) {
             setErrors({
@@ -126,7 +125,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         handleFileSelect(selected, isPanorama);
     };
 
-    // Drag and drop handlers for regular image
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -155,7 +153,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
     };
 
-    // Drag and drop handlers for panorama image
     const handlePanoramaDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -185,9 +182,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     };
 
     const removeImage = async () => {
-
         try {
-
             const normalImage = room.images?.find(
                 (img: any) => img.image_type === "normal"
             );
@@ -209,16 +204,13 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
             }
 
             refresh();
-
         } catch (err) {
             console.error(err);
         }
     };
 
     const removePanoramaImage = async () => {
-
         try {
-
             const panoramaImage = room.images?.find(
                 (img: any) => img.image_type === "360"
             );
@@ -240,7 +232,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
             }
 
             refresh();
-
         } catch (err) {
             console.error(err);
         }
@@ -249,21 +240,18 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     const handleSubmit = async (e: any) => {
         e.preventDefault();
 
-        if (!validateForm()) {
-            return;
-        }
+        if (!validateForm()) return;
 
         setLoading(true);
 
         try {
-            // First update the room details
             await updateRoom(room.id, {
                 room_number: form.room_number,
                 room_type_id: form.room_type_id ? Number(form.room_type_id) : null,
                 status: form.status,
+                amenities: form.amenities,
             });
 
-            // If there's a new regular image, upload it
             if (file) {
                 const fd = new FormData();
                 fd.append("room_id", room.id.toString());
@@ -272,7 +260,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 await uploadRoomImage(fd);
             }
 
-            // If there's a new panorama image, upload it
             if (panoramaFile) {
                 const fd360 = new FormData();
                 fd360.append("room_id", room.id.toString());
@@ -341,8 +328,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                         </label>
                         <input
                             type="text"
-                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_number ? 'border-red-500' : 'border-gray-300'
-                                }`}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_number ? 'border-red-500' : 'border-gray-300'}`}
                             placeholder="e.g., 101, A-202"
                             value={form.room_number}
                             onChange={e => {
@@ -364,8 +350,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                             Room Type <span className="text-red-500">*</span>
                         </label>
                         <select
-                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_type_id ? 'border-red-500' : 'border-gray-300'
-                                }`}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_type_id ? 'border-red-500' : 'border-gray-300'}`}
                             value={form.room_type_id}
                             onChange={e => {
                                 setForm(prev => ({ ...prev, room_type_id: e.target.value }));
@@ -385,6 +370,40 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                 {errors.room_type_id}
                             </p>
                         )}
+                    </div>
+
+                    {/* Amenities */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Amenities
+                        </label>
+                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                            {amenities.map((amenity) => (
+                                <label
+                                    key={amenity.id}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={form.amenities.includes(amenity.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    amenities: [...prev.amenities, amenity.id],
+                                                }));
+                                            } else {
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    amenities: prev.amenities.filter(id => id !== amenity.id),
+                                                }));
+                                            }
+                                        }}
+                                    />
+                                    <span>{amenity.name}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Status */}
@@ -409,7 +428,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                         </div>
                     </div>
 
-                    {/* Room Image with Drag & Drop */}
+                    {/* Room Image */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             Room Image <span className="text-xs text-gray-400">(Max 2MB, JPEG/PNG only)</span>
@@ -463,14 +482,11 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                 </div>
                             ) : (
                                 <div>
-                                    <Upload className={`w-10 h-10 mx-auto mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'
-                                        }`} />
+                                    <Upload className={`w-10 h-10 mx-auto mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
                                     <p className="text-sm text-gray-600">
                                         {isDragging ? 'Drop your image here' : 'Click to upload or drag and drop'}
                                     </p>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        JPEG, PNG up to 2MB
-                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">JPEG, PNG up to 2MB</p>
                                 </div>
                             )}
                         </div>
@@ -487,7 +503,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                         )}
                     </div>
 
-                    {/* 360° Panorama Image with Drag & Drop */}
+                    {/* 360° Panorama Image */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             360° Panorama Image <span className="text-xs text-gray-400">(Optional, Max 5MB, JPEG/PNG only)</span>
@@ -547,8 +563,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                             ) : (
                                 <div>
                                     <div className="relative inline-block">
-                                        <Upload className={`w-10 h-10 mx-auto mb-2 ${isDraggingPanorama ? 'text-purple-500' : 'text-gray-400'
-                                            }`} />
+                                        <Upload className={`w-10 h-10 mx-auto mb-2 ${isDraggingPanorama ? 'text-purple-500' : 'text-gray-400'}`} />
                                         <span className="absolute -top-1 -right-3 text-xs font-bold bg-purple-500 text-white rounded-full px-1.5 py-0.5">
                                             360
                                         </span>

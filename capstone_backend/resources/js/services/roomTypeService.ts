@@ -6,7 +6,14 @@ export const getRoomTypesCached = async () => {
     if (cache.length) return cache;
 
     const res = await api.get("/room-types");
-    cache = res.data;
+
+    cache = Array.isArray(res.data)
+        ? res.data
+        : res.data.data ?? [];
 
     return cache;
+};
+
+export const clearRoomTypeCache = () => {
+    cache = [];
 };

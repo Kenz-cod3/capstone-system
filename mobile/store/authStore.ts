@@ -1,4 +1,3 @@
-// store/authStore.ts
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setToken, clearToken } from "../services/api";
@@ -71,14 +70,43 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (e: any) {
       console.log("❌ fetch error:", e?.response?.status, e?.message);
 
-      // fallback sa AsyncStorage kung walang internet
+      // If the token is invalid, clear everything
+      if (e?.response?.status === 401) {
+        console.log("🔑 Invalid token. Logging out...");
+
+        await AsyncStorage.removeItem("auth");
+        await AsyncStorage.removeItem("inactive");
+        await clearToken();
+
+        set({
+          user: null,
+          token: null,
+          inactive: false,
+          isLoaded: true,
+        });
+
+        return;
+      }
+
+      // If it's only a network problem, keep the cached login
       set({
         user,
         token,
-        isLoaded: true,
         inactive: inactiveStored === "true",
+        isLoaded: true,
       });
     }
+    // catch (e: any) {
+    //   console.log("❌ fetch error:", e?.response?.status, e?.message);
+
+    //   // fallback sa AsyncStorage kung walang internet
+    //   set({
+    //     user,
+    //     token,
+    //     isLoaded: true,
+    //     inactive: inactiveStored === "true",
+    //   });
+    // }
   },
 
   logout: async () => {
