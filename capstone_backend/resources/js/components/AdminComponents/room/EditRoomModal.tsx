@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef } from "react";
-import { updateRoom, uploadRoomImage, deleteRoomImage } from "@/services/roomService";
+import {
+    updateRoom,
+    uploadRoomImage,
+    deleteRoomImage,
+} from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
 import { X, Upload, AlertCircle, CheckCircle, Trash2 } from "lucide-react";
 import api from "@/services/api";
@@ -28,7 +32,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
 
     useEffect(() => {
         getRoomTypesCached().then(setRoomTypes);
-        api.get("/amenities").then(res => setAmenities(res.data.data));
+        api.get("/amenities").then((res) => setAmenities(res.data.data));
     }, []);
 
     useEffect(() => {
@@ -50,10 +54,10 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
 
         return () => {
-            if (preview && preview.startsWith('blob:')) {
+            if (preview && preview.startsWith("blob:")) {
                 URL.revokeObjectURL(preview);
             }
-            if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
+            if (panoramaPreview && panoramaPreview.startsWith("blob:")) {
                 URL.revokeObjectURL(panoramaPreview);
             }
         };
@@ -77,11 +81,12 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     };
 
     const validateAndSetFile = (file: File, isPanorama: boolean = false) => {
-        const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+        const validTypes = ["image/jpeg", "image/png", "image/jpg"];
         if (!validTypes.includes(file.type)) {
             setErrors({
                 ...errors,
-                [isPanorama ? "panorama" : "image"]: "Please upload a valid image file (JPEG, PNG only)"
+                [isPanorama ? "panorama" : "image"]:
+                    "Please upload a valid image file (JPEG, PNG only)",
             });
             return false;
         }
@@ -90,7 +95,8 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         if (file.size > maxSize) {
             setErrors({
                 ...errors,
-                [isPanorama ? "panorama" : "image"]: `Image size should be less than ${isPanorama ? '5MB' : '2MB'}`
+                [isPanorama ? "panorama" : "image"]:
+                    `Image size should be less than ${isPanorama ? "5MB" : "2MB"}`,
             });
             return false;
         }
@@ -98,19 +104,22 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         return true;
     };
 
-    const handleFileSelect = (selectedFile: File | null, isPanorama: boolean = false) => {
+    const handleFileSelect = (
+        selectedFile: File | null,
+        isPanorama: boolean = false,
+    ) => {
         if (!selectedFile) return;
 
         if (validateAndSetFile(selectedFile, isPanorama)) {
             if (isPanorama) {
-                if (panoramaPreview && panoramaPreview.startsWith('blob:')) {
+                if (panoramaPreview && panoramaPreview.startsWith("blob:")) {
                     URL.revokeObjectURL(panoramaPreview);
                 }
                 setPanoramaFile(selectedFile);
                 setPanoramaPreview(URL.createObjectURL(selectedFile));
                 setErrors({ ...errors, panorama: "" });
             } else {
-                if (preview && preview.startsWith('blob:')) {
+                if (preview && preview.startsWith("blob:")) {
                     URL.revokeObjectURL(preview);
                 }
                 setFile(selectedFile);
@@ -120,7 +129,10 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isPanorama: boolean = false) => {
+    const handleFileChange = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        isPanorama: boolean = false,
+    ) => {
         const selected = e.target.files?.[0] || null;
         handleFileSelect(selected, isPanorama);
     };
@@ -184,7 +196,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     const removeImage = async () => {
         try {
             const normalImage = room.images?.find(
-                (img: any) => img.image_type === "normal"
+                (img: any) => img.image_type === "normal",
             );
 
             if (normalImage) {
@@ -212,7 +224,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     const removePanoramaImage = async () => {
         try {
             const panoramaImage = room.images?.find(
-                (img: any) => img.image_type === "360"
+                (img: any) => img.image_type === "360",
             );
 
             if (panoramaImage) {
@@ -247,7 +259,9 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         try {
             await updateRoom(room.id, {
                 room_number: form.room_number,
-                room_type_id: form.room_type_id ? Number(form.room_type_id) : null,
+                room_type_id: form.room_type_id
+                    ? Number(form.room_type_id)
+                    : null,
                 status: form.status,
                 amenities: form.amenities,
             });
@@ -277,14 +291,17 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 const backendErrors = err.response.data.errors;
                 const formattedErrors: Record<string, string> = {};
 
-                Object.keys(backendErrors).forEach(key => {
-                    formattedErrors[key] = backendErrors[key][0] || backendErrors[key];
+                Object.keys(backendErrors).forEach((key) => {
+                    formattedErrors[key] =
+                        backendErrors[key][0] || backendErrors[key];
                 });
 
                 setErrors(formattedErrors);
             } else {
                 setErrors({
-                    submit: err.response?.data?.message || "Failed to update room. Please try again."
+                    submit:
+                        err.response?.data?.message ||
+                        "Failed to update room. Please try again.",
                 });
             }
         } finally {
@@ -293,11 +310,27 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     };
 
     const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'available': return 'text-green-600 bg-green-50';
-            case 'occupied': return 'text-red-600 bg-red-50';
-            case 'maintenance': return 'text-yellow-600 bg-yellow-50';
-            default: return 'text-gray-600 bg-gray-50';
+        switch (status.toLowerCase()) {
+            case "available":
+                return "bg-green-50 text-green-700 border-green-300 ring-green-400 hover:bg-green-100";
+
+            case "reserved":
+                return "bg-yellow-50 text-yellow-700 border-yellow-300 ring-yellow-400 hover:bg-yellow-100";
+
+            case "occupied":
+                return "bg-blue-50 text-blue-700 border-blue-300 ring-blue-400 hover:bg-blue-100";
+
+            case "maintenance":
+                return "bg-red-50 text-red-700 border-red-300 ring-red-400 hover:bg-red-100";
+
+            case "dirty":
+                return "bg-purple-50 text-purple-700 border-purple-300 ring-purple-400 hover:bg-purple-100";
+
+            case "cleaning":
+                return "bg-amber-50 text-amber-700 border-amber-300 ring-amber-400 hover:bg-amber-100";
+
+            default:
+                return "bg-gray-50 text-gray-700 border-gray-300 ring-gray-400 hover:bg-gray-100";
         }
     };
 
@@ -305,12 +338,16 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+            <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
                 {/* Header */}
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-semibold text-gray-900">Edit Room</h2>
-                        <p className="text-sm text-gray-500 mt-1">Update room #{room.room_number}</p>
+                        <h2 className="text-xl font-semibold text-gray-900">
+                            Edit Room
+                        </h2>
+                        <p className="text-sm text-gray-500 mt-1">
+                            Update room #{room.room_number}
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
@@ -320,312 +357,400 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                    {/* Room Number */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Room Number <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_number ? 'border-red-500' : 'border-gray-300'}`}
-                            placeholder="e.g., 101, A-202"
-                            value={form.room_number}
-                            onChange={e => {
-                                setForm(prev => ({ ...prev, room_number: e.target.value }));
-                                if (errors.room_number) setErrors({ ...errors, room_number: "" });
-                            }}
-                        />
-                        {errors.room_number && (
-                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-4 h-4" />
-                                {errors.room_number}
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Room Type */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Room Type <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_type_id ? 'border-red-500' : 'border-gray-300'}`}
-                            value={form.room_type_id}
-                            onChange={e => {
-                                setForm(prev => ({ ...prev, room_type_id: e.target.value }));
-                                if (errors.room_type_id) setErrors({ ...errors, room_type_id: "" });
-                            }}
-                        >
-                            <option value="">Select Room Type</option>
-                            {roomTypes.map(t => (
-                                <option key={t.id} value={t.id}>
-                                    {t.type_name} - ₱{t.base_price.toLocaleString()}
-                                </option>
-                            ))}
-                        </select>
-                        {errors.room_type_id && (
-                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-4 h-4" />
-                                {errors.room_type_id}
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Amenities */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Amenities
-                        </label>
-                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-                            {amenities.map((amenity) => (
-                                <label
-                                    key={amenity.id}
-                                    className="flex items-center gap-2 cursor-pointer"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={form.amenities.includes(amenity.id)}
-                                        onChange={(e) => {
-                                            if (e.target.checked) {
-                                                setForm(prev => ({
-                                                    ...prev,
-                                                    amenities: [...prev.amenities, amenity.id],
-                                                }));
-                                            } else {
-                                                setForm(prev => ({
-                                                    ...prev,
-                                                    amenities: prev.amenities.filter(id => id !== amenity.id),
-                                                }));
-                                            }
-                                        }}
-                                    />
-                                    <span>{amenity.name}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Status */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Status
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {['available', 'occupied', 'maintenance'].map(status => (
-                                <button
-                                    key={status}
-                                    type="button"
-                                    onClick={() => setForm(prev => ({ ...prev, status }))}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-all ${form.status === status
-                                        ? `${getStatusColor(status)} ring-2 ring-offset-1 ring-blue-500`
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        }`}
-                                >
-                                    {status}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Room Image */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Room Image <span className="text-xs text-gray-400">(Max 2MB, JPEG/PNG only)</span>
-                        </label>
-                        <div
-                            onDragEnter={handleDragEnter}
-                            onDragLeave={handleDragLeave}
-                            onDragOver={handleDragOver}
-                            onDrop={handleDrop}
-                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDragging
-                                ? 'border-blue-500 bg-blue-50'
-                                : errors.image
-                                    ? 'border-red-500 bg-red-50'
-                                    : 'border-gray-300 hover:border-blue-500'
-                                }`}
-                            onClick={() => fileInputRef.current?.click()}
-                        >
+                <form
+                    onSubmit={handleSubmit}
+                    className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(90vh-90px)] overflow-hidden"
+                >
+                    {/* LEFT COLUMN: form fields */}
+                    <div className="flex flex-col gap-5 overflow-y-auto pr-1">
+                        {/* Room Number */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Room Number{" "}
+                                <span className="text-red-500">*</span>
+                            </label>
                             <input
-                                ref={fileInputRef}
-                                type="file"
-                                className="hidden"
-                                accept="image/jpeg,image/png,image/jpg"
-                                onChange={(e) => handleFileChange(e, false)}
+                                type="text"
+                                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_number ? "border-red-500" : "border-gray-300"}`}
+                                placeholder="e.g., 101, A-202"
+                                value={form.room_number}
+                                onChange={(e) => {
+                                    setForm((prev) => ({
+                                        ...prev,
+                                        room_number: e.target.value,
+                                    }));
+                                    if (errors.room_number)
+                                        setErrors({
+                                            ...errors,
+                                            room_number: "",
+                                        });
+                                }}
                             />
-
-                            {preview ? (
-                                <div className="space-y-3">
-                                    <img
-                                        src={preview}
-                                        alt="Room preview"
-                                        className="w-full h-48 object-cover rounded-lg"
-                                    />
-                                    <div className="flex gap-2 justify-center">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                removeImage();
-                                            }}
-                                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            {file ? 'Remove new image' : 'Remove current image'}
-                                        </button>
-                                        {!file && preview && !preview.startsWith('blob:') && (
-                                            <span className="text-xs text-gray-400">
-                                                Upload new image to replace
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    <Upload className={`w-10 h-10 mx-auto mb-2 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
-                                    <p className="text-sm text-gray-600">
-                                        {isDragging ? 'Drop your image here' : 'Click to upload or drag and drop'}
-                                    </p>
-                                    <p className="text-xs text-gray-400 mt-1">JPEG, PNG up to 2MB</p>
-                                </div>
+                            {errors.room_number && (
+                                <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {errors.room_number}
+                                </p>
                             )}
                         </div>
-                        {errors.image && (
-                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-4 h-4" />
-                                {errors.image}
-                            </p>
+
+                        {/* Room Type */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Room Type{" "}
+                                <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${errors.room_type_id ? "border-red-500" : "border-gray-300"}`}
+                                value={form.room_type_id}
+                                onChange={(e) => {
+                                    setForm((prev) => ({
+                                        ...prev,
+                                        room_type_id: e.target.value,
+                                    }));
+                                    if (errors.room_type_id)
+                                        setErrors({
+                                            ...errors,
+                                            room_type_id: "",
+                                        });
+                                }}
+                            >
+                                <option value="">Select Room Type</option>
+                                {roomTypes.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.type_name} - ₱
+                                        {t.base_price.toLocaleString()}
+                                    </option>
+                                ))}
+                            </select>
+                            {errors.room_type_id && (
+                                <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {errors.room_type_id}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Amenities */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Amenities
+                            </label>
+                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                                {amenities.map((amenity) => (
+                                    <label
+                                        key={amenity.id}
+                                        className="flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={form.amenities.includes(
+                                                amenity.id,
+                                            )}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setForm((prev) => ({
+                                                        ...prev,
+                                                        amenities: [
+                                                            ...prev.amenities,
+                                                            amenity.id,
+                                                        ],
+                                                    }));
+                                                } else {
+                                                    setForm((prev) => ({
+                                                        ...prev,
+                                                        amenities:
+                                                            prev.amenities.filter(
+                                                                (id) =>
+                                                                    id !==
+                                                                    amenity.id,
+                                                            ),
+                                                    }));
+                                                }
+                                            }}
+                                        />
+                                        <span>{amenity.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Status */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Status
+                            </label>
+                            <div className="px-3 grid grid-cols-3 gap-2">
+                                {[
+                                    "available",
+                                    "reserved",
+                                    "occupied",
+                                    "maintenance",
+                                    "dirty",
+                                    "cleaning",
+                                ].map((status) => (
+                                    <button
+                                        key={status}
+                                        type="button"
+                                        onClick={() =>
+                                            setForm((prev) => ({
+                                                ...prev,
+                                                status,
+                                            }))
+                                        }
+                                        className={`px-3 py-2 rounded-lg border text-sm font-medium capitalize transition-all ${getStatusColor(
+                                            status,
+                                        )} ${
+                                            form.status === status
+                                                ? "ring-2 ring-offset-1 shadow-md scale-105"
+                                                : "opacity-80 hover:opacity-100"
+                                        }`}
+                                    >
+                                        {status}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Submit Error */}
+                        {errors.submit && (
+                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm text-red-600 flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {errors.submit}
+                                </p>
+                            </div>
                         )}
-                        {!preview && !errors.image && (
-                            <p className="mt-1 text-xs text-gray-400">
-                                No image uploaded. Upload one to add a photo of the room.
-                            </p>
-                        )}
+
+                        {/* Buttons */}
+                        <div className="flex gap-3 pt-4 mt-auto">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        Updating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle className="w-4 h-4" />
+                                        Update Room
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
-                    {/* 360° Panorama Image */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            360° Panorama Image <span className="text-xs text-gray-400">(Optional, Max 5MB, JPEG/PNG only)</span>
-                        </label>
-                        <div
-                            onDragEnter={handlePanoramaDragEnter}
-                            onDragLeave={handlePanoramaDragLeave}
-                            onDragOver={handlePanoramaDragOver}
-                            onDrop={handlePanoramaDrop}
-                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${isDraggingPanorama
-                                ? 'border-purple-500 bg-purple-50'
-                                : errors.panorama
-                                    ? 'border-red-500 bg-red-50'
-                                    : 'border-gray-300 hover:border-purple-500'
+                    {/* RIGHT COLUMN: images */}
+                    <div className="flex flex-col gap-5 overflow-y-auto pl-1">
+                        {/* Room Image */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Room Image{" "}
+                                <span className="text-xs text-gray-400">
+                                    (Max 2MB, JPEG/PNG only)
+                                </span>
+                            </label>
+                            <div
+                                onDragEnter={handleDragEnter}
+                                onDragLeave={handleDragLeave}
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                                className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${
+                                    isDragging
+                                        ? "border-blue-500 bg-blue-50"
+                                        : errors.image
+                                          ? "border-red-500 bg-red-50"
+                                          : "border-gray-300 hover:border-blue-500"
                                 }`}
-                            onClick={() => panoramaInputRef.current?.click()}
-                        >
-                            <input
-                                ref={panoramaInputRef}
-                                type="file"
-                                className="hidden"
-                                accept="image/jpeg,image/png,image/jpg"
-                                onChange={(e) => handleFileChange(e, true)}
-                            />
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/jpeg,image/png,image/jpg"
+                                    onChange={(e) => handleFileChange(e, false)}
+                                />
 
-                            {panoramaPreview ? (
-                                <div className="space-y-3">
-                                    <div className="relative">
+                                {preview ? (
+                                    <div className="space-y-3">
                                         <img
-                                            src={panoramaPreview}
-                                            alt="360° panorama preview"
-                                            className="w-full h-40 object-cover rounded-lg"
+                                            src={preview}
+                                            alt="Room preview"
+                                            className="w-full h-48 object-cover rounded-lg"
                                         />
-                                        <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
-                                            360°
+                                        <div className="flex gap-2 justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeImage();
+                                                }}
+                                                className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                                {file
+                                                    ? "Remove new image"
+                                                    : "Remove current image"}
+                                            </button>
+                                            {!file &&
+                                                preview &&
+                                                !preview.startsWith(
+                                                    "blob:",
+                                                ) && (
+                                                    <span className="text-xs text-gray-400">
+                                                        Upload new image to
+                                                        replace
+                                                    </span>
+                                                )}
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 justify-center">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                removePanoramaImage();
-                                            }}
-                                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            {panoramaFile ? 'Remove new 360° image' : 'Remove current 360° image'}
-                                        </button>
-                                        {!panoramaFile && panoramaPreview && !panoramaPreview.startsWith('blob:') && (
-                                            <span className="text-xs text-gray-400">
-                                                Upload new 360° image to replace
+                                ) : (
+                                    <div>
+                                        <Upload
+                                            className={`w-10 h-10 mx-auto mb-2 ${isDragging ? "text-blue-500" : "text-gray-400"}`}
+                                        />
+                                        <p className="text-sm text-gray-600">
+                                            {isDragging
+                                                ? "Drop your image here"
+                                                : "Click to upload or drag and drop"}
+                                        </p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            JPEG, PNG up to 2MB
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            {errors.image && (
+                                <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {errors.image}
+                                </p>
+                            )}
+                            {!preview && !errors.image && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                    No image uploaded. Upload one to add a photo
+                                    of the room.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* 360° Panorama Image */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                360° Panorama Image{" "}
+                                <span className="text-xs text-gray-400">
+                                    (Optional, Max 5MB, JPEG/PNG only)
+                                </span>
+                            </label>
+                            <div
+                                onDragEnter={handlePanoramaDragEnter}
+                                onDragLeave={handlePanoramaDragLeave}
+                                onDragOver={handlePanoramaDragOver}
+                                onDrop={handlePanoramaDrop}
+                                className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${
+                                    isDraggingPanorama
+                                        ? "border-purple-500 bg-purple-50"
+                                        : errors.panorama
+                                          ? "border-red-500 bg-red-50"
+                                          : "border-gray-300 hover:border-purple-500"
+                                }`}
+                                onClick={() =>
+                                    panoramaInputRef.current?.click()
+                                }
+                            >
+                                <input
+                                    ref={panoramaInputRef}
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/jpeg,image/png,image/jpg"
+                                    onChange={(e) => handleFileChange(e, true)}
+                                />
+
+                                {panoramaPreview ? (
+                                    <div className="space-y-3">
+                                        <div className="relative">
+                                            <img
+                                                src={panoramaPreview}
+                                                alt="360° panorama preview"
+                                                className="w-full h-40 object-cover rounded-lg"
+                                            />
+                                            <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+                                                360°
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2 justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removePanoramaImage();
+                                                }}
+                                                className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                                {panoramaFile
+                                                    ? "Remove new 360° image"
+                                                    : "Remove current 360° image"}
+                                            </button>
+                                            {!panoramaFile &&
+                                                panoramaPreview &&
+                                                !panoramaPreview.startsWith(
+                                                    "blob:",
+                                                ) && (
+                                                    <span className="text-xs text-gray-400">
+                                                        Upload new 360° image to
+                                                        replace
+                                                    </span>
+                                                )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div className="relative inline-block">
+                                            <Upload
+                                                className={`w-10 h-10 mx-auto mb-2 ${isDraggingPanorama ? "text-purple-500" : "text-gray-400"}`}
+                                            />
+                                            <span className="absolute -top-1 -right-3 text-xs font-bold bg-purple-500 text-white rounded-full px-1.5 py-0.5">
+                                                360
                                             </span>
-                                        )}
+                                        </div>
+                                        <p className="text-sm text-gray-600">
+                                            {isDraggingPanorama
+                                                ? "Drop your 360° image here"
+                                                : "Click to upload 360° panorama or drag and drop"}
+                                        </p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Equirectangular panorama images
+                                            recommended (2:1 aspect ratio)
+                                        </p>
                                     </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    <div className="relative inline-block">
-                                        <Upload className={`w-10 h-10 mx-auto mb-2 ${isDraggingPanorama ? 'text-purple-500' : 'text-gray-400'}`} />
-                                        <span className="absolute -top-1 -right-3 text-xs font-bold bg-purple-500 text-white rounded-full px-1.5 py-0.5">
-                                            360
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-gray-600">
-                                        {isDraggingPanorama ? 'Drop your 360° image here' : 'Click to upload 360° panorama or drag and drop'}
-                                    </p>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        Equirectangular panorama images recommended (2:1 aspect ratio)
-                                    </p>
-                                </div>
+                                )}
+                            </div>
+                            {errors.panorama && (
+                                <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {errors.panorama}
+                                </p>
+                            )}
+                            {!panoramaPreview && !errors.panorama && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                    Optional: Add a 360° panorama view of the
+                                    room
+                                </p>
                             )}
                         </div>
-                        {errors.panorama && (
-                            <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-4 h-4" />
-                                {errors.panorama}
-                            </p>
-                        )}
-                        {!panoramaPreview && !errors.panorama && (
-                            <p className="mt-1 text-xs text-gray-400">
-                                Optional: Add a 360° panorama view of the room
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Submit Error */}
-                    {errors.submit && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm text-red-600 flex items-center gap-2">
-                                <AlertCircle className="w-4 h-4" />
-                                {errors.submit}
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Buttons */}
-                    <div className="flex gap-3 pt-4">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {loading ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    Updating...
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle className="w-4 h-4" />
-                                    Update Room
-                                </>
-                            )}
-                        </button>
                     </div>
                 </form>
             </div>

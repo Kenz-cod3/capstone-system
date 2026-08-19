@@ -75,12 +75,12 @@ interface Booking {
             room_number: string;
         };
     }[];
-    payments?: {
+    latest_payment?: {
         id: number;
         payment_status: string;
         payment_date: string;
         amount: number;
-    }[];
+    };
     created_at: string;
     booking_status: string;
     // latestPayment?: {
@@ -469,9 +469,7 @@ const RecentBookingsTable = ({
                                 <td className="py-3 px-3 text-right font-semibold text-gray-700">
                                     {formatCurrency(
                                         Number(
-                                            booking.payments?.[
-                                                booking.payments.length - 1
-                                            ]?.amount ?? 0,
+                                            booking.latest_payment?.amount ?? 0,
                                         ),
                                     )}
                                 </td>
@@ -495,15 +493,13 @@ const RecentBookingsTable = ({
                                 <td className="py-3 px-3 text-center">
                                     <Badge
                                         className={getStatusColor(
-                                            booking.payments?.[
-                                                booking.payments.length - 1
-                                            ]?.payment_status,
+                                            booking.latest_payment
+                                                ?.payment_status,
                                         )}
                                     >
                                         {getStatusText(
-                                            booking.payments?.[
-                                                booking.payments.length - 1
-                                            ]?.payment_status,
+                                            booking.latest_payment
+                                                ?.payment_status,
                                         )}
                                     </Badge>
                                 </td>

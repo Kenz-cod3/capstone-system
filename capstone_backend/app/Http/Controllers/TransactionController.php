@@ -150,9 +150,11 @@ class TransactionController extends Controller
             // Stay Information
             $item->stays = DB::table('booked_rooms as br')
                 ->join('rooms as r', 'r.id', '=', 'br.room_id')
+                ->leftJoin('room_types as rt', 'rt.id', '=', 'r.room_type_id')
                 ->where('br.booking_id', $item->id)
                 ->select(
                     'r.room_number',
+                    'rt.type_name as room_type',
                     'br.check_in_date',
                     'br.check_out_date',
                     'br.stay_type',
@@ -167,7 +169,7 @@ class TransactionController extends Controller
                 ->where('booking_id', $item->id)
                 ->where('payment_status', 'refunded')
                 ->sum('amount');
-                
+
             $item->cancelled_amount = DB::table('booked_rooms')
                 ->where('booking_id', $item->id)
                 ->where('status', 'cancelled')

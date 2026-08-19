@@ -34,6 +34,7 @@ export default function ReceiptModal({
         setLoading(true);
         try {
             const res = await api.get(`/receipts/${paymentId}`);
+            console.log(JSON.stringify(res.data, null, 2));
             setReceipt(res.data);
         } catch (err) {
             console.error(err);
@@ -145,63 +146,119 @@ export default function ReceiptModal({
                         </div>
 
                         {/* Room Details */}
-                        {receipt.booking?.bookedRooms &&
-                            receipt.booking.bookedRooms.length > 0 && (
+                        {receipt.booking?.booked_rooms &&
+                            receipt.booking.booked_rooms.length > 0 && (
                                 <div className="py-4 border-b border-dashed border-gray-400">
                                     <p className="font-semibold uppercase text-xs tracking-wide text-gray-600 mb-2">
                                         Room Charges
                                     </p>
-                                    {receipt.booking.bookedRooms.map(
+                                    {receipt.booking.booked_rooms.map(
                                         (room: any, index: number) => (
                                             <div
                                                 key={index}
-                                                className="flex justify-between"
+                                                className={`pb-3 ${
+                                                    index !==
+                                                    receipt.booking.booked_rooms
+                                                        .length -
+                                                        1
+                                                        ? "border-b border-dashed border-gray-300 mb-3"
+                                                        : ""
+                                                }`}
                                             >
-                                                <span>
-                                                    {room.room?.room_number ||
-                                                        `Room ${index + 1}`}
-                                                </span>
-                                                <span>
-                                                    ₱
-                                                    {Number(
-                                                        room.subtotal,
-                                                    ).toLocaleString()}
-                                                </span>
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <div className="font-semibold">
+                                                            Room{" "}
+                                                            {
+                                                                room.room
+                                                                    ?.room_number
+                                                            }
+                                                        </div>
+
+                                                        <div className="text-xs text-gray-500">
+                                                            {
+                                                                room.room
+                                                                    ?.room_type
+                                                                    ?.type_name
+                                                            }
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="text-xs font-semibold uppercase text-gray-600">
+                                                        {room.stay_type ===
+                                                        "short_stay"
+                                                            ? "Short Stay"
+                                                            : "Overnight"}
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-2 text-xs text-gray-600">
+                                                    Check-in:{" "}
+                                                    {new Date(
+                                                        room.check_in_date,
+                                                    ).toLocaleDateString()}
+                                                </div>
+
+                                                <div className="text-xs text-gray-600">
+                                                    Check-out:{" "}
+                                                    {new Date(
+                                                        room.check_out_date,
+                                                    ).toLocaleDateString()}
+                                                </div>
+
+                                                <div className="flex justify-between mt-2">
+                                                    <span>Room Amount</span>
+
+                                                    <span className="font-semibold">
+                                                        ₱
+                                                        {Number(
+                                                            room.subtotal,
+                                                        ).toLocaleString()}
+                                                    </span>
+                                                </div>
                                             </div>
                                         ),
                                     )}
                                 </div>
                             )}
-                            
+
                         {/* Add-ons */}
-                        {receipt.booking?.bookedRooms?.some(
-                            (room: any) => room.bookingAddOns?.length > 0,
+                        {receipt.booking?.booked_rooms?.some(
+                            (room: any) => room.booking_add_ons?.length > 0,
                         ) && (
                             <div className="py-4 border-b border-dashed border-gray-400">
                                 <p className="font-semibold uppercase text-xs tracking-wide text-gray-600 mb-2">
                                     Add-ons
                                 </p>
 
-                                {receipt.booking.bookedRooms.map((room: any) =>
-                                    room.bookingAddOns?.map((addon: any) => (
-                                        <div
-                                            key={addon.id}
-                                            className="flex justify-between"
-                                        >
-                                            <span>
-                                                Room {room.room?.room_number} •{" "}
-                                                {addon.addOn?.add_on_name} x
-                                                {addon.quantity}
-                                            </span>
+                                {receipt.booking.booked_rooms.flatMap(
+                                    (room: any) =>
+                                        (room.booking_add_ons ?? []).map(
+                                            (addon: any) => (
+                                                <div
+                                                    key={addon.id}
+                                                    className="flex justify-between mb-1"
+                                                >
+                                                    <span>
+                                                        Room{" "}
+                                                        {room.room?.room_number}{" "}
+                                                        •{" "}
+                                                        {
+                                                            addon.add_on
+                                                                ?.add_on_name
+                                                        }{" "}
+                                                        x{addon.quantity}
+                                                    </span>
 
-                                            <span>
-                                                ₱
-                                                {Number(
-                                                    addon.subtotal,
-                                                ).toLocaleString()}
-                                            </span>
-                                        </div>
-                                    )),
+                                                    <span>
+                                                        ₱
+                                                        {Number(
+                                                            addon.subtotal,
+                                                        ).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                            ),
+                                        ),
                                 )}
                             </div>
                         )}

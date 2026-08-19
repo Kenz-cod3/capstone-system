@@ -21,6 +21,7 @@ use App\Events\DashboardUpdated;
 use App\Events\NotificationCreated;
 use App\Models\BookedRoom;
 use App\Models\StaffActivityLog;
+use App\Models\User;
 
 class BookingController extends Controller
 {
@@ -686,19 +687,30 @@ class BookingController extends Controller
             ]);
 
         // Notifications
-        NotificationService::notifyAdmins(
-            'Guest Check-in',
-            'Guest booking ' . $reference . ' checked in'
-        );
+        // Notify all Admins and Staff about the new booking
+        $users = User::whereIn('role', ['admin', 'staff'])->get();
 
-        $notification = Notification::create([
+        foreach ($users as $user) {
+
+            $notification = Notification::create([
+                'user_id' => $user->id,
+                'title' => 'New Booking Request',
+                'message' => 'A new booking (' . $reference . ') has been submitted and is waiting for confirmation.',
+                'is_read' => false,
+            ]);
+
+            broadcast(new NotificationCreated($notification));
+        }
+
+        // Notify the guest that the booking was submitted
+        $guestNotification = Notification::create([
             'user_id' => Auth::id(),
-            'title' => 'Booking Created',
-            'message' => 'Your booking ' . $reference . ' has been successfully created.',
-            'is_read' => false
+            'title' => 'Booking Submitted',
+            'message' => 'Your booking ' . $reference . ' has been submitted and is waiting for staff confirmation.',
+            'is_read' => false,
         ]);
 
-        broadcast(new NotificationCreated($notification));
+        broadcast(new NotificationCreated($guestNotification));
 
         if (Auth::user()?->role === 'staff') {
             StaffActivityLog::create([
@@ -741,6 +753,33 @@ class BookingController extends Controller
         ])->findOrFail($id);
 
         return response()->json($booking);
+    }
+
+    // GET GUEST NAME + ROOM BY BOOKING REFERENCE (for notification lookups)
+    public function findByReference($reference)
+    {
+        $booking = Booking::with(['user', 'walkInGuest'])
+            ->where('booking_reference', $reference)
+            ->first();
+
+        if (!$booking) {
+            return response()->json([
+                'message' => 'Booking not found'
+            ], 404);
+        }
+
+        $guestName = null;
+
+        if ($booking->user) {
+            $guestName = trim($booking->user->first_name . ' ' . $booking->user->last_name);
+        } elseif ($booking->walkInGuest) {
+            $guestName = trim($booking->walkInGuest->first_name . ' ' . $booking->walkInGuest->last_name);
+        }
+
+        return response()->json([
+            'booking_reference' => $booking->booking_reference,
+            'guest_name' => $guestName ?: null,
+        ]);
     }
 
     // ===============================
@@ -796,6 +835,37 @@ class BookingController extends Controller
                     'shift_id' => $shift?->id,
                     'received_by' => Auth::id(),
                 ]);
+            }
+            // Notify all Admins and Staff
+            $users = User::whereIn('role', ['admin', 'staff'])
+                ->where('id', '!=', Auth::id()) // Don't notify the user who confirmed
+                ->get();
+
+            $staffName = Auth::user()->first_name . ' ' . Auth::user()->last_name;
+
+            foreach ($users as $user) {
+
+                $notification = Notification::create([
+                    'user_id' => $user->id,
+                    'title' => 'Booking Confirmed',
+                    'message' => $staffName . ' confirmed booking ' . $booking->booking_reference . '.',
+                    'is_read' => false,
+                ]);
+
+                broadcast(new NotificationCreated($notification));
+            }
+
+            // Notify the guest
+            if ($booking->user_id) {
+
+                $notification = Notification::create([
+                    'user_id' => $booking->user_id,
+                    'title' => 'Booking Confirmed',
+                    'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
+                    'is_read' => false,
+                ]);
+
+                broadcast(new NotificationCreated($notification));
             }
         } elseif ($newStatus === 'checked_in') {
 

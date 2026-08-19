@@ -18,14 +18,14 @@ const echo = new Echo({
 
     key: "app-key",
 
-    wsHost: "192.168.8.117",
+    wsHost: "192.168.254.188",
     wsPort: 8080,
 
     forceTLS: false,
 
     enabledTransports: ["ws"],
 
-    authEndpoint: "http://192.168.8.117:8000/broadcasting/auth",
+    authEndpoint: "http://192.168.254.188:8000/broadcasting/auth",
 
     auth: {
         headers: {

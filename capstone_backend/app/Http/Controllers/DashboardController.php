@@ -128,30 +128,63 @@ class DashboardController extends Controller
         $startOfLastWeek = Carbon::now()->subWeek()->startOfWeek();
         $endOfLastWeek   = Carbon::now()->subWeek()->endOfWeek();
 
-        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->sum('total_price');
+        // $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->sum('total_price');
 
-        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->sum('total_price');
+        $thisWeekPaid = BookingPayment::where('payment_status', 'paid')
+            ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+            ->sum('amount');
+
+        $thisWeekRefunded = BookingPayment::where('payment_status', 'refunded')
+            ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+            ->sum('amount');
+
+        $thisWeekRevenue = $thisWeekPaid - $thisWeekRefunded;
+
+        // $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->sum('total_price');
+        $lastWeekPaid = BookingPayment::where('payment_status', 'paid')
+            ->whereBetween('payment_date', [$startOfLastWeek, $endOfLastWeek])
+            ->sum('amount');
+
+        $lastWeekRefunded = BookingPayment::where('payment_status', 'refunded')
+            ->whereBetween('payment_date', [$startOfLastWeek, $endOfLastWeek])
+            ->sum('amount');
+
+        $lastWeekRevenue = $lastWeekPaid - $lastWeekRefunded;
 
         if ($isStaff) {
-            $todayRevenue = Booking::whereDate('updated_at', $today)
-                ->whereHas('bookedRooms', function ($q) {
-                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-                })
-                ->sum('total_price');
+            $todayPaid = BookingPayment::where('payment_status', 'paid')
+                ->whereDate('payment_date', $today)
+                ->sum('amount');
 
-            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
-                ->whereHas('bookedRooms', function ($q) {
-                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-                })
-                ->sum('total_price');
+            $todayRefunded = BookingPayment::where('payment_status', 'refunded')
+                ->whereDate('payment_date', $today)
+                ->sum('amount');
+
+            $todayRevenue = $todayPaid - $todayRefunded;
+            // $todayRevenue = Booking::whereDate('updated_at', $today)
+            //     ->whereHas('bookedRooms', function ($q) {
+            //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            //     })
+            //     ->sum('total_price');
+
+            // 
+            $yesterdayPaid = BookingPayment::where('payment_status', 'paid')
+                ->whereDate('payment_date', $yesterday)
+                ->sum('amount');
+
+            $yesterdayRefunded = BookingPayment::where('payment_status', 'refunded')
+                ->whereDate('payment_date', $yesterday)
+                ->sum('amount');
+
+            $yesterdayRevenue = $yesterdayPaid - $yesterdayRefunded;
 
             $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
         } else {
@@ -186,20 +219,29 @@ class DashboardController extends Controller
             'user',
             'walkInGuest',
             'bookedRooms.room',
-            'payments',
-        ])->latest()->limit(5)->get();
+            'latestPayment',
+        ])
+            ->latest()
+            ->limit(5)
+            ->get();
+        // $recentBookings = Booking::with([
+        //     'user',
+        //     'walkInGuest',
+        //     'bookedRooms.room',
+        //     'payments',
+        // ])->latest()->limit(5)->get();
 
-        $recentBookings->each(function ($booking) {
+        // $recentBookings->each(function ($booking) {
 
-            // $booking->booking_status =
-            //     $booking->bookedRooms->first()?->status ?? 'pending';
-            $latestPayment = $booking->payments
-                ->sortByDesc('payment_date')
-                ->first();
+        //     // $booking->booking_status =
+        //     //     $booking->bookedRooms->first()?->status ?? 'pending';
+        //     $latestPayment = $booking->payments
+        //         ->sortByDesc('payment_date')
+        //         ->first();
 
-            $booking->booking_status =
-                $latestPayment?->payment_status ?? 'pending';
-        });
+        //     $booking->booking_status =
+        //         $latestPayment?->payment_status ?? 'pending';
+        // });
 
         // OCCUPANCY STATUS
         $occupancyStatus = 'normal';
@@ -300,16 +342,33 @@ class DashboardController extends Controller
             $activeBookings = Booking::whereNull('deleted_at')->count();
         }
 
-        // REVENUE - using booked_rooms status (FIXED)
-        $totalRevenueQuery = Booking::whereNull('deleted_at')
-            ->whereYear('created_at', $currentYear)
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            });
+        // REVENUE - using booked_rooms status
+        $payments = BookingPayment::query();
+
         if ($isStaff) {
-            $totalRevenueQuery->whereBetween('updated_at', [$todayStart, $todayEnd]);
+            $payments->whereBetween('payment_date', [$todayStart, $todayEnd]);
+        } else {
+            $payments->whereYear('payment_date', $currentYear);
         }
-        $totalRevenue = $totalRevenueQuery->sum('total_price');
+
+        $totalPaid = (clone $payments)
+            ->where('payment_status', 'paid')
+            ->sum('amount');
+
+        $totalRefunded = (clone $payments)
+            ->where('payment_status', 'refunded')
+            ->sum('amount');
+
+        $totalRevenue = $totalPaid - $totalRefunded;
+        // $totalRevenueQuery = Booking::whereNull('deleted_at')
+        //     ->whereYear('created_at', $currentYear)
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     });
+        // if ($isStaff) {
+        //     $totalRevenueQuery->whereBetween('updated_at', [$todayStart, $todayEnd]);
+        // }
+        // $totalRevenue = $totalRevenueQuery->sum('total_price');
 
         // EXPENSES
         $totalExpensesQuery = CashTransaction::where('type', 'pay_out');
@@ -324,30 +383,67 @@ class DashboardController extends Controller
         $startOfLastWeek = Carbon::now()->subWeek()->startOfWeek();
         $endOfLastWeek   = Carbon::now()->subWeek()->endOfWeek();
 
-        $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->sum('total_price');
+        // $thisWeekRevenue = Booking::whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->sum('total_price');
+        $thisWeekPaid = BookingPayment::where('payment_status', 'paid')
+            ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+            ->sum('amount');
 
-        $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->sum('total_price');
+        $thisWeekRefunded = BookingPayment::where('payment_status', 'refunded')
+            ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+            ->sum('amount');
+
+        $thisWeekRevenue = $thisWeekPaid - $thisWeekRefunded;
+
+        // $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->sum('total_price');
+
+        $lastWeekPaid = BookingPayment::where('payment_status', 'paid')
+            ->whereBetween('payment_date', [$startOfLastWeek, $endOfLastWeek])
+            ->sum('amount');
+
+        $lastWeekRefunded = BookingPayment::where('payment_status', 'refunded')
+            ->whereBetween('payment_date', [$startOfLastWeek, $endOfLastWeek])
+            ->sum('amount');
+
+        $lastWeekRevenue = $lastWeekPaid - $lastWeekRefunded;
 
         if ($isStaff) {
-            $todayRevenue = Booking::whereDate('updated_at', $today)
-                ->whereHas('bookedRooms', function ($q) {
-                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-                })
-                ->sum('total_price');
+            // $todayRevenue = Booking::whereDate('updated_at', $today)
+            //     ->whereHas('bookedRooms', function ($q) {
+            //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            //     })
+            //     ->sum('total_price');
+            $todayPaid = BookingPayment::where('payment_status', 'paid')
+                ->whereDate('payment_date', $today)
+                ->sum('amount');
 
-            $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
-                ->whereHas('bookedRooms', function ($q) {
-                    $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-                })
-                ->sum('total_price');
+            $todayRefunded = BookingPayment::where('payment_status', 'refunded')
+                ->whereDate('payment_date', $today)
+                ->sum('amount');
+
+            $todayRevenue = $todayPaid - $todayRefunded;
+
+            // $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
+            //     ->whereHas('bookedRooms', function ($q) {
+            //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+            //     })
+            //     ->sum('total_price');
+            $yesterdayPaid = BookingPayment::where('payment_status', 'paid')
+                ->whereDate('payment_date', $yesterday)
+                ->sum('amount');
+
+            $yesterdayRefunded = BookingPayment::where('payment_status', 'refunded')
+                ->whereDate('payment_date', $yesterday)
+                ->sum('amount');
+
+            $yesterdayRevenue = $yesterdayPaid - $yesterdayRefunded;
 
             $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
         } else {
@@ -382,7 +478,27 @@ class DashboardController extends Controller
             'user',
             'walkInGuest',
             'bookedRooms.room',
-        ])->latest()->limit(5)->get();
+            'latestPayment',
+        ])
+            ->latest()
+            ->limit(5)
+            ->get();
+        // $recentBookings = Booking::with([
+        //     'user',
+        //     'walkInGuest',
+        //     'bookedRooms.room',
+        //     'payments' => function ($query) {
+        //         $query->orderByDesc('payment_date');
+        //     },
+        // ])
+        //     ->latest()
+        //     ->limit(5)
+        //     ->get();
+        // $recentBookings = Booking::with([
+        //     'user',
+        //     'walkInGuest',
+        //     'bookedRooms.room',
+        // ])->latest()->limit(5)->get();
 
         $recentBookings->each(function ($booking) {
 
@@ -523,11 +639,22 @@ class DashboardController extends Controller
         // FINANCIAL TREND — bulk queries (FIXED)
         $thirtyDaysAgo = Carbon::today()->subDays(29)->startOfDay();
 
-        $dailyRevenueRaw = Booking::where('created_at', '>=', $thirtyDaysAgo)
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->selectRaw('DATE(created_at) as date, SUM(total_price) as total')
+        // $dailyRevenueRaw = BookingPayment::where('created_at', '>=', $thirtyDaysAgo)
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->selectRaw('DATE(created_at) as date, SUM(total_price) as total')
+        //     ->groupBy('date')
+        //     ->pluck('total', 'date');
+        $dailyPaidRaw = BookingPayment::where('payment_status', 'paid')
+            ->where('payment_date', '>=', $thirtyDaysAgo)
+            ->selectRaw('DATE(payment_date) as date, SUM(amount) as total')
+            ->groupBy('date')
+            ->pluck('total', 'date');
+
+        $dailyRefundRaw = BookingPayment::where('payment_status', 'refunded')
+            ->where('payment_date', '>=', $thirtyDaysAgo)
+            ->selectRaw('DATE(payment_date) as date, SUM(amount) as total')
             ->groupBy('date')
             ->pluck('total', 'date');
 
@@ -541,7 +668,9 @@ class DashboardController extends Controller
         for ($i = 29; $i >= 0; $i--) {
             $date             = Carbon::today()->subDays($i);
             $dateStr          = $date->toDateString();
-            $rev              = $dailyRevenueRaw[$dateStr] ?? 0;
+            // $rev              = $dailyRevenueRaw[$dateStr] ?? 0;
+            $rev = ($dailyPaidRaw[$dateStr] ?? 0)
+                - ($dailyRefundRaw[$dateStr] ?? 0);
             $exp              = $dailyExpensesRaw[$dateStr] ?? 0;
             $financialTrend[] = [
                 'name'     => $date->format('M d'),
@@ -552,14 +681,25 @@ class DashboardController extends Controller
             ];
         }
 
-        // YEARLY TREND (FIXED)
-        $yearlyRevenueRaw = Booking::whereNull('deleted_at')
-            ->whereYear('created_at', $currentYear)
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
-            ->groupBy('month')->pluck('total', 'month');
+        // YEARLY TREND
+        // $yearlyRevenueRaw = BookingPayment::whereNull('deleted_at')
+        //     ->whereYear('created_at', $currentYear)
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
+        //     ->groupBy('month')->pluck('total', 'month');
+        $yearlyPaidRaw = BookingPayment::where('payment_status', 'paid')
+            ->whereYear('payment_date', $currentYear)
+            ->selectRaw('MONTH(payment_date) as month, SUM(amount) as total')
+            ->groupBy('month')
+            ->pluck('total', 'month');
+
+        $yearlyRefundRaw = BookingPayment::where('payment_status', 'refunded')
+            ->whereYear('payment_date', $currentYear)
+            ->selectRaw('MONTH(payment_date) as month, SUM(amount) as total')
+            ->groupBy('month')
+            ->pluck('total', 'month');
 
         $yearlyExpensesRaw = CashTransaction::where('type', 'pay_out')
             ->whereYear('created_at', $currentYear)
@@ -568,7 +708,9 @@ class DashboardController extends Controller
 
         $yearlyTrend = [];
         for ($m = 1; $m <= 12; $m++) {
-            $rev           = $yearlyRevenueRaw[$m] ?? 0;
+            $rev = ($yearlyPaidRaw[$m] ?? 0)
+                - ($yearlyRefundRaw[$m] ?? 0);
+            // $rev           = $yearlyRevenueRaw[$m] ?? 0;
             $exp           = $yearlyExpensesRaw[$m] ?? 0;
             $yearlyTrend[] = [
                 'name'     => Carbon::create()->month($m)->format('M'),
@@ -579,14 +721,25 @@ class DashboardController extends Controller
             ];
         }
 
-        // LAST YEAR TREND (FIXED)
-        $lastYearRevenueRaw = Booking::whereNull('deleted_at')
-            ->whereYear('created_at', $lastYear)
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            })
-            ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
-            ->groupBy('month')->pluck('total', 'month');
+        // LAST YEAR TREND
+        // $lastYearRevenueRaw = BookingPayment::whereNull('deleted_at')
+        //     ->whereYear('created_at', $lastYear)
+        //     ->whereHas('bookedRooms', function ($q) {
+        //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     })
+        //     ->selectRaw('MONTH(created_at) as month, SUM(total_price) as total')
+        //     ->groupBy('month')->pluck('total', 'month');
+        $lastYearPaidRaw = BookingPayment::where('payment_status', 'paid')
+            ->whereYear('payment_date', $lastYear)
+            ->selectRaw('MONTH(payment_date) as month, SUM(amount) as total')
+            ->groupBy('month')
+            ->pluck('total', 'month');
+
+        $lastYearRefundRaw = BookingPayment::where('payment_status', 'refunded')
+            ->whereYear('payment_date', $lastYear)
+            ->selectRaw('MONTH(payment_date) as month, SUM(amount) as total')
+            ->groupBy('month')
+            ->pluck('total', 'month');
 
         $lastYearExpensesRaw = CashTransaction::where('type', 'pay_out')
             ->whereYear('created_at', $lastYear)
@@ -595,7 +748,9 @@ class DashboardController extends Controller
 
         $lastYearTrend = [];
         for ($m = 1; $m <= 12; $m++) {
-            $rev             = $lastYearRevenueRaw[$m] ?? 0;
+            // $rev             = $lastYearRevenueRaw[$m] ?? 0;
+            $rev                = ($lastYearPaidRaw[$m] ?? 0)
+                - ($lastYearRefundRaw[$m] ?? 0);
             $exp             = $lastYearExpensesRaw[$m] ?? 0;
             $lastYearTrend[] = [
                 'name'     => Carbon::create()->month($m)->format('M'),

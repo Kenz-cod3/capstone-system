@@ -8,6 +8,9 @@ import {
     Spin,
     Table,
     Popconfirm,
+    Button,
+    Modal,
+    Input,
 } from "antd";
 import api from "@/services/api";
 
@@ -517,6 +520,8 @@ export default function StaffCash() {
     const [loading, setLoading] = useState<boolean>(false);
     const [submitting, setSubmitting] = useState<boolean>(false);
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+    const [newCategory, setNewCategory] = useState("");
 
     const fetchAll = async () => {
         setLoading(true);
@@ -530,7 +535,9 @@ export default function StaffCash() {
             setTransactions(transRes.data);
             setUsers(userRes.data.data);
         } catch (error: any) {
-            message.error(error.response?.data?.message || "Failed to fetch data");
+            message.error(
+                error.response?.data?.message || "Failed to fetch data",
+            );
         } finally {
             setLoading(false);
         }
@@ -547,11 +554,17 @@ export default function StaffCash() {
         if (type === "pay_in") {
             // Always lock to "deposit"
             const c = categories.find((c) => c.name === "deposit");
-            if (c) { setCategory(c.id); form.setFieldValue("category", c.id); }
+            if (c) {
+                setCategory(c.id);
+                form.setFieldValue("category", c.id);
+            }
         } else {
             // Default pay_out to "bill"
             const c = categories.find((c) => c.name === "bill");
-            if (c) { setCategory(c.id); form.setFieldValue("category", c.id); }
+            if (c) {
+                setCategory(c.id);
+                form.setFieldValue("category", c.id);
+            }
         }
 
         setSelectedRole("");
@@ -561,24 +574,45 @@ export default function StaffCash() {
     }, [type, categories, form]);
 
     const selectedCategory = categories.find((c) => c.id == category);
-    const isCashAdvance = type === "pay_out" && selectedCategory?.name === "cash advance";
+
+    const isCashAdvance =
+        type === "pay_out" &&
+        selectedCategory?.name?.toLowerCase() === "cash advance";
+
+    console.log({
+        type,
+        category,
+        selectedCategory,
+        isCashAdvance,
+    });
 
     // Categories available for pay_out (exclude "deposit")
     const payOutCategories = categories.filter((c) => c.name !== "deposit");
 
     const handleSubmit = async () => {
-        if (!amount || amount <= 0) { message.warning("Please enter a valid amount"); return; }
-        if (isCashAdvance && !selectedUser) { message.warning("Please select a person for cash advance"); return; }
+        if (!amount || amount <= 0) {
+            message.warning("Please enter a valid amount");
+            return;
+        }
+        if (isCashAdvance && !selectedUser) {
+            message.warning("Please select a person for cash advance");
+            return;
+        }
         setSubmitting(true);
         try {
             if (editingId) {
                 await api.put(`/cash/${editingId}`, {
-                    type, amount, category_id: category, recorded_by: selectedUser || null,
+                    type,
+                    amount,
+                    category_id: category,
+                    recorded_by: selectedUser || null,
                 });
                 message.success("Transaction updated successfully");
             } else {
                 await api.post("/cash", {
-                    type, amount, category_id: category,
+                    type,
+                    amount,
+                    category_id: category,
                     recorded_by: isCashAdvance ? selectedUser : null,
                     description: "Manual entry",
                 });
@@ -587,7 +621,9 @@ export default function StaffCash() {
             resetForm();
             fetchAll();
         } catch (err: any) {
-            message.error(err.response?.data?.message || "Error saving transaction");
+            message.error(
+                err.response?.data?.message || "Error saving transaction",
+            );
         } finally {
             setSubmitting(false);
         }
@@ -600,8 +636,12 @@ export default function StaffCash() {
             message.success("Transaction deleted successfully");
             fetchAll();
         } catch (err: any) {
-            message.error(err.response?.data?.message || "Error deleting transaction");
-        } finally { setDeletingId(null); }
+            message.error(
+                err.response?.data?.message || "Error deleting transaction",
+            );
+        } finally {
+            setDeletingId(null);
+        }
     };
 
     const handleEdit = (record: any) => {
@@ -609,17 +649,26 @@ export default function StaffCash() {
         setType(record.type);
         setCategory(record.category_id);
         setAmount(record.amount);
-        form.setFieldsValue({ type: record.type, category: record.category_id, amount: record.amount });
+        form.setFieldsValue({
+            type: record.type,
+            category: record.category_id,
+            amount: record.amount,
+        });
         if (record.user) {
             setSelectedRole(record.user.role?.toLowerCase());
             setSelectedUser(record.user.id);
-            form.setFieldsValue({ selectedRole: record.user.role, selectedUser: record.user.id });
+            form.setFieldsValue({
+                selectedRole: record.user.role,
+                selectedUser: record.user.id,
+            });
         }
     };
 
     const resetForm = () => {
-        setEditingId(null); setAmount(null);
-        setSelectedRole(""); setSelectedUser("");
+        setEditingId(null);
+        setAmount(null);
+        setSelectedRole("");
+        setSelectedUser("");
         form.resetFields();
         form.setFieldsValue({ type: "pay_out" });
         setType("pay_out");
@@ -631,16 +680,24 @@ export default function StaffCash() {
             dataIndex: "type",
             key: "type",
             render: (t: string) =>
-                t === "pay_in"
-                    ? <span className="sc-tag-payin">Deposit</span>
-                    : <span className="sc-tag-payout">Expense</span>,
+                t === "pay_in" ? (
+                    <span className="sc-tag-payin">Deposit</span>
+                ) : (
+                    <span className="sc-tag-payout">Expense</span>
+                ),
         },
         {
             title: "Category",
             dataIndex: ["category", "name"],
             key: "category",
             render: (name: string) => (
-                <span style={{ color: "#4a4a42", fontWeight: 500, textTransform: "capitalize" as const }}>
+                <span
+                    style={{
+                        color: "#4a4a42",
+                        fontWeight: 500,
+                        textTransform: "capitalize" as const,
+                    }}
+                >
                     {name || "—"}
                 </span>
             ),
@@ -649,17 +706,28 @@ export default function StaffCash() {
             title: "Person",
             key: "person",
             render: (_: any, record: any) =>
-                record.user
-                    ? <span style={{ fontWeight: 500 }}>{record.user.first_name} {record.user.last_name}</span>
-                    : <span style={{ color: "#b0ae9f" }}>—</span>,
+                record.user ? (
+                    <span style={{ fontWeight: 500 }}>
+                        {record.user.first_name} {record.user.last_name}
+                    </span>
+                ) : (
+                    <span style={{ color: "#b0ae9f" }}>—</span>
+                ),
         },
         {
             title: "Amount",
             dataIndex: "amount",
             key: "amount",
             render: (amount: number, record: any) => (
-                <span className={record.type === "pay_in" ? "sc-amount-in" : "sc-amount-out"}>
-                    {record.type === "pay_in" ? "+" : "-"}₱{Number(amount).toLocaleString()}
+                <span
+                    className={
+                        record.type === "pay_in"
+                            ? "sc-amount-in"
+                            : "sc-amount-out"
+                    }
+                >
+                    {record.type === "pay_in" ? "+" : "-"}₱
+                    {Number(amount).toLocaleString()}
                 </span>
             ),
         },
@@ -670,8 +738,11 @@ export default function StaffCash() {
             render: (date: string) => (
                 <span style={{ color: "#6b6960", fontSize: 12.5 }}>
                     {new Date(date).toLocaleString("en-PH", {
-                        month: "short", day: "numeric", year: "numeric",
-                        hour: "2-digit", minute: "2-digit",
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
                     })}
                 </span>
             ),
@@ -681,7 +752,10 @@ export default function StaffCash() {
             key: "actions",
             render: (_: any, record: any) => (
                 <Space size={6}>
-                    <button className="sc-action-edit" onClick={() => handleEdit(record)}>
+                    <button
+                        className="sc-action-edit"
+                        onClick={() => handleEdit(record)}
+                    >
                         Edit
                     </button>
                     <Popconfirm
@@ -692,8 +766,13 @@ export default function StaffCash() {
                         cancelText="Cancel"
                         okButtonProps={{ danger: true }}
                     >
-                        <button className="sc-action-delete" disabled={deletingId === record.id}>
-                            {deletingId === record.id ? "Deleting..." : "Delete"}
+                        <button
+                            className="sc-action-delete"
+                            disabled={deletingId === record.id}
+                        >
+                            {deletingId === record.id
+                                ? "Deleting..."
+                                : "Delete"}
                         </button>
                     </Popconfirm>
                 </Space>
@@ -716,9 +795,7 @@ export default function StaffCash() {
                     }}
                 >
                     <div>
-                        <h1 className="sc-page-title">
-                            Cash Management
-                        </h1>
+                        <h1 className="sc-page-title">Cash Management</h1>
 
                         <p className="sc-page-subtitle">
                             Record and track all cash transactions
@@ -732,12 +809,27 @@ export default function StaffCash() {
                         <h2 className="sc-card-title">
                             {editingId ? "Edit Transaction" : "New Transaction"}
                         </h2>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span className={editingId ? "sc-badge sc-badge-edit" : "sc-badge sc-badge-new"}>
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                            }}
+                        >
+                            <span
+                                className={
+                                    editingId
+                                        ? "sc-badge sc-badge-edit"
+                                        : "sc-badge sc-badge-new"
+                                }
+                            >
                                 {editingId ? "Editing" : "New Entry"}
                             </span>
                             {editingId && (
-                                <button className="sc-btn-cancel" onClick={resetForm}>
+                                <button
+                                    className="sc-btn-cancel"
+                                    onClick={resetForm}
+                                >
                                     Cancel
                                 </button>
                             )}
@@ -746,23 +838,40 @@ export default function StaffCash() {
 
                     <div className="sc-card-body">
                         <Spin spinning={submitting}>
-                            <Form form={form} layout="vertical" initialValues={{ type: "pay_out" }}>
-
+                            <Form
+                                form={form}
+                                layout="vertical"
+                                initialValues={{ type: "pay_out" }}
+                            >
                                 {/* Transaction Type Segment */}
                                 <div style={{ marginBottom: 20 }}>
-                                    <span className="sc-field-label">Transaction Type</span>
+                                    <span className="sc-field-label">
+                                        Transaction Type
+                                    </span>
                                     <div className="sc-segment">
                                         <button
                                             type="button"
                                             className={`sc-segment-btn ${type === "pay_in" ? "active-payin" : ""}`}
-                                            onClick={() => { setType("pay_in"); form.setFieldValue("type", "pay_in"); }}
+                                            onClick={() => {
+                                                setType("pay_in");
+                                                form.setFieldValue(
+                                                    "type",
+                                                    "pay_in",
+                                                );
+                                            }}
                                         >
                                             Pay In
                                         </button>
                                         <button
                                             type="button"
                                             className={`sc-segment-btn ${type === "pay_out" ? "active-payout" : ""}`}
-                                            onClick={() => { setType("pay_out"); form.setFieldValue("type", "pay_out"); }}
+                                            onClick={() => {
+                                                setType("pay_out");
+                                                form.setFieldValue(
+                                                    "type",
+                                                    "pay_out",
+                                                );
+                                            }}
                                         >
                                             Pay Out
                                         </button>
@@ -772,7 +881,9 @@ export default function StaffCash() {
                                 <div className="sc-form-grid">
                                     {/* Category */}
                                     <div>
-                                        <span className="sc-field-label">Category</span>
+                                        <span className="sc-field-label">
+                                            Category
+                                        </span>
                                         {type === "pay_in" ? (
                                             /* Pay In — locked to Deposit, no dropdown */
                                             <div className="sc-locked-category">
@@ -784,18 +895,91 @@ export default function StaffCash() {
                                             <Form.Item
                                                 name="category"
                                                 style={{ margin: 0 }}
-                                                rules={[{ required: true, message: "Please select category" }]}
+                                                rules={[
+                                                    {
+                                                        required: true,
+                                                        message:
+                                                            "Please select category",
+                                                    },
+                                                ]}
                                             >
                                                 <Select
                                                     className="sc-select"
-                                                    onChange={(value) => setCategory(value)}
-                                                    loading={categories.length === 0}
+                                                    value={category}
+                                                    onChange={(value) =>
+                                                        setCategory(value)
+                                                    }
+                                                    loading={
+                                                        categories.length === 0
+                                                    }
                                                     placeholder="Select category"
                                                     style={{ width: "100%" }}
+                                                    dropdownRender={(menu) => (
+                                                        <>
+                                                            {menu}
+
+                                                            <div
+                                                                style={{
+                                                                    borderTop:
+                                                                        "1px solid #f0f0f0",
+                                                                    padding:
+                                                                        "6px",
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    onMouseDown={(
+                                                                        e,
+                                                                    ) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                    }}
+                                                                    onClick={() =>
+                                                                        setCategoryModalOpen(
+                                                                            true,
+                                                                        )
+                                                                    }
+                                                                    style={{
+                                                                        padding:
+                                                                            "10px 12px",
+                                                                        textAlign:
+                                                                            "center",
+                                                                        cursor: "pointer",
+                                                                        color: "#3eb489",
+                                                                        fontWeight: 600,
+                                                                        borderRadius: 8,
+                                                                        transition:
+                                                                            "all .2s ease",
+                                                                    }}
+                                                                    onMouseEnter={(
+                                                                        e,
+                                                                    ) => {
+                                                                        e.currentTarget.style.background =
+                                                                            "#f5fffb";
+                                                                    }}
+                                                                    onMouseLeave={(
+                                                                        e,
+                                                                    ) => {
+                                                                        e.currentTarget.style.background =
+                                                                            "transparent";
+                                                                    }}
+                                                                >
+                                                                    + Add New
+                                                                    Category
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 >
-                                                    {payOutCategories.map((c) => (
-                                                        <Option key={c.id} value={c.id}>{c.name}</Option>
-                                                    ))}
+                                                    {payOutCategories.map(
+                                                        (c) => (
+                                                            <Option
+                                                                key={c.id}
+                                                                value={c.id}
+                                                            >
+                                                                {c.name}
+                                                            </Option>
+                                                        ),
+                                                    )}
                                                 </Select>
                                             </Form.Item>
                                         )}
@@ -803,22 +987,45 @@ export default function StaffCash() {
 
                                     {/* Amount */}
                                     <div>
-                                        <span className="sc-field-label">Amount</span>
+                                        <span className="sc-field-label">
+                                            Amount
+                                        </span>
                                         <Form.Item
                                             name="amount"
                                             style={{ margin: 0 }}
                                             rules={[
-                                                { required: true, message: "Please enter amount" },
-                                                { type: "number", min: 1, message: "Amount must be at least 1" },
+                                                {
+                                                    required: true,
+                                                    message:
+                                                        "Please enter amount",
+                                                },
+                                                {
+                                                    type: "number",
+                                                    min: 1,
+                                                    message:
+                                                        "Amount must be at least 1",
+                                                },
                                             ]}
                                         >
                                             <InputNumber
                                                 className="sc-input-number"
                                                 placeholder="0.00"
                                                 prefix="₱"
-                                                formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                                                parser={(value) => value!.replace(/,/g, "") as any}
-                                                onChange={(value) => setAmount(value as number)}
+                                                formatter={(value) =>
+                                                    `${value}`.replace(
+                                                        /\B(?=(\d{3})+(?!\d))/g,
+                                                        ",",
+                                                    )
+                                                }
+                                                parser={(value) =>
+                                                    value!.replace(
+                                                        /,/g,
+                                                        "",
+                                                    ) as any
+                                                }
+                                                onChange={(value) =>
+                                                    setAmount(value as number)
+                                                }
                                             />
                                         </Form.Item>
                                     </div>
@@ -833,42 +1040,83 @@ export default function StaffCash() {
                                         </div>
                                         <div className="sc-form-grid">
                                             <div>
-                                                <span className="sc-field-label">Role</span>
-                                                <Form.Item name="selectedRole" style={{ margin: 0 }}>
+                                                <span className="sc-field-label">
+                                                    Role
+                                                </span>
+                                                <Form.Item
+                                                    name="selectedRole"
+                                                    style={{ margin: 0 }}
+                                                >
                                                     <Select
                                                         className="sc-select"
                                                         placeholder="Select role"
                                                         onChange={(value) => {
-                                                            setSelectedRole(value);
+                                                            setSelectedRole(
+                                                                value,
+                                                            );
                                                             setSelectedUser("");
-                                                            form.setFieldValue("selectedUser", undefined);
+                                                            form.setFieldValue(
+                                                                "selectedUser",
+                                                                undefined,
+                                                            );
                                                         }}
-                                                        style={{ width: "100%" }}
+                                                        style={{
+                                                            width: "100%",
+                                                        }}
                                                     >
-                                                        <Option value="staff">Staff</Option>
-                                                        <Option value="housekeeper">Housekeeper</Option>
-                                                        <Option value="cashier">Cashier</Option>
+                                                        <Option value="staff">
+                                                            Staff
+                                                        </Option>
+                                                        <Option value="housekeeper">
+                                                            Housekeeper
+                                                        </Option>
+                                                        <Option value="cashier">
+                                                            Cashier
+                                                        </Option>
                                                     </Select>
                                                 </Form.Item>
                                             </div>
                                             <div>
-                                                <span className="sc-field-label">Person</span>
-                                                <Form.Item name="selectedUser" style={{ margin: 0 }}>
+                                                <span className="sc-field-label">
+                                                    Person
+                                                </span>
+                                                <Form.Item
+                                                    name="selectedUser"
+                                                    style={{ margin: 0 }}
+                                                >
                                                     <Select
                                                         className="sc-select"
                                                         placeholder="Select person"
-                                                        onChange={(value) => setSelectedUser(value)}
+                                                        onChange={(value) =>
+                                                            setSelectedUser(
+                                                                value,
+                                                            )
+                                                        }
                                                         disabled={!selectedRole}
                                                         allowClear
                                                         showSearch
                                                         optionFilterProp="children"
-                                                        style={{ width: "100%" }}
+                                                        style={{
+                                                            width: "100%",
+                                                        }}
                                                     >
                                                         {users
-                                                            .filter((u) => u.role === selectedRole)
+                                                            .filter(
+                                                                (u) =>
+                                                                    u.role?.toLowerCase() ===
+                                                                    selectedRole.toLowerCase(),
+                                                            )
                                                             .map((u) => (
-                                                                <Option key={u.id} value={u.id}>
-                                                                    {u.first_name} {u.last_name}
+                                                                <Option
+                                                                    key={u.id}
+                                                                    value={u.id}
+                                                                >
+                                                                    {
+                                                                        u.first_name
+                                                                    }{" "}
+                                                                    {
+                                                                        u.last_name
+                                                                    }
                                                                 </Option>
                                                             ))}
                                                     </Select>
@@ -887,8 +1135,12 @@ export default function StaffCash() {
                                     disabled={submitting}
                                 >
                                     {submitting
-                                        ? (editingId ? "Updating..." : "Creating...")
-                                        : (editingId ? "Update Transaction" : "Create Transaction")}
+                                        ? editingId
+                                            ? "Updating..."
+                                            : "Creating..."
+                                        : editingId
+                                          ? "Update Transaction"
+                                          : "Create Transaction"}
                                 </button>
                             </Form>
                         </Spin>
@@ -899,7 +1151,9 @@ export default function StaffCash() {
                 <div className="sc-card">
                     <div className="sc-card-header">
                         <h2 className="sc-card-title">Transaction History</h2>
-                        <span className="sc-count-badge">{transactions.length} records</span>
+                        <span className="sc-count-badge">
+                            {transactions.length} records
+                        </span>
                     </div>
                     <div style={{ padding: "0 0 4px 0" }}>
                         <Spin spinning={loading}>
@@ -911,7 +1165,8 @@ export default function StaffCash() {
                                 pagination={{
                                     pageSize: 10,
                                     showSizeChanger: true,
-                                    showTotal: (total) => `${total} total transactions`,
+                                    showTotal: (total) =>
+                                        `${total} total transactions`,
                                     style: { padding: "16px 24px", margin: 0 },
                                 }}
                                 // scroll={{ x: 800 }}
@@ -919,6 +1174,60 @@ export default function StaffCash() {
                         </Spin>
                     </div>
                 </div>
+                <Modal
+                    title="Add New Category"
+                    open={categoryModalOpen}
+                    centered
+                    width={420}
+                    destroyOnClose
+                    okText="Add Category"
+                    cancelText="Cancel"
+                    onCancel={() => {
+                        setCategoryModalOpen(false);
+                        setNewCategory("");
+                    }}
+                    onOk={async () => {
+                        if (!newCategory.trim()) {
+                            message.warning("Please enter category name");
+                            return;
+                        }
+
+                        try {
+                            await api.post("/cash-categories", {
+                                name: newCategory,
+                            });
+
+                            message.success("Category added successfully");
+
+                            setCategoryModalOpen(false);
+                            setNewCategory("");
+
+                            fetchAll();
+                        } catch (err: any) {
+                            message.error(
+                                err.response?.data?.message ||
+                                    "Failed to add category",
+                            );
+                        }
+                    }}
+                >
+                    <Form layout="vertical">
+                        <Form.Item
+                            label="Category Name"
+                            style={{ marginBottom: 0 }}
+                        >
+                            <Input
+                                size="large"
+                                placeholder="e.g. Transportation"
+                                value={newCategory}
+                                onChange={(e) => setNewCategory(e.target.value)}
+                                onPressEnter={(e) => {
+                                    e.preventDefault();
+                                }}
+                            />
+                        </Form.Item>
+                    </Form>
+                </Modal>
             </div>
         </>
     );

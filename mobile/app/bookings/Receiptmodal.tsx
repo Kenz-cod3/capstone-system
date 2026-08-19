@@ -31,13 +31,30 @@ type ReceiptData = {
   receiver?: { first_name: string; last_name: string } | null;
   booking?: {
     booking_reference?: string;
-    bookedRooms?: {
+
+    booked_rooms?: {
       subtotal: number | string;
-      room?: { room_number?: string };
-    }[];
-    addOns?: {
-      add_on_name: string;
-      pivot?: { quantity?: number; subtotal?: number | string };
+      stay_type?: string;
+
+      check_in_date?: string;
+      check_out_date?: string;
+
+      room?: {
+        room_number?: string;
+
+        room_type?: {
+          type_name?: string;
+        };
+      };
+
+      booking_add_ons?: {
+        quantity?: number;
+        subtotal?: number | string;
+
+        add_on?: {
+          add_on_name?: string;
+        };
+      }[];
     }[];
   };
 };
@@ -68,6 +85,10 @@ export default function ReceiptModal({
     setError(false);
     try {
       const res = await api.get(`/bookings/${bookingId}/receipt`);
+
+      console.log("========== RECEIPT ==========");
+      console.log(JSON.stringify(res.data, null, 2));
+
       setReceipt(res.data);
     } catch (err) {
       console.log(err);
@@ -88,6 +109,16 @@ export default function ReceiptModal({
     return new Date(date).toLocaleString("en-PH", {
       dateStyle: "medium",
       timeStyle: "short",
+    });
+  };
+
+  const formatStayDate = (date?: string) => {
+    if (!date) return "-";
+
+    return new Date(date).toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   };
 
@@ -134,7 +165,7 @@ export default function ReceiptModal({
       <View className="flex-1 justify-end">
         <View
           className="bg-[#faf8f3] rounded-t-3xl overflow-hidden"
-          style={{ maxHeight: Dimensions.get("window").height * 0.90 }}
+          style={{ maxHeight: Dimensions.get("window").height * 0.9 }}
         >
           {/* drag handle */}
           <View
@@ -228,24 +259,59 @@ export default function ReceiptModal({
               </View>
 
               {/* Room charges */}
-              {receipt.booking?.bookedRooms &&
-                receipt.booking.bookedRooms.length > 0 && (
+              {/* Room charges */}
+              {receipt.booking?.booked_rooms &&
+                receipt.booking.booked_rooms.length > 0 && (
                   <View className="border-b border-dashed border-[#1a4a35]/20 pb-4 mb-4">
                     <Text className="text-[#8a8a8a] text-[11px] tracking-widest uppercase mb-2">
                       Room Charges
                     </Text>
-                    {receipt.booking.bookedRooms.map((room, index) => (
-                      <ReceiptRow
+
+                    {receipt.booking.booked_rooms.map((room, index) => (
+                      <View
                         key={index}
-                        label={room.room?.room_number || `Room ${index + 1}`}
-                        value={formatCurrency(room.subtotal)}
-                      />
+                        className="mb-4 pb-3 border-b border-[#1a4a35]/10"
+                      >
+                        <ReceiptRow
+                          label="Room Number"
+                          value={room.room?.room_number || "-"}
+                        />
+
+                        <ReceiptRow
+                          label="Room Type"
+                          value={room.room?.room_type?.type_name || "-"}
+                        />
+
+                        <ReceiptRow
+                          label="Stay Type"
+                          value={
+                            room.stay_type === "short_stay"
+                              ? "Short Time"
+                              : "Overnight"
+                          }
+                        />
+
+                        <ReceiptRow
+                          label="Check-in"
+                          value={formatStayDate(room.check_in_date)}
+                        />
+
+                        <ReceiptRow
+                          label="Check-out"
+                          value={formatStayDate(room.check_out_date)}
+                        />
+
+                        <ReceiptRow
+                          label="Room Charge"
+                          value={formatCurrency(room.subtotal)}
+                        />
+                      </View>
                     ))}
                   </View>
                 )}
 
               {/* Add-ons */}
-              {receipt.booking?.addOns && receipt.booking.addOns.length > 0 && (
+              {/* {receipt.booking?.addOns && receipt.booking.addOns.length > 0 && (
                 <View className="border-b border-dashed border-[#1a4a35]/20 pb-4 mb-4">
                   <Text className="text-[#8a8a8a] text-[11px] tracking-widest uppercase mb-2">
                     Add-ons
@@ -258,7 +324,7 @@ export default function ReceiptModal({
                     />
                   ))}
                 </View>
-              )}
+              )} */}
 
               {/* Total */}
               <View className="flex-row justify-between items-center mb-2">

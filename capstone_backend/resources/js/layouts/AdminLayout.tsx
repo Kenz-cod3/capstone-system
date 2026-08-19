@@ -38,6 +38,13 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@/components/ui/dialog";
 import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
 import Echo from "@/services/echo";
@@ -101,6 +108,10 @@ const AdminLayout = ({
     const [notificationsLoading, setNotificationsLoading] = useState(false);
     const [offset, setOffset] = useState(0);
 
+    const [selectedNotification, setSelectedNotification] = useState<any>(null);
+    const [guestName, setGuestName] = useState<string | null>(null);
+    const [guestNameLoading, setGuestNameLoading] = useState(false);
+
     // State for dropdown toggles
     const [openDropdowns, setOpenDropdowns] = useState<{
         [key: string]: boolean;
@@ -123,6 +134,7 @@ const AdminLayout = ({
     const routesMap: any = {
         "/dashboard": "Dashboard",
         "/reservation-monitor": "Reservation Monitor",
+        "/messages": "Messages",
         "/bookings": "Bookings",
         "/booking-management": "Booking List",
         "/booking-transaction": "Booking Transaction",
@@ -589,6 +601,12 @@ const AdminLayout = ({
                     href: "/reservation-monitor",
                     icon: CalendarDays,
                 },
+                {
+                    name: "Messages",
+                    description: "Chat & Conversations",
+                    href: "/messages",
+                    icon: MessageCircle,
+                },
             ],
         },
         {
@@ -715,10 +733,49 @@ const AdminLayout = ({
         },
     ];
 
+    const parseNotificationDetails = (message: string) => {
+        const roomMatch = message.match(/Room\s+([A-Za-z0-9\-]+)/i);
+        const bookingMatch = message.match(/BOOK-[A-Z0-9]+/i);
+
+        return {
+            room: roomMatch ? roomMatch[1] : null,
+            bookingReference: bookingMatch ? bookingMatch[0] : null,
+        };
+    };
+
+    useEffect(() => {
+        if (!selectedNotification) {
+            setGuestName(null);
+            return;
+        }
+
+        const { bookingReference } = parseNotificationDetails(
+            selectedNotification.message,
+        );
+
+        if (!bookingReference) {
+            setGuestName(null);
+            return;
+        }
+
+        setGuestNameLoading(true);
+        api.get(`/bookings/reference/${bookingReference}`)
+            .then((res) => {
+                setGuestName(res.data?.guest_name ?? null);
+            })
+            .catch(() => {
+                setGuestName(null);
+            })
+            .finally(() => {
+                setGuestNameLoading(false);
+            });
+    }, [selectedNotification]);
+
     const timeAgo = (dateString: string) => {
         const now = new Date();
         const date = new Date(dateString);
         const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
         if (seconds < 60) return "Just now";
         const minutes = Math.floor(seconds / 60);
         if (minutes < 60) return `${minutes} min${minutes > 1 ? "s" : ""} ago`;
@@ -726,10 +783,14 @@ const AdminLayout = ({
         if (hours < 24) return `${hours} hr${hours > 1 ? "s" : ""} ago`;
         const days = Math.floor(hours / 24);
         if (days < 7) return `${days} day${days > 1 ? "s" : ""} ago`;
-        const weeks = Math.floor(days / 7);
-        if (weeks < 4) return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
-        const months = Math.floor(days / 30);
-        if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`;
+        if (days < 30) {
+            const weeks = Math.floor(days / 7);
+            return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
+        }
+        if (days < 365) {
+            const months = Math.floor(days / 30);
+            return `${months} month${months > 1 ? "s" : ""} ago`;
+        }
         const years = Math.floor(days / 365);
         return `${years} year${years > 1 ? "s" : ""} ago`;
     };
@@ -1062,9 +1123,11 @@ const AdminLayout = ({
                                 {notifications.map((n) => (
                                     <div
                                         key={n.id}
-                                        onClick={() =>
-                                            markNotificationAsRead(n.id)
-                                        }
+                                        onClick={() => {
+                                            markNotificationAsRead(n.id);
+                                            setSelectedNotification(n);
+                                            setIsNotifOpen(false);
+                                        }}
                                         className={`px-4 py-3 cursor-pointer hover:bg-gray-50 rounded-lg mb-1 select-none ${!n.is_read ? "bg-emerald-50" : ""}`}
                                     >
                                         <div className="flex justify-between items-center">
@@ -1622,14 +1685,16 @@ const AdminLayout = ({
                     {/* Scrollable content */}
                     <div
                         className={`flex-1 bg-gray-50 ${
-                            location.pathname === "/reservation-monitor"
+                            location.pathname === "/reservation-monitor" ||
+                            location.pathname === "/messages"
                                 ? "overflow-hidden"
                                 : "overflow-y-auto scrollbar-mint"
                         }`}
                     >
                         <div
                             className={
-                                location.pathname === "/reservation-monitor"
+                                location.pathname === "/reservation-monitor" ||
+                                location.pathname === "/messages"
                                     ? "h-full"
                                     : "px-4 sm:px-6 py-4 sm:py-6"
                             }
@@ -1685,6 +1750,74 @@ const AdminLayout = ({
             {isSettingsOpen && (
                 <SettingsModal onClose={() => setIsSettingsOpen(false)} />
             )}
+
+            <Dialog
+                open={!!selectedNotification}
+                onOpenChange={(open) => !open && setSelectedNotification(null)}
+            >
+                <DialogContent className="sm:max-w-md bg-white border border-gray-100 shadow-lg ring-0 outline-none focus:outline-none focus:ring-0 focus-visible:ring-0">
+                    <DialogHeader>
+                        <DialogTitle className="text-gray-900">
+                            {selectedNotification?.title}
+                        </DialogTitle>
+                        <DialogDescription className="text-gray-500">
+                            {selectedNotification?.message}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {selectedNotification &&
+                        (() => {
+                            const { room, bookingReference } =
+                                parseNotificationDetails(
+                                    selectedNotification.message,
+                                );
+
+                            if (!room && !bookingReference) return null;
+
+                            return (
+                                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-2">
+                                    {(guestName || guestNameLoading) && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-500">
+                                                Guest
+                                            </span>
+                                            <span className="font-medium text-gray-800">
+                                                {guestNameLoading
+                                                    ? "Loading..."
+                                                    : guestName}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {room && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-500">
+                                                Room
+                                            </span>
+                                            <span className="font-medium text-gray-800">
+                                                {room}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {bookingReference && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-500">
+                                                Booking Ref
+                                            </span>
+                                            <span className="font-medium text-gray-800">
+                                                {bookingReference}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                    <p className="text-xs text-gray-400">
+                        {selectedNotification &&
+                            timeAgo(selectedNotification.created_at)}
+                    </p>
+                </DialogContent>
+            </Dialog>
         </>
     );
 };

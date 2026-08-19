@@ -28,7 +28,6 @@ export default function CreateBooking() {
   const [loading, setLoading] = useState(false);
 
   const [bookingType, setBookingType] = useState<"overnight" | "short">("overnight");
-  const [hours, setHours] = useState(3);
 
   if (!parsedRoom) {
     return (
@@ -41,8 +40,13 @@ export default function CreateBooking() {
   }
 
   const formatDate = (date: Date | null) => {
-    if (!date) return null;
-    return date.toISOString().split("T")[0];
+    if (!date) return "";
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   };
 
   const formatDisplayDate = (date: Date | null) => {
@@ -74,11 +78,24 @@ export default function CreateBooking() {
       minimumFractionDigits: 0,
     }).format(price);
 
-  const handleBooking = () => {
+  // Use correct field name: short_stay_price (not short_price)
+  const shortStayPrice = parsedRoom.room_type?.short_stay_price || 0;
+  const nights = getNights();
+  const overnightTotal = getOvernightTotal();
 
+  // Short stay is a flat rate for a single selected date (no hours picker anymore)
+  const shortTotal = shortStayPrice;
+
+  const total = bookingType === "overnight" ? overnightTotal : shortTotal;
+
+  const canBook =
+    bookingType === "overnight"
+      ? !!checkInDate && !!checkOutDate && checkOutDate > checkInDate && overnightTotal > 0
+      : !!checkInDate && shortStayPrice > 0;
+
+  const handleBooking = () => {
     // Overnight validation
     if (bookingType === "overnight") {
-
       if (!checkInDate || !checkOutDate) {
         alert("Please select check-in and check-out dates");
         return;
@@ -90,17 +107,22 @@ export default function CreateBooking() {
       }
     }
 
-    // Short stay validation
+    // Short stay validation - only needs a single date from the calendar
     if (bookingType === "short") {
+      if (!checkInDate) {
+        alert("Please select a date");
+        return;
+      }
 
-      const shortPrice =
-        parsedRoom.room_type?.short_stay_price;
-
-      if (!shortPrice || shortPrice === 0) {
+      if (!shortStayPrice || shortStayPrice === 0) {
         alert("Short stay pricing is not available for this room");
         return;
       }
     }
+
+    // For short stay, check-out date mirrors check-in date (same-day stay)
+    const effectiveCheckOut =
+      bookingType === "short" ? checkInDate : checkOutDate;
 
     router.push({
       pathname: "/bookings/payment",
@@ -110,28 +132,12 @@ export default function CreateBooking() {
 
         booking_type: bookingType,
 
-        check_in_date:
-          formatDate(checkInDate) || "",
+        check_in_date: formatDate(checkInDate) || "",
 
-        check_out_date:
-          formatDate(checkOutDate) || "",
-
-        hours: hours.toString(),
+        check_out_date: formatDate(effectiveCheckOut) || "",
       },
     });
   };
-
-  const nights = getNights();
-  // Use correct field name: short_stay_price (not short_price)
-  const shortStayPrice = parsedRoom.room_type?.short_stay_price || 0;
-  const overnightTotal = getOvernightTotal();
-  const shortTotal = hours * shortStayPrice;
-  const total = bookingType === "overnight" ? overnightTotal : shortTotal;
-
-  const canBook =
-    bookingType === "overnight"
-      ? checkInDate && checkOutDate && checkOutDate > checkInDate && overnightTotal > 0
-      : shortStayPrice > 0 && shortTotal > 0;
 
   return (
     <View className="flex-1 bg-[#faf8f3]">
@@ -184,7 +190,12 @@ export default function CreateBooking() {
 
           <View className="flex-row gap-3 mb-6">
             <TouchableOpacity
-              onPress={() => setBookingType("short")}
+              onPress={() => {
+                setBookingType("short");
+                // reset dates when switching modes so stale selections don't carry over
+                setCheckInDate(null);
+                setCheckOutDate(null);
+              }}
               className={`flex-1 py-3 rounded-xl ${bookingType === "short" ? "bg-[#1a4a35]" : "bg-gray-200"
                 }`}
             >
@@ -194,7 +205,11 @@ export default function CreateBooking() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setBookingType("overnight")}
+              onPress={() => {
+                setBookingType("overnight");
+                setCheckInDate(null);
+                setCheckOutDate(null);
+              }}
               className={`flex-1 py-3 rounded-xl ${bookingType === "overnight" ? "bg-[#1a4a35]" : "bg-gray-200"
                 }`}
             >
@@ -204,138 +219,124 @@ export default function CreateBooking() {
             </TouchableOpacity>
           </View>
 
-          {bookingType === "short" && (
-            <View className="mb-6">
-              <Text className="mb-2 text-[#1a4a35]">Select Hours</Text>
-
-              <View className="flex-row gap-2">
-                {[3, 6, 12].map((h) => (
-                  <TouchableOpacity
-                    key={h}
-                    onPress={() => setHours(h)}
-                    className={`px-4 py-2 rounded-lg ${hours === h ? "bg-[#1a4a35]" : "bg-gray-200"
-                      }`}
-                  >
-                    <Text className={hours === h ? "text-white" : "text-black"}>
-                      {h} hrs
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Display short stay price info */}
-              {shortStayPrice > 0 && (
-                <Text className="text-xs text-[#1a4a35]/50 mt-3">
-                  Rate: {formatPrice(shortStayPrice)} per {hours} hour(s)
-                </Text>
-              )}
-            </View>
-          )}
-
           {/* ── DATE CARDS ── */}
-          {bookingType === "overnight" && (
-            <View className="gap-4 mb-8">
+          <View className="gap-4 mb-8">
 
-              {/* Check-in */}
-              <TouchableOpacity
-                onPress={() => setShowCheckIn(true)}
-                activeOpacity={0.85}
-                className="bg-white rounded-2xl border border-[#1a4a35]/08 overflow-hidden"
-              >
-                <View className="px-5 py-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-3">
-                      <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
-                        <Ionicons name="enter-outline" size={16} color="#1a4a35" />
-                      </View>
-                      <View>
-                        <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
-                          Check-in
-                        </Text>
-                        {checkInDate ? (
-                          <Text
-                            className="text-[#1a4a35] text-base"
-                            style={{ fontFamily: "Georgia" }}
-                          >
-                            {formatDisplayDate(checkInDate)}
-                          </Text>
-                        ) : (
-                          <Text className="text-[#1a4a35]/30 text-sm">
-                            Select date
-                          </Text>
-                        )}
-                      </View>
+            {/* Check-in (used as the single "Date" card for short stay) */}
+            <TouchableOpacity
+              onPress={() => setShowCheckIn(true)}
+              activeOpacity={0.85}
+              className="bg-white rounded-2xl border border-[#1a4a35]/08 overflow-hidden"
+            >
+              <View className="px-5 py-4">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
+                      <Ionicons
+                        name={bookingType === "short" ? "calendar-outline" : "enter-outline"}
+                        size={16}
+                        color="#1a4a35"
+                      />
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color="#1a4a35" style={{ opacity: 0.3 }} />
+                    <View>
+                      <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
+                        {bookingType === "short" ? "Date" : "Check-in"}
+                      </Text>
+                      {checkInDate ? (
+                        <Text
+                          className="text-[#1a4a35] text-base"
+                          style={{ fontFamily: "Georgia" }}
+                        >
+                          {formatDisplayDate(checkInDate)}
+                        </Text>
+                      ) : (
+                        <Text className="text-[#1a4a35]/30 text-sm">
+                          Select date
+                        </Text>
+                      )}
+                    </View>
                   </View>
+                  <Ionicons name="chevron-forward" size={16} color="#1a4a35" style={{ opacity: 0.3 }} />
                 </View>
-                {checkInDate && (
-                  <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
-                )}
-                {checkInDate && (
-                  <View className="px-5 py-2">
-                    <Text className="text-[#c9a96e] text-xs tracking-wide">
-                      {formatDate(checkInDate)}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Arrow connector */}
-              <View className="items-center">
-                <View className="w-px h-4 bg-[#1a4a35]/10" />
-                <View className="w-6 h-6 rounded-full bg-[#1a4a35]/06 border border-[#1a4a35]/10 justify-center items-center">
-                  <Ionicons name="arrow-down" size={12} color="#1a4a35" />
-                </View>
-                <View className="w-px h-4 bg-[#1a4a35]/10" />
               </View>
-
-              {/* Check-out */}
-              <TouchableOpacity
-                onPress={() => setShowCheckOut(true)}
-                activeOpacity={0.85}
-                className="bg-white rounded-2xl border border-[#1a4a35]/08 overflow-hidden"
-              >
-                <View className="px-5 py-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-3">
-                      <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
-                        <Ionicons name="exit-outline" size={16} color="#1a4a35" />
-                      </View>
-                      <View>
-                        <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
-                          Check-out
-                        </Text>
-                        {checkOutDate ? (
-                          <Text
-                            className="text-[#1a4a35] text-base"
-                            style={{ fontFamily: "Georgia" }}
-                          >
-                            {formatDisplayDate(checkOutDate)}
-                          </Text>
-                        ) : (
-                          <Text className="text-[#1a4a35]/30 text-sm">
-                            Select date
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color="#1a4a35" style={{ opacity: 0.3 }} />
-                  </View>
+              {checkInDate && (
+                <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
+              )}
+              {checkInDate && (
+                <View className="px-5 py-2">
+                  <Text className="text-[#c9a96e] text-xs tracking-wide">
+                    {formatDate(checkInDate)}
+                  </Text>
                 </View>
-                {checkOutDate && (
-                  <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
-                )}
-                {checkOutDate && (
-                  <View className="px-5 py-2">
-                    <Text className="text-[#c9a96e] text-xs tracking-wide">
-                      {formatDate(checkOutDate)}
-                    </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Check-out is only relevant for overnight stays */}
+            {bookingType === "overnight" && (
+              <>
+                {/* Arrow connector */}
+                <View className="items-center">
+                  <View className="w-px h-4 bg-[#1a4a35]/10" />
+                  <View className="w-6 h-6 rounded-full bg-[#1a4a35]/06 border border-[#1a4a35]/10 justify-center items-center">
+                    <Ionicons name="arrow-down" size={12} color="#1a4a35" />
                   </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
+                  <View className="w-px h-4 bg-[#1a4a35]/10" />
+                </View>
+
+                {/* Check-out */}
+                <TouchableOpacity
+                  onPress={() => setShowCheckOut(true)}
+                  activeOpacity={0.85}
+                  className="bg-white rounded-2xl border border-[#1a4a35]/08 overflow-hidden"
+                >
+                  <View className="px-5 py-4">
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-row items-center gap-3">
+                        <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
+                          <Ionicons name="exit-outline" size={16} color="#1a4a35" />
+                        </View>
+                        <View>
+                          <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
+                            Check-out
+                          </Text>
+                          {checkOutDate ? (
+                            <Text
+                              className="text-[#1a4a35] text-base"
+                              style={{ fontFamily: "Georgia" }}
+                            >
+                              {formatDisplayDate(checkOutDate)}
+                            </Text>
+                          ) : (
+                            <Text className="text-[#1a4a35]/30 text-sm">
+                              Select date
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color="#1a4a35" style={{ opacity: 0.3 }} />
+                    </View>
+                  </View>
+                  {checkOutDate && (
+                    <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
+                  )}
+                  {checkOutDate && (
+                    <View className="px-5 py-2">
+                      <Text className="text-[#c9a96e] text-xs tracking-wide">
+                        {formatDate(checkOutDate)}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Short stay hint under the calendar */}
+            {bookingType === "short" && shortStayPrice > 0 && (
+              <Text className="text-xs text-[#1a4a35]/50 -mt-1 px-1">
+                Short stay rate: {formatPrice(shortStayPrice)} for the selected date
+              </Text>
+            )}
+          </View>
 
           {/* Date pickers */}
           {showCheckIn && (
@@ -350,7 +351,7 @@ export default function CreateBooking() {
               }}
             />
           )}
-          {showCheckOut && (
+          {showCheckOut && bookingType === "overnight" && (
             <DateTimePicker
               value={checkOutDate || new Date()}
               mode="date"
@@ -373,33 +374,29 @@ export default function CreateBooking() {
 
                 {/* Summary based on booking type */}
                 {bookingType === "overnight" ? (
-                  <>
-                    <View className="flex-row justify-between items-center mb-3">
-                      <View className="flex-row items-center gap-2">
-                        <Ionicons name="moon-outline" size={14} color="#1a4a35" />
-                        <Text className="text-[#1a4a35]/60 text-sm">
-                          {nights} {nights === 1 ? "night" : "nights"}
-                        </Text>
-                      </View>
+                  <View className="flex-row justify-between items-center mb-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="moon-outline" size={14} color="#1a4a35" />
                       <Text className="text-[#1a4a35]/60 text-sm">
-                        {formatPrice(parsedRoom.room_type?.base_price)} × {nights}
+                        {nights} {nights === 1 ? "night" : "nights"}
                       </Text>
                     </View>
-                  </>
+                    <Text className="text-[#1a4a35]/60 text-sm">
+                      {formatPrice(parsedRoom.room_type?.base_price)} × {nights}
+                    </Text>
+                  </View>
                 ) : (
-                  <>
-                    <View className="flex-row justify-between items-center mb-3">
-                      <View className="flex-row items-center gap-2">
-                        <Ionicons name="time-outline" size={14} color="#1a4a35" />
-                        <Text className="text-[#1a4a35]/60 text-sm">
-                          {hours} {hours === 1 ? "hour" : "hours"}
-                        </Text>
-                      </View>
+                  <View className="flex-row justify-between items-center mb-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="calendar-outline" size={14} color="#1a4a35" />
                       <Text className="text-[#1a4a35]/60 text-sm">
-                        {formatPrice(shortStayPrice)} × {hours}
+                        {formatDisplayDate(checkInDate)}
                       </Text>
                     </View>
-                  </>
+                    <Text className="text-[#1a4a35]/60 text-sm">
+                      {formatPrice(shortStayPrice)}
+                    </Text>
+                  </View>
                 )}
 
                 <View className="h-px bg-[#1a4a35]/06 mb-3" />
@@ -435,7 +432,7 @@ export default function CreateBooking() {
                   ? "Select both dates to see\n your booking summary"
                   : !shortStayPrice
                     ? "Short stay pricing not available\n for this room"
-                    : "Select hours to see\n your booking summary"}
+                    : "Select a date to see\n your booking summary"}
               </Text>
             </View>
           )}

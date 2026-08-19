@@ -233,55 +233,67 @@ export default function Chat() {
 
   return (
     <TouchableWithoutFeedback onPress={dismissKeyboard}>
-      <View className="flex-1 bg-white">
-        {/* GRADIENT */}
-        <LinearGradient
-          colors={["#d1fae5", "#a7f3d0", "#ffffff"]}
-          locations={[0, 0.3, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={{
-            position: "absolute",
+      <View className="flex-1 bg-[#faf8f3]">
+        {/* HEADER */}
+        <View>
+          <LinearGradient
+            colors={["#0d2e1f", "#1a4a35", "#0d2e1f"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              paddingTop: insets.top + 12,
+              paddingBottom: 18,
+              paddingHorizontal: 20,
+              borderBottomLeftRadius: 28,
+              borderBottomRightRadius: 28,
+              overflow: "hidden",
+            }}
+          >
+            {/* Decorative circle */}
+            <View
+              className="absolute rounded-full border border-white/5"
+              style={{ width: 160, height: 160, top: -60, right: -40 }}
+            />
 
-            top: 0,
-            left: 0,
-            right: 0,
+            <View className="flex-row items-center">
+              <TouchableOpacity
+                onPress={() => {
+                  if (router.canGoBack()) {
+                    router.back();
+                  }
+                }}
+                className="w-9 h-9 rounded-full bg-white/10 border border-white/10 justify-center items-center"
+              >
+                <Ionicons name="chevron-back" size={20} color="#c9a96e" />
+              </TouchableOpacity>
 
-            height: insets.top + 120,
-          }}
-        />
+              {/* Monogram avatar */}
+              <View className="w-10 h-10 rounded-full bg-[#c9a96e]/20 border border-[#c9a96e]/40 justify-center items-center ml-3">
+                <Text
+                  className="text-[#c9a96e] text-sm font-bold"
+                  style={{ fontFamily: "Georgia" }}
+                >
+                  {(name || "A").charAt(0).toUpperCase()}
+                </Text>
+              </View>
 
-        {/*EADER */}
-        <View
-          style={{
-            paddingTop: insets.top + 10,
+              <View className="ml-3">
+                <Text
+                  className="text-white text-lg"
+                  style={{ fontFamily: "Georgia" }}
+                >
+                  {name || "Agent"}
+                </Text>
 
-            paddingBottom: 10,
-
-            paddingHorizontal: 16,
-
-            backgroundColor: "transparent",
-          }}
-        >
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              onPress={() => {
-                if (router.canGoBack()) {
-                  router.back();
-                }
-              }}
-            >
-              <Ionicons name="chevron-back" size={28} color="#065f46" />
-            </TouchableOpacity>
-
-            <View className="ml-3">
-              <Text className="text-lg font-bold text-emerald-800">
-                {name || "Agent"}
-              </Text>
-
-              <Text className="text-xs text-green-600">Online</Text>
+                <View className="flex-row items-center gap-1.5 mt-0.5">
+                  <View className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]" />
+                  <Text className="text-white/50 text-[11px] tracking-widest uppercase">
+                    Online
+                  </Text>
+                </View>
+              </View>
             </View>
-          </View>
+          </LinearGradient>
         </View>
 
         {/* CHAT LIST */}
@@ -290,7 +302,7 @@ export default function Chat() {
           data={messages}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{
-            padding: 16,
+            padding: 20,
             paddingBottom: 90,
           }}
           showsVerticalScrollIndicator={false}
@@ -306,40 +318,63 @@ export default function Chat() {
 
             return (
               <View className={`mb-3 ${isMe ? "items-end" : "items-start"}`}>
-                {/* 🔥 MESSAGE */}
-                <View
-                  className={`px-4 py-3 rounded-3xl max-w-[80%] ${
-                    isMe
-                      ? "bg-emerald-500 rounded-br-none"
-                      : "bg-white border border-gray-200 rounded-bl-none"
-                  }`}
-                  style={{
-                    shadowColor: "#000",
-
-                    shadowOffset: {
-                      width: 0,
-                      height: 1,
-                    },
-
-                    shadowOpacity: 0.05,
-
-                    shadowRadius: 2,
-
-                    elevation: 1,
-                  }}
-                >
-                  <Text className={isMe ? "text-white" : "text-gray-800"}>
-                    {item.message.message}
-                  </Text>
-                </View>
+                {/* MESSAGE BUBBLE */}
+                {isMe ? (
+                  <LinearGradient
+                    colors={["#1a4a35", "#0d2e1f"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                      borderRadius: 22,
+                      borderBottomRightRadius: 4,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      maxWidth: "80%",
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 4,
+                      elevation: 2,
+                    }}
+                  >
+                    <Text className="text-white text-[15px]">
+                      {item.message.message}
+                    </Text>
+                  </LinearGradient>
+                ) : (
+                  <View
+                    className="px-4 py-3 rounded-[22px] max-w-[80%] bg-white border border-[#1a4a35]/10"
+                    style={{
+                      borderBottomLeftRadius: 4,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 3,
+                      elevation: 1,
+                    }}
+                  >
+                    <Text className="text-[#1a4a35] text-[15px]">
+                      {item.message.message}
+                    </Text>
+                  </View>
+                )}
 
                 {/* STATUS */}
                 {isMe && isLast && (
-                  <View className="flex-row items-center mt-1 mr-1">
-                    <Text className="text-[11px] text-gray-400">
+                  <View className="flex-row items-center mt-1.5 mr-1 gap-1">
+                    {item.status === "sent" && item.is_read && (
+                      <View className="w-1 h-1 rounded-full bg-[#c9a96e]" />
+                    )}
+                    <Text
+                      className={`text-[11px] tracking-wide ${
+                        item.status === "failed"
+                          ? "text-red-500"
+                          : "text-[#1a4a35]/40"
+                      }`}
+                    >
                       {item.status === "sending" && "Sending..."}
 
-                      {item.status === "failed" && "Failed ❌"}
+                      {item.status === "failed" && "Failed to send"}
 
                       {item.status === "sent" &&
                         (item.is_read ? "Seen" : "Sent")}
@@ -353,7 +388,7 @@ export default function Chat() {
 
         {/* INPUT */}
         <View
-          className="px-3 py-3 bg-white border-t border-gray-200"
+          className="px-4 py-3 bg-white border-t border-[#1a4a35]/10"
           style={{
             paddingBottom: insets.bottom + 5,
           }}
@@ -365,7 +400,7 @@ export default function Chat() {
               value={text}
               onChangeText={setText}
               placeholder="Type a message..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor="rgba(26,74,53,0.35)"
               multiline
               maxLength={500}
               onContentSizeChange={(e) => {
@@ -380,21 +415,43 @@ export default function Chat() {
                 maxHeight: 140,
                 textAlignVertical: "top",
               }}
-              className="flex-1 bg-gray-100 rounded-3xl px-4 py-3 mr-2 text-base"
+              className="flex-1 bg-[#faf8f3] rounded-3xl px-4 py-3 mr-2 text-[15px] text-[#1a4a35] border border-[#1a4a35]/10"
             />
 
             {/* SEND */}
             <TouchableOpacity
               onPress={sendMessage}
               disabled={!text.trim()}
-              className={`px-5 rounded-full justify-center items-center ${
-                text.trim() ? "bg-emerald-500" : "bg-gray-300"
-              }`}
+              activeOpacity={0.85}
               style={{
                 height: 45,
+                width: 45,
+                borderRadius: 22.5,
+                overflow: "hidden",
               }}
             >
-              <Text className="text-white font-semibold">Send</Text>
+              {text.trim() ? (
+                <LinearGradient
+                  colors={["#1a4a35", "#0d2e1f"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons name="arrow-up" size={20} color="#c9a96e" />
+                </LinearGradient>
+              ) : (
+                <View className="flex-1 justify-center items-center bg-[#1a4a35]/10">
+                  <Ionicons
+                    name="arrow-up"
+                    size={20}
+                    color="rgba(26,74,53,0.3)"
+                  />
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>

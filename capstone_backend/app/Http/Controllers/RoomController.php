@@ -61,18 +61,85 @@ class RoomController extends Controller
     }
 
     // LIGHTWEIGHT REALTIME ROOM GRID
+    // public function statusGrid()
+    // {
+    //     $rooms = Room::select(
+    //         'id',
+    //         'room_number',
+    //         'status'
+    //     )
+    //         ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
+    //         ->get();
+
+    //     return response()->json($rooms);
+    // }
     public function statusGrid()
     {
-        $rooms = Room::select(
-            'id',
-            'room_number',
-            'status'
-        )
+        $rooms = Room::with([
+            'bookedRooms.booking.user',
+            'bookedRooms.booking.walkInGuest',
+        ])
+            ->select(
+                'id',
+                'room_number',
+                'status'
+            )
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
 
+        $rooms->each(function ($room) {
+
+            // Get the active booked room for this room
+            $bookedRoom = $room->bookedRooms
+                ->whereIn('status', [
+                    'pending',
+                    'confirmed',
+                    'checked_in',
+                ])
+                ->sortByDesc('id')
+                ->first();
+
+            $booking = $bookedRoom?->booking;
+
+            $guestName = null;
+
+            // WALK-IN GUEST
+            if ($booking?->walkInGuest) {
+
+                $walkIn = $booking->walkInGuest;
+
+                $guestName = $walkIn->full_name
+                    ?? trim(
+                        ($walkIn->first_name ?? '') . ' ' .
+                            ($walkIn->middle_name ?? '') . ' ' .
+                            ($walkIn->last_name ?? '')
+                    );
+            }
+
+            // REGISTERED USER
+            elseif ($booking?->user) {
+
+                $user = $booking->user;
+
+                $guestName = trim(
+                    ($user->first_name ?? '') . ' ' .
+                        ($user->middle_name ?? '') . ' ' .
+                        ($user->last_name ?? '')
+                );
+            }
+
+            $room->current_guest = $guestName;
+            $room->booking_status = $bookedRoom?->status;
+            $room->check_in_date = $bookedRoom?->check_in_date;
+            $room->check_out_date = $bookedRoom?->check_out_date;
+            $room->booking_reference = $booking?->booking_reference;
+            $room->booked_room_id = $bookedRoom?->id;
+            $room->booking_id = $booking?->id;
+        });
+
         return response()->json($rooms);
     }
+
 
     // CREATE ROOM
     public function store(Request $request)

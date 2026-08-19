@@ -83,6 +83,10 @@ export default function PaymentPage() {
       setProcessing(true);
 
       const isMultiple = params.multiple === "true";
+      console.log("========== PAYMENT DEBUG ==========");
+      console.log("PARAMS:");
+      console.log(JSON.stringify(params, null, 2));
+      console.log("IS MULTIPLE:", isMultiple);
       let bookingIds: number[] = [];
       let totalAmount = 0;
 
@@ -114,18 +118,44 @@ export default function PaymentPage() {
 
         totalAmount = Number(booking.total_price);
       } else {
-        const payload: any = {
-          booking_type: params.booking_type,
-          room_ids: [Number(params.room_id)],
+        // const payload: any = {
+        //   booking_type: params.booking_type,
+        //   room_ids: [Number(params.room_id)],
+        //   payment_method: paymentMethod,
+        // };
+
+        // if (params.booking_type === "overnight") {
+        //   payload.check_in_date = params.check_in_date;
+        //   payload.check_out_date = params.check_out_date;
+        // } else {
+        //   payload.hours = Number(params.hours);
+        // }
+
+        // const res = await api.post("/bookings", payload);
+        const payload = {
           payment_method: paymentMethod,
+
+          rooms: [
+            {
+              room_id: Number(params.room_id),
+
+              stay_type:
+                params.booking_type === "overnight"
+                  ? "overnight"
+                  : "short_stay",
+
+              check_in_date: params.check_in_date,
+
+              check_out_date:
+                params.booking_type === "overnight"
+                  ? params.check_out_date
+                  : params.check_in_date,
+            },
+          ],
         };
 
-        if (params.booking_type === "overnight") {
-          payload.check_in_date = params.check_in_date;
-          payload.check_out_date = params.check_out_date;
-        } else {
-          payload.hours = Number(params.hours);
-        }
+        console.log("SINGLE PAYLOAD:");
+        console.log(JSON.stringify(payload, null, 2));
 
         const res = await api.post("/bookings", payload);
         const created: CreatedBooking = res.data.data;

@@ -814,20 +814,27 @@ export default function TransactionsPage() {
                                         {/* Card Content */}
                                         <div className="relative z-10">
                                             {/* Header */}
-                                            <div className="flex items-center justify-between mb-4">
-                                                <p
-                                                    className={`font-bold ${
-                                                        refunded
-                                                            ? "line-through text-red-500"
-                                                            : "text-[#1a1a18]"
-                                                    }`}
-                                                    style={{
-                                                        fontFamily:
-                                                            "'Playfair Display', serif",
-                                                    }}
-                                                >
-                                                    Room {stay.room_number}
-                                                </p>
+                                            {/* Header */}
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div>
+                                                    <p
+                                                        className={`font-bold ${
+                                                            refunded
+                                                                ? "line-through text-red-500"
+                                                                : "text-[#1a1a18]"
+                                                        }`}
+                                                        style={{
+                                                            fontFamily:
+                                                                "'Playfair Display', serif",
+                                                        }}
+                                                    >
+                                                        Room {stay.room_number}
+                                                    </p>
+
+                                                    <p className="text-sm text-[#8a8878] mt-1">
+                                                        {stay.room_type}
+                                                    </p>
+                                                </div>
 
                                                 <span
                                                     className={`px-2.5 py-1 rounded-md text-[10px] font-semibold ${

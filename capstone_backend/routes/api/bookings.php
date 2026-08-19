@@ -18,6 +18,7 @@ Route::prefix('bookings')->group(function () {
     Route::get('/active', [BookingController::class, 'active']);
     Route::get('/history', [BookingController::class, 'history']);
     Route::get('/trash', [BookingController::class, 'trash']);
+    Route::get('/bookings/reference/{reference}', [BookingController::class, 'findByReference']);
     // Route::get('/all', [BookingController::class, 'all']);
 
     Route::post('/', [BookingController::class, 'store']);

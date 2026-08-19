@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
+use App\Models\BookedRoom;
 use App\Models\Room;
 use App\Models\RoomIncident;
 use Illuminate\Http\Request;
@@ -17,7 +19,7 @@ class RoomIncidentController extends Controller
     public function index(Request $request)
     {
         $perPage = (int) ($request->per_page ?? 10);
-        
+
         // Ensure per_page is within reasonable bounds
         if ($perPage < 1) $perPage = 1;
         if ($perPage > 100) $perPage = 100;
@@ -91,14 +93,14 @@ class RoomIncidentController extends Controller
             }
         }
 
-        $activeBooking = \App\Models\Booking::whereHas(
-            'rooms',
-            function ($q) use ($validated) {
-                $q->where('rooms.id', $validated['room_id']);
-            }
-        )
-            ->latest()
+        $bookedRoom = BookedRoom::with('booking')
+            ->where('room_id', $validated['room_id'])
+            ->where('status', 'checked_out')
+            ->orderByDesc('id')
             ->first();
+
+        $activeBooking = $bookedRoom?->booking;
+
 
         $report = RoomIncident::create([
             'room_id'     => $validated['room_id'],
@@ -157,17 +159,33 @@ class RoomIncidentController extends Controller
 
         if ($validated['status'] === 'resolved') {
 
+            // Check if naa pay unresolved damaged reports sa same room
             $remainingDamages = RoomIncident::where('room_id', $report->room_id)
-                ->where('id', '!=', $report->id)
                 ->where('report_type', 'damaged')
                 ->whereIn('status', ['pending', 'repairing'])
+                ->where('id', '!=', $report->id)
                 ->count();
 
-            if ($remainingDamages === 0) {
-                Room::where('id', $report->room_id)->update([
-                    'status' => 'available',
-                    'has_damage' => false,
-                ]);
+            $room = Room::find($report->room_id);
+
+            if ($room) {
+
+                if ($remainingDamages > 0) {
+                    // Naa pay pending damage, maintenance gihapon
+                    $room->update([
+                        'status' => Room::STATUS_MAINTENANCE,
+                        'has_damage' => true,
+                    ]);
+                } else {
+                    // Wala nay pending damage, available na
+                    $room->update([
+                        'status' => Room::STATUS_AVAILABLE,
+                        'has_damage' => false,
+                    ]);
+                }
+
+                // Broadcast dashboard update
+                event(new DashboardUpdated());
             }
         }
 

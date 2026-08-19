@@ -21,7 +21,7 @@ export default function PanoramaViewer() {
   const parsedRoom = room ? JSON.parse(room as string) : null;
 
   useEffect(() => {
-    // ✅ kung walang panorama URL — not available agad
+    // kung walang panorama URL — not available agad
     if (!panorama) return;
 
     const fetchImage = async () => {
@@ -73,7 +73,7 @@ export default function PanoramaViewer() {
   </html>
   `;
 
-  // ✅ Not Available State — walang panorama URL
+  // Not Available State — walang panorama URL
   const NotAvailable = () => (
     <View className="flex-1 justify-center items-center bg-[#0a0a0a] gap-4 px-8">
       <View className="w-24 h-24 rounded-full border border-[#c9a96e]/20 bg-[#c9a96e]/5 justify-center items-center mb-2">
@@ -104,7 +104,7 @@ export default function PanoramaViewer() {
     <View className="flex-1 bg-[#0a0a0a]">
       <StatusBar hidden />
 
-      {/* ✅ Not Available — walang panorama */}
+      {/* Not Available — walang panorama */}
       {!panorama ? (
         <NotAvailable />
 

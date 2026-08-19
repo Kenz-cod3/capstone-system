@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\RoomType;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RoomTypeController extends Controller
 {
@@ -42,12 +43,24 @@ class RoomTypeController extends Controller
     // CREATE ROOM TYPE
     public function store(Request $request)
     {
+        // Remove extra spaces
+        $request->merge([
+            'type_name' => trim($request->type_name),
+        ]);
+
         $validated = $request->validate([
-            'type_name' => 'required|string|max:255',
+            'type_name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('room_types', 'type_name'),
+            ],
             'description' => 'nullable|string',
             'base_price' => 'required|numeric|min:0',
             'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'required|integer|min:1',
+        ], [
+            'type_name.unique' => 'This room type already exists.',
         ]);
 
         $roomType = RoomType::create($validated);
@@ -57,27 +70,75 @@ class RoomTypeController extends Controller
             'data' => $roomType
         ], 201);
     }
+    // public function store(Request $request)
+    // {
+    //     $validated = $request->validate([
+    //         'type_name' => 'required|string|max:255',
+    //         'description' => 'nullable|string',
+    //         'base_price' => 'required|numeric|min:0',
+    //         'short_stay_price' => 'nullable|numeric|min:0',
+    //         'max_occupancy' => 'required|integer|min:1',
+    //     ]);
+
+    //     $roomType = RoomType::create($validated);
+
+    //     return response()->json([
+    //         'message' => 'Room type created successfully',
+    //         'data' => $roomType
+    //     ], 201);
+    // }
 
     // UPDATE ROOM TYPE
     public function update(Request $request, $id)
     {
         $roomType = RoomType::findOrFail($id);
 
+        // Remove extra spaces
+        $request->merge([
+            'type_name' => trim($request->type_name),
+        ]);
+
         $validated = $request->validate([
-            'type_name' => 'sometimes|string|max:255',
+            'type_name' => [
+                'sometimes',
+                'string',
+                'max:255',
+                Rule::unique('room_types', 'type_name')->ignore($roomType->id),
+            ],
             'description' => 'nullable|string',
             'base_price' => 'sometimes|numeric|min:0',
             'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'sometimes|integer|min:1',
+        ], [
+            'type_name.unique' => 'This room type already exists.',
         ]);
 
         $roomType->update($validated);
-        
+
         return response()->json([
             'message' => 'Room type updated successfully',
             'data' => $roomType
         ], 200);
     }
+    // public function update(Request $request, $id)
+    // {
+    //     $roomType = RoomType::findOrFail($id);
+
+    //     $validated = $request->validate([
+    //         'type_name' => 'sometimes|string|max:255',
+    //         'description' => 'nullable|string',
+    //         'base_price' => 'sometimes|numeric|min:0',
+    //         'short_stay_price' => 'nullable|numeric|min:0',
+    //         'max_occupancy' => 'sometimes|integer|min:1',
+    //     ]);
+
+    //     $roomType->update($validated);
+
+    //     return response()->json([
+    //         'message' => 'Room type updated successfully',
+    //         'data' => $roomType
+    //     ], 200);
+    // }
 
     // DELETE ROOM TYPE
     public function destroy($id)

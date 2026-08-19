@@ -21,6 +21,7 @@ import { setToken, clearToken } from "../../services/api";
 import { useAuthStore } from "../../store/authStore";
 import { useRouter } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from "@expo/vector-icons";
 
 const { width, height } = Dimensions.get("window");
 
@@ -54,7 +55,7 @@ export default function Login() {
       await setAuth(res.user, res.token);
       await setToken(res.token);
 
-      // ✅ ROLE BASED REDIRECT
+      // ROLE BASED REDIRECT
       if (res.user.role === "guest") {
         router.replace("/(guest)/(tabs)/home");
       } else if (res.user.role === "housekeeper") {
@@ -67,7 +68,7 @@ export default function Login() {
       const message = e.response?.data?.message;
       const userEmail = e.response?.data?.email || email;
 
-      // 🔥 FIX: handle ANY verify message
+      // handle ANY verify message
       if (message?.toLowerCase().includes("verify")) {
 
         Alert.alert(
@@ -93,7 +94,7 @@ export default function Login() {
         return;
       }
 
-      // ❌ NORMAL ERROR
+      // NORMAL ERROR
       Alert.alert(
         "Login Failed",
         message || "Invalid email or password"
@@ -117,7 +118,7 @@ export default function Login() {
           resizeMode="cover"
         >
           <LinearGradient
-            colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.7)']}
+            colors={['rgba(13,46,31,0.55)', 'rgba(13,46,31,0.88)']}
             style={{ flex: 1 }}
           >
             <ScrollView
@@ -129,7 +130,7 @@ export default function Login() {
               <View className="flex-1 justify-center items-center px-6 py-8">
                 {/* LOGO */}
                 <View className="items-center mb-8">
-                  <View className="bg-white/20 p-4 rounded-full mb-3">
+                  <View className="bg-[#c9a96e]/15 border border-[#c9a96e]/40 p-4 rounded-full mb-4">
                     <Image
                       source={require("../../assets/logo.jpg")}
                       style={{
@@ -139,41 +140,63 @@ export default function Login() {
                       className="rounded-full"
                     />
                   </View>
-                  <Text className="text-white text-3xl font-bold tracking-wider">
-                    Welcome Back
+                  <Text
+                    className="text-[#c9a96e] text-[11px] tracking-[4px] uppercase mb-2"
+                  >
+                    Welcome back
                   </Text>
-                  <Text className="text-white/80 text-base mt-2">
-                    Sign in to continue
+                  <Text
+                    className="text-white text-3xl"
+                    style={{ fontFamily: "Georgia" }}
+                  >
+                    Lyn Enia's Travelers' Inn
+                  </Text>
+                  <Text
+                    className="text-white/50 text-sm mt-2"
+                    style={{ fontFamily: "Georgia", fontStyle: "italic" }}
+                  >
+                    Sign in to continue your stay
                   </Text>
                 </View>
 
                 {/* FORM CARD */}
                 <View
-                  style={{ width: width * 0.9 }}
-                  className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl overflow-hidden"
+                  style={{
+                    width: width * 0.9,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 16,
+                    elevation: 8,
+                  }}
+                  className="bg-[#faf8f3] rounded-3xl overflow-hidden"
                 >
                   <View className="p-6">
-                    <Text className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-green-600 to-green-500 bg-clip-text">
+                    <Text
+                      className="text-2xl text-center mb-1 text-[#1a4a35]"
+                      style={{ fontFamily: "Georgia" }}
+                    >
                       Login
                     </Text>
-                    <Text className="text-center text-gray-500 mb-6">
+                    <Text className="text-center text-[#1a4a35]/50 text-sm mb-6">
                       Enter your credentials
                     </Text>
 
                     {/* EMAIL FIELD */}
                     <View className="mb-4">
-                      <Text className="text-gray-700 font-semibold mb-2 ml-1">
+                      <Text className="text-[#1a4a35] text-xs tracking-widest uppercase mb-2 ml-1">
                         Email Address
                       </Text>
-                      <View className="flex-row items-center bg-gray-50 rounded-xl border border-gray-200 px-4">
+                      <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4">
+                        <Ionicons name="mail-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
                         <TextInput
                           value={email}
                           onChangeText={setEmail}
                           placeholder="Enter your email"
-                          placeholderTextColor="#999"
+                          placeholderTextColor="rgba(26,74,53,0.35)"
                           autoCapitalize="none"
                           keyboardType="email-address"
-                          className="flex-1 py-3 text-gray-800"
+                          className="flex-1 py-3 px-3 text-[#1a4a35]"
                           editable={!loading}
                         />
                       </View>
@@ -181,24 +204,25 @@ export default function Login() {
 
                     {/* PASSWORD FIELD */}
                     <View className="mb-6">
-                      <Text className="text-gray-700 font-semibold mb-2 ml-1">
+                      <Text className="text-[#1a4a35] text-xs tracking-widest uppercase mb-2 ml-1">
                         Password
                       </Text>
-                      <View className="flex-row items-center bg-gray-50 rounded-xl border border-gray-200 px-4">
+                      <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4">
+                        <Ionicons name="lock-closed-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
                         <TextInput
                           value={password}
                           onChangeText={setPassword}
                           placeholder="Enter your password"
-                          placeholderTextColor="#999"
+                          placeholderTextColor="rgba(26,74,53,0.35)"
                           secureTextEntry={!showPassword}
-                          className="flex-1 py-3 text-gray-800"
+                          className="flex-1 py-3 px-3 text-[#1a4a35]"
                           editable={!loading}
                         />
                         <TouchableOpacity
                           onPress={() => setShowPassword(!showPassword)}
                           className="ml-2"
                         >
-                          <Text className="text-green-600 font-semibold">
+                          <Text className="text-[#c9a96e] font-semibold text-xs uppercase tracking-wide">
                             {showPassword ? "Hide" : "Show"}
                           </Text>
                         </TouchableOpacity>
@@ -207,7 +231,7 @@ export default function Login() {
                         onPress={() => router.push("/")}
                         className="mt-2 self-end"
                       >
-                        <Text className="text-green-600 text-sm">
+                        <Text className="text-[#1a4a35]/60 text-xs">
                           Forgot Password?
                         </Text>
                       </TouchableOpacity>
@@ -218,66 +242,73 @@ export default function Login() {
                       onPress={handleLogin}
                       disabled={loading}
                       activeOpacity={0.9}
+                      className="rounded-2xl overflow-hidden"
                     >
                       <LinearGradient
-                        colors={['#10b981', '#059669']}
+                        colors={['#1a4a35', '#0d2e1f']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={{
                           paddingVertical: height * 0.018,
-                          borderRadius: 12,
                           opacity: loading ? 0.7 : 1,
                         }}
+                        className="flex-row items-center justify-center gap-2"
                       >
                         {loading ? (
-                          <ActivityIndicator size="small" color="white" />
+                          <ActivityIndicator size="small" color="#c9a96e" />
                         ) : (
-                          <Text className="text-white text-center font-bold text-lg">
-                            Sign In
-                          </Text>
+                          <>
+                            <Text
+                              className="text-white text-center text-base tracking-widest uppercase"
+                              style={{ fontFamily: "Georgia" }}
+                            >
+                              Sign In
+                            </Text>
+                            <Ionicons name="arrow-forward" size={16} color="#c9a96e" />
+                          </>
                         )}
                       </LinearGradient>
                     </TouchableOpacity>
 
                     {/* DIVIDER */}
-                    <View className="flex-row items-center my-6">
-                      <View className="flex-1 h-px bg-gray-200" />
-                      <Text className="mx-4 text-gray-400 text-sm">or</Text>
-                      <View className="flex-1 h-px bg-gray-200" />
-                    </View>
+                    {/* <View className="flex-row items-center my-6">
+                      <View className="flex-1 h-px bg-[#1a4a35]/10" />
+                      <Text className="mx-4 text-[#1a4a35]/40 text-xs tracking-widest uppercase">or</Text>
+                      <View className="flex-1 h-px bg-[#1a4a35]/10" />
+                    </View> */}
 
                     {/* SOCIAL LOGIN OPTIONS */}
-                    <View className="flex-row justify-center space-x-4 gap-4">
+                    {/* <View className="flex-row justify-center space-x-4 gap-4"> */}
                       {/* GOOGLE BUTTON */}
-                      <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-gray-50 py-3 rounded-xl border border-gray-200">
+                      {/* <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-white py-3 rounded-xl border border-[#1a4a35]/15">
                         <Image
                           source={require("../../assets/google-logo.png")}
-                          style={{ width: 20, height: 20 }}
+                          style={{ width: 18, height: 18 }}
                         />
-                        <Text className="text-gray-700 font-semibold ml-2">
+                        <Text className="text-[#1a4a35] font-semibold ml-2 text-sm">
                           Google
                         </Text>
-                      </TouchableOpacity>
+                      </TouchableOpacity> */}
 
                       {/* FACEBOOK BUTTON */}
-                      <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-gray-50 py-3 rounded-xl border border-gray-200">
+                      {/* <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-white py-3 rounded-xl border border-[#1a4a35]/15">
                         <Image
                           source={require("../../assets/facebook-logo.png")}
-                          style={{ width: 20, height: 20 }}
+                          style={{ width: 18, height: 18 }}
                         />
-                        <Text className="text-gray-700 font-semibold ml-2">
+                        <Text className="text-[#1a4a35] font-semibold ml-2 text-sm">
                           Facebook
                         </Text>
                       </TouchableOpacity>
-                    </View>
+                    </View> */}
 
                     {/* REGISTER LINK */}
                     <View className="mt-6 flex-row justify-center">
-                      <Text className="text-gray-500">
+                      <Text className="text-[#1a4a35]/50 text-sm">
                         Don't have an account?{" "}
                       </Text>
                       <TouchableOpacity onPress={() => router.push("/auth/register")}>
-                        <Text className="text-green-600 font-semibold">
+                        <Text className="text-[#1a4a35] font-semibold text-sm">
                           Create Account
                         </Text>
                       </TouchableOpacity>
@@ -286,7 +317,7 @@ export default function Login() {
                 </View>
 
                 {/* FOOTER */}
-                <Text className="text-white/60 text-xs text-center mt-6">
+                <Text className="text-white/50 text-xs text-center mt-6">
                   By signing in, you agree to our Terms & Conditions
                 </Text>
               </View>
@@ -294,7 +325,7 @@ export default function Login() {
           </LinearGradient>
         </ImageBackground>
 
-        {/* 🔥 LOADING MODAL SPINNER */}
+        {/* LOADING MODAL SPINNER */}
         <Modal
           transparent={true}
           visible={showModal}
@@ -308,7 +339,7 @@ export default function Login() {
         >
           <View className="flex-1 justify-center items-center bg-black/60">
             <View
-              className="bg-white rounded-3xl items-center shadow-2xl"
+              className="bg-[#faf8f3] rounded-3xl items-center"
               style={{
                 width: width * 0.75,
                 padding: 30,
@@ -319,14 +350,17 @@ export default function Login() {
                 shadowRadius: 5,
               }}
             >
-              <ActivityIndicator size="large" color="#10b981" />
-              <Text className="text-xl font-bold mt-5 text-gray-800">
+              <ActivityIndicator size="large" color="#1a4a35" />
+              <Text
+                className="text-xl mt-5 text-[#1a4a35]"
+                style={{ fontFamily: "Georgia" }}
+              >
                 {loading ? "Signing In" : "Please Wait"}
               </Text>
-              <Text className="text-base text-gray-500 mt-2 text-center">
+              <Text className="text-sm text-[#1a4a35]/50 mt-2 text-center">
                 {loading ? "Verifying your credentials" : ""}
               </Text>
-              <Text className="text-xs text-gray-400 mt-4 text-center">
+              <Text className="text-xs text-[#1a4a35]/30 mt-4 text-center tracking-wide">
                 Please don't close the app
               </Text>
             </View>

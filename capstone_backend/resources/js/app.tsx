@@ -33,6 +33,7 @@ import Reports from "./pages/admin/analytics/Reports";
 import AdminMenu from "./pages/admin/restaurant/Menu";
 import AdminOrders from "./pages/admin/restaurant/OrdersReport";
 import ChatPage from "./pages/admin/messages/[userId]";
+import Message from "./pages/admin/main/Message";
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
 import BookingStaff from "./pages/admin/management/BookingManagement";
@@ -142,6 +143,7 @@ export default function App() {
                         <Route path="/panorama" element={<PanoramaViewer />} />
                         <Route path="/admin/menu" element={<AdminMenu />} />
                         <Route path="/admin/orders" element={<AdminOrders />} />
+                        <Route path="/messages" element={<Message />} />
                         <Route
                             path="/messages/:userId"
                             element={<ChatPage />}
@@ -159,22 +161,35 @@ export default function App() {
                 {user?.role === "staff" && (
                     <Route element={<StaffLayout />}>
                         <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/bookings" element={<BookingStaff />} />
+                        <Route
+                            path="/reservation-monitor"
+                            element={<ReservationMonitor />}
+                        />
+                        <Route path="/booking-management" element={<BookingStaff />} />
                         <Route path="/transactions" element={<Transaction />} />
                         <Route path="/incidents" element={<IncidentsRooms />} />
                         <Route path="/walk-in-guests" element={<WalkIn />} />
                         {/* <Route path="/receipt/:paymentId" element={<Receipt />} /> */}
-                        <Route path="/extend-stay" element={<BookingExtend />} />
+                        <Route
+                            path="/extend-stay"
+                            element={<BookingExtend />}
+                        />
                         <Route path="/cash" element={<Cash />} />
 
-                        <Route path="*" element={<Navigate to="/dashboard" />} />
+                        <Route
+                            path="*"
+                            element={<Navigate to="/dashboard" />}
+                        />
                     </Route>
                 )}
 
                 {/* CASHIER ROUTES */}
                 {user?.role === "cashier" && (
                     <Route element={<CashierLayout />}>
-                        <Route path="/restaurant" element={<RestaurantDashboard />} />
+                        <Route
+                            path="/restaurant"
+                            element={<RestaurantDashboard />}
+                        />
                         <Route path="/orders" element={<Orders />} />
                         <Route path="/menu" element={<Menu />} />
                         <Route path="/product" element={<Product />} />

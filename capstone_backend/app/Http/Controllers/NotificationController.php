@@ -127,7 +127,6 @@ class NotificationController extends Controller
 
         return response()->json($notifications);
     }
-
     // public function getByUser(Request $request)
     // {
     //     $user = $request->user();

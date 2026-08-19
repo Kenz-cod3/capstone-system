@@ -56,7 +56,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-//  RESPONSE INTERCEPTOR (FIXED + BULLETPROOF)
+//  RESPONSE INTERCEPTOR
 api.interceptors.response.use(
   (response) => response,
   async (error) => {

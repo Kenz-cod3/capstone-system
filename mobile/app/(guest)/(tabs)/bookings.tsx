@@ -106,10 +106,13 @@ export default function Bookings() {
   }, [filter, page]);
 
   const filteredData = data.filter((item) => {
+    const status = item.booked_rooms?.[0]?.status || item.booking_status;
+
     if (filter === "active") {
-      return !["checked_out", "refunded"].includes(item.booking_status);
+      return !["checked_out", "refunded"].includes(status);
     }
-    return ["checked_out", "refunded"].includes(item.booking_status);
+
+    return ["checked_out", "refunded"].includes(status);
   });
 
   const formatPrice = (price: number) =>
@@ -261,7 +264,9 @@ export default function Bookings() {
               className="text-[#1a4a35] text-lg mb-2"
               style={{ fontFamily: "Georgia" }}
             >
-              {filter === "active" ? "No active bookings" : "No booking history"}
+              {filter === "active"
+                ? "No active bookings"
+                : "No booking history"}
             </Text>
             <Text className="text-[#1a4a35]/40 text-sm text-center leading-5">
               {filter === "active"
@@ -278,17 +283,17 @@ export default function Bookings() {
             ? `${room.image_url}?t=${new Date().getTime()}`
             : null;
 
-          const statusKey = item.booking_status
-            ?.toLowerCase()
-            .replace("-", "_");
+          const bookingStatus =
+            item.booked_rooms?.[0]?.status || item.booking_status || "pending";
 
-          const s =
-            STATUS_CONFIG[statusKey as keyof typeof STATUS_CONFIG] ?? {
-              bg: "rgba(0,0,0,0.45)",
-              text: "#fff",
-              dot: "#fff",
-              label: item.booking_status,
-            };
+          const statusKey = bookingStatus.toLowerCase().replace("-", "_");
+
+          const s = STATUS_CONFIG[statusKey as keyof typeof STATUS_CONFIG] ?? {
+            bg: "rgba(0,0,0,0.45)",
+            text: "#fff",
+            dot: "#fff",
+            label: bookingStatus,
+          };
 
           const nights = (() => {
             if (!item.check_in_date || !item.check_out_date) return null;
@@ -321,7 +326,9 @@ export default function Bookings() {
               <View className="relative">
                 <Image
                   source={{
-                    uri: normalImage || "https://picsum.photos/seed/booking/400/250",
+                    uri:
+                      normalImage ||
+                      "https://picsum.photos/seed/booking/400/250",
                   }}
                   style={{ width: "100%", height: 180 }}
                 />
@@ -430,18 +437,22 @@ export default function Bookings() {
                       >
                         View Details
                       </Text>
-                      <Ionicons name="arrow-forward" size={13} color="#c9a96e" />
+                      <Ionicons
+                        name="arrow-forward"
+                        size={13}
+                        color="#c9a96e"
+                      />
                     </LinearGradient>
                   </TouchableOpacity>
 
                   {/* CANCEL — only for pending */}
-                  {item.booking_status === "pending" && (
+                  {bookingStatus === "pending" && (
                     <TouchableOpacity
                       activeOpacity={0.85}
                       onPress={async () => {
                         try {
                           await api.put(`/bookings/${item.id}`, {
-                            booking_status: "cancelled",
+                            status: "cancelled",
                           });
                           fetchBookings(page);
                         } catch (e) {

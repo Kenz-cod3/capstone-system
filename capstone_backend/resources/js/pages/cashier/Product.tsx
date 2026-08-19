@@ -319,7 +319,8 @@ export default function Product() {
     );
 
     return (
-        <div className="min-h-screen bg-[#eef0ea]">
+        //bg-[#eef0ea]
+        <div className="min-h-screen">
             <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Header */}
                 <div className="mb-7 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">

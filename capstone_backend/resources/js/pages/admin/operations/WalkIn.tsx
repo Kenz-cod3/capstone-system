@@ -1088,7 +1088,9 @@ function WalkInContent() {
 
     // Receipt Modal State
     const [showReceiptModal, setShowReceiptModal] = useState(false);
-    const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
+    const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(
+        null,
+    );
 
     useEffect(() => {
         fetchRooms();
@@ -1382,6 +1384,8 @@ function WalkInContent() {
                 bank_reference: paymentMethod === "bank" ? bankReference : null,
             };
             const response = await api.post("/walk-in-guests/checkin", payload);
+            console.log("CHECK-IN RESPONSE");
+            console.log(JSON.stringify(response.data, null, 2));
 
             queryClient.invalidateQueries({ queryKey: ["dashboard"] });
             queryClient.invalidateQueries({ queryKey: ["rooms"] });

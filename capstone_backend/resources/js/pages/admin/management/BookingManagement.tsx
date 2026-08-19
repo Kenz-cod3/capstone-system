@@ -462,7 +462,7 @@ export default function Bookings() {
 
             return data.data || [];
         },
-        staleTime: 30000,
+        staleTime: 0,
         gcTime: 300000,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
@@ -470,6 +470,10 @@ export default function Bookings() {
     });
 
     const bookings = bookingQuery.data ?? [];
+
+    useEffect(() => {
+        bookingQuery.refetch();
+    }, [activeTab]);
 
     // Remove client-side filtering since we're doing server-side pagination
     const filteredData = bookings;

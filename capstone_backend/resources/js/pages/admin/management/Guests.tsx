@@ -42,7 +42,7 @@ import { Table } from "antd";
 import { format } from "date-fns";
 import dayjs from "dayjs";
 
-// ✅ Import the extracted full-screen modal + shared types
+// Import the extracted full-screen modal + shared types
 import {
     type User,
 } from "@/components/AdminComponents/users/Guestdetailmodal";

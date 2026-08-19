@@ -1,16 +1,37 @@
+/**
+ * Restaurant Dashboard — "Ticket Rail" design (matches Order & Menu management)
+ *
+ * Fonts used (add to your index.html <head>, or a global stylesheet):
+ *   <link rel="preconnect" href="https://fonts.googleapis.com">
+ *   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+ */
+
 import React, { useEffect, useState } from "react";
-import StaffLayout from "@/layouts/CashierLayout";
 import api from "@/services/api";
-import { 
-    ShoppingBag, 
-    TrendingUp, 
-    Clock, 
-    AlertTriangle, 
-    Package, 
+import {
+    ShoppingBag,
+    TrendingUp,
+    Clock3,
+    TriangleAlert,
+    Package,
     PhilippinePeso,
     Loader2,
-    RefreshCw
+    RefreshCcw,
+    CheckCircle2,
+    PackageX,
 } from "lucide-react";
+
+const STATUS_META: Record<string, { text: string; bg: string; dot: string }> = {
+    pending: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
+    preparing: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
+    served: { text: "#5e3c66", bg: "#f1e9f4", dot: "#845a8f" },
+    paid: { text: "#155c42", bg: "#e4f3ec", dot: "#1f7a5c" },
+    cancelled: { text: "#8a3226", bg: "#fbe9e6", dot: "#a1402f" },
+};
+
+function statusMeta(status: string) {
+    return STATUS_META[status] || STATUS_META.pending;
+}
 
 export default function RestaurantDashboard() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -26,7 +47,7 @@ export default function RestaurantDashboard() {
         try {
             const [ordersRes, menuRes] = await Promise.all([
                 api.get("/orders"),
-                api.get("/menu-items")
+                api.get("/menu-items"),
             ]);
 
             setOrders(ordersRes.data.data);
@@ -48,294 +69,324 @@ export default function RestaurantDashboard() {
     const totalOrders = orders.length;
     const totalSales = orders.reduce(
         (sum, o) => sum + parseFloat(o.total_amount || 0),
-        0
+        0,
     );
-    const pendingOrders = orders.filter(o => o.order_status === "pending").length;
-    const paidOrders = orders.filter(o => o.order_status === "paid").length;
-    
+    const pendingOrders = orders.filter((o) => o.order_status === "pending").length;
+    const paidOrders = orders.filter((o) => o.order_status === "paid").length;
+
     const lowStock = menu.filter(
-        item => item.stock_quantity <= (item.low_stock_threshold || 5)
+        (item) => item.stock_quantity <= (item.low_stock_threshold || 5),
     );
-    
-    const outOfStock = menu.filter(item => item.stock_quantity === 0);
-    
+    const outOfStock = menu.filter((item) => item.stock_quantity === 0);
+
     const recentOrders = [...orders]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 5);
 
+    const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat("en-PH", {
+            style: "currency",
+            currency: "PHP",
+            minimumFractionDigits: 2,
+        }).format(amount);
+
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center">
-                    <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mx-auto mb-4" />
-                    <p className="text-gray-500">Loading dashboard...</p>
-                </div>
+            //bg-[#eef0ea]
+            <div className="min-h-screen flex flex-col items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-[#a8822f]" />
+                <p className="mt-4 text-[#8a8f83] text-sm">Loading dashboard...</p>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        //bg-[#eef0ea]
+        <div className="min-h-screen">
+            <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Header */}
-                <div className="mb-8">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="mb-7 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
+                    <div>
+                        <p className="text-[11px] font-semibold tracking-[0.18em] text-[#a8822f] uppercase mb-1 font-['IBM_Plex_Mono']">
+                            Overview
+                        </p>
+                        <h1 className="font-['Space_Grotesk'] text-[28px] font-semibold text-[#1c2420] tracking-tight m-0">
+                            Restaurant dashboard
+                        </h1>
+                        <p className="text-[13px] text-[#6b7268] mt-1">
+                            A snapshot of orders, sales, and stock right now
+                        </p>
+                    </div>
+
+                    <button
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#dde1d7] rounded-lg text-[#5c6258] text-[13px] font-medium hover:bg-[#f5f6f2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <RefreshCcw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                        Refresh
+                    </button>
+                </div>
+
+                {/* Stat cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                    {/* Total Orders */}
+                    <div
+                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
+                        style={{ borderLeftColor: "#3b6ea5" }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
+                                Total orders
+                            </p>
+                            <ShoppingBag className="w-4 h-4 text-[#3b6ea5]" />
+                        </div>
+                        <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
+                            {totalOrders}
+                        </p>
+                        <div className="flex items-center gap-2 text-[11px] font-['IBM_Plex_Mono']">
+                            <span className="text-[#1f7a5c]">Paid {paidOrders}</span>
+                            <span className="text-[#dde1d7]">·</span>
+                            <span className="text-[#c1861f]">Pending {pendingOrders}</span>
+                        </div>
+                    </div>
+
+                    {/* Total Sales */}
+                    <div
+                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
+                        style={{ borderLeftColor: "#1f7a5c" }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
+                                Total sales
+                            </p>
+                            <PhilippinePeso className="w-4 h-4 text-[#1f7a5c]" />
+                        </div>
+                        <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
+                            {formatCurrency(totalSales)}
+                        </p>
+                        <div className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
+                            From {totalOrders} orders
+                        </div>
+                    </div>
+
+                    {/* Pending Orders */}
+                    <div
+                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
+                        style={{ borderLeftColor: "#c1861f" }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
+                                Pending orders
+                            </p>
+                            <Clock3 className="w-4 h-4 text-[#c1861f]" />
+                        </div>
+                        <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
+                            {pendingOrders}
+                        </p>
+                        {pendingOrders > 0 && (
+                            <div className="text-[11px] text-[#8a5a0f] font-['IBM_Plex_Mono']">
+                                Needs attention
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Low Stock */}
+                    <div
+                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
+                        style={{ borderLeftColor: "#a1402f" }}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
+                                Low stock items
+                            </p>
+                            <TriangleAlert className="w-4 h-4 text-[#a1402f]" />
+                        </div>
+                        <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
+                            {lowStock.length}
+                        </p>
+                        {lowStock.length > 0 && (
+                            <div className="text-[11px] text-[#8a3226] font-['IBM_Plex_Mono']">
+                                {outOfStock.length} out of stock
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Two column layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Low Stock Items */}
+                    <div className="bg-white rounded-lg border border-[#dde1d7] overflow-hidden">
+                        <div className="px-5 py-4 border-b border-[#dde1d7] flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Package className="w-4 h-4 text-[#a1402f]" />
+                                <h2 className="font-['Space_Grotesk'] text-[15px] font-semibold text-[#1c2420]">
+                                    Low stock items
+                                </h2>
+                            </div>
+                            <span className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
+                                {lowStock.length} need attention
+                            </span>
+                        </div>
+
+                        <div className="p-4">
+                            {lowStock.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-10">
+                                    <CheckCircle2 className="h-10 w-10 text-[#1f7a5c] mb-3" />
+                                    <p className="text-[#8a8f83] text-sm">
+                                        All stock levels are healthy
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {lowStock.map((item) => {
+                                        const zero = item.stock_quantity === 0;
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md border-l-2"
+                                                style={{
+                                                    borderLeftColor: zero ? "#a1402f" : "#c1861f",
+                                                }}
+                                            >
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium text-[#1c2420]">
+                                                        {item.name}
+                                                    </p>
+                                                    <p className="text-[11px] text-[#8a8f83] mt-0.5 font-['IBM_Plex_Mono']">
+                                                        threshold {item.low_stock_threshold || 5}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span
+                                                        className="text-sm font-semibold font-['IBM_Plex_Mono']"
+                                                        style={{ color: zero ? "#a1402f" : "#8a5a0f" }}
+                                                    >
+                                                        {item.stock_quantity} left
+                                                    </span>
+                                                    {zero && (
+                                                        <p className="text-[11px] text-[#a1402f] mt-0.5 flex items-center justify-end gap-1">
+                                                            <PackageX className="w-3 h-3" />
+                                                            Out of stock
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Recent Orders */}
+                    <div className="bg-white rounded-lg border border-[#dde1d7] overflow-hidden">
+                        <div className="px-5 py-4 border-b border-[#dde1d7] flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <ShoppingBag className="w-4 h-4 text-[#3b6ea5]" />
+                                <h2 className="font-['Space_Grotesk'] text-[15px] font-semibold text-[#1c2420]">
+                                    Recent orders
+                                </h2>
+                            </div>
+                            <span className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
+                                Last 5
+                            </span>
+                        </div>
+
+                        <div className="p-4">
+                            {recentOrders.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-10">
+                                    <ShoppingBag className="h-10 w-10 text-[#dde1d7] mb-3" />
+                                    <p className="text-[#8a8f83] text-sm">No orders yet</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {recentOrders.map((order) => {
+                                        const meta = statusMeta(order.order_status)!;
+                                        return (
+                                            <div
+                                                key={order.id}
+                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md border-l-2 hover:bg-[#f5f6f2] transition-colors"
+                                                style={{ borderLeftColor: meta.dot }}
+                                            >
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-['IBM_Plex_Mono'] font-semibold text-[#3c423a] bg-white border border-[#e4e7dd] px-2 py-0.5 rounded text-xs">
+                                                            {order.order_number || `#${order.id}`}
+                                                        </span>
+                                                        <span
+                                                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                                                            style={{
+                                                                backgroundColor: meta.bg,
+                                                                color: meta.text,
+                                                            }}
+                                                        >
+                                                            <span
+                                                                className="w-1.5 h-1.5 rounded-full"
+                                                                style={{ backgroundColor: meta.dot }}
+                                                            />
+                                                            {order.order_status}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
+                                                        {new Date(
+                                                            order.created_at || order.order_date,
+                                                        ).toLocaleString()}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="font-['IBM_Plex_Mono'] font-semibold text-sm text-[#1f7a5c] tabular-nums">
+                                                        {formatCurrency(parseFloat(order.total_amount || 0))}
+                                                    </p>
+                                                    <p className="text-[11px] text-[#8a8f83] mt-0.5 font-['IBM_Plex_Mono']">
+                                                        {order.items?.length || 0} items
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Additional stats */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-                                <TrendingUp className="w-8 h-8 text-emerald-500" />
-                                Restaurant Dashboard
-                            </h1>
-                            <p className="text-gray-500 mt-1">
-                                Overview of your restaurant's performance
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                                Avg order value
+                            </p>
+                            <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
+                                {formatCurrency(totalOrders > 0 ? totalSales / totalOrders : 0)}
                             </p>
                         </div>
-                        
-                        <button
-                            onClick={handleRefresh}
-                            disabled={refreshing}
-                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </button>
-                    </div>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    {/* Total Orders Card */}
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">Total Orders</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {totalOrders}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <ShoppingBag className="w-6 h-6 text-blue-600" />
-                            </div>
-                        </div>
-                        <div className="mt-4 flex items-center gap-2 text-xs">
-                            <span className="text-green-600">Paid: {paidOrders}</span>
-                            <span className="text-gray-300">|</span>
-                            <span className="text-yellow-600">Pending: {pendingOrders}</span>
-                        </div>
+                        <TrendingUp className="w-6 h-6 text-[#a8822f]" />
                     </div>
 
-                    {/* Total Sales Card */}
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">Total Sales</p>
-                                <p className="text-2xl font-bold text-emerald-600">
-                                    ₱{totalSales.toLocaleString()}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-                                <PhilippinePeso className="w-6 h-6 text-emerald-600" />
-                            </div>
+                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                                Menu items
+                            </p>
+                            <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
+                                {menu.length}
+                            </p>
                         </div>
-                        <div className="mt-4 text-xs text-gray-500">
-                            From {totalOrders} completed orders
-                        </div>
+                        <Package className="w-6 h-6 text-[#a8822f]" />
                     </div>
 
-                    {/* Pending Orders Card */}
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">Pending Orders</p>
-                                <p className={`text-2xl font-bold ${pendingOrders > 0 ? 'text-yellow-600' : 'text-gray-900'}`}>
-                                    {pendingOrders}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                                <Clock className="w-6 h-6 text-yellow-600" />
-                            </div>
+                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                                Completion rate
+                            </p>
+                            <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
+                                {totalOrders > 0 ? Math.round((paidOrders / totalOrders) * 100) : 0}%
+                            </p>
                         </div>
-                        {pendingOrders > 0 && (
-                            <div className="mt-4 text-xs text-yellow-600">
-                                ⚠️ Needs attention
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Low Stock Card */}
-                    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">Low Stock Items</p>
-                                <p className={`text-2xl font-bold ${lowStock.length > 0 ? 'text-red-500' : 'text-gray-900'}`}>
-                                    {lowStock.length}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                                <AlertTriangle className="w-6 h-6 text-red-600" />
-                            </div>
-                        </div>
-                        {lowStock.length > 0 && (
-                            <div className="mt-4 text-xs text-red-600">
-                                {outOfStock.length} items out of stock
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Two Column Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Low Stock Items Section */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <Package className="w-5 h-5 text-red-500" />
-                                    <h2 className="text-lg font-semibold text-gray-900">
-                                        Low Stock Items
-                                    </h2>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                    {lowStock.length} items need attention
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <div className="p-6">
-                            {lowStock.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <Package className="w-8 h-8 text-green-600" />
-                                    </div>
-                                    <p className="text-gray-500">All stock levels are healthy! 👍</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {lowStock.map(item => (
-                                        <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                            <div className="flex-1">
-                                                <p className="font-medium text-gray-900">{item.name}</p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    Threshold: {item.low_stock_threshold || 5}
-                                                </p>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className={`text-sm font-bold ${
-                                                    item.stock_quantity === 0 
-                                                        ? 'text-red-600' 
-                                                        : 'text-orange-600'
-                                                }`}>
-                                                    {item.stock_quantity} left
-                                                </span>
-                                                {item.stock_quantity === 0 && (
-                                                    <p className="text-xs text-red-500 mt-1">Out of stock!</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Recent Orders Section */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <ShoppingBag className="w-5 h-5 text-blue-500" />
-                                    <h2 className="text-lg font-semibold text-gray-900">
-                                        Recent Orders
-                                    </h2>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                    Last 5 orders
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <div className="p-6">
-                            {recentOrders.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <ShoppingBag className="w-8 h-8 text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500">No orders yet</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {recentOrders.map(order => (
-                                        <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <p className="font-medium text-gray-900">
-                                                        {order.order_number || `Order #${order.id}`}
-                                                    </p>
-                                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                                        order.order_status === 'paid' 
-                                                            ? 'bg-green-100 text-green-700'
-                                                            : order.order_status === 'pending'
-                                                                ? 'bg-yellow-100 text-yellow-700'
-                                                                : 'bg-gray-100 text-gray-700'
-                                                    }`}>
-                                                        {order.order_status}
-                                                    </span>
-                                                </div>
-                                                <p className="text-xs text-gray-500">
-                                                    {new Date(order.created_at || order.order_date).toLocaleString()}
-                                                </p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-bold text-emerald-600">
-                                                    ₱{parseFloat(order.total_amount || 0).toLocaleString()}
-                                                </p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    {order.items?.length || 0} items
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Additional Stats Section */}
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-blue-600 mb-1">Average Order Value</p>
-                                <p className="text-2xl font-bold text-blue-900">
-                                    ₱{(totalOrders > 0 ? totalSales / totalOrders : 0).toLocaleString()}
-                                </p>
-                            </div>
-                            <TrendingUp className="w-8 h-8 text-blue-500 opacity-50" />
-                        </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-purple-600 mb-1">Menu Items</p>
-                                <p className="text-2xl font-bold text-purple-900">
-                                    {menu.length}
-                                </p>
-                            </div>
-                            <Package className="w-8 h-8 text-purple-500 opacity-50" />
-                        </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-emerald-600 mb-1">Completion Rate</p>
-                                <p className="text-2xl font-bold text-emerald-900">
-                                    {totalOrders > 0 ? Math.round((paidOrders / totalOrders) * 100) : 0}%
-                                </p>
-                            </div>
-                            <TrendingUp className="w-8 h-8 text-emerald-500 opacity-50" />
-                        </div>
+                        <TrendingUp className="w-6 h-6 text-[#a8822f]" />
                     </div>
                 </div>
             </div>

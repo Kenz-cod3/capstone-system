@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
 use App\Events\NotificationCreated;
 use App\Models\BookingPayment;
 use App\Models\Booking;
@@ -9,6 +10,7 @@ use App\Models\Shift;
 use App\Models\CashTransaction;
 use App\Models\Notification;
 use App\Models\User;
+use App\Services\MailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -213,9 +215,10 @@ class BookingPaymentController extends Controller
         if (!in_array($bookedRoom->status, [
             'confirmed',
             'checked_in',
+            'cancelled',
         ])) {
             return response()->json([
-                'message' => 'Only confirmed or checked-in rooms can be refunded.'
+                'message' => 'Only confirmed, checked-in, or cancelled rooms can be refunded.'
             ], 400);
         }
 
@@ -272,6 +275,12 @@ class BookingPaymentController extends Controller
                 'status' => 'refunded'
             ]);
 
+            if ($bookedRoom->room) {
+                $bookedRoom->room->update([
+                    'status' => \App\Models\Room::STATUS_AVAILABLE,
+                ]);
+            }
+
             $staffName = Auth::user()->first_name . ' ' . Auth::user()->last_name;
 
             $users = User::whereIn('role', ['admin', 'staff'])->get();
@@ -287,6 +296,30 @@ class BookingPaymentController extends Controller
                 event(new NotificationCreated($notification));
             }
 
+            // Notify Guest
+            if ($booking->user_id) {
+
+                $notification = Notification::create([
+                    'user_id' => $booking->user_id,
+                    'title' => 'Booking Refunded',
+                    'message' => 'Your booking ' . $booking->booking_reference .
+                        ' has been refunded successfully.',
+                    'is_read' => false,
+                ]);
+
+                broadcast(new NotificationCreated($notification));
+
+                if ($booking->user && $booking->user->email) {
+
+                    MailService::sendNotificationEmail(
+                        $booking->user->email,
+                        $booking->user->first_name,
+                        $booking->booking_reference,
+                        $notification->title,
+                        $notification->message
+                    );
+                }
+            }
             // Update booking total
             $remainingTotal = 0;
 
@@ -344,6 +377,8 @@ class BookingPaymentController extends Controller
             }
 
             DB::commit();
+
+            broadcast(new DashboardUpdated())->toOthers();
 
             return response()->json([
                 'message' => 'Room refunded successfully.',

@@ -9,75 +9,376 @@ use App\Models\BookingPayment;
 use App\Models\Notification;
 use App\Models\Room;
 use App\Models\User;
+use App\Services\MailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class BookedRoomController extends Controller
 {
     // GET ALL ACTIVE BOOKED ROOMS
-    public function index()
+    public function index(Request $request)
     {
+        $perPage = $request->per_page ?? 10;
+        $search = $request->search;
 
-        return response()->json(
-            BookedRoom::with([
-                'room.roomType',
-                'booking.user',
-                'booking.walkInGuest',
-                'booking.createdBy',
-                'booking.histories.user',
-                'booking.payments.receiver',
-                'booking.payments.shift',
-                'bookingAddOns.addOn',
-            ])
-                ->whereNull('archived_at')
-                ->whereIn('status', [
+        $query = BookedRoom::with([
+            'room.roomType',
+            'booking.user',
+            'booking.walkInGuest',
+            'booking.createdBy',
+            'booking.histories.user',
+            'booking.payments.receiver',
+            'booking.payments.shift',
+            'bookingAddOns.addOn',
+        ])
+            ->whereNull('archived_at')
+            ->where(function ($q) {
+
+                $q->whereIn('status', [
                     'pending',
                     'confirmed',
                     'checked_in',
-                ])
+                ]);
+
+                $q->orWhere(function ($q2) {
+                    $q2->where('status', 'cancelled')
+                        ->whereHas('booking.payments', function ($payment) {
+                            $payment->where('payment_status', 'paid');
+                        });
+                });
+            });
+
+        if (!empty($search)) {
+
+            $query->where(function ($q) use ($search) {
+
+                // Room Number
+                $q->whereHas('room', function ($room) use ($search) {
+                    $room->where('room_number', 'LIKE', "%{$search}%");
+                })
+
+                    // Booking Reference
+                    ->orWhereHas('booking', function ($booking) use ($search) {
+
+                        $booking->where('booking_reference', 'LIKE', "%{$search}%")
+                            ->orWhere('id', $search)
+
+                            // Online Guest
+                            ->orWhereHas('user', function ($user) use ($search) {
+
+                                $user->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    // First Middle Last
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // First Last
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last First
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last First Middle
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last, First Middle
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            })
+
+                            // Walk-in Guest
+                            ->orWhereHas('walkInGuest', function ($guest) use ($search) {
+
+                                $guest->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    // First Middle Last
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // First Last
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last First
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last First Middle
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    // Last, First Middle
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            });
+                    });
+            });
+        }
+
+        return response()->json(
+            $query
                 ->latest()
-                ->paginate(10),
+                ->paginate($perPage),
             200
         );
     }
 
-    public function history()
+    public function history(Request $request)
     {
-        return response()->json(
-            BookedRoom::with([
-                'room.roomType',
-                'booking.user',
-                'booking.walkInGuest',
-                'booking.createdBy',
-                'booking.payments.receiver',
-                'booking.payments.shift',
-                'bookingAddOns.addOn',
-            ])
-                ->whereNull('archived_at')
-                ->whereIn('status', [
+        $perPage = $request->per_page ?? 10;
+        $search = $request->search;
+
+        $query = BookedRoom::with([
+            'room.roomType',
+            'booking.user',
+            'booking.walkInGuest',
+            'booking.createdBy',
+            'booking.payments.receiver',
+            'booking.payments.shift',
+            'bookingAddOns.addOn',
+        ])
+            ->whereNull('archived_at')
+            ->where(function ($q) {
+
+                // Always show these
+                $q->whereIn('status', [
                     'checked_out',
-                    'cancelled',
-                    'refunded'
-                ])
-                ->paginate(10),
+                    'refunded',
+                ]);
+
+                // Show cancelled only if NOT paid
+                $q->orWhere(function ($q2) {
+                    $q2->where('status', 'cancelled')
+                        ->whereHas('booking.payments', function ($payment) {
+                            $payment->where('payment_status', '!=', 'paid');
+                        });
+                });
+            });
+
+        if (!empty($search)) {
+
+            $query->where(function ($q) use ($search) {
+
+                // Room Number
+                $q->whereHas('room', function ($room) use ($search) {
+                    $room->where('room_number', 'LIKE', "%{$search}%");
+                })
+
+                    // Booking
+                    ->orWhereHas('booking', function ($booking) use ($search) {
+
+                        $booking->where('booking_reference', 'LIKE', "%{$search}%")
+                            ->orWhere('id', $search)
+
+                            // Online Guest
+                            ->orWhereHas('user', function ($user) use ($search) {
+
+                                $user->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            })
+
+                            // Walk-in Guest
+                            ->orWhereHas('walkInGuest', function ($guest) use ($search) {
+
+                                $guest->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            });
+                    });
+            });
+        }
+
+        return response()->json(
+            $query
+                ->latest()
+                ->paginate($perPage),
+            200
         );
     }
 
     // GET TRASHED BOOKED ROOMS
-    public function trash()
+    public function trash(Request $request)
     {
+        $perPage = $request->per_page ?? 10;
+        $search = $request->search;
+
+        $query = BookedRoom::with([
+            'room.roomType',
+            'booking.user',
+            'booking.walkInGuest',
+            'booking.createdBy',
+            'booking.payments.receiver',
+            'booking.payments.shift',
+            'bookingAddOns.addOn',
+        ])
+            ->whereNotNull('archived_at');
+
+        if (!empty($search)) {
+
+            $query->where(function ($q) use ($search) {
+
+                // Room Number
+                $q->whereHas('room', function ($room) use ($search) {
+                    $room->where('room_number', 'LIKE', "%{$search}%");
+                })
+
+                    // Booking
+                    ->orWhereHas('booking', function ($booking) use ($search) {
+
+                        $booking->where('booking_reference', 'LIKE', "%{$search}%")
+                            ->orWhere('id', $search)
+
+                            // Online Guest
+                            ->orWhereHas('user', function ($user) use ($search) {
+
+                                $user->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            })
+
+                            // Walk-in Guest
+                            ->orWhereHas('walkInGuest', function ($guest) use ($search) {
+
+                                $guest->where('first_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('middle_name', 'LIKE', "%{$search}%")
+                                    ->orWhere('last_name', 'LIKE', "%{$search}%")
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', middle_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(first_name, ' ', last_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ' ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    )
+
+                                    ->orWhereRaw(
+                                        "CONCAT(last_name, ', ', first_name, ' ', middle_name) LIKE ?",
+                                        ["%{$search}%"]
+                                    );
+                            });
+                    });
+            });
+        }
+
         return response()->json(
-            BookedRoom::with([
-                'room.roomType',
-                'booking.user',
-                'booking.walkInGuest',
-                'booking.createdBy',
-                'booking.payments.receiver',
-                'booking.payments.shift',
-                'bookingAddOns.addOn',
-            ])
-                ->whereNotNull('archived_at')
-                ->paginate(10),
+            $query
+                ->latest()
+                ->paginate($perPage),
             200
         );
     }
@@ -188,7 +489,7 @@ class BookedRoomController extends Controller
                         'old_status'   => 'pending',
                         'new_status'   => 'confirmed',
                         'change_note'  => 'Booking confirmed',
-                        'changed_by' => Auth::id(),
+                        'changed_by'   => Auth::id(),
                     ]);
 
                     BookingPayment::where('booking_id', $bookedRoom->booking_id)
@@ -197,6 +498,49 @@ class BookedRoomController extends Controller
                             'payment_status' => 'paid',
                             'payment_date' => now(),
                         ]);
+
+                    // Notify Admins and Staff (except the user who confirmed)
+                    $users = User::whereIn('role', ['admin', 'staff'])
+                        ->where('id', '!=', Auth::id())
+                        ->get();
+
+                    $staffName = Auth::user()->first_name . ' ' . Auth::user()->last_name;
+
+                    foreach ($users as $user) {
+
+                        $notification = Notification::create([
+                            'user_id' => $user->id,
+                            'title' => 'Booking Confirmed',
+                            'message' => $staffName . ' confirmed booking ' . $booking->booking_reference . '.',
+                            'is_read' => false,
+                        ]);
+
+                        broadcast(new NotificationCreated($notification));
+                    }
+
+                    // Notify Guest
+                    if ($booking->user_id) {
+
+                        $notification = Notification::create([
+                            'user_id' => $booking->user_id,
+                            'title' => 'Booking Confirmed',
+                            'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
+                            'is_read' => false,
+                        ]);
+
+                        broadcast(new NotificationCreated($notification));
+
+                        if ($booking->user && $booking->user->email) {
+
+                            MailService::sendNotificationEmail(
+                                $booking->user->email,
+                                $booking->user->first_name,
+                                $booking->booking_reference,
+                                $notification->title,
+                                $notification->message
+                            );
+                        }
+                    }
 
                     break;
 
@@ -241,7 +585,7 @@ class BookedRoomController extends Controller
                     foreach ($users as $user) {
                         $notification = Notification::create([
                             'user_id' => $user->id,
-                            'title' => 'Room Ready for Cleaning',
+                            'title' => 'Checked-out',
                             'message' => 'Guest Room ' .
                                 $bookedRoom->room->room_number .
                                 ' has been checked out.',

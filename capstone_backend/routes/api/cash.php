@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CashCategoryController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CashTransactionController;
 use App\Models\CashCategory;
@@ -13,10 +14,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/cash/expenses/total', [CashTransactionController::class, 'totalExpenses']);
 
+    // // CATEGORIES
+    // Route::get('/cash-categories', function () {
+    //     return CashCategory::all();
+    // });
     // CATEGORIES
-    Route::get('/cash-categories', function () {
-        return CashCategory::all();
-    });
+    Route::get('/cash-categories', [CashCategoryController::class, 'index']);
+    Route::post('/cash-categories', [CashCategoryController::class, 'store']);
 
     // USERS (FILTERED ROLES)
     return User::whereIn(DB::raw('LOWER(role)'), [

@@ -1,16 +1,16 @@
 import { useEffect, useState, useRef } from "react";
 import api from "@/services/api";
-import { 
-    Plus, 
-    Trash2, 
-    Edit, 
-    Search, 
-    X, 
-    AlertCircle, 
-    CheckCircle, 
-    Package, 
-    Coffee, 
-    Utensils, 
+import {
+    Plus,
+    Trash2,
+    Edit,
+    Search,
+    X,
+    AlertCircle,
+    CheckCircle,
+    Package,
+    Coffee,
+    Utensils,
     Cake,
     AlertTriangle,
     Loader2,
@@ -18,7 +18,7 @@ import {
     ChevronDown,
     ChevronUp,
     Upload,
-    Image as ImageIcon
+    Image as ImageIcon,
 } from "lucide-react";
 
 export default function AdminMenu() {
@@ -66,7 +66,7 @@ export default function AdminMenu() {
                 alert("Image size must be less than 2MB");
                 return;
             }
-            if (!file.type.startsWith('image/')) {
+            if (!file.type.startsWith("image/")) {
                 alert("Please select a valid image file");
                 return;
             }
@@ -83,7 +83,7 @@ export default function AdminMenu() {
         setImageFile(null);
         setImagePreview(null);
         if (fileInputRef.current) {
-            fileInputRef.current.value = '';
+            fileInputRef.current.value = "";
         }
     };
 
@@ -102,26 +102,29 @@ export default function AdminMenu() {
 
         try {
             const formData = new FormData();
-            formData.append('name', form.name);
-            formData.append('description', form.description || '');
-            formData.append('category', form.category);
-            formData.append('price', form.price);
-            formData.append('stock_quantity', form.stock_quantity || '0');
-            formData.append('low_stock_threshold', form.low_stock_threshold || '0');
-            formData.append('is_active', form.is_active ? '1' : '0');
-            
+            formData.append("name", form.name);
+            formData.append("description", form.description || "");
+            formData.append("category", form.category);
+            formData.append("price", form.price);
+            formData.append("stock_quantity", form.stock_quantity || "0");
+            formData.append(
+                "low_stock_threshold",
+                form.low_stock_threshold || "0",
+            );
+            formData.append("is_active", form.is_active ? "1" : "0");
+
             if (imageFile) {
-                formData.append('image', imageFile);
+                formData.append("image", imageFile);
             }
 
             if (editingItem) {
-                formData.append('_method', 'PUT');
+                formData.append("_method", "PUT");
                 await api.post(`/menu-items/${editingItem.id}`, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
+                    headers: { "Content-Type": "multipart/form-data" },
                 });
             } else {
-                await api.post('/menu-items', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
+                await api.post("/menu-items", formData, {
+                    headers: { "Content-Type": "multipart/form-data" },
                 });
             }
 
@@ -132,7 +135,10 @@ export default function AdminMenu() {
             setImagePreview(null);
             fetchItems();
         } catch (err: any) {
-            alert(err.response?.data?.message || `Error ${editingItem ? "updating" : "adding"} product`);
+            alert(
+                err.response?.data?.message ||
+                    `Error ${editingItem ? "updating" : "adding"} product`,
+            );
         } finally {
             setLoading(false);
         }
@@ -140,7 +146,7 @@ export default function AdminMenu() {
 
     const deleteItem = async (id: number, name: string) => {
         if (!confirm(`Delete "${name}"? This action cannot be undone.`)) return;
-        
+
         try {
             await api.delete(`/menu-items/${id}`);
             fetchItems();
@@ -184,43 +190,56 @@ export default function AdminMenu() {
     };
 
     const getCategoryIcon = (category: string) => {
-        switch(category) {
-            case "Drinks": return <Coffee className="w-4 h-4" />;
-            case "Meals": return <Utensils className="w-4 h-4" />;
-            case "Desserts": return <Cake className="w-4 h-4" />;
-            default: return <Package className="w-4 h-4" />;
+        switch (category) {
+            case "Drinks":
+                return <Coffee className="w-4 h-4" />;
+            case "Meals":
+                return <Utensils className="w-4 h-4" />;
+            case "Desserts":
+                return <Cake className="w-4 h-4" />;
+            default:
+                return <Package className="w-4 h-4" />;
         }
     };
 
     const getCategoryColor = (category: string) => {
-        switch(category) {
-            case "Drinks": return "bg-blue-100 text-blue-700";
-            case "Meals": return "bg-orange-100 text-orange-700";
-            case "Desserts": return "bg-pink-100 text-pink-700";
-            default: return "bg-gray-100 text-gray-700";
+        switch (category) {
+            case "Drinks":
+                return "bg-blue-100 text-blue-700";
+            case "Meals":
+                return "bg-orange-100 text-orange-700";
+            case "Desserts":
+                return "bg-pink-100 text-pink-700";
+            default:
+                return "bg-gray-100 text-gray-700";
         }
     };
 
     // Filter and sort items
     const filteredAndSortedItems = items
-        .filter(item => {
-            const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                  (item.description?.toLowerCase().includes(searchTerm.toLowerCase()));
-            const matchesCategory = categoryFilter === "All" || item.category === categoryFilter;
-            const matchesStatus = statusFilter === "All" || 
-                                 (statusFilter === "Active" && item.is_active) ||
-                                 (statusFilter === "Inactive" && !item.is_active);
+        .filter((item) => {
+            const matchesSearch =
+                item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.description
+                    ?.toLowerCase()
+                    .includes(searchTerm.toLowerCase());
+            const matchesCategory =
+                categoryFilter === "All" || item.category === categoryFilter;
+            const matchesStatus =
+                statusFilter === "All" ||
+                (statusFilter === "Active" && item.is_active) ||
+                (statusFilter === "Inactive" && !item.is_active);
             return matchesSearch && matchesCategory && matchesStatus;
         })
         .sort((a, b) => {
             let aVal = a[sortBy];
             let bVal = b[sortBy];
-            
+
             if (sortBy === "price" || sortBy === "stock_quantity") {
                 aVal = Number(aVal);
                 bVal = Number(bVal);
             }
-            
+
             if (sortOrder === "asc") {
                 return aVal > bVal ? 1 : -1;
             } else {
@@ -238,8 +257,13 @@ export default function AdminMenu() {
     };
 
     const getStockStatus = (item: any) => {
-        if (item.stock_quantity <= 0) return { label: "Out of Stock", color: "bg-red-100 text-red-700" };
-        if (item.stock_quantity <= item.low_stock_threshold) return { label: "Low Stock", color: "bg-yellow-100 text-yellow-700" };
+        if (item.stock_quantity <= 0)
+            return { label: "Out of Stock", color: "bg-red-100 text-red-700" };
+        if (item.stock_quantity <= item.low_stock_threshold)
+            return {
+                label: "Low Stock",
+                color: "bg-yellow-100 text-yellow-700",
+            };
         return { label: "In Stock", color: "bg-green-100 text-green-700" };
     };
 
@@ -257,7 +281,7 @@ export default function AdminMenu() {
                             Manage your restaurant's menu items and inventory
                         </p>
                     </div>
-                    
+
                     <button
                         onClick={() => {
                             resetForm();
@@ -282,10 +306,14 @@ export default function AdminMenu() {
                     {filteredAndSortedItems.length === 0 ? (
                         <div className="col-span-full bg-white rounded-xl shadow-sm p-12 text-center border border-gray-100">
                             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                            <p className="text-gray-500 text-lg">No menu items found</p>
+                            <p className="text-gray-500 text-lg">
+                                No menu items found
+                            </p>
                             <p className="text-gray-400 text-sm mt-2">
-                                {searchTerm || categoryFilter !== "All" || statusFilter !== "All" 
-                                    ? "Try adjusting your filters" 
+                                {searchTerm ||
+                                categoryFilter !== "All" ||
+                                statusFilter !== "All"
+                                    ? "Try adjusting your filters"
                                     : "Click 'Add Menu Item' to get started"}
                             </p>
                         </div>
@@ -300,8 +328,8 @@ export default function AdminMenu() {
                                     {/* Image Section */}
                                     {item.image_url && (
                                         <div className="relative h-48 overflow-hidden bg-gray-100">
-                                            <img 
-                                                src={item.image_url} 
+                                            <img
+                                                src={item.image_url}
                                                 alt={item.name}
                                                 className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
                                             />
@@ -314,14 +342,18 @@ export default function AdminMenu() {
                                             )}
                                         </div>
                                     )}
-                                    
+
                                     <div className="p-6">
                                         {/* Header */}
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-2">
-                                                    {getCategoryIcon(item.category)}
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(item.category)}`}>
+                                                    {getCategoryIcon(
+                                                        item.category,
+                                                    )}
+                                                    <span
+                                                        className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(item.category)}`}
+                                                    >
                                                         {item.category}
                                                     </span>
                                                 </div>
@@ -331,60 +363,79 @@ export default function AdminMenu() {
                                             </div>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => editItem(item)}
+                                                    onClick={() =>
+                                                        editItem(item)
+                                                    }
                                                     className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                                 >
                                                     <Edit className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => deleteItem(item.id, item.name)}
+                                                    onClick={() =>
+                                                        deleteItem(
+                                                            item.id,
+                                                            item.name,
+                                                        )
+                                                    }
                                                     className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         </div>
-                                        
+
                                         {/* Description */}
                                         {item.description && (
                                             <p className="text-gray-600 text-sm mb-3 line-clamp-2">
                                                 {item.description}
                                             </p>
                                         )}
-                                        
+
                                         {/* Price and Stock */}
                                         <div className="space-y-2 mb-3">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-xl font-bold text-orange-600">
-                                                    ₱{Number(item.price).toFixed(2)}
+                                                    ₱
+                                                    {Number(item.price).toFixed(
+                                                        2,
+                                                    )}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <Package className="w-4 h-4 text-gray-400" />
                                                 <span className="text-sm text-gray-600">
-                                                    Stock: {item.stock_quantity} units
+                                                    Stock: {item.stock_quantity}{" "}
+                                                    units
                                                 </span>
                                             </div>
                                         </div>
-                                        
+
                                         {/* Status Badges */}
                                         <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-100">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                item.is_active 
-                                                    ? "bg-green-100 text-green-700" 
-                                                    : "bg-gray-100 text-gray-700"
-                                            }`}>
-                                                {item.is_active ? "Active" : "Inactive"}
+                                            <span
+                                                className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                    item.is_active
+                                                        ? "bg-green-100 text-green-700"
+                                                        : "bg-gray-100 text-gray-700"
+                                                }`}
+                                            >
+                                                {item.is_active
+                                                    ? "Active"
+                                                    : "Inactive"}
                                             </span>
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.color}`}>
+                                            <span
+                                                className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.color}`}
+                                            >
                                                 {stockStatus.label}
                                             </span>
-                                            {item.stock_quantity <= item.low_stock_threshold && item.stock_quantity > 0 && (
-                                                <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-                                                    <AlertTriangle className="w-3 h-3" />
-                                                    Low Stock Alert
-                                                </span>
-                                            )}
+                                            {item.stock_quantity <=
+                                                item.low_stock_threshold &&
+                                                item.stock_quantity > 0 && (
+                                                    <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                        Low Stock Alert
+                                                    </span>
+                                                )}
                                         </div>
                                     </div>
                                 </div>
@@ -396,15 +447,19 @@ export default function AdminMenu() {
                 {/* Add/Edit Modal with Image Upload */}
                 {open && (
                     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-10 duration-300">
+                        <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-10 duration-300">
                             {/* Modal Header */}
-                            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                            <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                                 <div>
                                     <h2 className="text-xl font-semibold text-gray-900">
-                                        {editingItem ? "Edit Menu Item" : "Add New Menu Item"}
+                                        {editingItem
+                                            ? "Edit Menu Item"
+                                            : "Add New Menu Item"}
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        {editingItem ? "Update the details below" : "Fill in the details to add a new item"}
+                                        {editingItem
+                                            ? "Update the details below"
+                                            : "Fill in the details to add a new item"}
                                     </p>
                                 </div>
                                 <button
@@ -418,9 +473,9 @@ export default function AdminMenu() {
                                     <X className="w-5 h-5 text-gray-500" />
                                 </button>
                             </div>
-                            
+
                             {/* Modal Body */}
-                            <div className="p-6">
+                            <div className="flex-1 overflow-y-auto p-6">
                                 {/* Image Upload Section */}
                                 <div className="mb-6">
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -429,9 +484,9 @@ export default function AdminMenu() {
                                     <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-orange-500 transition-colors">
                                         {imagePreview ? (
                                             <div className="relative">
-                                                <img 
-                                                    src={imagePreview} 
-                                                    alt="Preview" 
+                                                <img
+                                                    src={imagePreview}
+                                                    alt="Preview"
                                                     className="h-40 w-auto object-cover rounded-lg"
                                                 />
                                                 <button
@@ -449,18 +504,24 @@ export default function AdminMenu() {
                                                         htmlFor="image-upload"
                                                         className="relative cursor-pointer bg-white rounded-md font-medium text-orange-600 hover:text-orange-500 focus-within:outline-none"
                                                     >
-                                                        <span>Upload a file</span>
+                                                        <span>
+                                                            Upload a file
+                                                        </span>
                                                         <input
                                                             id="image-upload"
                                                             name="image-upload"
                                                             type="file"
                                                             className="sr-only"
                                                             accept="image/*"
-                                                            onChange={handleImageSelect}
+                                                            onChange={
+                                                                handleImageSelect
+                                                            }
                                                             ref={fileInputRef}
                                                         />
                                                     </label>
-                                                    <p className="pl-1">or drag and drop</p>
+                                                    <p className="pl-1">
+                                                        or drag and drop
+                                                    </p>
                                                 </div>
                                                 <p className="text-xs text-gray-500">
                                                     PNG, JPG, GIF up to 2MB
@@ -473,16 +534,24 @@ export default function AdminMenu() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="md:col-span-2">
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Item Name <span className="text-red-500">*</span>
+                                            Item Name{" "}
+                                            <span className="text-red-500">
+                                                *
+                                            </span>
                                         </label>
                                         <input
                                             placeholder="e.g., Chicken Adobo"
                                             value={form.name}
-                                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    name: e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
                                         />
                                     </div>
-                                    
+
                                     <div className="md:col-span-2">
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
                                             Description
@@ -491,40 +560,65 @@ export default function AdminMenu() {
                                             placeholder="Describe the item..."
                                             rows={3}
                                             value={form.description}
-                                            onChange={(e) => setForm({ ...form, description: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    description: e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Category <span className="text-red-500">*</span>
+                                            Category{" "}
+                                            <span className="text-red-500">
+                                                *
+                                            </span>
                                         </label>
                                         <select
                                             value={form.category}
-                                            onChange={(e) => setForm({ ...form, category: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    category: e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                         >
-                                            <option value="Drinks">Drinks</option>
+                                            <option value="Drinks">
+                                                Drinks
+                                            </option>
                                             <option value="Meals">Meals</option>
-                                            <option value="Desserts">Desserts</option>
+                                            <option value="Desserts">
+                                                Desserts
+                                            </option>
                                         </select>
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Price (₱) <span className="text-red-500">*</span>
+                                            Price (₱){" "}
+                                            <span className="text-red-500">
+                                                *
+                                            </span>
                                         </label>
                                         <input
                                             type="number"
                                             step="0.01"
                                             placeholder="0.00"
                                             value={form.price}
-                                            onChange={(e) => setForm({ ...form, price: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    price: e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
                                             Stock Quantity
@@ -533,11 +627,17 @@ export default function AdminMenu() {
                                             type="number"
                                             placeholder="0"
                                             value={form.stock_quantity}
-                                            onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    stock_quantity:
+                                                        e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
                                             Low Stock Threshold
@@ -546,29 +646,43 @@ export default function AdminMenu() {
                                             type="number"
                                             placeholder="10"
                                             value={form.low_stock_threshold}
-                                            onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    low_stock_threshold:
+                                                        e.target.value,
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
                                             Status
                                         </label>
                                         <select
                                             value={form.is_active ? "1" : "0"}
-                                            onChange={(e) => setForm({ ...form, is_active: e.target.value === "1" })}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    is_active:
+                                                        e.target.value === "1",
+                                                })
+                                            }
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                                         >
                                             <option value="1">Available</option>
-                                            <option value="0">Unavailable</option>
+                                            <option value="0">
+                                                Unavailable
+                                            </option>
                                         </select>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Modal Footer */}
-                            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+                            <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
                                 <button
                                     onClick={() => {
                                         setOpen(false);
@@ -584,8 +698,16 @@ export default function AdminMenu() {
                                     disabled={loading}
                                     className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
-                                    {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                                    {loading ? (editingItem ? "Updating..." : "Adding...") : (editingItem ? "Update Item" : "Save Item")}
+                                    {loading && (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    )}
+                                    {loading
+                                        ? editingItem
+                                            ? "Updating..."
+                                            : "Adding..."
+                                        : editingItem
+                                          ? "Update Item"
+                                          : "Save Item"}
                                 </button>
                             </div>
                         </div>
