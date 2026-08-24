@@ -1,6 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, TrendingUp, TrendingDown, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import {
+    Calendar as CalendarIcon,
+    TrendingUp,
+    TrendingDown,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    X,
+} from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
     LineChart,
@@ -10,10 +18,11 @@ import {
     Tooltip,
     ResponsiveContainer,
     CartesianGrid,
-    Legend
+    Legend,
 } from "recharts";
 import { DateRange } from "react-day-picker";
 import { format, addMonths } from "date-fns";
+import api from "@/services/api";
 
 //-----TYPES----->
 export interface ChartData {
@@ -25,23 +34,47 @@ export interface ChartData {
     year?: number;
 }
 
-type TimeRange = "last7days" | "last30days" | "thismonth" | "thisyear" | "lastyear" | "custom";
+type TimeRange =
+    | "last7days"
+    | "last30days"
+    | "thismonth"
+    | "thisyear"
+    | "lastyear"
+    | "custom";
 
 //-----HELPER (SAFE NUMBER)----->
 const toNumber = (val: number | string) => Number(val) || 0;
 
 //-----HELPER FUNCTION TO CALCULATE PERCENTAGE CHANGE BETWEEN TWO PERIODS----->
-const calculatePeriodChange = (currentData: ChartData[], previousData: ChartData[]) => {
-    const currentTotal = currentData.reduce((sum, item) => sum + toNumber(item.revenue), 0);
-    const previousTotal = previousData.reduce((sum, item) => sum + toNumber(item.revenue), 0);
+const calculatePeriodChange = (
+    currentData: ChartData[],
+    previousData: ChartData[],
+) => {
+    const currentTotal = currentData.reduce(
+        (sum, item) => sum + toNumber(item.revenue),
+        0,
+    );
+    const previousTotal = previousData.reduce(
+        (sum, item) => sum + toNumber(item.revenue),
+        0,
+    );
 
     if (previousTotal === 0) return currentTotal > 0 ? 100 : 0;
     return ((currentTotal - previousTotal) / previousTotal) * 100;
 };
 
-const calculateExpensesChange = (currentData: ChartData[], previousData: ChartData[]) => {
-    const currentTotal = currentData.reduce((sum, item) => sum + toNumber(item.expenses), 0);
-    const previousTotal = previousData.reduce((sum, item) => sum + toNumber(item.expenses), 0);
+const calculateExpensesChange = (
+    currentData: ChartData[],
+    previousData: ChartData[],
+) => {
+    const currentTotal = currentData.reduce(
+        (sum, item) => sum + toNumber(item.expenses),
+        0,
+    );
+    const previousTotal = previousData.reduce(
+        (sum, item) => sum + toNumber(item.expenses),
+        0,
+    );
 
     if (previousTotal === 0) return currentTotal > 0 ? 100 : 0;
     return ((currentTotal - previousTotal) / previousTotal) * 100;
@@ -62,8 +95,8 @@ const generateDateRange = (startDate: Date, endDate: Date): string[] => {
 
     while (currentDate <= endDate) {
         const year = currentDate.getFullYear();
-        const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-        const day = String(currentDate.getDate()).padStart(2, '0');
+        const month = String(currentDate.getMonth() + 1).padStart(2, "0");
+        const day = String(currentDate.getDate()).padStart(2, "0");
         dates.push(`${year}-${month}-${day}`);
         currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -110,7 +143,7 @@ const MonthCaption = ({
 const RangePicker = ({
     onSelect,
     onClose,
-    initialRange
+    initialRange,
 }: {
     onSelect: (from: Date, to: Date) => void;
     onClose: () => void;
@@ -118,11 +151,11 @@ const RangePicker = ({
 }) => {
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: initialRange.from || undefined,
-        to: initialRange.to || undefined
+        to: initialRange.to || undefined,
     });
 
     const [leftMonth, setLeftMonth] = useState<Date>(
-        initialRange.from ?? new Date()
+        initialRange.from ?? new Date(),
     );
 
     const rightMonth = addMonths(leftMonth, 1);
@@ -161,7 +194,10 @@ const RangePicker = ({
 
     const durationDays =
         dateRange?.from && dateRange?.to
-            ? Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 3600 * 24))
+            ? Math.ceil(
+                  (dateRange.to.getTime() - dateRange.from.getTime()) /
+                      (1000 * 3600 * 24),
+              )
             : null;
 
     const sharedClassNames = {
@@ -172,7 +208,8 @@ const RangePicker = ({
         nav: "hidden",
         table: "border-collapse mx-auto",
         head_row: "flex justify-center",
-        head_cell: "text-gray-400 w-9 font-normal text-[11px] uppercase tracking-wider text-center py-1.5",
+        head_cell:
+            "text-gray-400 w-9 font-normal text-[11px] uppercase tracking-wider text-center py-1.5",
         row: "flex justify-center mt-1",
         cell: [
             "relative text-center text-sm p-0",
@@ -187,13 +224,18 @@ const RangePicker = ({
             "hover:bg-emerald-200 hover:text-emerald-900 hover:scale-105",
             "aria-disabled:hover:bg-transparent aria-disabled:hover:text-gray-400 aria-disabled:hover:scale-100",
         ].join(" "),
-        day_selected: "bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white shadow-md shadow-emerald-200 scale-105 font-semibold rounded-full",
-        day_today: "ring-2 ring-emerald-400 ring-offset-1 text-emerald-700 font-semibold rounded-full",
+        day_selected:
+            "bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white shadow-md shadow-emerald-200 scale-105 font-semibold rounded-full",
+        day_today:
+            "ring-2 ring-emerald-400 ring-offset-1 text-emerald-700 font-semibold rounded-full",
         day_outside: "opacity-20 blur-[1px] pointer-events-none select-none",
         day_disabled: "text-gray-300 opacity-30",
-        day_range_middle: "aria-selected:bg-emerald-100 aria-selected:text-emerald-900 rounded-none",
-        day_range_start: "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
-        day_range_end: "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
+        day_range_middle:
+            "aria-selected:bg-emerald-100 aria-selected:text-emerald-900 rounded-none",
+        day_range_start:
+            "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
+        day_range_end:
+            "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
         day_hidden: "invisible",
     };
 
@@ -233,13 +275,18 @@ const RangePicker = ({
             <div className="bg-white rounded-xl border border-gray-200 shadow-lg w-full max-w-2xl overflow-hidden">
                 <div className="flex items-start justify-between px-5 pt-5 pb-3">
                     <div>
-                        <p className="text-sm font-medium text-gray-900">Select Date Range</p>
+                        <p className="text-sm font-medium text-gray-900">
+                            Select Date Range
+                        </p>
                         {dateRange?.from && dateRange?.to ? (
                             <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                                {format(dateRange.from, "MMM d, yyyy")} – {format(dateRange.to, "MMM d, yyyy")}
+                                {format(dateRange.from, "MMM d, yyyy")} –{" "}
+                                {format(dateRange.to, "MMM d, yyyy")}
                             </p>
                         ) : (
-                            <p className="text-xs text-gray-400 mt-0.5">Choose start and end dates</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                Choose start and end dates
+                            </p>
                         )}
                     </div>
                     <button
@@ -253,10 +300,16 @@ const RangePicker = ({
                 <div className="flex flex-wrap gap-1.5 px-5 pb-3">
                     {[
                         { label: "Last 7 days", action: () => quickSelect(7) },
-                        { label: "Last 30 days", action: () => quickSelect(30) },
+                        {
+                            label: "Last 30 days",
+                            action: () => quickSelect(30),
+                        },
                         { label: "This week", action: selectCurrentWeek },
                         { label: "This month", action: selectCurrentMonth },
-                        { label: "Last 3 months", action: () => quickSelect(90) },
+                        {
+                            label: "Last 3 months",
+                            action: () => quickSelect(90),
+                        },
                         { label: "Last year", action: () => quickSelect(365) },
                     ].map(({ label, action }) => (
                         <button
@@ -275,7 +328,9 @@ const RangePicker = ({
                     <div className="flex-1">
                         <MonthCaption
                             displayMonth={leftMonth}
-                            onPrev={() => setLeftMonth(addMonths(leftMonth, -1))}
+                            onPrev={() =>
+                                setLeftMonth(addMonths(leftMonth, -1))
+                            }
                             onNext={() => setLeftMonth(addMonths(leftMonth, 1))}
                             hideNext
                         />
@@ -288,8 +343,16 @@ const RangePicker = ({
                             onMonthChange={setLeftMonth}
                             showOutsideDays
                             disabled={(date) => {
-                                const start = new Date(leftMonth.getFullYear(), leftMonth.getMonth(), 1);
-                                const end = new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 0);
+                                const start = new Date(
+                                    leftMonth.getFullYear(),
+                                    leftMonth.getMonth(),
+                                    1,
+                                );
+                                const end = new Date(
+                                    leftMonth.getFullYear(),
+                                    leftMonth.getMonth() + 1,
+                                    0,
+                                );
                                 return date < start || date > end;
                             }}
                             className="border-0 p-0"
@@ -303,7 +366,9 @@ const RangePicker = ({
                     <div className="flex-1">
                         <MonthCaption
                             displayMonth={rightMonth}
-                            onPrev={() => setLeftMonth(addMonths(leftMonth, -1))}
+                            onPrev={() =>
+                                setLeftMonth(addMonths(leftMonth, -1))
+                            }
                             onNext={() => setLeftMonth(addMonths(leftMonth, 1))}
                             hidePrev
                         />
@@ -313,11 +378,21 @@ const RangePicker = ({
                             onSelect={setDateRange}
                             numberOfMonths={1}
                             month={rightMonth}
-                            onMonthChange={(m) => setLeftMonth(addMonths(m, -1))}
+                            onMonthChange={(m) =>
+                                setLeftMonth(addMonths(m, -1))
+                            }
                             showOutsideDays
                             disabled={(date) => {
-                                const start = new Date(rightMonth.getFullYear(), rightMonth.getMonth(), 1);
-                                const end = new Date(rightMonth.getFullYear(), rightMonth.getMonth() + 1, 0);
+                                const start = new Date(
+                                    rightMonth.getFullYear(),
+                                    rightMonth.getMonth(),
+                                    1,
+                                );
+                                const end = new Date(
+                                    rightMonth.getFullYear(),
+                                    rightMonth.getMonth() + 1,
+                                    0,
+                                );
                                 return date < start || date > end;
                             }}
                             className="border-0 p-0"
@@ -331,25 +406,37 @@ const RangePicker = ({
                     <div className="mx-5 mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
                         <div className="flex gap-6">
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">Start date</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    Start date
+                                </p>
                                 <p className="text-sm font-medium text-gray-800 mt-0.5">
                                     {format(dateRange.from, "MMM d, yyyy")}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">End date</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    End date
+                                </p>
                                 <p className="text-sm font-medium text-gray-800 mt-0.5">
                                     {format(dateRange.to, "MMM d, yyyy")}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">Duration</p>
-                                <p className="text-sm font-medium text-emerald-600 mt-0.5">{durationDays} days</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    Duration
+                                </p>
+                                <p className="text-sm font-medium text-emerald-600 mt-0.5">
+                                    {durationDays} days
+                                </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <p className="text-[10px] text-gray-400">Total days</p>
-                            <p className="text-2xl font-semibold text-emerald-600">{(durationDays ?? 0) + 1}</p>
+                            <p className="text-[10px] text-gray-400">
+                                Total days
+                            </p>
+                            <p className="text-2xl font-semibold text-emerald-600">
+                                {(durationDays ?? 0) + 1}
+                            </p>
                         </div>
                     </div>
                 )}
@@ -379,14 +466,14 @@ const RangePicker = ({
 const DropdownMenu = ({
     options,
     value,
-    onChange
+    onChange,
 }: {
     options: { value: TimeRange; label: string; subtext?: string }[];
     value: TimeRange;
     onChange: (value: TimeRange) => void;
 }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const selectedOption = options.find(opt => opt.value === value);
+    const selectedOption = options.find((opt) => opt.value === value);
 
     return (
         <div className="relative">
@@ -398,23 +485,38 @@ const DropdownMenu = ({
             >
                 <CalendarIcon className="h-3.5 w-3.5" />
                 {selectedOption?.label}
-                <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                <ChevronDown
+                    className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                />
             </Button>
 
             {isOpen && (
                 <>
-                    <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+                    <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setIsOpen(false)}
+                    />
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 overflow-hidden">
                         {options.map((option) => (
                             <button
                                 key={option.value}
-                                onClick={() => { onChange(option.value); setIsOpen(false); }}
-                                className={`w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors ${value === option.value ? "bg-emerald-50 text-emerald-700" : "text-gray-700"
-                                    }`}
+                                onClick={() => {
+                                    onChange(option.value);
+                                    setIsOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors ${
+                                    value === option.value
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "text-gray-700"
+                                }`}
                             >
-                                <div className="text-sm font-medium">{option.label}</div>
+                                <div className="text-sm font-medium">
+                                    {option.label}
+                                </div>
                                 {option.subtext && (
-                                    <div className="text-xs text-gray-400">{option.subtext}</div>
+                                    <div className="text-xs text-gray-400">
+                                        {option.subtext}
+                                    </div>
                                 )}
                             </button>
                         ))}
@@ -430,15 +532,24 @@ const CustomLegend = () => {
     return (
         <div className="flex justify-center gap-6 mt-4 pt-2 border-t border-gray-100">
             <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#10b981' }}></div>
+                <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: "#10b981" }}
+                ></div>
                 <span className="text-xs text-gray-600">Revenue</span>
             </div>
             <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#ef4444' }}></div>
+                <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: "#ef4444" }}
+                ></div>
                 <span className="text-xs text-gray-600">Expenses</span>
             </div>
             <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3b82f6' }}></div>
+                <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: "#3b82f6" }}
+                ></div>
                 <span className="text-xs text-gray-600">Profit</span>
             </div>
         </div>
@@ -448,7 +559,10 @@ const CustomLegend = () => {
 //-----MAIN COMPONENT----->
 interface RevenueChartProps {
     data: ChartData[];
-    onRangeChange?: (range: TimeRange, customDates?: { from: Date; to: Date }) => void;
+    onRangeChange?: (
+        range: TimeRange,
+        customDates?: { from: Date; to: Date },
+    ) => void;
     customRangeData?: ChartData[];
     yearlyData?: ChartData[];
     lastYearData?: ChartData[];
@@ -464,29 +578,60 @@ export default function RevenueChart({
     role = "admin",
 }: RevenueChartProps) {
     const [activeRange, setActiveRange] = useState<TimeRange>(
-        role === "staff" ? "last7days" : "last7days"
+        role === "staff" ? "last7days" : "last7days",
     );
     const [showCalendar, setShowCalendar] = useState(false);
-    const [customRange, setCustomRange] = useState<{ from: Date | null; to: Date | null }>({
+    const [customRange, setCustomRange] = useState<{
+        from: Date | null;
+        to: Date | null;
+    }>({
         from: null,
-        to: null
+        to: null,
     });
+    const [fetchedRangeData, setFetchedRangeData] = useState<
+        ChartData[] | undefined
+    >(undefined);
+    const [isLoadingRange, setIsLoadingRange] = useState(false);
     const chartContainerRef = useRef<HTMLDivElement>(null);
 
     const currentYear = new Date().getFullYear();
     const lastYear = currentYear - 1;
 
     const rangeOptions = [
-        { value: "last7days" as const, label: "Last 7 Days", subtext: "daily trend" },
-        { value: "last30days" as const, label: "Last 30 Days", subtext: "monthly view" },
-        { value: "thismonth" as const, label: "This Month", subtext: format(new Date(), "MMMM yyyy") },
-        { value: "thisyear" as const, label: "This Year", subtext: `Jan ${currentYear} - Dec ${currentYear}` },
-        { value: "lastyear" as const, label: "Last Year", subtext: `Jan ${lastYear} - Dec ${lastYear}` },
-        { value: "custom" as const, label: "Custom Range", subtext: "select dates" }
+        {
+            value: "last7days" as const,
+            label: "Last 7 Days",
+            subtext: "daily trend",
+        },
+        {
+            value: "last30days" as const,
+            label: "Last 30 Days",
+            subtext: "monthly view",
+        },
+        {
+            value: "thismonth" as const,
+            label: "This Month",
+            subtext: format(new Date(), "MMMM yyyy"),
+        },
+        {
+            value: "thisyear" as const,
+            label: "This Year",
+            subtext: `Jan ${currentYear} - Dec ${currentYear}`,
+        },
+        {
+            value: "lastyear" as const,
+            label: "Last Year",
+            subtext: `Jan ${lastYear} - Dec ${lastYear}`,
+        },
+        {
+            value: "custom" as const,
+            label: "Custom Range",
+            subtext: "select dates",
+        },
     ];
 
     const getRangeSubtext = (range: TimeRange): string => {
-        const option = rangeOptions.find(opt => opt.value === range);
+        const option = rangeOptions.find((opt) => opt.value === range);
         if (range === "custom" && customRange.from && customRange.to) {
             return `${format(customRange.from, "MMM d, yyyy")} - ${format(customRange.to, "MMM d, yyyy")}`;
         }
@@ -505,12 +650,64 @@ export default function RevenueChart({
     // Helper function to normalize date to YYYY-MM-DD
     const normalizeDate = (date: Date): string => {
         const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
         return `${year}-${month}-${day}`;
     };
 
-    const filterDataByRange = (data: ChartData[], range: TimeRange, customFrom?: Date, customTo?: Date): ChartData[] => {
+    // Fetch daily revenue/expenses/profit para sa napiling custom date range
+    useEffect(() => {
+        if (activeRange !== "custom" || !customRange.from || !customRange.to)
+            return;
+
+        const controller = new AbortController();
+
+        const fetchRangeData = async () => {
+            setIsLoadingRange(true);
+            try {
+                const fromStr = normalizeDate(customRange.from!);
+                const toStr = normalizeDate(customRange.to!);
+
+                const res = await api.get("/dashboard/financial-range", {
+                    params: { from: fromStr, to: toStr },
+                    signal: controller.signal,
+                });
+
+                const mapped: ChartData[] = (
+                    res.data?.financialRangeTrend ?? []
+                ).map((item: any) => ({
+                    name: item.name,
+                    date: item.date,
+                    revenue: Number(item.revenue) || 0,
+                    expenses: Number(item.expenses) || 0,
+                    profit: Number(item.profit) || 0,
+                }));
+
+                setFetchedRangeData(mapped);
+            } catch (err: any) {
+                if (
+                    err?.name !== "CanceledError" &&
+                    err?.code !== "ERR_CANCELED"
+                ) {
+                    console.error("Error fetching financial range data:", err);
+                    setFetchedRangeData(undefined);
+                }
+            } finally {
+                setIsLoadingRange(false);
+            }
+        };
+
+        fetchRangeData();
+
+        return () => controller.abort();
+    }, [activeRange, customRange.from, customRange.to]);
+
+    const filterDataByRange = (
+        data: ChartData[],
+        range: TimeRange,
+        customFrom?: Date,
+        customTo?: Date,
+    ): ChartData[] => {
         if (!data || data.length === 0) return [];
 
         switch (range) {
@@ -524,7 +721,9 @@ export default function RevenueChart({
 
                 const filtered = data.filter((item: ChartData) => {
                     if (!item.date) return false;
-                    return item.date >= sevenDaysAgoStr && item.date <= todayStr;
+                    return (
+                        item.date >= sevenDaysAgoStr && item.date <= todayStr
+                    );
                 });
 
                 return [...filtered];
@@ -539,7 +738,9 @@ export default function RevenueChart({
 
                 const filtered = data.filter((item: ChartData) => {
                     if (!item.date) return false;
-                    return item.date >= thirtyDaysAgoStr && item.date <= todayStr;
+                    return (
+                        item.date >= thirtyDaysAgoStr && item.date <= todayStr
+                    );
                 });
 
                 return [...filtered];
@@ -549,18 +750,25 @@ export default function RevenueChart({
                 const currentYear = new Date().getFullYear();
                 const filtered = data.filter((item: ChartData) => {
                     if (!item.date) return false;
-                    const parts = item.date.split('-');
+                    const parts = item.date.split("-");
                     const year = parts[0] ?? "0";
                     const month = parts[1] ?? "0";
-                    return parseInt(year) === currentYear && parseInt(month) - 1 === currentMonth;
+                    return (
+                        parseInt(year) === currentYear &&
+                        parseInt(month) - 1 === currentMonth
+                    );
                 });
                 return [...filtered];
             }
             case "thisyear": {
-                return yearlyData && yearlyData.length > 0 ? [...yearlyData] : [];
+                return yearlyData && yearlyData.length > 0
+                    ? [...yearlyData]
+                    : [];
             }
             case "lastyear": {
-                return lastYearData && lastYearData.length > 0 ? [...lastYearData] : [];
+                return lastYearData && lastYearData.length > 0
+                    ? [...lastYearData]
+                    : [];
             }
             case "custom":
                 if (customFrom && customTo) {
@@ -569,17 +777,22 @@ export default function RevenueChart({
 
                     let filtered = data.filter((item: ChartData) => {
                         if (!item.date) return false;
-                        return item.date >= startDateStr && item.date <= endDateStr;
+                        return (
+                            item.date >= startDateStr && item.date <= endDateStr
+                        );
                     });
 
-                    const allDatesInRange = generateDateRange(customFrom, customTo);
+                    const allDatesInRange = generateDateRange(
+                        customFrom,
+                        customTo,
+                    );
 
                     const dataMap = new Map();
-                    filtered.forEach(item => {
+                    filtered.forEach((item) => {
                         dataMap.set(item.date, item);
                     });
 
-                    const completeData = allDatesInRange.map(date => {
+                    const completeData = allDatesInRange.map((date) => {
                         if (dataMap.has(date)) {
                             return { ...dataMap.get(date) };
                         } else {
@@ -597,7 +810,8 @@ export default function RevenueChart({
                     return completeData;
                 }
                 return [];
-            default: return [...data];
+            default:
+                return [...data];
         }
     };
 
@@ -605,12 +819,12 @@ export default function RevenueChart({
         let filtered: ChartData[] = [];
 
         if (activeRange === "custom") {
-            const src = customRangeData ?? data;
+            const src = fetchedRangeData ?? customRangeData ?? data;
             filtered = filterDataByRange(
                 src,
                 "custom",
                 customRange.from || undefined,
-                customRange.to || undefined
+                customRange.to || undefined,
             );
         } else if (activeRange === "thisyear") {
             filtered = filterDataByRange(data, "thisyear");
@@ -645,7 +859,15 @@ export default function RevenueChart({
         }
 
         return result;
-    }, [activeRange, data, customRangeData, yearlyData, lastYearData, customRange]);
+    }, [
+        activeRange,
+        data,
+        customRangeData,
+        fetchedRangeData,
+        yearlyData,
+        lastYearData,
+        customRange,
+    ]);
 
     // Split data into two halves for proper comparison
     const { previousPeriod, currentPeriod } = useMemo(() => {
@@ -657,12 +879,25 @@ export default function RevenueChart({
 
     // Calculate changes using period totals instead of first/last points
     const revenueChange = calculatePeriodChange(currentPeriod, previousPeriod);
-    const expensesChange = calculateExpensesChange(currentPeriod, previousPeriod);
+    const expensesChange = calculateExpensesChange(
+        currentPeriod,
+        previousPeriod,
+    );
 
-    const totalRevenue = displayData.reduce((sum, item) => sum + toNumber(item.revenue), 0);
-    const totalExpenses = displayData.reduce((sum, item) => sum + toNumber(item.expenses), 0);
-    const totalProfit = displayData.reduce((sum, item) => sum + toNumber(item.profit), 0);
-    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+    const totalRevenue = displayData.reduce(
+        (sum, item) => sum + toNumber(item.revenue),
+        0,
+    );
+    const totalExpenses = displayData.reduce(
+        (sum, item) => sum + toNumber(item.expenses),
+        0,
+    );
+    const totalProfit = displayData.reduce(
+        (sum, item) => sum + toNumber(item.profit),
+        0,
+    );
+    const profitMargin =
+        totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
     const handleRangeChange = (range: TimeRange) => {
         if (role === "staff") return;
@@ -692,16 +927,19 @@ export default function RevenueChart({
                 interval: 0, // Changed from Math.floor(dataLength / 10) to 0 to show every day
                 angle: -45,
                 height: 80,
-                fontSize: 10
+                fontSize: 10,
             };
         }
 
-        if (activeRange === "last30days" || (activeRange === "custom" && dataLength > 10)) {
+        if (
+            activeRange === "last30days" ||
+            (activeRange === "custom" && dataLength > 10)
+        ) {
             return {
                 interval: 0, // Changed from Math.floor(dataLength / 8) to 0 to show every day
                 angle: -40,
                 height: 70,
-                fontSize: 10
+                fontSize: 10,
             };
         }
 
@@ -710,7 +948,7 @@ export default function RevenueChart({
                 interval: 0,
                 angle: -35,
                 height: 60,
-                fontSize: 11
+                fontSize: 11,
             };
         }
 
@@ -718,7 +956,7 @@ export default function RevenueChart({
             interval: 0,
             angle: -35,
             height: 60,
-            fontSize: 11
+            fontSize: 11,
         };
     };
 
@@ -732,41 +970,78 @@ export default function RevenueChart({
             return date.toLocaleDateString("en-US", { weekday: "short" });
         }
         if (activeRange === "last30days") {
-            return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+            });
         }
         if (activeRange === "thismonth") {
-            return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+            });
         }
         if (activeRange === "thisyear" || activeRange === "lastyear") {
-            return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                year: "numeric",
+            });
         }
         if (activeRange === "custom") {
             // For custom range, show month/day
             // If the range spans multiple years, also show the year
             const firstDateItem = displayData[0];
             const lastDateItem = displayData[displayData.length - 1];
-            const firstDate = firstDateItem?.date ? new Date(firstDateItem.date) : null;
-            const lastDate = lastDateItem?.date ? new Date(lastDateItem.date) : null;
+            const firstDate = firstDateItem?.date
+                ? new Date(firstDateItem.date)
+                : null;
+            const lastDate = lastDateItem?.date
+                ? new Date(lastDateItem.date)
+                : null;
 
             // Check if range spans multiple years
-            if (firstDate && lastDate && firstDate.getFullYear() !== lastDate.getFullYear()) {
-                return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            if (
+                firstDate &&
+                lastDate &&
+                firstDate.getFullYear() !== lastDate.getFullYear()
+            ) {
+                return date.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                });
             }
             // For single year range, just show month and day
-            return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+            });
         }
-        return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+        });
     };
 
     return (
         <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col h-full">
             <div className="flex justify-between items-center mb-3">
                 <div>
-                    <h2 className="text-lg font-semibold">Revenue, Expenses & Profit</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">{getRangeSubtext(activeRange)}</p>
+                    <h2 className="text-lg font-semibold">
+                        Revenue, Expenses & Profit
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                        {activeRange === "custom" && isLoadingRange
+                            ? "Loading data..."
+                            : getRangeSubtext(activeRange)}
+                    </p>
                 </div>
                 {role === "admin" ? (
-                    <DropdownMenu options={rangeOptions} value={activeRange} onChange={handleRangeChange} />
+                    <DropdownMenu
+                        options={rangeOptions}
+                        value={activeRange}
+                        onChange={handleRangeChange}
+                    />
                 ) : (
                     <span className="text-xs text-gray-400">Last 7 Days</span>
                 )}
@@ -785,32 +1060,54 @@ export default function RevenueChart({
 
             <div className="grid grid-cols-3 gap-4 mb-6 pb-4 border-b border-gray-100">
                 <div>
-                    <p className="text-xs text-gray-500 font-medium">Total Revenue</p>
-                    <p className="text-xl font-bold text-emerald-600">₱{totalRevenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 font-medium">
+                        Total Revenue
+                    </p>
+                    <p className="text-xl font-bold text-emerald-600">
+                        ₱{totalRevenue.toLocaleString()}
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
                         <TrendingUp className="h-3 w-3 text-emerald-500" />
-                        <span className={`text-xs ${revenueChange >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                            {revenueChange >= 0 ? "+" : ""}{revenueChange.toFixed(1)}%
+                        <span
+                            className={`text-xs ${revenueChange >= 0 ? "text-emerald-600" : "text-red-500"}`}
+                        >
+                            {revenueChange >= 0 ? "+" : ""}
+                            {revenueChange.toFixed(1)}%
                         </span>
                     </div>
                 </div>
 
                 <div>
-                    <p className="text-xs text-gray-500 font-medium">Total Expenses</p>
-                    <p className="text-xl font-bold text-red-500">₱{totalExpenses.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 font-medium">
+                        Total Expenses
+                    </p>
+                    <p className="text-xl font-bold text-red-500">
+                        ₱{totalExpenses.toLocaleString()}
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
                         <TrendingDown className="h-3 w-3 text-red-500" />
-                        <span className={`text-xs ${expensesChange > 0 ? "text-red-500" : "text-emerald-600"}`}>
-                            {expensesChange >= 0 ? "+" : ""}{expensesChange.toFixed(1)}%
+                        <span
+                            className={`text-xs ${expensesChange > 0 ? "text-red-500" : "text-emerald-600"}`}
+                        >
+                            {expensesChange >= 0 ? "+" : ""}
+                            {expensesChange.toFixed(1)}%
                         </span>
                     </div>
                 </div>
 
                 <div>
-                    <p className="text-xs text-gray-500 font-medium">Net Profit</p>
-                    <p className={`text-xl font-bold ${totalProfit < 0 ? "text-red-500" : "text-blue-600"}`}>₱{totalProfit.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 font-medium">
+                        Net Profit
+                    </p>
+                    <p
+                        className={`text-xl font-bold ${totalProfit < 0 ? "text-red-500" : "text-blue-600"}`}
+                    >
+                        ₱{totalProfit.toLocaleString()}
+                    </p>
                     <div className="flex items-center gap-1 mt-1">
-                        <span className="text-xs text-blue-600">{profitMargin.toFixed(1)}% margin</span>
+                        <span className="text-xs text-blue-600">
+                            {profitMargin.toFixed(1)}% margin
+                        </span>
                     </div>
                 </div>
             </div>
@@ -820,24 +1117,36 @@ export default function RevenueChart({
                 ref={chartContainerRef}
                 className="w-full overflow-x-auto overflow-y-hidden"
                 style={{
-                    minHeight: '420px',
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: '#cbd5e1 #f1f5f9'
+                    minHeight: "420px",
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "#cbd5e1 #f1f5f9",
                 }}
             >
                 <div
                     style={{
-                        width: activeRange === "custom" && displayData.length > 15 ? `${Math.max(800, displayData.length * 45)}px` : '100%',
-                        minWidth: '100%',
-                        height: '380px'
+                        width:
+                            activeRange === "custom" && displayData.length > 15
+                                ? `${Math.max(800, displayData.length * 45)}px`
+                                : "100%",
+                        minWidth: "100%",
+                        height: "380px",
                     }}
                 >
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                             data={displayData}
-                            margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                            margin={{
+                                top: 10,
+                                right: 30,
+                                left: 10,
+                                bottom: 10,
+                            }}
                         >
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke="#f1f5f9"
+                                vertical={false}
+                            />
                             <XAxis
                                 dataKey="date"
                                 tickFormatter={formatXAxisLabel}
@@ -856,17 +1165,25 @@ export default function RevenueChart({
                                 fontSize={11}
                                 tickLine={false}
                                 axisLine={false}
-                                tickFormatter={(value) => `₱${value.toLocaleString()}`}
+                                tickFormatter={(value) =>
+                                    `₱${value.toLocaleString()}`
+                                }
                                 width={80}
                             />
                             <Tooltip
                                 formatter={(value: any, name: any) => [
                                     `₱${Number(value)?.toLocaleString() || 0}`,
-                                    name ? name.charAt(0).toUpperCase() + name.slice(1) : ""
+                                    name
+                                        ? name.charAt(0).toUpperCase() +
+                                          name.slice(1)
+                                        : "",
                                 ]}
                                 labelFormatter={(label) => {
                                     const date = new Date(label);
-                                    if (activeRange === "thisyear" || activeRange === "lastyear") {
+                                    if (
+                                        activeRange === "thisyear" ||
+                                        activeRange === "lastyear"
+                                    ) {
                                         return format(date, "MMMM yyyy");
                                     }
                                     return format(date, "MMM d, yyyy");
@@ -923,7 +1240,9 @@ export default function RevenueChart({
                 <div className="text-center mt-2">
                     <p className="text-xs text-gray-400">
                         ← Scroll horizontally to see more data →
-                        <span className="inline-block ml-2 text-emerald-500">({displayData.length} days)</span>
+                        <span className="inline-block ml-2 text-emerald-500">
+                            ({displayData.length} days)
+                        </span>
                     </p>
                 </div>
             )}

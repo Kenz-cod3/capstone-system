@@ -291,6 +291,57 @@ class DashboardController extends Controller
     }
 
     /**
+     * Get daily financial data for an arbitrary date range (custom range picker)
+     */
+    public function financialRange(Request $request)
+    {
+        $request->validate([
+            'from' => 'required|date',
+            'to'   => 'required|date|after_or_equal:from',
+        ]);
+
+        $from = Carbon::parse($request->from)->startOfDay();
+        $to   = Carbon::parse($request->to)->endOfDay();
+
+        $dailyPaidRaw = BookingPayment::where('payment_status', 'paid')
+            ->whereBetween('payment_date', [$from, $to])
+            ->selectRaw('DATE(payment_date) as date, SUM(amount) as total')
+            ->groupBy('date')
+            ->pluck('total', 'date');
+
+        $dailyRefundRaw = BookingPayment::where('payment_status', 'refunded')
+            ->whereBetween('payment_date', [$from, $to])
+            ->selectRaw('DATE(payment_date) as date, SUM(amount) as total')
+            ->groupBy('date')
+            ->pluck('total', 'date');
+
+        $dailyExpensesRaw = CashTransaction::where('type', 'pay_out')
+            ->whereBetween('created_at', [$from, $to])
+            ->selectRaw('DATE(created_at) as date, SUM(amount) as total')
+            ->groupBy('date')
+            ->pluck('total', 'date');
+
+        $result = [];
+        $cursor = $from->copy();
+        while ($cursor->lte($to)) {
+            $dateStr = $cursor->toDateString();
+            $rev = ($dailyPaidRaw[$dateStr] ?? 0) - ($dailyRefundRaw[$dateStr] ?? 0);
+            $exp = $dailyExpensesRaw[$dateStr] ?? 0;
+
+            $result[] = [
+                'name'     => $cursor->format('M d'),
+                'date'     => $dateStr,
+                'revenue'  => $rev,
+                'expenses' => $exp,
+                'profit'   => $rev - $exp,
+            ];
+            $cursor->addDay();
+        }
+
+        return response()->json(['financialRangeTrend' => $result]);
+    }
+
+    /**
      * Get full dashboard with charts and trends (slower endpoint)
      */
     public function index()

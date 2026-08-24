@@ -30,13 +30,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // require __DIR__ . '/api/paymongo.php';
     Route::post('/paymongo/create-payment', [PayMongoController::class, 'createPayment']);
-    
+
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+    Route::get('/dashboard/financial-range', [DashboardController::class, 'financialRange']);
 
     Route::get('/reservation-monitor', [ReservationMonitorController::class, 'index']);
 });

@@ -21,6 +21,8 @@ import {
     PackageX,
 } from "lucide-react";
 
+const DARK_MINT = "#146C4B";
+
 const STATUS_META: Record<string, { text: string; bg: string; dot: string }> = {
     pending: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
     preparing: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
@@ -131,15 +133,12 @@ export default function RestaurantDashboard() {
                 {/* Stat cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
                     {/* Total Orders */}
-                    <div
-                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                        style={{ borderLeftColor: "#3b6ea5" }}
-                    >
+                    <div className="bg-white rounded-lg p-4 border border-[#dde1d7]">
                         <div className="flex items-center justify-between mb-2">
                             <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                 Total orders
                             </p>
-                            <ShoppingBag className="w-4 h-4 text-[#3b6ea5]" />
+                            <ShoppingBag className="w-4 h-4 text-[#8a8f83]" />
                         </div>
                         <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
                             {totalOrders}
@@ -152,15 +151,12 @@ export default function RestaurantDashboard() {
                     </div>
 
                     {/* Total Sales */}
-                    <div
-                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                        style={{ borderLeftColor: "#1f7a5c" }}
-                    >
+                    <div className="bg-white rounded-lg p-4 border border-[#dde1d7]">
                         <div className="flex items-center justify-between mb-2">
                             <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                 Total sales
                             </p>
-                            <PhilippinePeso className="w-4 h-4 text-[#1f7a5c]" />
+                            <PhilippinePeso className="w-4 h-4 text-[#8a8f83]" />
                         </div>
                         <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
                             {formatCurrency(totalSales)}
@@ -171,15 +167,12 @@ export default function RestaurantDashboard() {
                     </div>
 
                     {/* Pending Orders */}
-                    <div
-                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                        style={{ borderLeftColor: "#c1861f" }}
-                    >
+                    <div className="bg-white rounded-lg p-4 border border-[#dde1d7]">
                         <div className="flex items-center justify-between mb-2">
                             <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                 Pending orders
                             </p>
-                            <Clock3 className="w-4 h-4 text-[#c1861f]" />
+                            <Clock3 className="w-4 h-4 text-[#8a8f83]" />
                         </div>
                         <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
                             {pendingOrders}
@@ -192,15 +185,12 @@ export default function RestaurantDashboard() {
                     </div>
 
                     {/* Low Stock */}
-                    <div
-                        className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                        style={{ borderLeftColor: "#a1402f" }}
-                    >
+                    <div className="bg-white rounded-lg p-4 border border-[#dde1d7]">
                         <div className="flex items-center justify-between mb-2">
                             <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                 Low stock items
                             </p>
-                            <TriangleAlert className="w-4 h-4 text-[#a1402f]" />
+                            <TriangleAlert className="w-4 h-4 text-[#8a8f83]" />
                         </div>
                         <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums mb-2">
                             {lowStock.length}
@@ -244,10 +234,7 @@ export default function RestaurantDashboard() {
                                         return (
                                             <div
                                                 key={item.id}
-                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md border-l-2"
-                                                style={{
-                                                    borderLeftColor: zero ? "#a1402f" : "#c1861f",
-                                                }}
+                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md"
                                             >
                                                 <div className="flex-1">
                                                     <p className="text-sm font-medium text-[#1c2420]">
@@ -283,7 +270,7 @@ export default function RestaurantDashboard() {
                     <div className="bg-white rounded-lg border border-[#dde1d7] overflow-hidden">
                         <div className="px-5 py-4 border-b border-[#dde1d7] flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <ShoppingBag className="w-4 h-4 text-[#3b6ea5]" />
+                                <ShoppingBag className="w-4 h-4 text-[#8a8f83]" />
                                 <h2 className="font-['Space_Grotesk'] text-[15px] font-semibold text-[#1c2420]">
                                     Recent orders
                                 </h2>
@@ -306,8 +293,7 @@ export default function RestaurantDashboard() {
                                         return (
                                             <div
                                                 key={order.id}
-                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md border-l-2 hover:bg-[#f5f6f2] transition-colors"
-                                                style={{ borderLeftColor: meta.dot }}
+                                                className="flex items-center justify-between p-3 bg-[#f9faf7] rounded-md hover:bg-[#f5f6f2] transition-colors"
                                             >
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 mb-1">
@@ -353,40 +339,49 @@ export default function RestaurantDashboard() {
 
                 {/* Additional stats */}
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
+                    <div
+                        className="rounded-lg p-5 flex items-center justify-between"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
                         <div>
-                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono'] mb-1">
                                 Avg order value
                             </p>
                             <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
                                 {formatCurrency(totalOrders > 0 ? totalSales / totalOrders : 0)}
                             </p>
                         </div>
-                        <TrendingUp className="w-6 h-6 text-[#a8822f]" />
+                        <TrendingUp className="w-6 h-6 text-white/70" />
                     </div>
 
-                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
+                    <div
+                        className="rounded-lg p-5 flex items-center justify-between"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
                         <div>
-                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono'] mb-1">
                                 Menu items
                             </p>
                             <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
                                 {menu.length}
                             </p>
                         </div>
-                        <Package className="w-6 h-6 text-[#a8822f]" />
+                        <Package className="w-6 h-6 text-white/70" />
                     </div>
 
-                    <div className="bg-[#1c2420] rounded-lg p-5 flex items-center justify-between">
+                    <div
+                        className="rounded-lg p-5 flex items-center justify-between"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
                         <div>
-                            <p className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono'] mb-1">
+                            <p className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono'] mb-1">
                                 Completion rate
                             </p>
                             <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
                                 {totalOrders > 0 ? Math.round((paidOrders / totalOrders) * 100) : 0}%
                             </p>
                         </div>
-                        <TrendingUp className="w-6 h-6 text-[#a8822f]" />
+                        <TrendingUp className="w-6 h-6 text-white/70" />
                     </div>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Amenities from "./Amenities";
 import AddOnsPage from "./AddOnsPage";
 import api from "@/services/api";
@@ -118,6 +119,16 @@ export default function RoomTypeManager({
     const [activeTab, setActiveTab] = useState<
         "roomTypes" | "amenities" | "addons"
     >("roomTypes");
+
+    const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+    const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+
+    useEffect(() => {
+        const el = tabRefs.current[activeTab];
+        if (el) {
+            setIndicatorStyle({ left: el.offsetLeft, width: el.offsetWidth });
+        }
+    }, [activeTab]);
 
     const {
         register,
@@ -442,41 +453,53 @@ export default function RoomTypeManager({
                     </span> */}
                 </header>
 
-                <div className="border-b bg-white px-6">
-                    <div className="flex gap-2 py-3">
-                        <button
-                            onClick={() => setActiveTab("roomTypes")}
-                            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                                activeTab === "roomTypes"
-                                    ? "bg-mint-600 text-white"
-                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            }`}
-                        >
-                            Room Types
-                        </button>
+                <div className="border-b bg-white px-6 py-3">
+                    <Tabs
+                        value={activeTab}
+                        onValueChange={(v) =>
+                            setActiveTab(v as typeof activeTab)
+                        }
+                        className="flex justify-center"
+                    >
+                        <TabsList className="relative h-auto bg-transparent p-0 gap-6">
+                            <TabsTrigger
+                                ref={(el) => {
+                                    tabRefs.current.roomTypes = el;
+                                }}
+                                value="roomTypes"
+                                className="rounded-none bg-transparent px-1 py-2 text-sm font-semibold text-slate-500 shadow-none data-[state=active]:bg-transparent data-[state=active]:text-slate-900 data-[state=active]:shadow-none hover:bg-transparent"
+                            >
+                                Room Types
+                            </TabsTrigger>
+                            <TabsTrigger
+                                ref={(el) => {
+                                    tabRefs.current.amenities = el;
+                                }}
+                                value="amenities"
+                                className="rounded-none bg-transparent px-1 py-2 text-sm font-semibold text-slate-500 shadow-none data-[state=active]:bg-transparent data-[state=active]:text-slate-900 data-[state=active]:shadow-none hover:bg-transparent"
+                            >
+                                Amenities
+                            </TabsTrigger>
+                            <TabsTrigger
+                                ref={(el) => {
+                                    tabRefs.current.addons = el;
+                                }}
+                                value="addons"
+                                className="rounded-none bg-transparent px-1 py-2 text-sm font-semibold text-slate-500 shadow-none data-[state=active]:bg-transparent data-[state=active]:text-slate-900 data-[state=active]:shadow-none hover:bg-transparent"
+                            >
+                                Add-ons
+                            </TabsTrigger>
 
-                        <button
-                            onClick={() => setActiveTab("amenities")}
-                            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                                activeTab === "amenities"
-                                    ? "bg-mint-600 text-white"
-                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            }`}
-                        >
-                            Amenities
-                        </button>
-
-                        <button
-                            onClick={() => setActiveTab("addons")}
-                            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                                activeTab === "addons"
-                                    ? "bg-mint-600 text-white"
-                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            }`}
-                        >
-                            Add-ons
-                        </button>
-                    </div>
+                            {/* Sliding underline indicator */}
+                            <div
+                                className="absolute bottom-0 h-0.5 rounded-full bg-mint-600 transition-all duration-300 ease-out"
+                                style={{
+                                    left: indicatorStyle.left,
+                                    width: indicatorStyle.width,
+                                }}
+                            />
+                        </TabsList>
+                    </Tabs>
                 </div>
 
                 {/* Content */}

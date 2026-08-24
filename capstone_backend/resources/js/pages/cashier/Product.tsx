@@ -58,8 +58,10 @@ function useDebouncedValue<T>(value: T, delayMs = 400): T {
 
 // ---------------------------------------------------------------------------
 // Design tokens — "Ticket Rail": a POS / receipt-inspired palette.
-// Ink + brass instead of the usual cream/terracotta pairing.
+// Dark mint replaces the ink/black accents.
 // ---------------------------------------------------------------------------
+const DARK_MINT = "#146C4B";
+
 type OrderStatus = "pending" | "preparing" | "served" | "paid" | "cancelled";
 
 type StatusMeta = {
@@ -67,7 +69,6 @@ type StatusMeta = {
     text: string;
     bg: string;
     dot: string;
-    border: string;
 };
 
 const STATUS_META: Record<OrderStatus, StatusMeta> = {
@@ -76,35 +77,30 @@ const STATUS_META: Record<OrderStatus, StatusMeta> = {
         text: "#8a5a0f",
         bg: "#fbf1de",
         dot: "#c1861f",
-        border: "#c1861f",
     },
     preparing: {
         label: "Preparing",
         text: "#2a4f78",
         bg: "#e7eef7",
         dot: "#3b6ea5",
-        border: "#3b6ea5",
     },
     served: {
         label: "Served",
         text: "#5e3c66",
         bg: "#f1e9f4",
         dot: "#845a8f",
-        border: "#845a8f",
     },
     paid: {
         label: "Paid",
         text: "#155c42",
         bg: "#e4f3ec",
         dot: "#1f7a5c",
-        border: "#1f7a5c",
     },
     cancelled: {
         label: "Cancelled",
         text: "#8a3226",
         bg: "#fbe9e6",
         dot: "#a1402f",
-        border: "#a1402f",
     },
 };
 
@@ -292,25 +288,21 @@ export default function Product() {
         key: TabKey;
         label: string;
         icon: React.ReactNode;
-        dot: string;
     }[] = [
-        {
-            key: "pending",
-            label: "Pending",
-            icon: <Clock3 className="h-4 w-4" />,
-            dot: STATUS_META.pending.dot,
-        },
         {
             key: "sales",
             label: "Sales history",
             icon: <CheckCircle2 className="h-4 w-4" />,
-            dot: STATUS_META.paid.dot,
+        },
+        {
+            key: "pending",
+            label: "Pending",
+            icon: <Clock3 className="h-4 w-4" />,
         },
         {
             key: "cancelled",
             label: "Cancelled",
             icon: <Ban className="h-4 w-4" />,
-            dot: STATUS_META.cancelled.dot,
         },
     ];
 
@@ -338,10 +330,13 @@ export default function Product() {
                     </div>
 
                     {/* Register total — receipt-style summary */}
-                    <div className="relative bg-[#1c2420] rounded-lg px-6 py-4 min-w-[240px] shadow-[0_10px_30px_-12px_rgba(28,36,32,0.5)]">
+                    <div
+                        className="relative rounded-lg px-6 py-4 min-w-[240px] shadow-[0_10px_30px_-12px_rgba(20,108,75,0.5)]"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
                         <div className="flex items-center gap-2 mb-1">
-                            <Wallet className="h-3.5 w-3.5 text-[#a8822f]" />
-                            <span className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono']">
+                            <Wallet className="h-3.5 w-3.5 text-white/70" />
+                            <span className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono']">
                                 Register total
                             </span>
                         </div>
@@ -371,37 +366,32 @@ export default function Product() {
                             label: "Revenue",
                             value: formatCurrency(stats.totalRevenue),
                             icon: <TrendingUp className="w-4 h-4" />,
-                            accent: "#1f7a5c",
                         },
                         {
                             label: "Items sold",
                             value: String(stats.totalItems),
                             icon: <ShoppingBag className="w-4 h-4" />,
-                            accent: "#3b6ea5",
                         },
                         {
                             label: "Orders",
                             value: String(stats.uniqueOrders),
                             icon: <Users className="w-4 h-4" />,
-                            accent: "#845a8f",
                         },
                         {
                             label: "Avg order",
                             value: formatCurrency(stats.avgOrderValue),
                             icon: <PhilippinePeso className="w-4 h-4" />,
-                            accent: "#c1861f",
                         },
                     ].map((s) => (
                         <div
                             key={s.label}
-                            className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                            style={{ borderLeftColor: s.accent }}
+                            className="bg-white rounded-lg p-4 border border-[#dde1d7]"
                         >
                             <div className="flex items-center justify-between mb-2">
                                 <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                     {s.label}
                                 </p>
-                                <span style={{ color: s.accent }}>
+                                <span className="text-[#8a8f83]">
                                     {s.icon}
                                 </span>
                             </div>
@@ -441,7 +431,7 @@ export default function Product() {
                     </div>
                 )}
 
-                {/* Tabs — segmented control, status colour carried through as a dot */}
+                {/* Tabs — segmented control */}
                 <div className="inline-flex items-center gap-1 bg-white border border-[#dde1d7] rounded-lg p-1 mb-5">
                     {TABS.map((tab) => {
                         const active = activeTab === tab.key;
@@ -452,20 +442,17 @@ export default function Product() {
                                     setActiveTab(tab.key);
                                     setCurrentPage(1);
                                 }}
+                                style={
+                                    active
+                                        ? { backgroundColor: DARK_MINT }
+                                        : undefined
+                                }
                                 className={`px-4 py-2 rounded-md text-[13px] font-medium transition-all flex items-center gap-2 ${
                                     active
-                                        ? "bg-[#1c2420] text-white"
+                                        ? "text-white"
                                         : "text-[#5c6258] hover:bg-[#f5f6f2]"
                                 }`}
                             >
-                                <span
-                                    className="w-1.5 h-1.5 rounded-full"
-                                    style={{
-                                        backgroundColor: active
-                                            ? tab.dot
-                                            : `${tab.dot}`,
-                                    }}
-                                />
                                 {tab.icon}
                                 {tab.label}
                             </button>
@@ -482,7 +469,7 @@ export default function Product() {
                             placeholder="Search by product name..."
                             value={searchInput}
                             onChange={(e) => setSearchInput(e.target.value)}
-                            className="w-full border border-[#e4e7dd] rounded-md py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#a8822f]/30 focus:border-[#a8822f] bg-[#f9faf7]"
+                            className="w-full border border-[#e4e7dd] rounded-md py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#146C4B]/30 focus:border-[#146C4B] bg-[#f9faf7]"
                         />
                     </div>
 
@@ -519,7 +506,10 @@ export default function Product() {
                 <div className="bg-white rounded-lg border border-[#dde1d7] overflow-hidden">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-24">
-                            <Loader2 className="h-10 w-10 animate-spin text-[#a8822f]" />
+                            <Loader2
+                                className="h-10 w-10 animate-spin"
+                                style={{ color: DARK_MINT }}
+                            />
                             <p className="mt-4 text-[#8a8f83] text-sm">
                                 Loading orders...
                             </p>
@@ -580,11 +570,7 @@ export default function Product() {
                                         return (
                                             <tr
                                                 key={`${row.orderId}-${idx}`}
-                                                className="border-b border-[#f0f1eb] border-l-2 hover:bg-[#f9faf7] transition-colors"
-                                                style={{
-                                                    borderLeftColor:
-                                                        meta.border,
-                                                }}
+                                                className="border-b border-[#f0f1eb] hover:bg-[#f9faf7] transition-colors"
                                             >
                                                 <td className="px-4 py-3">
                                                     <span className="font-['IBM_Plex_Mono'] font-semibold text-[#3c423a] bg-[#f5f6f2] px-2 py-1 rounded text-xs">

@@ -49,28 +49,24 @@ export default function StaffLayout() {
             description: "Overview & analytics",
             href: "/restaurant",
             icon: LayoutDashboard,
-            dot: "#3b6ea5",
         },
         {
             name: "POS / Orders",
             description: "Process orders",
             href: "/orders",
             icon: ShoppingCart,
-            dot: "#1f7a5c",
         },
         {
             name: "Menu",
             description: "Manage menu items",
             href: "/menu",
             icon: UtensilsCrossed,
-            dot: "#c1861f",
         },
         {
             name: "Order Management",
             description: "Track order sales",
             href: "/product",
             icon: ClipboardList,
-            dot: "#845a8f",
         },
     ];
 
@@ -87,22 +83,22 @@ export default function StaffLayout() {
                     <div className="fixed inset-0 z-0" onClick={() => setDropdownOpen(false)} />
                 )}
 
-                {/* SIDEBAR — floating, ink panel */}
+                {/* SIDEBAR — floating, white panel */}
                 <aside
-                    className={`fixed top-3 left-3 bottom-3 bg-[#1c2420] shadow-[0_10px_30px_-12px_rgba(28,36,32,0.5)] transition-all duration-300 z-50
-                    ${isSidebarOpen ? "w-64" : "w-20"} flex flex-col rounded-lg`}
+                    className={`fixed top-3 left-3 bottom-3 bg-white shadow-[0_10px_30px_-12px_rgba(28,36,32,0.25)] transition-all duration-300 z-50
+                    ${isSidebarOpen ? "w-64" : "w-20"} flex flex-col rounded-lg border border-[#e3e6dc]`}
                 >
                     {/* LOGO */}
                     <div
                         className={`h-20 flex items-center ${
                             isSidebarOpen ? "px-5" : "justify-center"
-                        } flex-shrink-0 border-b border-white/10`}
+                        } flex-shrink-0 border-b border-[#e3e6dc]`}
                     >
                         <div
                             onClick={() => navigate("/restaurant")}
                             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                         >
-                            <div className="h-11 w-11 rounded-full overflow-hidden bg-white flex items-center justify-center flex-shrink-0">
+                            <div className="h-11 w-11 rounded-full overflow-hidden bg-[#f5f6f2] flex items-center justify-center flex-shrink-0">
                                 <img
                                     src={logo}
                                     alt="Lynn Ennia's Logo"
@@ -113,7 +109,7 @@ export default function StaffLayout() {
                                         if (parent) {
                                             const fallbackIcon = document.createElement("div");
                                             fallbackIcon.className =
-                                                "h-11 w-11 rounded-full bg-[#a8822f] flex items-center justify-center text-white font-bold text-lg";
+                                                "h-11 w-11 rounded-full bg-[#3ECF8E] flex items-center justify-center text-white font-bold text-lg";
                                             fallbackIcon.innerHTML = "🍽️";
                                             parent.appendChild(fallbackIcon);
                                         }
@@ -122,10 +118,10 @@ export default function StaffLayout() {
                             </div>
                             {isSidebarOpen && (
                                 <div className="flex flex-col">
-                                    <span className="font-['Space_Grotesk'] font-semibold text-[15px] tracking-tight leading-tight text-white">
+                                    <span className="font-['Space_Grotesk'] font-semibold text-[15px] tracking-tight leading-tight text-[#1c2420]">
                                         Lynn Ennia's
                                     </span>
-                                    <span className="text-[10px] text-[#a8822f] tracking-[0.14em] uppercase font-['IBM_Plex_Mono']">
+                                    <span className="text-[10px] text-[#2fa876] tracking-[0.14em] uppercase font-['IBM_Plex_Mono']">
                                         Restaurant
                                     </span>
                                 </div>
@@ -146,29 +142,29 @@ export default function StaffLayout() {
                                         flex items-center gap-3 px-3 py-2.5 rounded-md cursor-pointer transition-all group
                                         ${
                                             active
-                                                ? "bg-white/10"
-                                                : "text-[#a8b0a5] hover:bg-white/5"
+                                                ? "bg-[#3ECF8E]"
+                                                : "text-[#5c6258] hover:bg-[#f5f6f2]"
                                         }
                                         ${!isSidebarOpen && "justify-center"}
                                     `}
-                                    style={active ? { boxShadow: `inset 2px 0 0 ${item.dot}` } : undefined}
                                 >
                                     <item.icon
-                                        className="h-4.5 w-4.5 flex-shrink-0"
-                                        style={{ color: active ? item.dot : undefined }}
+                                        className={`h-4.5 w-4.5 flex-shrink-0 ${
+                                            active ? "text-white" : "text-[#5c6258]"
+                                        }`}
                                     />
                                     {isSidebarOpen && (
                                         <div className="flex flex-col min-w-0">
                                             <span
                                                 className={`text-[13px] font-medium truncate ${
-                                                    active ? "text-white" : "text-[#c7cdc2]"
+                                                    active ? "text-white" : "text-[#3c423a]"
                                                 }`}
                                             >
                                                 {item.name}
                                             </span>
                                             <span
                                                 className={`text-[9.5px] font-['IBM_Plex_Mono'] transition-colors ${
-                                                    active ? "text-[#a8b0a5]" : "text-[#6b7268]"
+                                                    active ? "text-white/85" : "text-[#8a8f83]"
                                                 }`}
                                             >
                                                 {item.description}
@@ -181,21 +177,21 @@ export default function StaffLayout() {
                     </nav>
 
                     {/* FOOTER WITH AVATAR DROPDOWN */}
-                    <div className="p-3 flex-shrink-0 relative z-20 border-t border-white/10">
+                    <div className="p-3 flex-shrink-0 relative z-20 border-t border-[#e3e6dc]">
                         <div className="relative">
                             <button
                                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                                className={`w-full flex items-center gap-3 p-2 rounded-md hover:bg-white/5 transition ${
+                                className={`w-full flex items-center gap-3 p-2 rounded-md hover:bg-[#f5f6f2] transition ${
                                     !isSidebarOpen && "justify-center"
                                 }`}
                             >
-                                <div className="w-9 h-9 rounded-full bg-[#a8822f] text-white flex items-center justify-center text-xs font-semibold flex-shrink-0 font-['IBM_Plex_Mono']">
+                                <div className="w-9 h-9 rounded-full bg-[#3ECF8E] text-white flex items-center justify-center text-xs font-semibold flex-shrink-0 font-['IBM_Plex_Mono']">
                                     KM
                                 </div>
                                 {isSidebarOpen && (
                                     <>
                                         <div className="flex-1 text-left min-w-0">
-                                            <p className="text-[13px] font-medium text-white truncate">
+                                            <p className="text-[13px] font-medium text-[#1c2420] truncate">
                                                 Kenneth
                                             </p>
                                             <p className="text-[11px] text-[#8a8f83]">Cashier</p>
@@ -266,7 +262,7 @@ export default function StaffLayout() {
 
                                 <div className="w-px h-5 bg-[#dde1d7]"></div>
 
-                                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#a8822f] uppercase font-['IBM_Plex_Mono']">
+                                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#2fa876] uppercase font-['IBM_Plex_Mono']">
                                     {getPageTitle()}
                                 </p>
                             </div>

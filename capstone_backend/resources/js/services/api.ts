@@ -1,10 +1,10 @@
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: "http://192.168.254.188:8000/api",
+    baseURL: "http://10.23.69.76:8000/api",
 });
 
-export const API_BASE = "http://192.168.254.188:8000";
+export const API_BASE = "http://10.23.69.76:8000";
 
 // REQUEST INTERCEPTOR (attach token)
 api.interceptors.request.use((config) => {

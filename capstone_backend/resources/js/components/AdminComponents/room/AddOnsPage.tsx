@@ -14,6 +14,26 @@ import {
 } from "lucide-react";
 import api from "@/services/api"; // ← your axios instance
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AddOn {
@@ -35,7 +55,10 @@ const createAddOn = async (payload: Omit<AddOn, "id">): Promise<AddOn> => {
     return res.data.data ?? res.data;
 };
 
-const updateAddOn = async (id: number, payload: Omit<AddOn, "id">): Promise<AddOn> => {
+const updateAddOn = async (
+    id: number,
+    payload: Omit<AddOn, "id">,
+): Promise<AddOn> => {
     const res = await api.put(`/add-ons/${id}`, payload);
     return res.data.data ?? res.data;
 };
@@ -63,17 +86,16 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
     const nameRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        nameRef.current?.focus();
+        // slight delay so the dialog's own focus trap settles first
+        const t = setTimeout(() => nameRef.current?.focus(), 0);
+        return () => clearTimeout(t);
     }, []);
-
-    const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget) onClose();
-    };
 
     const validate = () => {
         const next: Record<string, string> = {};
         if (!form.add_on_name.trim()) next.add_on_name = "Name is required";
-        else if (form.add_on_name.trim().length < 2) next.add_on_name = "At least 2 characters";
+        else if (form.add_on_name.trim().length < 2)
+            next.add_on_name = "At least 2 characters";
         const p = parseFloat(form.price);
         if (!form.price) next.price = "Price is required";
         else if (isNaN(p) || p < 0) next.price = "Enter a valid positive price";
@@ -109,7 +131,8 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
             } else {
                 setErrors({
                     submit:
-                        err?.response?.data?.message ?? "Something went wrong. Please try again.",
+                        err?.response?.data?.message ??
+                        "Something went wrong. Please try again.",
                 });
             }
         } finally {
@@ -118,23 +141,25 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
     };
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-            onClick={handleBackdrop}
-        >
-            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in slide-in-from-bottom-8 duration-300 overflow-hidden">
+        <Dialog open onOpenChange={(open) => !open && onClose()}>
+            <DialogContent
+                className="max-w-sm bg-white border border-gray-100 shadow-2xl rounded-2xl p-0 gap-0 overflow-hidden [&>button]:hidden"
+                onOpenAutoFocus={(e) => e.preventDefault()}
+            >
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <DialogHeader className="flex-row items-center justify-between space-y-0 px-6 py-4 border-b border-gray-100">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
                             <Package className="w-5 h-5 text-indigo-600" />
                         </div>
                         <div>
-                            <h2 className="text-base font-semibold text-gray-900">
+                            <DialogTitle className="text-base font-semibold text-gray-900">
                                 {isEdit ? "Edit Add-On" : "New Add-On"}
-                            </h2>
+                            </DialogTitle>
                             <p className="text-xs text-gray-400">
-                                {isEdit ? "Update the details below" : "Fill in the details below"}
+                                {isEdit
+                                    ? "Update the details below"
+                                    : "Fill in the details below"}
                             </p>
                         </div>
                     </div>
@@ -144,54 +169,69 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                     >
                         <X className="w-4 h-4 text-gray-500" />
                     </button>
-                </div>
+                </DialogHeader>
 
                 <div className="px-6 py-5 space-y-4">
                     {/* Name */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        <Label className="block text-sm font-medium text-gray-700 mb-1.5">
                             Add-On Name <span className="text-red-500">*</span>
-                        </label>
-                        <input
+                        </Label>
+                        <Input
                             ref={nameRef}
                             type="text"
-                            className={`w-full px-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${errors.add_on_name ? "border-red-400 bg-red-50" : "border-gray-200"
-                                }`}
+                            className={`w-full px-3.5 py-2.5 h-auto border rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none transition-all ${
+                                errors.add_on_name
+                                    ? "border-red-400 bg-red-50"
+                                    : "border-gray-200"
+                            }`}
                             placeholder="e.g., Extra Towel, Foam, Transportation"
                             value={form.add_on_name}
                             onChange={(e) => {
-                                setForm((p) => ({ ...p, add_on_name: e.target.value }));
-                                if (errors.add_on_name) setErrors((p) => ({ ...p, add_on_name: "" }));
+                                setForm((p) => ({
+                                    ...p,
+                                    add_on_name: e.target.value,
+                                }));
+                                if (errors.add_on_name)
+                                    setErrors((p) => ({ ...p, add_on_name: "" }));
                             }}
                             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
                         />
                         {errors.add_on_name && (
                             <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5" /> {errors.add_on_name}
+                                <AlertCircle className="w-3.5 h-3.5" />{" "}
+                                {errors.add_on_name}
                             </p>
                         )}
                     </div>
 
                     {/* Price */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        <Label className="block text-sm font-medium text-gray-700 mb-1.5">
                             Price (₱) <span className="text-red-500">*</span>
-                        </label>
+                        </Label>
                         <div className="relative">
                             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">
                                 ₱
                             </span>
-                            <input
+                            <Input
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                className={`w-full pl-7 pr-3.5 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all ${errors.price ? "border-red-400 bg-red-50" : "border-gray-200"
-                                    }`}
+                                className={`w-full pl-7 pr-3.5 py-2.5 h-auto border rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                    errors.price
+                                        ? "border-red-400 bg-red-50"
+                                        : "border-gray-200"
+                                }`}
                                 placeholder="0.00"
                                 value={form.price}
                                 onChange={(e) => {
-                                    setForm((p) => ({ ...p, price: e.target.value }));
-                                    if (errors.price) setErrors((p) => ({ ...p, price: "" }));
+                                    setForm((p) => ({
+                                        ...p,
+                                        price: e.target.value,
+                                    }));
+                                    if (errors.price)
+                                        setErrors((p) => ({ ...p, price: "" }));
                                 }}
                                 onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
                             />
@@ -206,26 +246,28 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                     {errors.submit && (
                         <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
                             <p className="text-xs text-red-600 flex items-center gap-1.5">
-                                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {errors.submit}
+                                <AlertCircle className="w-4 h-4 flex-shrink-0" />{" "}
+                                {errors.submit}
                             </p>
                         </div>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 pb-5 flex gap-3">
-                    <button
+                <DialogFooter className="px-6 pb-5 pt-0 flex-row gap-3 sm:justify-start">
+                    <Button
                         type="button"
+                        variant="outline"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="flex-1 h-auto px-4 py-2.5 border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
                     >
                         Cancel
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         type="button"
                         onClick={handleSubmit}
                         disabled={loading}
-                        className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="flex-1 h-auto px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading ? (
                             <>
@@ -238,10 +280,10 @@ function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
                                 {isEdit ? "Save Changes" : "Add Add-On"}
                             </>
                         )}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -266,7 +308,7 @@ function DeleteModal({ addOn, onClose, onDeleted }: DeleteModalProps) {
         } catch (err: any) {
             setError(
                 err?.response?.data?.message ??
-                "Failed to delete. It may be linked to existing bookings."
+                    "Failed to delete. It may be linked to existing bookings.",
             );
         } finally {
             setLoading(false);
@@ -274,34 +316,39 @@ function DeleteModal({ addOn, onClose, onDeleted }: DeleteModalProps) {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in slide-in-from-bottom-8 duration-300 overflow-hidden">
-                <div className="px-6 pt-6 pb-2 text-center">
+        <AlertDialog open onOpenChange={(open) => !open && onClose()}>
+            <AlertDialogContent className="max-w-sm bg-white border border-gray-100 shadow-2xl rounded-2xl p-0 gap-0 overflow-hidden">
+                <AlertDialogHeader className="px-6 pt-6 pb-2 text-center space-y-0">
                     <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
                         <Trash2 className="w-6 h-6 text-red-500" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Delete Add-On?</h3>
-                    <p className="text-sm text-gray-500 mt-1">
-                        <span className="font-medium text-gray-800">{addOn.add_on_name}</span> will
-                        be permanently removed. This cannot be undone.
-                    </p>
+                    <AlertDialogTitle className="text-lg font-semibold text-gray-900">
+                        Delete Add-On?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-sm text-gray-500 mt-1">
+                        <span className="font-medium text-gray-800">
+                            {addOn.add_on_name}
+                        </span>{" "}
+                        will be permanently removed. This cannot be undone.
+                    </AlertDialogDescription>
                     {error && (
                         <p className="mt-3 text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg p-2">
                             {error}
                         </p>
                     )}
-                </div>
-                <div className="px-6 pb-6 pt-4 flex gap-3">
-                    <button
+                </AlertDialogHeader>
+                <AlertDialogFooter className="px-6 pb-6 pt-4 flex-row gap-3 sm:justify-start">
+                    <Button
+                        variant="outline"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="flex-1 h-auto px-4 py-2.5 border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
                     >
                         Cancel
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         onClick={handleDelete}
                         disabled={loading}
-                        className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="flex-1 h-auto px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -309,10 +356,10 @@ function DeleteModal({ addOn, onClose, onDeleted }: DeleteModalProps) {
                             <Trash2 className="w-4 h-4" />
                         )}
                         {loading ? "Deleting..." : "Delete"}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    </Button>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
@@ -343,7 +390,8 @@ export default function AddOnsPage() {
         } catch (err: any) {
             // 401 is auto-handled by the axios interceptor (redirect to login)
             setError(
-                err?.response?.data?.message ?? "Could not load add-ons. Please try again."
+                err?.response?.data?.message ??
+                    "Could not load add-ons. Please try again.",
             );
         } finally {
             setLoading(false);
@@ -363,7 +411,9 @@ export default function AddOnsPage() {
     };
 
     const filtered = addOns
-        .filter((a) => a.add_on_name.toLowerCase().includes(search.toLowerCase()))
+        .filter((a) =>
+            a.add_on_name.toLowerCase().includes(search.toLowerCase()),
+        )
         .sort((a, b) => {
             const mul = sortDir === "asc" ? 1 : -1;
             if (sortKey === "price") return (a.price - b.price) * mul;
@@ -384,7 +434,6 @@ export default function AddOnsPage() {
     return (
         <div className="min-h-screen bg-gray-50 p-6">
             <div className="max-w-3xl mx-auto">
-
                 {/* Page Header */}
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
@@ -392,19 +441,22 @@ export default function AddOnsPage() {
                             <Package className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-xl font-bold text-gray-900">Add-Ons</h1>
+                            <h1 className="text-xl font-bold text-gray-900">
+                                Add-Ons
+                            </h1>
                             <p className="text-sm text-gray-500">
-                                {addOns.length} item{addOns.length !== 1 ? "s" : ""} available
+                                {addOns.length} item
+                                {addOns.length !== 1 ? "s" : ""} available
                             </p>
                         </div>
                     </div>
-                    <button
+                    <Button
                         onClick={() => setShowAddModal(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all shadow-md shadow-indigo-200"
+                        className="flex items-center gap-2 h-auto px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all shadow-md shadow-indigo-200"
                     >
                         <Plus className="w-4 h-4" />
                         Add New
-                    </button>
+                    </Button>
                 </div>
 
                 {/* Search */}
@@ -412,9 +464,9 @@ export default function AddOnsPage() {
                     <div className="relative">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 
-                        <input
+                        <Input
                             type="text"
-                            className="w-[250px] pl-10 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none shadow-sm transition-all"
+                            className="w-[250px] h-auto pl-10 pr-10 py-2.5 bg-white border-gray-200 rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none shadow-sm transition-all"
                             placeholder="Search add-ons..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -456,7 +508,9 @@ export default function AddOnsPage() {
                     {loading && (
                         <div className="flex flex-col items-center justify-center py-16 gap-3">
                             <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
-                            <p className="text-sm text-gray-400">Loading add-ons...</p>
+                            <p className="text-sm text-gray-400">
+                                Loading add-ons...
+                            </p>
                         </div>
                     )}
 
@@ -504,12 +558,14 @@ export default function AddOnsPage() {
                                     </div>
 
                                     <div>
-                                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold">
+                                        <Badge className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 shadow-none">
                                             ₱
-                                            {Number(addon.price).toLocaleString("en-PH", {
+                                            {Number(
+                                                addon.price,
+                                            ).toLocaleString("en-PH", {
                                                 minimumFractionDigits: 2,
                                             })}
-                                        </span>
+                                        </Badge>
                                     </div>
 
                                     <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -521,7 +577,9 @@ export default function AddOnsPage() {
                                             <Pencil className="w-4 h-4" />
                                         </button>
                                         <button
-                                            onClick={() => setDeleteTarget(addon)}
+                                            onClick={() =>
+                                                setDeleteTarget(addon)
+                                            }
                                             className="p-1.5 rounded-lg hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
                                             title="Delete"
                                         >
@@ -537,15 +595,21 @@ export default function AddOnsPage() {
                     {!loading && !error && filtered.length > 0 && (
                         <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between">
                             <span className="text-xs text-gray-400">
-                                Showing {filtered.length} of {addOns.length} add-ons
+                                Showing {filtered.length} of {addOns.length}{" "}
+                                add-ons
                             </span>
                             <span className="text-xs text-gray-500 font-medium">
                                 Total pool value:{" "}
                                 <span className="text-emerald-600 font-semibold">
                                     ₱
                                     {filtered
-                                        .reduce((s, a) => s + Number(a.price), 0)
-                                        .toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                        .reduce(
+                                            (s, a) => s + Number(a.price),
+                                            0,
+                                        )
+                                        .toLocaleString("en-PH", {
+                                            minimumFractionDigits: 2,
+                                        })}
                                 </span>
                             </span>
                         </div>
