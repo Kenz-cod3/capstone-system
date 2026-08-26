@@ -1,4 +1,5 @@
 import React from "react";
+import { motion } from "framer-motion";
 import { DollarSign, Hotel, CalendarDays, Users } from "lucide-react";
 import StatCard from "./StatCard";
 
@@ -15,6 +16,32 @@ interface DashboardStats {
     expenses_change: number;
     profit_change: number;
 }
+
+//---------ANIMATION VARIANTS---->
+// Container staggers its children (each stat card) so they animate in one by one
+const gridContainerVariants = {
+    hidden: {},
+    show: {
+        transition: {
+            staggerChildren: 0.09,
+            delayChildren: 0.05,
+        },
+    },
+};
+
+// Each card fades + slides up + scales in slightly for a smooth "pop" feel
+const cardItemVariants = {
+    hidden: { opacity: 0, y: 16, scale: 0.96 },
+    show: {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        transition: {
+            duration: 0.4,
+            ease: [0.22, 1, 0.36, 1] as const, // smooth ease-out-expo-ish
+        },
+    },
+};
 
 //---------COMPONENT---->
 export default function StatCardsGrid({
@@ -118,10 +145,17 @@ export default function StatCardsGrid({
 
     //---------RENDER---->
     return (
-        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 ${gapClasses[gap as keyof typeof gapClasses] || gapClasses[2]}`}>
+        <motion.div
+            variants={gridContainerVariants}
+            initial="hidden"
+            animate="show"
+            className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 ${gapClasses[gap as keyof typeof gapClasses] || gapClasses[2]}`}
+        >
             {statCards.map((stat, index) => (
-                <StatCard key={index} {...stat} rounded={cardRounded} />
+                <motion.div key={stat.label ?? index} variants={cardItemVariants}>
+                    <StatCard {...stat} rounded={cardRounded} />
+                </motion.div>
             ))}
-        </div>
+        </motion.div>
     );
 }

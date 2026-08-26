@@ -12,7 +12,6 @@ import {
     Key,
     ClipboardList,
     PanelLeft,
-    PanelRight,
     ChevronDown,
     Settings,
     LifeBuoy,
@@ -45,6 +44,8 @@ import {
 import api, { API_BASE } from "@/services/api";
 import "@/services/echo";
 import logo from "../../images/logo1.png";
+import NProgress from "nprogress";
+import "nprogress/nprogress.css";
 
 const StaffLayout = ({
     children,
@@ -142,6 +143,8 @@ const StaffLayout = ({
     }, []);
 
     const handleLogout = async () => {
+        NProgress.start();
+
         try {
             const currentShift = await api.get("/shift/current");
 
@@ -154,19 +157,27 @@ const StaffLayout = ({
             await api.post("/auth/logout");
         } catch (err) {
             console.log(err);
+        } finally {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+
+            navigate("/login", {
+                replace: true,
+            });
+
+            setTimeout(() => {
+                NProgress.done();
+            }, 200);
         }
-
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-
-        navigate("/login", {
-            replace: true,
-        });
     };
 
     const handleNavigation = (href: string) => {
+        NProgress.start();
         navigate(href);
         setIsMobileMenuOpen(false);
+        setTimeout(() => {
+            NProgress.done();
+        }, 200);
     };
 
     const toggleSidebar = (e: React.MouseEvent) => {
@@ -850,6 +861,20 @@ const StaffLayout = ({
                     -moz-user-select: none;
                     -ms-user-select: none;
                 }
+                .sidebar-label {
+                    transition: opacity 300ms ease-in-out, max-width 300ms ease-in-out, margin 300ms ease-in-out;
+                    overflow: hidden;
+                    white-space: nowrap;
+                }
+                .sidebar-label-open {
+                    opacity: 1;
+                    max-width: 220px;
+                }
+                .sidebar-label-closed {
+                    opacity: 0;
+                    max-width: 0;
+                    margin: 0 !important;
+                }
             `}</style>
 
             <div className="min-h-screen bg-gray-50">
@@ -861,18 +886,20 @@ const StaffLayout = ({
                 )}
 
                 <aside
-                    className={`fixed top-0 left-0 h-full bg-gradient-to-b from-emerald-900 to-emerald-950 text-white transition-all duration-300 z-50 flex flex-col
-                        ${isSidebarOpen ? "w-64" : "w-20"} 
+                    className={`fixed top-0 left-0 h-full bg-gradient-to-b from-emerald-900 to-emerald-950 text-white transition-[width] duration-300 ease-in-out z-50 flex flex-col
+                        ${isSidebarOpen ? "w-56" : "w-16"} 
                         ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
                 >
                     <div
-                        className={`h-20 flex items-center ${isSidebarOpen ? "px-6" : "justify-center"} shrink-0 border-b border-emerald-800/50`}
+                        className="h-20 flex items-center px-3 shrink-0 border-b border-emerald-800/50"
                     >
                         <div
                             onClick={() => handleNavigation("/dashboard")}
-                            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity select-none"
+                            className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none"
                         >
-                            <div className="h-10 w-10 rounded-full overflow-hidden flex items-center justify-center">
+                            <div
+                                className={`h-10 w-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
+                            >
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
@@ -893,16 +920,16 @@ const StaffLayout = ({
                                     }}
                                 />
                             </div>
-                            {isSidebarOpen && (
-                                <div className="flex flex-col">
-                                    <span className="font-bold text-sm tracking-tight leading-tight">
-                                        Lynn Ennia's
-                                    </span>
-                                    <span className="text-[8px] text-emerald-300/80 tracking-wide">
-                                        Traveler's Inn
-                                    </span>
-                                </div>
-                            )}
+                            <div
+                                className={`sidebar-label flex flex-col ${isSidebarOpen ? "sidebar-label-open" : "sidebar-label-closed"}`}
+                            >
+                                <span className="font-bold text-sm tracking-tight leading-tight">
+                                    Lynn Ennia's
+                                </span>
+                                <span className="text-[8px] text-emerald-300/80 tracking-wide">
+                                    Traveler's Inn
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -912,11 +939,15 @@ const StaffLayout = ({
                         <div className="space-y-6">
                             {navigationGroups.map((group) => (
                                 <div key={group.label}>
-                                    {isSidebarOpen && (
-                                        <p className="text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2 select-none">
-                                            {group.label}
-                                        </p>
-                                    )}
+                                    <p
+                                        className={`sidebar-label text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2 select-none ${
+                                            isSidebarOpen
+                                                ? "sidebar-label-open"
+                                                : "sidebar-label-closed h-0 mb-0"
+                                        }`}
+                                    >
+                                        {group.label}
+                                    </p>
                                     <div className="space-y-1">
                                         {group.items.map((item) => {
                                             const isActive =
@@ -930,13 +961,12 @@ const StaffLayout = ({
                                                         )
                                                     }
                                                     className={`
-                                                        flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer select-none
+                                                        flex items-center px-3 py-2 rounded-lg transition-colors duration-300 ease-in-out group cursor-pointer select-none
                                                         ${
                                                             isActive
                                                                 ? "bg-emerald-600 text-white shadow-lg"
                                                                 : "text-emerald-100 hover:bg-emerald-800/50 hover:text-white"
                                                         }
-                                                        ${!isSidebarOpen && "justify-center"}
                                                     `}
                                                     title={
                                                         !isSidebarOpen
@@ -945,20 +975,22 @@ const StaffLayout = ({
                                                     }
                                                 >
                                                     <item.icon
-                                                        className={`h-5 w-5 shrink-0 ${!isSidebarOpen ? "mx-auto" : ""}`}
+                                                        className={`h-5 w-5 shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
                                                     />
-                                                    {isSidebarOpen && (
-                                                        <div className="flex flex-col flex-1 min-w-0">
-                                                            <span className="text-xs font-medium truncate">
-                                                                {item.name}
-                                                            </span>
-                                                            <span className="text-[8px] text-emerald-300/70 truncate">
-                                                                {
-                                                                    item.description
-                                                                }
-                                                            </span>
-                                                        </div>
-                                                    )}
+                                                    <div
+                                                        className={`sidebar-label flex flex-col flex-1 min-w-0 ${
+                                                            isSidebarOpen
+                                                                ? "sidebar-label-open"
+                                                                : "sidebar-label-closed"
+                                                        }`}
+                                                    >
+                                                        <span className="text-xs font-medium truncate">
+                                                            {item.name}
+                                                        </span>
+                                                        <span className="text-[8px] text-emerald-300/70 truncate">
+                                                            {item.description}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -968,18 +1000,19 @@ const StaffLayout = ({
                         </div>
                     </nav>
 
-                    <div className="border-t border-emerald-800/50 py-1 px-3 shrink-0 mt-auto">
+                    <div className="border-t border-emerald-800/50 py-2 px-2 shrink-0 mt-auto">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
-                                    className={`
-                                        w-full flex items-center gap-3 p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
+                                    className="
+                                        w-full flex items-center justify-center p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
                                         focus:outline-none focus:ring-0 cursor-pointer select-none
-                                        ${!isSidebarOpen && "justify-center"}
-                                    `}
+                                    "
                                 >
                                     <div
-                                        className={`${isSidebarOpen ? "h-10 w-10" : "h-9 w-9"} rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center`}
+                                        className={`rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center shrink-0 transition-all duration-300 ease-in-out h-10 w-10 ${
+                                            isSidebarOpen ? "mr-3" : "mx-auto"
+                                        }`}
                                     >
                                         {user?.profile_image ? (
                                             <img
@@ -1000,27 +1033,37 @@ const StaffLayout = ({
                                                 }}
                                             />
                                         ) : (
-                                            <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-xs font-bold">
+                                            <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-sm font-bold">
                                                 {user?.first_name?.[0] || "U"}
                                             </div>
                                         )}
                                     </div>
-                                    {isSidebarOpen && (
-                                        <>
-                                            <div className="flex-1 text-left">
-                                                <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none select-none">
-                                                    {getDisplayName()}
-                                                </p>
-                                                <p className="text-[8px] text-emerald-400/80 truncate select-none">
-                                                    {user.email}
-                                                </p>
-                                            </div>
-                                            <div className="flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors select-none">
-                                                <ChevronUp className="h-4 w-3 -mb-1" />
-                                                <ChevronDown className="h-4 w-3 -mt-1" />
-                                            </div>
-                                        </>
-                                    )}
+
+                                    <div
+                                        className={`sidebar-label flex-1 text-left ${
+                                            isSidebarOpen
+                                                ? "sidebar-label-open"
+                                                : "sidebar-label-closed"
+                                        }`}
+                                    >
+                                        <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none select-none">
+                                            {getDisplayName()}
+                                        </p>
+                                        <p className="text-[8px] text-emerald-400/80 truncate select-none">
+                                            {user.email}
+                                        </p>
+                                    </div>
+
+                                    <div
+                                        className={`sidebar-label flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors select-none ${
+                                            isSidebarOpen
+                                                ? "sidebar-label-open"
+                                                : "sidebar-label-closed"
+                                        }`}
+                                    >
+                                        <ChevronUp className="h-4 w-3 -mb-1" />
+                                        <ChevronDown className="h-4 w-3 -mt-1" />
+                                    </div>
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
@@ -1062,7 +1105,7 @@ const StaffLayout = ({
                 </aside>
 
                 <main
-                    className={`transition-all duration-300 ${isSidebarOpen ? "lg:ml-64" : "lg:ml-20"} flex flex-col h-screen overflow-hidden`}
+                    className={`transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "lg:ml-56" : "lg:ml-16"} flex flex-col h-screen overflow-hidden`}
                 >
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
                         <div className="px-6 py-3 flex items-center justify-between">
@@ -1073,11 +1116,13 @@ const StaffLayout = ({
                                     className="h-8 w-8 rounded-md hover:bg-gray-100"
                                     onClick={toggleSidebar}
                                 >
-                                    {isSidebarOpen ? (
-                                        <PanelLeft className="h-4 w-4 text-gray-500" />
-                                    ) : (
-                                        <PanelRight className="h-4 w-4 text-gray-500" />
-                                    )}
+                                    <PanelLeft
+                                        className={`h-4 w-4 text-gray-500 transition-transform duration-300 ease-in-out ${
+                                            isSidebarOpen
+                                                ? "rotate-0"
+                                                : "rotate-180"
+                                        }`}
+                                    />
                                 </Button>
                                 <div className="w-px h-5 bg-gray-300"></div>
                                 <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide select-none">

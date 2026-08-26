@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app";
 import "../css/app.css";
+import { Toaster } from "@/components/ui/sonner";
 
 import "antd/dist/reset.css";
 
@@ -13,6 +14,7 @@ ReactDOM.createRoot(document.getElementById("app")!).render(
     <QueryClientProvider client={queryClient}>
         <BrowserRouter>
             <App />
+            <Toaster position="bottom-left" closeButton />
         </BrowserRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
 );

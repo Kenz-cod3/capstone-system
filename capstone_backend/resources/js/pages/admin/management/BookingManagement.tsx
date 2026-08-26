@@ -18,10 +18,18 @@ import {
     DeleteOutlined,
     CheckCircleOutlined,
     SearchOutlined,
+    HomeOutlined,
+    DollarOutlined,
+    TeamOutlined,
+    CalendarOutlined as CalendarIcon,
+    CheckOutlined,
+    CloseCircleOutlined,
+    SyncOutlined,
+    CopyOutlined,
+    FilterOutlined,
 } from "@ant-design/icons";
 import {
     Table,
-    Tabs,
     Input,
     Button,
     message,
@@ -37,12 +45,23 @@ import {
     Card,
     Badge,
     Timeline,
+    Row,
+    Col,
+    Avatar,
+    Select,
+    Popover,
 } from "antd";
-import type { MenuProps, TabsProps } from "antd";
+import type { MenuProps } from "antd";
 import api from "@/services/api";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const { Title, Text } = Typography;
+
+const MINT_GREEN = "#10b981";
+const MINT_GREEN_LIGHT = "#d1fae5";
+const MINT_GREEN_BG = "#ecfdf5";
+const MINT_GREEN_HOVER = "#059669";
+const MINT_GREEN_DARK = "#065f46";
 
 interface AddOn {
     id: number;
@@ -284,16 +303,6 @@ interface Booking {
     payments?: BookingPayment[];
 }
 
-// interface BookingRow extends Booking {
-//     booked_room_id: number;
-//     room?: Room;
-//     status: string;
-//     stay_type: "overnight" | "short_stay";
-//     subtotal: number;
-//     is_extended: boolean;
-//     check_in_date: string;
-//     check_out_date: string;
-// }
 interface BookingRow extends Booking {
     booked_room_id: number;
     room?: Room;
@@ -303,7 +312,6 @@ interface BookingRow extends Booking {
     is_extended: boolean;
     check_in_date: string;
     check_out_date: string;
-
     booking_add_ons?: {
         id: number;
         quantity: number;
@@ -396,6 +404,8 @@ export default function Bookings() {
     >(null);
     const [userRole, setUserRole] = useState<string>("staff");
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const [filterStatus, setFilterStatus] = useState<string>("all");
+    const [filterPopoverOpen, setFilterPopoverOpen] = useState<boolean>(false);
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -403,9 +413,29 @@ export default function Bookings() {
     const bookingId = location.state?.bookingId;
     const bookedRoomId = location.state?.bookedRoomId;
 
+    // Refs for tab animation
+    const tabContainerRef = useRef<HTMLDivElement>(null);
+    const activeTabRef = useRef<HTMLButtonElement>(null);
+    const [indicatorStyle, setIndicatorStyle] = useState<{
+        left: number;
+        width: number;
+    }>({ left: 0, width: 0 });
+
     useEffect(() => {
         setCurrentPage(1);
         setSearchText("");
+    }, [activeTab]);
+
+    // Update indicator position when active tab changes
+    useEffect(() => {
+        if (activeTabRef.current && tabContainerRef.current) {
+            const tabRect = activeTabRef.current.getBoundingClientRect();
+            const containerRect = tabContainerRef.current.getBoundingClientRect();
+            setIndicatorStyle({
+                left: tabRect.left - containerRect.left,
+                width: tabRect.width,
+            });
+        }
     }, [activeTab]);
 
     // Get user role on mount
@@ -431,6 +461,7 @@ export default function Bookings() {
             currentPage,
             pageSize,
             searchText,
+            filterStatus,
         ],
         queryFn: async () => {
             let endpoint = "/booked-rooms";
@@ -453,6 +484,10 @@ export default function Bookings() {
                 params.append("search", searchText.trim());
             }
 
+            if (filterStatus !== "all") {
+                params.append("status", filterStatus);
+            }
+
             const { data } = await api.get<PaginatedResponse>(
                 `${endpoint}?${params.toString()}`,
             );
@@ -473,7 +508,7 @@ export default function Bookings() {
 
     useEffect(() => {
         bookingQuery.refetch();
-    }, [activeTab]);
+    }, [activeTab, filterStatus]);
 
     // Remove client-side filtering since we're doing server-side pagination
     const filteredData = bookings;
@@ -484,7 +519,7 @@ export default function Bookings() {
     // Reset to page 1 when search changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchText, activeTab]);
+    }, [searchText, activeTab, filterStatus]);
 
     // Transform BookedRoom data to BookingRow for table display
     const tableData: BookingRow[] = paginatedData.map((bookedRoom) => {
@@ -542,6 +577,35 @@ export default function Bookings() {
             booking_add_ons: bookedRoom.booking_add_ons || [],
         } as BookingRow;
     });
+
+    // Calculate statistics
+    const stats = useMemo(() => {
+        const activeBookings = bookings.filter(
+            (b) =>
+                b.status === "checked_in" ||
+                b.status === "confirmed" ||
+                b.status === "pending",
+        );
+        const checkedIn = bookings.filter((b) => b.status === "checked_in");
+        const upcoming = bookings.filter((b) => {
+            if (b.status !== "confirmed") return false;
+            const checkIn = new Date(b.check_in_date);
+            const today = new Date();
+            return checkIn >= today;
+        });
+        const totalRevenue = bookings
+            .filter(
+                (b) => b.status === "checked_in" || b.status === "checked_out",
+            )
+            .reduce((sum, b) => sum + Number(b.subtotal || 0), 0);
+
+        return {
+            totalActive: activeBookings.length,
+            checkedIn: checkedIn.length,
+            upcoming: upcoming.length,
+            totalRevenue: totalRevenue,
+        };
+    }, [bookings]);
 
     // Get the selected booked room
     const selectedBookedRoom = (() => {
@@ -657,20 +721,20 @@ export default function Bookings() {
 
         const modalContent = (
             <div>
-                <Text style={{ fontSize: "13px" }}>
+                <Text style={{ fontSize: "11px" }}>
                     You are about to perform an override action:{" "}
                     <strong>{actionName}</strong>
                 </Text>
                 {requiresReason && (
-                    <div style={{ marginTop: 16 }}>
-                        <Text style={{ fontSize: "13px" }}>
+                    <div style={{ marginTop: 14 }}>
+                        <Text style={{ fontSize: "11px" }}>
                             Reason for override (optional):
                         </Text>
                         <Input.TextArea
                             rows={3}
                             placeholder="Enter reason for this override action..."
                             onChange={(e) => (reason = e.target.value)}
-                            style={{ marginTop: 8, fontSize: "13px" }}
+                            style={{ marginTop: 6, fontSize: "11px" }}
                         />
                     </div>
                 )}
@@ -684,7 +748,7 @@ export default function Bookings() {
             cancelText: "Cancel",
             okButtonProps: { danger: true },
             centered: true,
-            width: 500,
+            width: 480,
             onOk: async () => {
                 if (reason) {
                     console.log(
@@ -737,6 +801,7 @@ export default function Bookings() {
                         currentPage,
                         pageSize,
                         searchText,
+                        filterStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         if (!old) return old;
@@ -777,7 +842,7 @@ export default function Bookings() {
             Modal.confirm({
                 title: `Admin Override: ${actionName}`,
                 centered: true,
-                width: 500,
+                width: 480,
                 okText: "Proceed",
                 cancelText: "Cancel",
                 content: (
@@ -785,7 +850,7 @@ export default function Bookings() {
                         rows={3}
                         placeholder="Enter reason..."
                         onChange={(e) => (overrideReason = e.target.value)}
-                        style={{ fontSize: "13px" }}
+                        style={{ fontSize: "11px" }}
                     />
                 ),
                 onOk: () => action(overrideReason),
@@ -820,7 +885,7 @@ export default function Bookings() {
 
             // Update local state
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== bookingId);
@@ -841,6 +906,7 @@ export default function Bookings() {
                         currentPage,
                         pageSize,
                         searchText,
+                        filterStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [updatedBookedRoom, ...(old || [])];
@@ -862,7 +928,7 @@ export default function Bookings() {
             );
 
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.map((b) =>
@@ -906,6 +972,7 @@ export default function Bookings() {
                                 currentPage,
                                 pageSize,
                                 searchText,
+                                filterStatus,
                             ],
                             (old: BookedRoom[] | undefined) => {
                                 if (!old) return old;
@@ -976,7 +1043,7 @@ export default function Bookings() {
             });
 
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText],
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== record.id);
@@ -992,6 +1059,7 @@ export default function Bookings() {
                         currentPage,
                         pageSize,
                         searchText,
+                        filterStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [deletedItem, ...(old || [])];
@@ -1031,7 +1099,7 @@ export default function Bookings() {
             await api.post(`/booked-rooms/${record.booked_room_id}/restore`);
 
             queryClient.setQueryData(
-                ["booked-rooms", "trash", currentPage, pageSize, searchText],
+                ["booked-rooms", "trash", currentPage, pageSize, searchText, filterStatus],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== record.id);
@@ -1052,6 +1120,7 @@ export default function Bookings() {
                         currentPage,
                         pageSize,
                         searchText,
+                        filterStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [cleanRestored, ...(old || [])];
@@ -1072,11 +1141,11 @@ export default function Bookings() {
             title: "Permanent Deletion",
             content: (
                 <div>
-                    <Text type="danger" style={{ fontSize: "13px" }}>
+                    <Text type="danger" style={{ fontSize: "11px" }}>
                         ⚠️ This action cannot be undone!
                     </Text>
                     <br />
-                    <Text style={{ fontSize: "13px" }}>
+                    <Text style={{ fontSize: "11px" }}>
                         Are you sure you want to permanently delete this
                         booking?
                     </Text>
@@ -1098,6 +1167,7 @@ export default function Bookings() {
                             currentPage,
                             pageSize,
                             searchText,
+                            filterStatus,
                         ],
                         (old: BookedRoom[] | undefined) => {
                             if (!old) return old;
@@ -1226,7 +1296,7 @@ export default function Bookings() {
     const getStatusBadgeColor = (status: string): string => {
         const colors: Record<string, string> = {
             pending: "#faad14",
-            confirmed: "#52c41a",
+            confirmed: MINT_GREEN,
             checked_in: "#1890ff",
             checked_out: "#8c8c8c",
             cancelled: "#ff4d4f",
@@ -1297,6 +1367,14 @@ export default function Bookings() {
                 result.address = booking.walk_in_guest.address;
             return result;
         }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            message.success("Copied to clipboard!");
+        }).catch(() => {
+            message.error("Failed to copy");
+        });
     };
 
     const getActionMenu = (record: BookingRow, type: string): MenuProps => {
@@ -1457,166 +1535,373 @@ export default function Bookings() {
         e.stopPropagation();
     };
 
+    // Updated columns with copy icon on reference
     const columns = [
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Booking Reference
                 </span>
             ),
             key: "booking_id",
-            width: "12%",
+            width: "14%",
             render: (_: any, record: BookingRow) => (
-                <Text style={{ fontSize: "13px", fontWeight: 500 }}>
-                    {record.booking_reference}
-                </Text>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div>
+                        <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                            {record.booking_reference}
+                        </Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            Booked on{" "}
+                            {formatDate(record.created_at || record.check_in_date)}
+                        </Text>
+                    </div>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined style={{ fontSize: "12px", color: "#94a3b8" }} />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(record.booking_reference);
+                        }}
+                        style={{ padding: "2px 4px", height: "auto" }}
+                    />
+                </div>
             ),
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Guest Name
-                </span>
-            ),
-            key: "guest_name",
-            width: "13%",
-            align: "left" as const,
-            render: (_: any, record: BookingRow) => (
-                <Button
-                    type="link"
+                <span
                     style={{
-                        color: "black",
-                        padding: 0,
-                        fontSize: "13px",
-                        fontWeight: 400,
-                    }}
-                    onClick={() => showDetails(record)}
-                >
-                    {getGuestName(record)}
-                </Button>
-            ),
-        },
-        {
-            title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>Room</span>
-            ),
-            key: "room",
-            width: "5%",
-            align: "center" as const,
-            render: (_: any, record: BookingRow) => (
-                <Text style={{ fontSize: "13px" }}>
-                    {record.room?.room_number ?? "N/A"}
-                </Text>
-            ),
-        },
-        {
-            title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>Type</span>
-            ),
-            key: "type",
-            width: "8%",
-            align: "center" as const,
-            render: (_: any, record: BookingRow) => (
-                <Tag
-                    color={record.booking_type === "walk_in" ? "blue" : "green"}
-                    style={{
-                        fontSize: "12px",
-                        padding: "4px 12px",
-                        borderRadius: "6px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
                     }}
                 >
-                    {record.booking_type === "walk_in" ? "Walk-in" : "Online"}
-                </Tag>
-            ),
-        },
-        {
-            title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Status
+                    Guest
                 </span>
             ),
-            key: "status",
-            width: "10%",
-            align: "center" as const,
-            render: (_: any, record: BookingRow) => (
-                <Tag
-                    color={getStatusColor(record.status)}
-                    style={{
-                        fontSize: "12px",
-                        padding: "4px 12px",
-                        borderRadius: "6px",
-                    }}
-                >
-                    {record.status?.replace(/_/g, " ").toUpperCase()}
-                </Tag>
-            ),
-        },
-        {
-            title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
-                    Stay Type
-                </span>
-            ),
-            key: "stay_type",
-            width: "12%",
-            align: "center" as const,
+            key: "guest",
+            width: "16%",
             render: (_: any, record: BookingRow) => {
-                const type = record.room?.pivot?.stay_type ?? record.stay_type;
+                const name = getGuestName(record);
+                const initials = name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2);
+                const guestDetails = record.user || record.walk_in_guest;
+                let phone: string | undefined;
+
+                if (record.user) {
+                    phone = record.user.phone;
+                } else if (record.walk_in_guest) {
+                    phone = record.walk_in_guest.contact_number;
+                }
+
                 return (
-                    <Tag
-                        color={type === "short_stay" ? "purple" : "cyan"}
-                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                        }}
                     >
-                        {type === "short_stay" ? "Short Stay" : "Overnight"}
-                    </Tag>
+                        <Avatar
+                            style={{
+                                backgroundColor: MINT_GREEN_LIGHT,
+                                color: MINT_GREEN,
+                                fontSize: "10px",
+                                fontWeight: 600,
+                                flexShrink: 0,
+                            }}
+                            size={28}
+                        >
+                            {initials || "G"}
+                        </Avatar>
+                        <div>
+                            <Text
+                                strong
+                                style={{ fontSize: "11px", color: "#0f172a" }}
+                            >
+                                {name}
+                            </Text>
+                            {phone && (
+                                <div
+                                    style={{
+                                        fontSize: "8.5px",
+                                        color: "#64748b",
+                                    }}
+                                >
+                                    {phone}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 );
             },
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Room
+                </span>
+            ),
+            key: "room",
+            width: "12%",
+            render: (_: any, record: BookingRow) => (
+                <div>
+                    <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                        {record.room?.room_number ?? "N/A"}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {record.room?.room_type?.type_name || "-"}
+                    </Text>
+                </div>
+            ),
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Status
+                </span>
+            ),
+            key: "status",
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const statusMap: Record<
+                    string,
+                    { color: string; bg: string; label: string; icon: React.ReactNode }
+                > = {
+                    pending: {
+                        color: "#faad14",
+                        bg: "#fff7e6",
+                        label: "PENDING",
+                        icon: <SyncOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    confirmed: {
+                        color: MINT_GREEN,
+                        bg: MINT_GREEN_BG,
+                        label: "CONFIRMED",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    checked_in: {
+                        color: "#1890ff",
+                        bg: "#e6f7ff",
+                        label: "CHECKED IN",
+                        icon: <CheckCircleOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    checked_out: {
+                        color: "#8c8c8c",
+                        bg: "#f5f5f5",
+                        label: "CHECKED OUT",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    cancelled: {
+                        color: "#ff4d4f",
+                        bg: "#fff1f0",
+                        label: "CANCELLED",
+                        icon: <CloseCircleOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    refunded: {
+                        color: "#722ed1",
+                        bg: "#f9f0ff",
+                        label: "REFUNDED",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                };
+                const defaultStatus = {
+                    color: "#faad14",
+                    bg: "#fff7e6",
+                    label: "PENDING",
+                    icon: <SyncOutlined style={{ fontSize: "10px" }} />,
+                };
+                const status =
+                    statusMap[record.status as string] || defaultStatus;
+                return (
+                    <div
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "3px 10px",
+                            borderRadius: "16px",
+                            backgroundColor: status.bg,
+                            color: status.color,
+                            fontSize: "8.5px",
+                            fontWeight: 600,
+                            letterSpacing: "0.5px",
+                        }}
+                    >
+                        {status.icon}
+                        {status.label}
+                    </div>
+                );
+            },
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Stay Type
+                </span>
+            ),
+            key: "stay_type",
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const type = record.room?.pivot?.stay_type ?? record.stay_type;
+                const isWalkIn = record.booking_type === "walk_in";
+                return (
+                    <div>
+                        <Tag
+                            color={type === "short_stay" ? "purple" : "cyan"}
+                            style={{
+                                fontSize: "8.5px",
+                                borderRadius: "3px",
+                                padding: "1px 8px",
+                                margin: 0,
+                                lineHeight: 1.5,
+                            }}
+                        >
+                            {type === "short_stay" ? "Short Stay" : "Overnight"}
+                        </Tag>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            {isWalkIn ? "Walk-in" : "Online"}
+                        </Text>
+                    </div>
+                );
+            },
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Check In
                 </span>
             ),
             key: "check_in",
-            width: "8%",
+            width: "12%",
             render: (_: any, record: BookingRow) => (
-                <Text style={{ fontSize: "13px" }}>
-                    {formatDate(record.check_in_date)}
-                </Text>
+                <div>
+                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                        {formatDate(record.check_in_date)}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {formatTime(record.check_in_date)}
+                    </Text>
+                </div>
             ),
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Check Out
                 </span>
             ),
             key: "check_out",
-            width: "8%",
+            width: "12%",
             render: (_: any, record: BookingRow) => (
-                <Text style={{ fontSize: "13px" }}>
-                    {formatDate(record.check_out_date)}
-                </Text>
+                <div>
+                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                        {formatDate(record.check_out_date)}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {formatTime(record.check_out_date)}
+                    </Text>
+                </div>
             ),
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Payment
                 </span>
             ),
-            key: "payment_status",
-            width: "9%",
-            align: "center" as const,
+            key: "payment",
+            width: "8%",
             render: (_: any, record: BookingRow) => {
                 const payment = record.payments?.[0];
                 const status = payment?.payment_status ?? "pending";
+                const color = status === "paid" ? "green" : "orange";
+                const icon = status === "paid" 
+                    ? <CheckCircleOutlined style={{ fontSize: "10px" }} /> 
+                    : <SyncOutlined style={{ fontSize: "10px" }} />;
                 return (
                     <Tag
-                        color={getPaymentStatusColor(status)}
-                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                        color={color}
+                        style={{
+                            fontSize: "8.5px",
+                            borderRadius: "3px",
+                            padding: "1px 10px",
+                            fontWeight: 500,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                        }}
                     >
+                        {icon}
                         {status.toUpperCase()}
                     </Tag>
                 );
@@ -1624,35 +1909,34 @@ export default function Bookings() {
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Amount
                 </span>
             ),
-            key: "subtotal",
-            width: "8%",
+            key: "amount",
+            width: "10%",
             render: (_: any, record: BookingRow) => {
                 const addOnTotal =
                     record.booking_add_ons?.reduce(
                         (sum, addon) => sum + Number(addon.subtotal ?? 0),
                         0,
                     ) ?? 0;
-                // const addOnTotal =
-                //     record.booked_rooms
-                //         ?.find((br) => br.id === record.booked_room_id)
-                //         ?.booking_add_ons?.reduce(
-                //             (sum, addon) => sum + Number(addon.subtotal ?? 0),
-                //             0,
-                //         ) ?? 0;
-
                 const total = Number(record.subtotal) + addOnTotal;
-
                 return (
                     <Text
                         strong
                         style={{
-                            color: "#52c41a",
-                            fontSize: "13px",
-                            fontWeight: 600,
+                            color: MINT_GREEN,
+                            fontSize: "12px",
+                            fontWeight: 700,
                         }}
                     >
                         ₱
@@ -1666,15 +1950,23 @@ export default function Bookings() {
         },
         {
             title: (
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
                     Action
                 </span>
             ),
             key: "action",
-            width: "5%",
+            width: "6%",
             align: "center" as const,
             render: (_: any, record: BookingRow) => (
-                <div onClick={(e) => handleActionClick(e, record)}>
+                <div onClick={(e) => e.stopPropagation()}>
                     <Dropdown
                         menu={getActionMenu(record, activeTab)}
                         trigger={["click"]}
@@ -1683,6 +1975,7 @@ export default function Bookings() {
                             type="text"
                             icon={<MoreOutlined />}
                             size="small"
+                            style={{ fontSize: "14px" }}
                         />
                     </Dropdown>
                 </div>
@@ -1732,25 +2025,25 @@ export default function Bookings() {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    marginTop: 20,
+                    marginTop: 14,
                     flexWrap: "wrap",
-                    gap: 16,
-                    padding: "12px 0",
+                    gap: 12,
+                    padding: "8px 0",
                 }}
             >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Button
                         size="small"
                         disabled={currentPage === 1 || bookingQuery.isLoading}
                         onClick={() =>
                             setCurrentPage((prev: number) => prev - 1)
                         }
-                        style={{ borderRadius: "8px" }}
+                        style={{ borderRadius: "6px", fontSize: "10px" }}
                     >
                         Prev
                     </Button>
 
-                    <Text style={{ fontSize: "12px" }}>
+                    <Text style={{ fontSize: "10px" }}>
                         Page {currentPage} of {totalPages}
                     </Text>
 
@@ -1762,23 +2055,23 @@ export default function Bookings() {
                         onClick={() =>
                             setCurrentPage((prev: number) => prev + 1)
                         }
-                        style={{ borderRadius: "8px" }}
+                        style={{ borderRadius: "6px", fontSize: "10px" }}
                     >
                         Next
                     </Button>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <Text style={{ fontSize: "13px" }}>Total: {totalRows}</Text>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <Text style={{ fontSize: "10px" }}>Total: {totalRows}</Text>
 
                     <div
                         style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 6,
+                            gap: 4,
                         }}
                     >
-                        <Text style={{ fontSize: "13px" }}>Rows:</Text>
+                        <Text style={{ fontSize: "10px" }}>Rows:</Text>
                         <select
                             value={pageSize}
                             onChange={(e) => {
@@ -1786,10 +2079,10 @@ export default function Bookings() {
                                 setCurrentPage(1);
                             }}
                             style={{
-                                padding: "6px 12px",
-                                borderRadius: "8px",
+                                padding: "4px 10px",
+                                borderRadius: "6px",
                                 border: "1px solid #e5e7eb",
-                                fontSize: "13px",
+                                fontSize: "10px",
                                 backgroundColor: "white",
                                 cursor: "pointer",
                                 outline: "none",
@@ -1800,81 +2093,228 @@ export default function Bookings() {
                             <option value={50}>50</option>
                             <option value={100}>100</option>
                         </select>
-                        <Text style={{ fontSize: "13px" }}>/ page</Text>
+                        <Text style={{ fontSize: "10px" }}>/ page</Text>
                     </div>
                 </div>
             </div>
         );
     };
 
-    const tabItems: TabsProps["items"] = [
-        {
-            key: "active",
-            label: (
-                <Space size={6}>
-                    <CheckCircleOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                        Active
-                    </span>
-                </Space>
-            ),
-            children: (
-                <>
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            ),
-        },
-        {
-            key: "history",
-            label: (
-                <Space size={6}>
-                    <HistoryOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                        History
-                    </span>
-                </Space>
-            ),
-            children: (
-                <>
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            ),
-        },
-        {
-            key: "trash",
-            label: (
-                <Space size={6}>
-                    <DeleteOutlined style={{ fontSize: "13px" }} />
-                    <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                        Trash
-                    </span>
-                </Space>
-            ),
-            children: (
-                <>
-                    {bookings.length > 0 && (
-                        <Alert
-                            message="Warning"
-                            description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
-                            type="warning"
-                            showIcon
-                            closable
+    // Render statistics cards
+    const renderStats = () => (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
                             style={{
-                                marginBottom: 16,
-                                fontSize: "12px",
-                                borderRadius: "10px",
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
                             }}
-                        />
-                    )}
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            ),
-        },
-    ];
+                        >
+                            <HomeOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Total Active
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.totalActive}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Currently active reservations
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <TeamOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Checked In
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.checkedIn}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Guests currently staying
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <CalendarIcon
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Upcoming
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.upcoming}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Arriving today or later
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <DollarOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Total Revenue
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "16px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                ₱{stats.totalRevenue.toLocaleString()}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                From active bookings
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+        </Row>
+    );
 
+    // Render booking details drawer (keeping it compact)
     const renderBookingDetails = () => {
         if (!selectedBooking) return null;
 
@@ -1931,7 +2371,7 @@ export default function Bookings() {
                         <Space size={8}>
                             <Text
                                 strong
-                                style={{ fontSize: "14px", fontWeight: 600 }}
+                                style={{ fontSize: "13px", fontWeight: 600 }}
                             >
                                 {guestName}
                             </Text>
@@ -1944,9 +2384,9 @@ export default function Bookings() {
                     setDetailsVisible(false);
                     setSelectedBookedRoomId(null);
                 }}
-                width={500}
+                width={480}
                 closable={true}
-                closeIcon={<CloseOutlined style={{ fontSize: "14px" }} />}
+                closeIcon={<CloseOutlined style={{ fontSize: "13px" }} />}
                 extra={
                     <Dropdown
                         menu={
@@ -1959,22 +2399,22 @@ export default function Bookings() {
                         <Button
                             type="primary"
                             icon={<MoreOutlined />}
-                            size="middle"
-                            style={{ borderRadius: "8px" }}
+                            size="small"
+                            style={{ borderRadius: "6px", fontSize: "10px", background: MINT_GREEN, borderColor: MINT_GREEN }}
                         >
                             Actions
                         </Button>
                     </Dropdown>
                 }
             >
-                <div style={{ marginBottom: 24, textAlign: "center" }}>
+                <div style={{ marginBottom: 20, textAlign: "center" }}>
                     <Badge
                         color={statusColor}
                         text={
                             <Text
                                 strong
                                 style={{
-                                    fontSize: "14px",
+                                    fontSize: "13px",
                                     color: statusColor,
                                     fontWeight: 600,
                                 }}
@@ -1990,9 +2430,10 @@ export default function Bookings() {
                         type="error"
                         showIcon
                         style={{
-                            marginBottom: 16,
-                            borderRadius: "12px",
+                            marginBottom: 14,
+                            borderRadius: "10px",
                             alignItems: "center",
+                            fontSize: "10px",
                         }}
                         message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
                         description="Guest exceeded expected checkout date."
@@ -2002,16 +2443,16 @@ export default function Bookings() {
                 <Card
                     title={
                         <Space size={6}>
-                            <UserOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                            <UserOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
                                 Guest Information
                             </span>
                         </Space>
                     }
                     size="small"
                     style={{
-                        marginBottom: 16,
-                        borderRadius: "12px",
+                        marginBottom: 14,
+                        borderRadius: "10px",
                         border: "1px solid #f0f0f0",
                     }}
                 >
@@ -2020,7 +2461,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2028,7 +2469,7 @@ export default function Bookings() {
                                 </span>
                             }
                         >
-                            <Text strong style={{ fontSize: "13px" }}>
+                            <Text strong style={{ fontSize: "11px" }}>
                                 {guestDetails.name}
                             </Text>
                         </Descriptions.Item>
@@ -2037,7 +2478,7 @@ export default function Bookings() {
                                 label={
                                     <span
                                         style={{
-                                            fontSize: "12px",
+                                            fontSize: "10px",
                                             fontWeight: 500,
                                         }}
                                     >
@@ -2045,7 +2486,7 @@ export default function Bookings() {
                                     </span>
                                 }
                             >
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {guestDetails.email}
                                 </Text>
                             </Descriptions.Item>
@@ -2055,7 +2496,7 @@ export default function Bookings() {
                                 label={
                                     <span
                                         style={{
-                                            fontSize: "12px",
+                                            fontSize: "10px",
                                             fontWeight: 500,
                                         }}
                                     >
@@ -2065,9 +2506,9 @@ export default function Bookings() {
                             >
                                 <Space size={4}>
                                     <PhoneOutlined
-                                        style={{ fontSize: "12px" }}
+                                        style={{ fontSize: "10px" }}
                                     />
-                                    <Text style={{ fontSize: "13px" }}>
+                                    <Text style={{ fontSize: "11px" }}>
                                         {guestDetails.phone}
                                     </Text>
                                 </Space>
@@ -2078,7 +2519,7 @@ export default function Bookings() {
                                 label={
                                     <span
                                         style={{
-                                            fontSize: "12px",
+                                            fontSize: "10px",
                                             fontWeight: 500,
                                         }}
                                     >
@@ -2088,9 +2529,9 @@ export default function Bookings() {
                             >
                                 <Space size={4}>
                                     <EnvironmentOutlined
-                                        style={{ fontSize: "12px" }}
+                                        style={{ fontSize: "10px" }}
                                     />
-                                    <Text style={{ fontSize: "13px" }}>
+                                    <Text style={{ fontSize: "11px" }}>
                                         {guestDetails.address}
                                     </Text>
                                 </Space>
@@ -2102,16 +2543,16 @@ export default function Bookings() {
                 <Card
                     title={
                         <Space size={6}>
-                            <CalendarOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                            <CalendarOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
                                 Booking Details
                             </span>
                         </Space>
                     }
                     size="small"
                     style={{
-                        marginBottom: 16,
-                        borderRadius: "12px",
+                        marginBottom: 14,
+                        borderRadius: "10px",
                         border: "1px solid #f0f0f0",
                     }}
                 >
@@ -2120,7 +2561,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2135,8 +2576,8 @@ export default function Bookings() {
                                         : "green"
                                 }
                                 style={{
-                                    fontSize: "12px",
-                                    borderRadius: "6px",
+                                    fontSize: "10px",
+                                    borderRadius: "4px",
                                 }}
                             >
                                 {selectedBooking.booking_type === "walk_in"
@@ -2148,7 +2589,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2168,8 +2609,8 @@ export default function Bookings() {
                                                 : "cyan"
                                         }
                                         style={{
-                                            fontSize: "12px",
-                                            borderRadius: "6px",
+                                            fontSize: "10px",
+                                            borderRadius: "4px",
                                         }}
                                     >
                                         {type === "short_stay"
@@ -2183,7 +2624,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2191,9 +2632,18 @@ export default function Bookings() {
                                 </span>
                             }
                         >
-                            <Text code style={{ fontSize: "12px" }}>
-                                {selectedBooking.booking_reference}
-                            </Text>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <Text code style={{ fontSize: "10px" }}>
+                                    {selectedBooking.booking_reference}
+                                </Text>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<CopyOutlined style={{ fontSize: "11px", color: "#94a3b8" }} />}
+                                    onClick={() => copyToClipboard(selectedBooking.booking_reference)}
+                                    style={{ padding: "2px 4px", height: "auto" }}
+                                />
+                            </div>
                         </Descriptions.Item>
 
                         {(() => {
@@ -2207,7 +2657,7 @@ export default function Bookings() {
                                         {user.role && (
                                             <Text
                                                 type="secondary"
-                                                style={{ marginLeft: 6 }}
+                                                style={{ marginLeft: 4, fontSize: "9px" }}
                                             >
                                                 ({user.role})
                                             </Text>
@@ -2237,7 +2687,7 @@ export default function Bookings() {
                                                 {confirmedBy?.user ? (
                                                     formatUser(confirmedBy.user)
                                                 ) : (
-                                                    <Text type="secondary">
+                                                    <Text type="secondary" style={{ fontSize: "10px" }}>
                                                         Not confirmed
                                                     </Text>
                                                 )}
@@ -2256,7 +2706,7 @@ export default function Bookings() {
                                     )}
                                     {override?.user && (
                                         <Descriptions.Item label="Override By">
-                                            <Text type="danger">
+                                            <Text type="danger" style={{ fontSize: "10px" }}>
                                                 {formatUser(override.user)}
                                             </Text>
                                         </Descriptions.Item>
@@ -2269,7 +2719,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2279,9 +2729,9 @@ export default function Bookings() {
                         >
                             <Space size={4}>
                                 <CalendarOutlined
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 />
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {formatDateTime(
                                         selectedBooking.created_at || "",
                                     )}
@@ -2292,7 +2742,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2302,9 +2752,9 @@ export default function Bookings() {
                         >
                             <Space size={4}>
                                 <CalendarOutlined
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 />
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {formatDate(
                                         (selectedBookedRoom as any)
                                             ?.check_in_date || "",
@@ -2316,7 +2766,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2326,9 +2776,9 @@ export default function Bookings() {
                         >
                             <Space size={4}>
                                 <CalendarOutlined
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 />
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {formatDate(
                                         (selectedBookedRoom as any)
                                             ?.check_out_date || "",
@@ -2340,7 +2790,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2350,9 +2800,9 @@ export default function Bookings() {
                         >
                             <Space size={4}>
                                 <ClockCircleOutlined
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 />
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {formatTime(
                                         (selectedBookedRoom as any)
                                             ?.check_in_time || "",
@@ -2364,7 +2814,7 @@ export default function Bookings() {
                             label={
                                 <span
                                     style={{
-                                        fontSize: "12px",
+                                        fontSize: "10px",
                                         fontWeight: 500,
                                     }}
                                 >
@@ -2374,9 +2824,9 @@ export default function Bookings() {
                         >
                             <Space size={4}>
                                 <ClockCircleOutlined
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 />
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     {formatTime(
                                         (selectedBookedRoom as any)
                                             ?.check_out_time || "",
@@ -2390,16 +2840,16 @@ export default function Bookings() {
                 <Card
                     title={
                         <Space size={6}>
-                            <TagOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                            <TagOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
                                 Rooms
                             </span>
                         </Space>
                     }
                     size="small"
                     style={{
-                        marginBottom: 16,
-                        borderRadius: "12px",
+                        marginBottom: 14,
+                        borderRadius: "10px",
                         border: "1px solid #f0f0f0",
                     }}
                 >
@@ -2410,18 +2860,18 @@ export default function Bookings() {
                                     display: "flex",
                                     justifyContent: "space-between",
                                     alignItems: "center",
-                                    padding: "10px 14px",
+                                    padding: "8px 12px",
                                     background: "#f8fafc",
-                                    borderRadius: "10px",
+                                    borderRadius: "8px",
                                     border: "1px solid #e2e8f0",
                                 }}
                             >
-                                <Space size={8}>
+                                <Space size={6}>
                                     <Tag
                                         color="blue"
                                         style={{
-                                            fontSize: "12px",
-                                            borderRadius: "6px",
+                                            fontSize: "10px",
+                                            borderRadius: "4px",
                                         }}
                                     >
                                         Room{" "}
@@ -2430,7 +2880,7 @@ export default function Bookings() {
                                     </Tag>
                                     <Text
                                         type="secondary"
-                                        style={{ fontSize: "12px" }}
+                                        style={{ fontSize: "10px" }}
                                     >
                                         {(selectedBookedRoom as any).room
                                             ?.room_type?.type_name ?? "-"}
@@ -2445,7 +2895,7 @@ export default function Bookings() {
                                         ?.base_price && (
                                         <Text
                                             type="secondary"
-                                            style={{ fontSize: "11px" }}
+                                            style={{ fontSize: "9px" }}
                                         >
                                             Original: ₱
                                             {Number(
@@ -2457,8 +2907,8 @@ export default function Bookings() {
                                     <Text
                                         strong
                                         style={{
-                                            color: "#52c41a",
-                                            fontSize: "13px",
+                                            color: MINT_GREEN,
+                                            fontSize: "11px",
                                             fontWeight: 600,
                                         }}
                                     >
@@ -2478,7 +2928,7 @@ export default function Bookings() {
                             </div>
                         </div>
                     ) : (
-                        <Text type="secondary" style={{ fontSize: "13px" }}>
+                        <Text type="secondary" style={{ fontSize: "11px" }}>
                             No rooms assigned
                         </Text>
                     )}
@@ -2487,16 +2937,16 @@ export default function Bookings() {
                 <Card
                     title={
                         <Space size={6}>
-                            <TagOutlined style={{ fontSize: "13px" }} />
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                            <TagOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
                                 Add-ons
                             </span>
                         </Space>
                     }
                     size="small"
                     style={{
-                        marginBottom: 16,
-                        borderRadius: "12px",
+                        marginBottom: 14,
+                        borderRadius: "10px",
                         border: "1px solid #f0f0f0",
                     }}
                 >
@@ -2508,18 +2958,18 @@ export default function Bookings() {
                                     display: "flex",
                                     justifyContent: "space-between",
                                     alignItems: "center",
-                                    padding: "10px 14px",
+                                    padding: "8px 12px",
                                     background: "#f8fafc",
-                                    borderRadius: "10px",
+                                    borderRadius: "8px",
                                     border: "1px solid #e2e8f0",
-                                    marginBottom: 10,
+                                    marginBottom: 8,
                                 }}
                             >
                                 <div>
                                     <div
                                         style={{
                                             fontWeight: 600,
-                                            fontSize: "13px",
+                                            fontSize: "11px",
                                         }}
                                     >
                                         {addon.add_on?.add_on_name}
@@ -2527,7 +2977,7 @@ export default function Bookings() {
                                     <div
                                         style={{
                                             color: "#64748b",
-                                            fontSize: "12px",
+                                            fontSize: "10px",
                                         }}
                                     >
                                         ₱
@@ -2539,9 +2989,9 @@ export default function Bookings() {
                                 </div>
                                 <div
                                     style={{
-                                        color: "#52c41a",
+                                        color: MINT_GREEN,
                                         fontWeight: 700,
-                                        fontSize: "13px",
+                                        fontSize: "11px",
                                     }}
                                 >
                                     ₱{Number(addon.subtotal).toLocaleString()}
@@ -2549,28 +2999,29 @@ export default function Bookings() {
                             </div>
                         ))
                     ) : (
-                        <Text type="secondary">No add-ons purchased</Text>
+                        <Text type="secondary" style={{ fontSize: "11px" }}>
+                            No add-ons purchased
+                        </Text>
                     )}
                 </Card>
 
                 <Card
                     title={
                         <Space size={6}>
-                            <span style={{ fontSize: "13px", fontWeight: 600 }}>
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
                                 Payment Summary
                             </span>
                         </Space>
                     }
                     size="small"
                     style={{
-                        marginBottom: 16,
-                        borderRadius: "12px",
+                        marginBottom: 14,
+                        borderRadius: "10px",
                         border: "1px solid #f0f0f0",
                         position: "relative",
                         overflow: "hidden",
                     }}
                 >
-                    {/* {firstPayment?.payment_status === "refunded" && ( */}
                     {paymentStatus === "refunded" && (
                         <div
                             style={{
@@ -2580,23 +3031,16 @@ export default function Bookings() {
                                 transform:
                                     "translate(-50%, -50%) rotate(-18deg)",
                                 zIndex: 100,
-
                                 pointerEvents: "none",
-
-                                border: "5px double #d9363e",
+                                border: "4px double #d9363e",
                                 color: "#d9363e",
-
-                                padding: "12px 36px",
-                                borderRadius: 8,
-
-                                fontSize: 42,
+                                padding: "8px 28px",
+                                borderRadius: 6,
+                                fontSize: 32,
                                 fontWeight: 900,
                                 letterSpacing: 3,
-
-                                opacity: 0.4,
-
+                                opacity: 0.35,
                                 background: "rgba(255,255,255,0.12)",
-
                                 textTransform: "uppercase",
                                 whiteSpace: "nowrap",
                             }}
@@ -2604,29 +3048,35 @@ export default function Bookings() {
                             REFUNDED
                         </div>
                     )}
-                    <div style={{ marginBottom: 16 }}>
-                        <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary">Payment Method:</Text>
-                            <Tag color="green" style={{ marginLeft: 8 }}>
+                    <div style={{ marginBottom: 14 }}>
+                        <div style={{ marginBottom: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
+                                Payment Method:
+                            </Text>
+                            <Tag color="green" style={{ marginLeft: 6, fontSize: "10px" }}>
                                 {paymentToShow?.payment_method?.toUpperCase() ||
                                     "N/A"}
                             </Tag>
                         </div>
 
-                        <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary">Payment Status:</Text>
+                        <div style={{ marginBottom: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
+                                Payment Status:
+                            </Text>
                             <Tag
                                 color={getPaymentStatusColor(paymentStatus)}
-                                style={{ marginLeft: 8 }}
+                                style={{ marginLeft: 6, fontSize: "10px" }}
                             >
                                 {paymentStatus.toUpperCase()}
                             </Tag>
                         </div>
 
                         {paymentToShow?.payment_method !== "cash" && (
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Reference:</Text>
-                                <Text strong style={{ marginLeft: 8 }}>
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    Reference:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
                                     {paymentToShow?.gcash_reference ||
                                         paymentToShow?.bank_reference ||
                                         "N/A"}
@@ -2635,34 +3085,36 @@ export default function Bookings() {
                         )}
 
                         {paymentToShow?.receipt_number && (
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Receipt Number:</Text>
-                                <Text strong style={{ marginLeft: 8 }}>
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    Receipt Number:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
                                     {paymentToShow.receipt_number}
                                 </Text>
                             </div>
                         )}
 
                         {paymentToShow?.payment_date && (
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
                                     {paymentDateLabel}:
                                 </Text>
-
-                                <Text strong style={{ marginLeft: 8 }}>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
                                     {formatDateTime(paymentToShow.payment_date)}
                                 </Text>
                             </div>
                         )}
 
                         {paymentToShow?.receiver && (
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">{receiverLabel}:</Text>
-
-                                <Text strong style={{ marginLeft: 8 }}>
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    {receiverLabel}:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
                                     {paymentToShow.receiver.first_name}{" "}
                                     {paymentToShow.receiver.last_name}
-                                    <Text type="secondary">
+                                    <Text type="secondary" style={{ fontSize: "9px" }}>
                                         {" "}
                                         ({paymentToShow.receiver.role})
                                     </Text>
@@ -2670,22 +3122,22 @@ export default function Bookings() {
                             </div>
                         )}
 
-                        <div style={{ marginTop: 8 }}>
-                            <Text type="secondary">
+                        <div style={{ marginTop: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
                                 {paymentStatus === "refunded"
                                     ? "Refund Amount"
                                     : "Amount Paid"}
                                 :
                             </Text>
-
                             <Text
                                 strong
                                 style={{
-                                    marginLeft: 8,
+                                    marginLeft: 6,
+                                    fontSize: "12px",
                                     color:
                                         paymentStatus === "refunded"
                                             ? "#cf1322"
-                                            : "#52c41a",
+                                            : MINT_GREEN,
                                 }}
                             >
                                 ₱
@@ -2697,21 +3149,21 @@ export default function Bookings() {
                         </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                        <div style={{ marginBottom: 8 }}>
+                        <div style={{ marginBottom: 6 }}>
                             <div
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
-                                    marginBottom: 6,
+                                    marginBottom: 4,
                                 }}
                             >
                                 <Text
                                     type="secondary"
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 >
                                     Room Charges
                                 </Text>
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     ₱
                                     {roomCharges.toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
@@ -2723,16 +3175,16 @@ export default function Bookings() {
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
-                                    marginBottom: 6,
+                                    marginBottom: 4,
                                 }}
                             >
                                 <Text
                                     type="secondary"
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 >
                                     Add-ons
                                 </Text>
-                                <Text style={{ fontSize: "13px" }}>
+                                <Text style={{ fontSize: "11px" }}>
                                     ₱
                                     {addOnTotal.toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
@@ -2745,20 +3197,20 @@ export default function Bookings() {
                                     style={{
                                         display: "flex",
                                         justifyContent: "space-between",
-                                        marginBottom: 6,
+                                        marginBottom: 4,
                                     }}
                                 >
                                     <Text
                                         type="secondary"
-                                        style={{ fontSize: "12px" }}
+                                        style={{ fontSize: "10px" }}
                                     >
                                         Extended
                                     </Text>
                                     <Text
                                         strong
                                         style={{
-                                            fontSize: "13px",
-                                            color: "#52c41a",
+                                            fontSize: "11px",
+                                            color: MINT_GREEN,
                                         }}
                                     >
                                         Yes
@@ -2773,16 +3225,16 @@ export default function Bookings() {
                             >
                                 <Text
                                     type="secondary"
-                                    style={{ fontSize: "12px" }}
+                                    style={{ fontSize: "10px" }}
                                 >
                                     Subtotal:
                                 </Text>
                                 <Text
                                     strong
                                     style={{
-                                        fontSize: "14px",
-                                        color: "#52c41a",
-                                        marginLeft: 16,
+                                        fontSize: "12px",
+                                        color: MINT_GREEN,
+                                        marginLeft: 12,
                                         fontWeight: 700,
                                     }}
                                 >
@@ -2794,20 +3246,20 @@ export default function Bookings() {
                                 </Text>
                             </div>
                         </div>
-                        <Divider style={{ margin: "8px 0" }} />
+                        <Divider style={{ margin: "6px 0" }} />
                         <div>
                             <Text
                                 strong
-                                style={{ fontSize: "13px", fontWeight: 600 }}
+                                style={{ fontSize: "11px", fontWeight: 600 }}
                             >
                                 Total:
                             </Text>
                             <Text
                                 strong
                                 style={{
-                                    fontSize: "14px",
-                                    color: "#52c41a",
-                                    marginLeft: 16,
+                                    fontSize: "13px",
+                                    color: MINT_GREEN,
+                                    marginLeft: 12,
                                     fontWeight: 700,
                                 }}
                             >
@@ -2827,7 +3279,7 @@ export default function Bookings() {
                             title={
                                 <span
                                     style={{
-                                        fontSize: "13px",
+                                        fontSize: "11px",
                                         fontWeight: 600,
                                     }}
                                 >
@@ -2836,7 +3288,7 @@ export default function Bookings() {
                             }
                             size="small"
                             style={{
-                                borderRadius: "12px",
+                                borderRadius: "10px",
                                 border: "1px solid #f0f0f0",
                             }}
                         >
@@ -2852,7 +3304,7 @@ export default function Bookings() {
                                                 <Text
                                                     strong
                                                     style={{
-                                                        fontSize: "12px",
+                                                        fontSize: "10px",
                                                         color: history.is_override
                                                             ? "red"
                                                             : undefined,
@@ -2870,7 +3322,7 @@ export default function Bookings() {
                                                                 type="danger"
                                                                 style={{
                                                                     fontSize:
-                                                                        "11px",
+                                                                        "9px",
                                                                 }}
                                                             >
                                                                 Override Reason:{" "}
@@ -2883,7 +3335,7 @@ export default function Bookings() {
                                                 <br />
                                                 <Text
                                                     type="secondary"
-                                                    style={{ fontSize: "11px" }}
+                                                    style={{ fontSize: "9px" }}
                                                 >
                                                     From: {history.old_status} →
                                                     To: {history.new_status}
@@ -2891,7 +3343,7 @@ export default function Bookings() {
                                                 <br />
                                                 <Text
                                                     type="secondary"
-                                                    style={{ fontSize: "11px" }}
+                                                    style={{ fontSize: "9px" }}
                                                 >
                                                     {formatDateTime(
                                                         history.changed_at,
@@ -2909,66 +3361,263 @@ export default function Bookings() {
     };
 
     return (
-        <div className="space-y-1 pb-6">
+        <div
+            style={{
+                padding: "0 0 24px 0",
+                background: "#f8fafc",
+                minHeight: "100vh",
+            }}
+        >
             <style>
                 {`
-                    .clickable-row { cursor: pointer; }
-                    .selected-booking-row td { background: #ecfdf5 !important; }
-                    .selected-booking-row:hover td { background: #d1fae5 !important; }
-                    .selected-booking-row td:first-child { border-left: 4px solid #10b981 !important; }
-                    .warning-overdue-row td:first-child { border-left: 4px solid #faad14 !important; }
-                    .critical-overdue-row td:first-child { border-left: 4px solid #ff4d4f !important; }
+                    .clickable-row { cursor: pointer; transition: background 0.15s; }
+                    .clickable-row:hover td { background: #f1f5f9 !important; }
                     
-                    .mint-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { color: #10b981 !important; }
-                    .mint-tabs .ant-tabs-ink-bar { background: #10b981 !important; }
-                    .mint-tabs .ant-tabs-tab { font-size: 13px !important; padding: 12px 0 !important; }
+                    .selected-booking-row td { background: ${MINT_GREEN_BG} !important; }
+                    .selected-booking-row:hover td { background: ${MINT_GREEN_LIGHT} !important; }
+                    .selected-booking-row td:first-child { border-left: 3px solid ${MINT_GREEN} !important; }
+                    .warning-overdue-row td:first-child { border-left: 3px solid #faad14 !important; }
+                    .critical-overdue-row td:first-child { border-left: 3px solid #ff4d4f !important; }
                     
-                    .premium-table .ant-table { background: white; border-radius: 16px; overflow: visible; }
+                    .premium-table .ant-table {
+                        background: white;
+                        border-radius: 12px;
+                        overflow: hidden;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                    }
                     .premium-table .ant-table-thead > tr > th {
-                        font-size: 13px !important;
+                        font-size: 10px !important;
                         font-weight: 600 !important;
-                        padding: 14px 8px !important;
-                        background-color: #f8fafc !important;
-                        border-bottom: 1px solid #e2e8f0 !important;
-                        color: #1e293b !important;
+                        padding: 10px 10px !important;
+                        background-color: #fafbfc !important;
+                        border-bottom: 1px solid #e8edf2 !important;
+                        color: #64748b !important;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
                     }
                     .premium-table .ant-table-tbody > tr > td {
-                        font-size: 13px !important;
-                        padding: 12px 8px !important;
+                        font-size: 11px !important;
+                        padding: 10px 10px !important;
                         border-bottom: 1px solid #f1f5f9 !important;
-                        color: #334155 !important;
+                        color: #0f172a !important;
+                        vertical-align: middle;
                     }
-                    .premium-table .ant-table-tbody > tr:last-child > td { border-bottom: none !important; }
+                    .premium-table .ant-table-tbody > tr:last-child > td {
+                        border-bottom: none !important;
+                    }
                     
-                    .ant-descriptions-item-label { font-size: 12px !important; font-weight: 500 !important; color: #64748b !important; }
-                    .ant-descriptions-item-content { font-size: 13px !important; color: #1e293b !important; }
-                    .ant-card-head-title { font-size: 13px !important; font-weight: 600 !important; color: #1e293b !important; }
-                    .ant-timeline-item-content { font-size: 12px !important; }
-                    .ant-tag { font-size: 12px !important; border-radius: 6px !important; padding: 4px 12px !important; }
-                    .ant-btn { font-size: 13px !important; border-radius: 8px !important; }
-                    .ant-modal-content { border-radius: 16px !important; }
-                    .ant-modal-header { border-radius: 16px 16px 0 0 !important; }
+                    .ant-card {
+                        border-radius: 10px !important;
+                    }
+                    .ant-card-body {
+                        padding: 14px !important;
+                    }
+                    .ant-card-head-title {
+                        font-size: 11px !important;
+                        font-weight: 600 !important;
+                        color: #1e293b !important;
+                    }
+                    
+                    .ant-descriptions-item-label {
+                        font-size: 10px !important;
+                        font-weight: 500 !important;
+                        color: #64748b !important;
+                    }
+                    .ant-descriptions-item-content {
+                        font-size: 11px !important;
+                        color: #1e293b !important;
+                    }
+                    .ant-timeline-item-content {
+                        font-size: 10px !important;
+                    }
+                    .ant-tag {
+                        font-size: 10px !important;
+                        border-radius: 4px !important;
+                        padding: 2px 10px !important;
+                    }
+                    .ant-badge-status-text {
+                        font-size: 11px !important;
+                    }
+                    .ant-btn {
+                        font-size: 11px !important;
+                        border-radius: 6px !important;
+                    }
+                    .ant-btn-primary {
+                        background: ${MINT_GREEN} !important;
+                        border-color: ${MINT_GREEN} !important;
+                    }
+                    .ant-btn-primary:hover {
+                        background: ${MINT_GREEN_HOVER} !important;
+                        border-color: ${MINT_GREEN_HOVER} !important;
+                    }
+                    .ant-modal-content {
+                        border-radius: 12px !important;
+                    }
+                    .ant-modal-header {
+                        border-radius: 12px 12px 0 0 !important;
+                    }
+                    
+                    .ant-select-selector {
+                        border-radius: 8px !important;
+                        border-color: #e2e8f0 !important;
+                        font-size: 11px !important;
+                        height: 38px !important;
+                    }
+                    .ant-select-selection-item {
+                        font-size: 11px !important;
+                        line-height: 36px !important;
+                    }
+                    
+                    /* shadcn-style tabs - sliding indicator */
+                    .tabs-container {
+                        position: relative;
+                        display: flex;
+                        gap: 4px;
+                        padding: 4px;
+                        background: #f1f5f9;
+                        border-radius: 10px;
+                        width: fit-content;
+                    }
+                    .tab-indicator {
+                        position: absolute;
+                        top: 4px;
+                        bottom: 4px;
+                        background: ${MINT_GREEN};
+                        border-radius: 8px;
+                        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+                        z-index: 0;
+                    }
+                    .shadcn-tabs-trigger {
+                        position: relative;
+                        z-index: 1;
+                        padding: 8px 18px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: #64748b;
+                        background: transparent;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        transition: color 0.2s ease;
+                        font-family: inherit;
+                    }
+                    .shadcn-tabs-trigger:hover {
+                        color: #0f172a;
+                    }
+                    .shadcn-tabs-trigger.active {
+                        color: #ffffff !important;
+                        font-weight: 600;
+                    }
+                    .shadcn-tabs-trigger.active .anticon {
+                        color: #ffffff !important;
+                    }
+                    .shadcn-tabs-content {
+                        display: block;
+                    }
+
+                    /* Filter popover */
+                    .filter-popover .ant-popover-inner {
+                        border-radius: 10px;
+                        padding: 8px;
+                        min-width: 160px;
+                    }
+                    .filter-option {
+                        padding: 6px 12px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        transition: all 0.15s ease;
+                    }
+                    .filter-option:hover {
+                        background: #f1f5f9;
+                    }
+                    .filter-option.active {
+                        background: ${MINT_GREEN_BG};
+                        color: ${MINT_GREEN};
+                        font-weight: 500;
+                    }
+                    .filter-option.active:hover {
+                        background: ${MINT_GREEN_LIGHT};
+                    }
+
+                    .filter-btn {
+                        border-radius: 8px !important;
+                        border: 1px solid #e2e8f0 !important;
+                        height: 38px !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        gap: 4px !important;
+                        color: #64748b !important;
+                        background: white !important;
+                    }
+                    .filter-btn:hover {
+                        border-color: ${MINT_GREEN} !important;
+                        color: ${MINT_GREEN} !important;
+                    }
+                    .filter-btn.active {
+                        border-color: ${MINT_GREEN} !important;
+                        color: white !important;
+                        background: ${MINT_GREEN} !important;
+                    }
+                    .filter-btn.active:hover {
+                        background: ${MINT_GREEN_HOVER} !important;
+                        border-color: ${MINT_GREEN_HOVER} !important;
+                    }
+                    .filter-badge {
+                        font-size: 8px;
+                        background: white;
+                        color: ${MINT_GREEN};
+                        border-radius: 50%;
+                        width: 16px;
+                        height: 16px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: 600;
+                    }
+                    .filter-btn.active .filter-badge {
+                        background: white;
+                        color: ${MINT_GREEN};
+                    }
                     
                     @media (max-width: 768px) {
-                        .ant-table { font-size: 12px; }
-                        .ant-table-thead > tr > th { font-size: 12px !important; }
-                        .ant-table-tbody > tr > td { font-size: 12px !important; }
+                        .ant-table { font-size: 10px; }
+                        .ant-table-thead > tr > th { font-size: 9px !important; }
+                        .ant-table-tbody > tr > td { font-size: 10px !important; }
+                        .shadcn-tabs-trigger {
+                            padding: 6px 12px;
+                            font-size: 11px;
+                        }
+                        .tabs-container {
+                            flex-wrap: wrap;
+                            width: 100%;
+                        }
+                        .search-filter-wrapper {
+                            flex-wrap: wrap;
+                            width: 100%;
+                        }
                     }
                 `}
             </style>
+
+            {/* Header */}
             <div
                 style={{
-                    marginBottom: 24,
+                    padding: "16px 0 14px 0",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     flexWrap: "wrap",
-                    gap: 16,
+                    gap: 12,
                 }}
             >
                 <div>
                     <Title
-                        level={5}
+                        level={4}
                         style={{
                             margin: 0,
                             fontSize: "24px",
@@ -2978,25 +3627,60 @@ export default function Bookings() {
                     >
                         Booking List
                     </Title>
-                    <Text
-                        type="secondary"
-                        style={{ fontSize: "12px", color: "#64748b" }}
-                    >
+                    <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>
                         Manage and track all reservations
                     </Text>
                 </div>
             </div>
 
-            <Tabs
-                className="mint-tabs"
-                activeKey={activeTab}
-                onChange={setActiveTab}
-                items={tabItems}
-                size="middle"
-                centered={false}
-                tabBarExtraContent={
+            {/* shadcn-style Tabs with sliding indicator */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <div className="tabs-container" ref={tabContainerRef}>
+                    <div 
+                        className="tab-indicator" 
+                        style={{ 
+                            left: indicatorStyle.left, 
+                            width: indicatorStyle.width 
+                        }} 
+                    />
+                    <button
+                        ref={activeTab === "active" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "active" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("active");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <CheckCircleOutlined style={{ fontSize: "14px" }} />
+                        Overview
+                    </button>
+                    <button
+                        ref={activeTab === "history" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "history" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("history");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <HistoryOutlined style={{ fontSize: "14px" }} />
+                        History
+                    </button>
+                    <button
+                        ref={activeTab === "trash" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "trash" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("trash");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <DeleteOutlined style={{ fontSize: "14px" }} />
+                        Trash
+                    </button>
+                </div>
+
+                {/* Right side - Search with gap and Filter on the right with mint green */}
+                <div className="search-filter-wrapper" style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Input
-                        className="mint-search-input"
                         placeholder="Search by name, ID, or type..."
                         allowClear
                         value={searchInput}
@@ -3006,35 +3690,159 @@ export default function Bookings() {
                             debouncedSearch(value);
                         }}
                         prefix={
-                            <div
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                }}
-                            >
-                                <SearchOutlined
-                                    style={{ color: "#94a3b8", fontSize: 16 }}
-                                />
-                                <div
-                                    style={{
-                                        width: 2,
-                                        height: 18,
-                                        background: "#d1d5db",
-                                        borderRadius: 999,
-                                    }}
-                                />
-                            </div>
+                            <SearchOutlined
+                                style={{ color: "#94a3b8", fontSize: 14 }}
+                            />
                         }
                         style={{
-                            width: 300,
-                            height: 40,
-                            borderRadius: 10,
-                            bottom: 10,
+                            width: 280,
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            fontSize: "11px",
+                            height: 38,
                         }}
                     />
-                }
-            />
+                    <Popover
+                        content={
+                            <div style={{ minWidth: 150 }}>
+                                <div
+                                    className={`filter-option ${filterStatus === "all" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("all");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    All Status
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "pending" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("pending");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Pending
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "confirmed" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("confirmed");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Confirmed
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "checked_in" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("checked_in");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Checked In
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "checked_out" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("checked_out");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Checked Out
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "cancelled" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("cancelled");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Cancelled
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "refunded" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("refunded");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Refunded
+                                </div>
+                            </div>
+                        }
+                        trigger="click"
+                        open={filterPopoverOpen}
+                        onOpenChange={setFilterPopoverOpen}
+                        placement="bottomRight"
+                        overlayClassName="filter-popover"
+                    >
+                        <Button
+                            className={`filter-btn ${filterStatus !== "all" ? "active" : ""}`}
+                            onClick={() => setFilterPopoverOpen(!filterPopoverOpen)}
+                            style={{
+                                borderRadius: "8px",
+                                border: "1px solid #e2e8f0",
+                                height: 38,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                color: filterStatus !== "all" ? "white" : "#64748b",
+                                borderColor: filterStatus !== "all" ? MINT_GREEN : "#e2e8f0",
+                                background: filterStatus !== "all" ? MINT_GREEN : "white",
+                            }}
+                        >
+                            <FilterOutlined style={{ fontSize: 14 }} />
+                            {filterStatus !== "all" && (
+                                <span className="filter-badge">
+                                    {filterStatus === "pending" ? "P" : 
+                                     filterStatus === "confirmed" ? "C" :
+                                     filterStatus === "checked_in" ? "I" :
+                                     filterStatus === "checked_out" ? "O" :
+                                     filterStatus === "cancelled" ? "X" :
+                                     filterStatus === "refunded" ? "R" : "1"}
+                                </span>
+                            )}
+                        </Button>
+                    </Popover>
+                </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="shadcn-tabs-content" style={{ marginTop: 16 }}>
+                {activeTab === "active" && (
+                    <>
+                        {renderStats()}
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+                {activeTab === "history" && (
+                    <>
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+                {activeTab === "trash" && (
+                    <>
+                        {bookings.length > 0 && (
+                            <Alert
+                                message="Warning"
+                                description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
+                                type="warning"
+                                showIcon
+                                closable
+                                style={{
+                                    marginBottom: 12,
+                                    fontSize: "10px",
+                                    borderRadius: "8px",
+                                }}
+                            />
+                        )}
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+            </div>
 
             {renderBookingDetails()}
         </div>

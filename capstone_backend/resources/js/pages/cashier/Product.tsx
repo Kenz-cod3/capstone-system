@@ -107,7 +107,7 @@ const STATUS_META: Record<OrderStatus, StatusMeta> = {
 type TabKey = "pending" | "sales" | "cancelled";
 
 export default function Product() {
-    const [activeTab, setActiveTab] = useState<TabKey>("pending");
+    const [activeTab, setActiveTab] = useState<TabKey>("sales");
     const [searchInput, setSearchInput] = useState("");
     const debouncedSearch = useDebouncedValue(searchInput, 400);
     const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null]>([

@@ -27,6 +27,8 @@ import { toast } from "sonner";
 // ---------------------------------------------------------------------------
 // Design tokens — same "Ticket Rail" palette as Order management
 // ---------------------------------------------------------------------------
+const DARK_MINT = "#146C4B";
+
 const CATEGORY_META: Record<string, { text: string; bg: string; dot: string }> = {
     Drinks: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
     Meals: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
@@ -140,10 +142,13 @@ export default function Menu() {
                     </div>
 
                     {/* Catalog value — receipt-style summary, mirrors Register total */}
-                    <div className="relative bg-[#1c2420] rounded-lg px-6 py-4 min-w-[240px] shadow-[0_10px_30px_-12px_rgba(28,36,32,0.5)]">
+                    <div
+                        className="relative rounded-lg px-6 py-4 min-w-[240px] shadow-[0_10px_30px_-12px_rgba(20,108,75,0.5)]"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
                         <div className="flex items-center gap-2 mb-1">
-                            <Layers className="h-3.5 w-3.5 text-[#a8822f]" />
-                            <span className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono']">
+                            <Layers className="h-3.5 w-3.5 text-white/70" />
+                            <span className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono']">
                                 Catalog value
                             </span>
                         </div>
@@ -173,37 +178,32 @@ export default function Menu() {
                             label: "Items",
                             value: String(items.length),
                             icon: <ShoppingBag className="w-4 h-4" />,
-                            accent: "#3b6ea5",
                         },
                         {
                             label: "Categories",
                             value: String(categories.length - 1),
                             icon: <Layers className="w-4 h-4" />,
-                            accent: "#845a8f",
                         },
                         {
                             label: "Low stock",
                             value: String(lowStockCount),
                             icon: <TriangleAlert className="w-4 h-4" />,
-                            accent: "#c1861f",
                         },
                         {
                             label: "Out of stock",
                             value: String(outOfStockCount),
                             icon: <PackageX className="w-4 h-4" />,
-                            accent: "#a1402f",
                         },
                     ].map((s) => (
                         <div
                             key={s.label}
-                            className="bg-white rounded-lg p-4 border border-[#dde1d7] border-l-4"
-                            style={{ borderLeftColor: s.accent }}
+                            className="bg-white rounded-lg p-4 border border-[#dde1d7]"
                         >
                             <div className="flex items-center justify-between mb-2">
                                 <p className="text-[10.5px] font-semibold text-[#8a8f83] uppercase tracking-wide font-['IBM_Plex_Mono']">
                                     {s.label}
                                 </p>
-                                <span style={{ color: s.accent }}>{s.icon}</span>
+                                <span className="text-[#8a8f83]">{s.icon}</span>
                             </div>
                             <p className="font-['Space_Grotesk'] text-xl font-semibold text-[#1c2420] tabular-nums">
                                 {s.value}
@@ -225,9 +225,10 @@ export default function Menu() {
                             <button
                                 key={category}
                                 onClick={() => setSelectedCategory(category)}
+                                style={active ? { backgroundColor: DARK_MINT } : undefined}
                                 className={`px-4 py-2 rounded-md text-[13px] font-medium transition-all flex items-center gap-2 ${
                                     active
-                                        ? "bg-[#1c2420] text-white"
+                                        ? "text-white"
                                         : "text-[#5c6258] hover:bg-[#f5f6f2]"
                                 }`}
                             >
@@ -241,7 +242,7 @@ export default function Menu() {
                                 {category}
                                 <span
                                     className={`font-['IBM_Plex_Mono'] text-[10px] ${
-                                        active ? "text-[#a8b0a5]" : "text-[#a8ad9f]"
+                                        active ? "text-white/70" : "text-[#a8ad9f]"
                                     }`}
                                 >
                                     {count}
@@ -293,10 +294,9 @@ export default function Menu() {
                             return (
                                 <div
                                     key={item.id}
-                                    className={`bg-white rounded-lg border border-[#dde1d7] border-l-4 overflow-hidden transition-all ${
+                                    className={`bg-white rounded-lg border border-[#dde1d7] overflow-hidden transition-all ${
                                         isOutOfStock ? "opacity-70" : "hover:shadow-[0_10px_30px_-16px_rgba(28,36,32,0.35)]"
                                     }`}
-                                    style={{ borderLeftColor: stock.dot }}
                                 >
                                     {/* Image */}
                                     <div className="relative h-40 bg-[#f5f6f2] overflow-hidden">
@@ -330,7 +330,10 @@ export default function Menu() {
                                         </div>
 
                                         {isOutOfStock && (
-                                            <div className="absolute inset-0 bg-[#1c2420]/55 flex items-center justify-center">
+                                            <div
+                                                className="absolute inset-0 flex items-center justify-center"
+                                                style={{ backgroundColor: `${DARK_MINT}8c` }}
+                                            >
                                                 <span className="inline-flex items-center gap-1.5 bg-[#a1402f] text-white text-xs font-semibold px-3 py-1.5 rounded-full">
                                                     <AlertCircle className="w-3.5 h-3.5" />
                                                     Out of stock

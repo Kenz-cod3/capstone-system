@@ -28,6 +28,9 @@ import { toast } from "sonner";
 // ---------------------------------------------------------------------------
 // Design tokens — same "Ticket Rail" palette as Order/Menu management
 // ---------------------------------------------------------------------------
+const DARK_MINT = "#146C4B";
+const DARK_MINT_HOVER = "#0F5A3E";
+
 const CATEGORY_META: Record<string, { text: string; bg: string; dot: string }> = {
     Drinks: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
     Meals: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
@@ -365,9 +368,10 @@ export default function Orders() {
                                 <button
                                     key={category}
                                     onClick={() => setSelectedCategory(category)}
+                                    style={active ? { backgroundColor: DARK_MINT } : undefined}
                                     className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
                                         active
-                                            ? "bg-[#1c2420] text-white"
+                                            ? "text-white"
                                             : "text-[#5c6258] hover:bg-[#f5f6f2]"
                                     }`}
                                 >
@@ -382,7 +386,7 @@ export default function Orders() {
                                     {category !== "All" && (
                                         <span
                                             className={`font-['IBM_Plex_Mono'] text-[10px] ${
-                                                active ? "text-[#a8b0a5]" : "text-[#a8ad9f]"
+                                                active ? "text-white/70" : "text-[#a8ad9f]"
                                             }`}
                                         >
                                             {menu.filter((item) => item.category === category).length}
@@ -416,12 +420,11 @@ export default function Orders() {
                         return (
                             <div
                                 key={item.id}
-                                className={`bg-white rounded-lg border border-[#dde1d7] border-l-4 overflow-hidden transition-all ${
+                                className={`bg-white rounded-lg border border-[#dde1d7] overflow-hidden transition-all ${
                                     available
                                         ? "hover:shadow-[0_10px_24px_-16px_rgba(28,36,32,0.35)] cursor-pointer"
                                         : "opacity-60 cursor-not-allowed"
                                 }`}
-                                style={{ borderLeftColor: catMeta.dot }}
                             >
                                 <div className="flex flex-row h-full min-h-[104px]">
                                     {/* Image */}
@@ -443,7 +446,10 @@ export default function Orders() {
                                             </div>
                                         )}
                                         {!available && (
-                                            <div className="absolute inset-0 bg-[#1c2420]/55 flex items-center justify-center">
+                                            <div
+                                                className="absolute inset-0 flex items-center justify-center"
+                                                style={{ backgroundColor: `${DARK_MINT}8c` }}
+                                            >
                                                 <span className="bg-[#a1402f] text-white text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
                                                     {item.stock_quantity <= 0 ? "Out" : "Unavail."}
                                                 </span>
@@ -479,9 +485,16 @@ export default function Orders() {
                                             <button
                                                 onClick={() => addToCart(item)}
                                                 disabled={!available}
+                                                style={available ? { backgroundColor: DARK_MINT } : undefined}
+                                                onMouseEnter={(e) => {
+                                                    if (available) e.currentTarget.style.backgroundColor = DARK_MINT_HOVER;
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    if (available) e.currentTarget.style.backgroundColor = DARK_MINT;
+                                                }}
                                                 className={`px-2.5 py-1 text-xs rounded-md font-medium transition-all ${
                                                     available
-                                                        ? "bg-[#1c2420] hover:bg-[#2a332c] text-white active:scale-95"
+                                                        ? "text-white active:scale-95"
                                                         : "bg-[#e4e7dd] cursor-not-allowed text-[#a8ad9f]"
                                                 }`}
                                             >
@@ -536,8 +549,7 @@ export default function Orders() {
                             return (
                                 <div
                                     key={item.id}
-                                    className="flex items-center gap-3 p-2.5 bg-[#f9faf7] rounded-md border-l-2"
-                                    style={{ borderLeftColor: catMeta.dot }}
+                                    className="flex items-center gap-3 p-2.5 bg-[#f9faf7] rounded-md"
                                 >
                                     <div className="w-9 h-9 rounded-md overflow-hidden bg-[#f5f6f2] flex-shrink-0">
                                         {item.image_url ? (
@@ -601,13 +613,16 @@ export default function Orders() {
 
                 {/* Order Summary — receipt-notched */}
                 <div className="flex-shrink-0 border-t border-[#dde1d7]">
-                    <div className="relative bg-[#1c2420] px-5 pt-4 pb-3">
-                        <div className="flex justify-between text-xs text-[#a8b0a5] font-['IBM_Plex_Mono'] mb-1.5">
+                    <div
+                        className="relative px-5 pt-4 pb-3"
+                        style={{ backgroundColor: DARK_MINT }}
+                    >
+                        <div className="flex justify-between text-xs text-white/70 font-['IBM_Plex_Mono'] mb-1.5">
                             <span>Subtotal</span>
                             <span>{formatCurrency(total)}</span>
                         </div>
                         <div className="flex justify-between items-baseline pt-1.5 border-t border-white/10">
-                            <span className="text-[10px] font-semibold tracking-[0.16em] text-[#a8b0a5] uppercase font-['IBM_Plex_Mono']">
+                            <span className="text-[10px] font-semibold tracking-[0.16em] text-white/70 uppercase font-['IBM_Plex_Mono']">
                                 Total
                             </span>
                             <span className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">

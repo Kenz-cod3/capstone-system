@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import api from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,9 +84,6 @@ interface Booking {
     };
     created_at: string;
     booking_status: string;
-    // latestPayment?: {
-    //     payment_status: string;
-    // };
     total_price?: number;
 }
 
@@ -132,7 +130,7 @@ interface DashboardData {
 }
 
 // ============================================
-// ANIMATED COUNTER COMPONENT - UPDATED
+// ANIMATED COUNTER COMPONENT
 // ============================================
 
 interface AnimatedCounterProps {
@@ -145,7 +143,7 @@ interface AnimatedCounterProps {
 const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
     value,
     isCurrency = false,
-    duration = 600,
+    duration = 450,
     dataKey,
 }) => {
     const [displayValue, setDisplayValue] = React.useState(0);
@@ -169,19 +167,21 @@ const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
         const stored = sessionStorage.getItem(storageKey);
         const previousValue = stored ? parseFloat(stored) : null;
 
-        // 🔥 FIRST LOAD → animate
         const isFirstLoad = previousValue === null;
 
-        // 🔥 CHECK CHANGE
         const hasChanged =
             previousValue !== null &&
             Math.abs(targetValue - previousValue) > 0.01;
 
-        // 🔥 SAVE VALUE
         sessionStorage.setItem(storageKey, targetValue.toString());
 
-        // ❌ NO CHANGE → no animation
         if (!isFirstLoad && !hasChanged) {
+            setDisplayValue(targetValue);
+            return;
+        }
+
+        // Skip animation if tab isn't visible — saves cycles on background refetches
+        if (document.hidden) {
             setDisplayValue(targetValue);
             return;
         }
@@ -314,34 +314,6 @@ const renderCustomizedLabel = (props: any) => {
 // COMPONENTS
 // ============================================
 
-// const PageHeader = ({ user }: { user: any }) => (
-//     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-gray-100">
-//         <div>
-//             <h1 className="text-2xl font-bold">
-//                 Welcome back, {user?.first_name || "Admin"}
-//             </h1>
-//             <p className="text-gray-600">
-//                 Here's an overview of your property performance.
-//             </p>
-//         </div>
-//         <div className="flex gap-3">
-//             <Button
-//                 variant="outline"
-//                 className="gap-2 border-gray-200 text-gray-600 hover:border-emerald-300 hover:text-emerald-700"
-//             >
-//                 <Filter className="h-4 w-4" />
-//                 Filter
-//             </Button>
-//             <Button
-//                 className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm transition-all"
-//             >
-//                 <Download className="h-4 w-4" />
-//                 Export Report
-//             </Button>
-//         </div>
-//     </div>
-// );
-
 const RecentBookingsTable = ({
     bookings,
     isLoading,
@@ -380,7 +352,6 @@ const RecentBookingsTable = ({
                 </div>
             ) : (
                 <table className="w-full text-sm">
-                    {/* HEADER */}
                     <thead>
                         <tr className="text-gray-500 text-xs border-b border-gray-100">
                             <th className="text-left py-3 px-3 font-medium">
@@ -395,116 +366,91 @@ const RecentBookingsTable = ({
                             <th className="text-left py-3 px-3 font-medium">
                                 Date
                             </th>
-                            {/* <th className="text-left py-3 px-3 font-medium">
-                                Status
-                            </th> */}
                             <th className="text-right py-3 px-3 font-medium">
                                 Amount
                             </th>
-                            {/* <th className="text-center py-3 px-3 font-medium">
-                                Action
-                            </th> */}
                             <th className="text-center py-3 px-3 font-medium">
                                 Status
                             </th>
                         </tr>
                     </thead>
 
-                    {/* BODY */}
                     <tbody className="divide-y divide-gray-50">
-                        {bookings.map((booking: Booking) => (
-                            <tr
-                                key={booking.id}
-                                className="hover:bg-gray-50/60 transition"
-                            >
-                                {/* ID */}
-                                <td className="py-3 px-3 font-mono text-gray-500">
-                                    {booking.booking_reference ||
-                                        `#${booking.id}`}
-                                </td>
+                        <AnimatePresence initial={false}>
+                            {bookings.map((booking: Booking) => (
+                                <motion.tr
+                                    key={booking.id}
+                                    layout
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.25 }}
+                                    className="hover:bg-gray-50/60 transition-colors duration-200"
+                                >
+                                    {/* ID */}
+                                    <td className="py-3 px-3 font-mono text-gray-500">
+                                        {booking.booking_reference ||
+                                            `#${booking.id}`}
+                                    </td>
 
-                                {/* GUEST */}
-                                <td className="py-3 px-3">
-                                    <p className="font-medium text-gray-800">
-                                        {booking.walk_in_guest?.full_name ||
-                                            `${booking.user?.first_name || ""} ${booking.user?.last_name || ""}`.trim() ||
-                                            "Unnamed Guest"}
-                                    </p>
-                                </td>
+                                    {/* GUEST */}
+                                    <td className="py-3 px-3">
+                                        <p className="font-medium text-gray-800">
+                                            {booking.walk_in_guest
+                                                ?.full_name ||
+                                                `${booking.user?.first_name || ""} ${booking.user?.last_name || ""}`.trim() ||
+                                                "Unnamed Guest"}
+                                        </p>
+                                    </td>
 
-                                {/* ROOM */}
-                                <td className="py-3 px-3 text-gray-600">
-                                    {booking.booked_rooms
-                                        ?.map((br) => br.room?.room_number)
-                                        .filter(Boolean)
-                                        .join(", ") || "-"}
-                                </td>
-
-                                {/* DATE */}
-                                <td className="py-3 px-2 text-gray-500">
-                                    {new Date(
-                                        booking.created_at,
-                                    ).toLocaleDateString("en-US", {
-                                        month: "short",
-                                        day: "numeric",
-                                        year: "numeric",
-                                    })}
-                                </td>
-
-                                {/* STATUS
-                                <td className="py-3 px-3">
-                                    <span
-                                        className={`px-2 py-1 rounded-md text-xs font-medium border ${getStatusColor(
-                                            booking.booking_status,
-                                        )}`}
-                                    >
-                                        {getStatusText(booking.booking_status)}
-                                    </span>
-                                </td> */}
-
-                                {/* AMOUNT */}
-                                {/* <td className="py-3 px-3 text-right font-semibold text-gray-700">
-                                    {formatCurrency(booking.total_price || 0)}
-                                </td> */}
-                                <td className="py-3 px-3 text-right font-semibold text-gray-700">
-                                    {formatCurrency(
-                                        Number(
-                                            booking.latest_payment?.amount ?? 0,
-                                        ),
-                                    )}
-                                </td>
-
-                                {/* ACTION */}
-                                {/* <td className="py-3 px-3 text-center">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 p-0 text-gray-400 hover:text-emerald-600"
-                                        onClick={() =>
-                                            navigateTo(
-                                                `/bookings/${booking.id}`,
+                                    {/* ROOM */}
+                                    <td className="py-3 px-3 text-gray-600">
+                                        {booking.booked_rooms
+                                            ?.map(
+                                                (br) => br.room?.room_number,
                                             )
-                                        }
-                                    >
-                                        <Eye className="h-3.5 w-3.5" />
-                                    </Button>
-                                </td> */}
-                                <td className="py-3 px-3 text-center">
-                                    <Badge
-                                        className={getStatusColor(
-                                            booking.latest_payment
-                                                ?.payment_status,
+                                            .filter(Boolean)
+                                            .join(", ") || "-"}
+                                    </td>
+
+                                    {/* DATE */}
+                                    <td className="py-3 px-2 text-gray-500">
+                                        {new Date(
+                                            booking.created_at,
+                                        ).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                        })}
+                                    </td>
+
+                                    {/* AMOUNT */}
+                                    <td className="py-3 px-3 text-right font-semibold text-gray-700">
+                                        {formatCurrency(
+                                            Number(
+                                                booking.latest_payment
+                                                    ?.amount ?? 0,
+                                            ),
                                         )}
-                                    >
-                                        {getStatusText(
-                                            booking.latest_payment
-                                                ?.payment_status,
-                                        )}
-                                    </Badge>
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+
+                                    {/* STATUS */}
+                                    <td className="py-3 px-3 text-center">
+                                        <Badge
+                                            className={getStatusColor(
+                                                booking.latest_payment
+                                                    ?.payment_status,
+                                            )}
+                                        >
+                                            {getStatusText(
+                                                booking.latest_payment
+                                                    ?.payment_status,
+                                            )}
+                                        </Badge>
+                                    </td>
+                                </motion.tr>
+                            ))}
+                        </AnimatePresence>
                     </tbody>
                 </table>
             )}
@@ -535,14 +481,154 @@ const useCurrentUser = () => {
 };
 
 // ============================================
-// MAIN COMPONENT - SILENT AUTO UPDATE
+// SKELETON (extracted so it can be a motion child)
+// ============================================
+
+const DashboardSkeleton = () => (
+    <div className="space-y-3">
+        {/* TOP STATS */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div
+                    key={i}
+                    className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse"
+                >
+                    <div className="flex justify-between mb-6">
+                        <div className="w-20 h-4 bg-gray-100 rounded"></div>
+                        <div className="w-10 h-4 bg-gray-100 rounded"></div>
+                    </div>
+
+                    <div className="w-32 h-8 bg-gray-100 rounded mb-3"></div>
+                    <div className="w-24 h-4 bg-gray-100 rounded"></div>
+                </div>
+            ))}
+        </div>
+
+        {/* ROOM STATUS + PIE */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {/* ROOM GRID */}
+            <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
+                <div className="flex justify-between items-center mb-5">
+                    <div className="w-44 h-6 bg-gray-100 rounded"></div>
+
+                    <div className="flex gap-3">
+                        <div className="w-16 h-4 bg-gray-100 rounded"></div>
+                        <div className="w-16 h-4 bg-gray-100 rounded"></div>
+                        <div className="w-20 h-4 bg-gray-100 rounded"></div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    {[...Array(16)].map((_, i) => (
+                        <div
+                            key={i}
+                            className="rounded-lg p-4 w-full aspect-square bg-gray-100 animate-pulse"
+                        />
+                    ))}
+                </div>
+                <div className="flex justify-between items-center pt-3">
+                    <div className="w-12 h-6 rounded bg-gray-100"></div>
+                    <div className="w-8 h-4 rounded bg-gray-100"></div>
+                    <div className="w-12 h-6 rounded bg-gray-100"></div>
+                </div>
+            </div>
+
+            {/* PIE CHART */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
+                <div className="flex justify-between items-center mb-6">
+                    <div className="w-52 h-7 bg-gray-100 rounded"></div>
+                    <div className="w-4 h-4 bg-gray-100 rounded"></div>
+                </div>
+
+                <div className="flex items-center justify-between gap-6 mt-8">
+                    <div className="w-44 h-44 rounded-full border-[28px] border-gray-100 shrink-0"></div>
+
+                    <div className="flex-1 space-y-4">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className="h-4 bg-gray-100 rounded" />
+                        ))}
+
+                        <div className="h-px bg-gray-100 my-2"></div>
+
+                        <div className="h-5 bg-gray-100 rounded w-32"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// ============================================
+// ERROR STATE
+// ============================================
+
+const DashboardError = ({ onRetry }: { onRetry: () => void }) => (
+    <div className="flex flex-col gap-4 min-h-screen">
+        <div className="text-center py-12">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
+                <p className="text-red-600 mb-4 font-medium">
+                    Failed to load dashboard data
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                    Please check your connection and try again.
+                </p>
+                <Button onClick={onRetry} variant="outline" className="mx-auto">
+                    Retry
+                </Button>
+            </div>
+        </div>
+    </div>
+);
+
+// Fade/slide variants shared by skeleton, error, and content states
+const fadeVariants = {
+    initial: { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" as const } },
+    exit: { opacity: 0, transition: { duration: 0.2, ease: "easeIn" as const } },
+};
+
+// Stagger container for the whole page — each direct section (stat cards,
+// room row, bookings table, revenue chart, occupancy chart) is a child here,
+// so they visibly animate in ONE AFTER ANOTHER instead of all at once.
+const containerVariants = {
+    hidden: {},
+    show: {
+        transition: {
+            staggerChildren: 0.18,
+            delayChildren: 0.05,
+        },
+    },
+};
+
+// Nested stagger container — used for the room-status row so that
+// RoomStatusGrid and RoomStatusChart also animate in sequentially,
+// not together.
+const rowContainerVariants = {
+    hidden: {},
+    show: {
+        transition: {
+            staggerChildren: 0.15,
+        },
+    },
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 18 },
+    show: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as const },
+    },
+};
+
+// ============================================
+// MAIN COMPONENT
 // ============================================
 
 export default function Dashboard() {
     const { user } = useCurrentUser();
     const navigate = useNavigate();
 
-    // TanStack Query with silent auto refresh every 5 seconds
     const {
         data: dashboardData,
         isLoading,
@@ -604,34 +690,7 @@ export default function Dashboard() {
         return () => {
             Echo.leave("dashboard");
         };
-    }, []); // ← EMPTY, walang refetch dito
-
-    // Handle error state
-    if (isError) {
-        console.error("Dashboard data fetch error:", error);
-        return (
-            <div className="flex flex-col gap-4 min-h-screen">
-                {/* <PageHeader user={user} /> */}
-                <div className="text-center py-12">
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
-                        <p className="text-red-600 mb-4 font-medium">
-                            Failed to load dashboard data
-                        </p>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Please check your connection and try again.
-                        </p>
-                        <Button
-                            onClick={() => window.location.reload()}
-                            variant="outline"
-                            className="mx-auto"
-                        >
-                            Retry
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    }, []);
 
     // Safe destructuring with fallbacks
     const stats = statsData?.stats;
@@ -641,136 +700,94 @@ export default function Dashboard() {
 
     const occupancyTrend = dashboardData?.trend ?? [];
 
-    console.log(JSON.stringify(recentBookings[0], null, 2));
-
     const navigateTo = (path: string) => {
         navigate(path);
     };
 
-    // Show loading skeleton only on initial load
-    if (isLoading) {
-        return (
-            <div className="space-y-3">
-                {/* TOP STATS */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <div
-                            key={i}
-                            className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse"
-                        >
-                            <div className="flex justify-between mb-6">
-                                <div className="w-20 h-4 bg-gray-100 rounded"></div>
-                                <div className="w-10 h-4 bg-gray-100 rounded"></div>
-                            </div>
-
-                            <div className="w-32 h-8 bg-gray-100 rounded mb-3"></div>
-                            <div className="w-24 h-4 bg-gray-100 rounded"></div>
-                        </div>
-                    ))}
-                </div>
-
-                {/* ROOM STATUS + PIE */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                    {/* ROOM GRID */}
-                    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
-                        <div className="flex justify-between items-center mb-5">
-                            <div className="w-44 h-6 bg-gray-100 rounded"></div>
-
-                            <div className="flex gap-3">
-                                <div className="w-16 h-4 bg-gray-100 rounded"></div>
-                                <div className="w-16 h-4 bg-gray-100 rounded"></div>
-                                <div className="w-20 h-4 bg-gray-100 rounded"></div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                            {[...Array(16)].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className="rounded-lg p-4 w-full aspect-square bg-gray-100 animate-pulse"
-                                />
-                            ))}
-                        </div>
-                        <div className="flex justify-between items-center pt-3">
-                            <div className="w-12 h-6 rounded bg-gray-100"></div>
-
-                            <div className="w-8 h-4 rounded bg-gray-100"></div>
-
-                            <div className="w-12 h-6 rounded bg-gray-100"></div>
-                        </div>
-                    </div>
-
-                    {/* PIE CHART */}
-                    <div className="bg-white border border-gray-200 rounded-2xl p-5 animate-pulse">
-                        {/* HEADER */}
-                        <div className="flex justify-between items-center mb-6">
-                            <div className="w-52 h-7 bg-gray-100 rounded"></div>
-                            <div className="w-4 h-4 bg-gray-100 rounded"></div>
-                        </div>
-
-                        {/* CHART + LEGEND */}
-                        <div className="flex items-center justify-between gap-6 mt-8">
-                            {/* DONUT */}
-                            <div className="w-44 h-44 rounded-full border-[28px] border-gray-100 shrink-0"></div>
-
-                            {/* LEGEND */}
-                            <div className="flex-1 space-y-4">
-                                {[1, 2, 3, 4, 5].map((i) => (
-                                    <div
-                                        key={i}
-                                        className="h-4 bg-gray-100 rounded"
-                                    />
-                                ))}
-
-                                <div className="h-px bg-gray-100 my-2"></div>
-
-                                <div className="h-5 bg-gray-100 rounded w-32"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    // Determine which "phase" to render — drives the AnimatePresence key
+    const phase = isError ? "error" : isLoading ? "loading" : "content";
 
     return (
-        <div className="space-y-3 -mt-1">
-            {/* <PageHeader user={user} /> */}
+        <AnimatePresence mode="wait">
+            {phase === "error" && (
+                <motion.div
+                    key="error"
+                    variants={fadeVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                >
+                    <DashboardError onRetry={() => window.location.reload()} />
+                </motion.div>
+            )}
 
-            <StatCardsGrid
-                stats={stats}
-                occupancy={occupancy}
-                role={user?.role ?? "staff"}
-            />
+            {phase === "loading" && (
+                <motion.div
+                    key="skeleton"
+                    variants={fadeVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                >
+                    <DashboardSkeleton />
+                </motion.div>
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch">
-                <div className="lg:col-span-2">
-                    <RoomStatusGrid rooms={roomsData || []} />
-                </div>
-                <div className="lg:col-span-1">
-                    <RoomStatusChart data={roomStatus} />
-                </div>
-            </div>
+            {phase === "content" && (
+                <motion.div
+                    key="content"
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="show"
+                    className="space-y-3 -mt-1"
+                >
+                    {/* 1. STAT CARDS (animates its own cards in sequentially too) */}
+                    <motion.div variants={itemVariants}>
+                        <StatCardsGrid
+                            stats={stats}
+                            occupancy={occupancy}
+                            role={user?.role ?? "staff"}
+                        />
+                    </motion.div>
 
-            <RecentBookingsTable
-                bookings={recentBookings}
-                isLoading={false}
-                navigateTo={navigateTo}
-            />
+                    {/* 2. ROOM GRID + ROOM CHART — each comes in one after the other */}
+                    <motion.div
+                        variants={rowContainerVariants}
+                        className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch"
+                    >
+                        <motion.div variants={itemVariants} className="lg:col-span-2">
+                            <RoomStatusGrid rooms={roomsData || []} />
+                        </motion.div>
+                        <motion.div variants={itemVariants} className="lg:col-span-1">
+                            <RoomStatusChart data={roomStatus} />
+                        </motion.div>
+                    </motion.div>
 
-            {/*---------REVENUE CHART---->*/}
-            <div className="mt-8">
-                <RevenueChart
-                    data={dashboardData?.financialTrend ?? []}
-                    yearlyData={dashboardData?.yearlyTrend ?? []}
-                    lastYearData={dashboardData?.lastYearTrend ?? []}
-                    role={user?.role ?? "staff"}
-                />
-            </div>
+                    {/* 3. RECENT BOOKINGS */}
+                    <motion.div variants={itemVariants}>
+                        <RecentBookingsTable
+                            bookings={recentBookings}
+                            isLoading={false}
+                            navigateTo={navigateTo}
+                        />
+                    </motion.div>
 
-            <div className="mt-8">
-                <OccupancyTrendChart data={occupancyTrend} />
-            </div>
-        </div>
+                    {/* 4. REVENUE CHART */}
+                    <motion.div variants={itemVariants} className="mt-8">
+                        <RevenueChart
+                            data={dashboardData?.financialTrend ?? []}
+                            yearlyData={dashboardData?.yearlyTrend ?? []}
+                            lastYearData={dashboardData?.lastYearTrend ?? []}
+                            role={user?.role ?? "staff"}
+                        />
+                    </motion.div>
+
+                    {/* 5. OCCUPANCY TREND CHART */}
+                    <motion.div variants={itemVariants} className="mt-8">
+                        <OccupancyTrendChart data={occupancyTrend} />
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 }
