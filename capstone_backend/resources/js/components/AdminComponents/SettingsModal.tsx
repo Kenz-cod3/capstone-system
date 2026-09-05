@@ -1,23 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
-    Settings, User, Info, Monitor, Sun, Moon,
-    Globe, ChevronRight, Check, Save, Shield,
-    Bell, Lock, Palette, Languages, FileText, HelpCircle, X,
-    Camera
-} from 'lucide-react';
+    Settings,
+    User,
+    Lock,
+    Bell,
+    Shield,
+    HelpCircle,
+    X,
+    Camera,
+    CheckCircle2,
+    Calendar,
+    ChevronRight,
+    Save,
+    Mail,
+    Phone,
+    MapPin,
+    Info,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import api, { API_BASE } from '@/services/api';
+import api, { API_BASE } from "@/services/api";
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
-
     const user = JSON.parse(localStorage.getItem("user") || "null");
 
     if (!user) {
@@ -25,9 +29,14 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         window.location.replace("/");
         return null;
     }
-    const [activeSection, setActiveSection] = useState('profile');
-    const [theme, setTheme] = useState('light');
-    const [language, setLanguage] = useState('en');
+
+    type SectionId =
+        | "account"
+        | "notifications"
+        | "security"
+        | "privacy"
+        | "help";
+    const [activeSection, setActiveSection] = useState<SectionId>("account");
     const [emailNotifications, setEmailNotifications] = useState(true);
     const [pushNotifications, setPushNotifications] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -45,21 +54,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         const previewUrl = URL.createObjectURL(file);
         setPreview(previewUrl);
 
-        // 🔥 UPDATE CURRENT USER AGAD
         setCurrentUser((prev: any) => ({
             ...prev,
-            profile_image: previewUrl
+            profile_image: previewUrl,
         }));
     };
 
     // Profile form state - populated from auth (matches your users table)
     const [profile, setProfile] = useState({
-        first_name: user?.first_name || '',
-        last_name: user?.last_name || '',
-        email: user?.email || '',
-        contact_number: user?.contact_number || '',
-        address: user?.address || '',
-        profile_image: user?.profile_image || '',
+        first_name: user?.first_name || "",
+        last_name: user?.last_name || "",
+        email: user?.email || "",
+        contact_number: user?.contact_number || "",
+        address: user?.address || "",
+        profile_image: user?.profile_image || "",
     });
 
     const [passwordData, setPasswordData] = useState({
@@ -70,28 +78,23 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
 
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+            if (e.key === "Escape") {
                 onClose();
             }
         };
 
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
+        window.addEventListener("keydown", handleEsc);
+        return () => window.removeEventListener("keydown", handleEsc);
     }, [onClose]);
 
     useEffect(() => {
         const fetchUser = async () => {
             try {
                 const res = await api.get("/users/" + user.id);
-
                 const freshUser = res.data.data || res.data.user || res.data;
-
-                console.log("FETCHED USER:", freshUser);
-                console.log("PROFILE IMAGE:", freshUser?.profile_image);
 
                 setCurrentUser(freshUser);
                 localStorage.setItem("user", JSON.stringify(freshUser));
-
             } catch (error) {
                 console.error("Failed to fetch user", error);
             }
@@ -100,32 +103,43 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         fetchUser();
     }, []);
 
-
-    const sections = [
-        { id: 'profile', name: 'Profile', icon: User, description: 'Personal information and account details' },
-        { id: 'general', name: 'General', icon: Settings, description: 'Appearance, language, and notifications' },
-        { id: 'security', name: 'Security', icon: Lock, description: 'Password and authentication settings' },
-        { id: 'preferences', name: 'Preferences', icon: Palette, description: 'Customize your experience' },
-        { id: 'about', name: 'About', icon: Info, description: 'Application information and support' },
+    // Sidebar sections - matches the reference design
+    const sections: { id: SectionId; name: string; icon: typeof User }[] = [
+        { id: "account", name: "Profile", icon: User },
+        { id: "notifications", name: "General", icon: Settings },
+        { id: "security", name: "Security", icon: Lock },
+        { id: "privacy", name: "Preferences", icon: Bell },
+        { id: "help", name: "About", icon: Info },
     ];
 
-    const themes = [
-        { id: 'light', name: 'Light', icon: Sun },
-        { id: 'dark', name: 'Dark', icon: Moon },
-        { id: 'system', name: 'System', icon: Monitor },
-    ];
-
-    const languages = [
-        { code: 'en', name: 'English', flag: '🇺🇸' },
-        { code: 'es', name: 'Español', flag: '🇪🇸' },
-        { code: 'fr', name: 'Français', flag: '🇫🇷' },
-        { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
-        { code: 'zh', name: '中文', flag: '🇨🇳' },
-        { code: 'ja', name: '日本語', flag: '🇯🇵' },
-    ];
+    const sectionMeta: Record<
+        SectionId,
+        { title: string; description: string }
+    > = {
+        account: {
+            title: "Account Settings",
+            description:
+                "Update your personal information and manage your account.",
+        },
+        security: {
+            title: "Change Password",
+            description: "Update your password to keep your account secure.",
+        },
+        notifications: {
+            title: "Notification Settings",
+            description: "Choose how you want to be notified.",
+        },
+        privacy: {
+            title: "Privacy & Security",
+            description: "Manage your privacy and security preferences.",
+        },
+        help: {
+            title: "Help & Support",
+            description: "Find answers or get in touch with our team.",
+        },
+    };
 
     const handleSave = async () => {
-
         const isChanged =
             profile.first_name !== user.first_name ||
             profile.last_name !== user.last_name ||
@@ -159,29 +173,21 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             formData.append("contact_number", profile.contact_number);
             formData.append("address", profile.address);
 
-            // 🔥 IMAGE
             if (image) {
                 formData.append("profile_image", image);
             }
 
-            formData.append("_method", "PUT"); 
+            formData.append("_method", "PUT");
 
-            const res = await api.post(
-                "/users/" + user.id,
-                formData
-            );
+            const res = await api.post("/users/" + user.id, formData);
 
             const updatedUser = res.data.data || res.data.user || res.data;
 
             localStorage.setItem("user", JSON.stringify(updatedUser));
             setCurrentUser(updatedUser);
 
-            localStorage.setItem("user", JSON.stringify(updatedUser));
-            setCurrentUser(updatedUser);
-
             alert("Profile updated successfully!");
             onClose();
-
         } catch (error: any) {
             console.error(error);
 
@@ -194,7 +200,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             setIsSaving(false);
         }
     };
-
 
     const handleChangePassword = async () => {
         try {
@@ -217,7 +222,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 new_password: "",
                 confirm_password: "",
             });
-
         } catch (error: any) {
             console.error(error);
             alert(error.response?.data?.message || "Failed to update password");
@@ -225,78 +229,61 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     };
 
     const handleProfileChange = (field: string, value: string) => {
-        setProfile(prev => ({ ...prev, [field]: value }));
+        setProfile((prev) => ({ ...prev, [field]: value }));
     };
-
-    // Get user initials for avatar fallback
-    const getUserInitials = () => {
-        if (!profile.first_name && !profile.last_name) return "U";
-
-        const first = profile.first_name?.charAt(0) || '';
-        const last = profile.last_name?.charAt(0) || '';
-
-        return `${first}${last}`.toUpperCase();
-    };
-
-    console.log("CURRENT USER:", currentUser);
-    console.log("IMAGE SRC:", currentUser?.profile_image);
 
     const fallback = `https://ui-avatars.com/api/?name=${profile.first_name}+${profile.last_name}&background=10b981&color=fff`;
 
     const getImageUrl = (img?: string | null) => {
         if (!img) return null;
-
-        // if already full URL → use directly
         if (img.startsWith("http")) return img;
-
-        // if only path → build full URL
         return `${API_BASE}/storage/${img}`;
     };
 
+    const memberSince = currentUser?.created_at
+        ? new Date(currentUser.created_at).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+          })
+        : "—";
+
+    const isVerified = !!(
+        currentUser?.email_verified_at || currentUser?.is_verified
+    );
+
     return (
         <>
-            {/* Global styles for mint green scrollbars */}
             <style>{`
-                /* Mint green scrollbar for WebKit browsers (Chrome, Safari, Edge) */
-                .scrollbar-mint::-webkit-scrollbar {
-                    width: 6px;
-                    height: 6px;
-                }
-                
-                .scrollbar-mint::-webkit-scrollbar-track {
-                    background: #f1f1f1;
-                    border-radius: 10px;
-                }
-                
-                .scrollbar-mint::-webkit-scrollbar-thumb {
-                    background: #10b981;
-                    border-radius: 10px;
-                }
-                
-                .scrollbar-mint::-webkit-scrollbar-thumb:hover {
-                    background: #059669;
-                }
-                
-                /* Firefox scrollbar */
-                .scrollbar-mint {
-                    scrollbar-width: thin;
-                    scrollbar-color: #10b981 #f1f1f1;
-                }
+                .scrollbar-mint::-webkit-scrollbar { width: 6px; height: 6px; }
+                .scrollbar-mint::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+                .scrollbar-mint::-webkit-scrollbar-thumb { background: #10b981; border-radius: 10px; }
+                .scrollbar-mint::-webkit-scrollbar-thumb:hover { background: #059669; }
+                .scrollbar-mint { scrollbar-width: thin; scrollbar-color: #10b981 #f1f1f1; }
             `}</style>
-            
+
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                {/* Backdrop with blur */}
-                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+                <div
+                    className="fixed inset-0 bg-black/30 backdrop-blur-sm"
+                    onClick={onClose}
+                />
 
-                {/* Modal Container */}
-                <div className="relative w-full max-w-4xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200">
-
+                <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200">
                     {/* Header */}
-                    <div className="px-6 py-4 border-b border-gray-200 bg-white/50">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-white">
                         <div className="flex items-center justify-between">
-                            <div>
-                                <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
-                                <p className="text-xs text-gray-500 mt-0.5">Manage your account preferences</p>
+                            <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                    <Settings className="h-4 w-4 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <h1 className="text-base font-semibold text-gray-900">
+                                        Settings
+                                    </h1>
+                                    <p className="text-xs text-gray-500">
+                                        Manage your account and preferences
+                                    </p>
+                                </div>
                             </div>
                             <button
                                 onClick={onClose}
@@ -307,32 +294,54 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                         </div>
                     </div>
 
-                    {/* Scrollable Content Area - Hide scrollbar */}
-                    <div className="flex flex-col md:flex-row h-[65vh] overflow-hidden">
-                        {/* Sidebar Navigation - Mint green scrollbar */}
-                        <div className="md:w-64 flex-shrink-0 border-r border-gray-200 bg-white/30 overflow-y-auto scrollbar-mint">
+                    <div className="flex flex-col md:flex-row h-[70vh] overflow-hidden">
+                        {/* Sidebar */}
+                        <div className="md:w-64 flex-shrink-0 border-r border-gray-100 bg-white overflow-y-auto scrollbar-mint">
                             <div className="p-3 space-y-1">
                                 {sections.map((section) => {
                                     const Icon = section.icon;
-                                    const isActive = activeSection === section.id;
+                                    const isActive =
+                                        activeSection === section.id;
+
                                     return (
                                         <button
                                             key={section.id}
-                                            onClick={() => setActiveSection(section.id)}
+                                            onClick={() =>
+                                                setActiveSection(section.id)
+                                            }
                                             className={`
-                                                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-left
-                                                ${isActive
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : 'text-gray-600 hover:bg-gray-100'
-                                                }
-                                            `}
+                        w-full flex items-center gap-4
+                        px-4 py-3
+                        rounded-lg
+                        text-left
+                        transition-all duration-150
+                        ${
+                            isActive
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "text-gray-600 hover:bg-gray-50"
+                        }
+                    `}
                                         >
-                                            <Icon className={`h-4 w-4 ${isActive ? 'text-emerald-600' : 'text-gray-400'}`} />
-                                            <span className={`text-sm font-medium ${isActive ? 'text-emerald-700' : 'text-gray-700'}`}>
+                                            <Icon
+                                                className={`
+                            h-5 w-5 flex-shrink-0
+                            ${isActive ? "text-emerald-600" : "text-gray-400"}
+                        `}
+                                            />
+
+                                            <span
+                                                className={`
+                            text-[15px]
+                            font-medium
+                            flex-1
+                            ${isActive ? "text-emerald-700" : "text-gray-600"}
+                        `}
+                                            >
                                                 {section.name}
                                             </span>
+
                                             {isActive && (
-                                                <ChevronRight className="h-3 w-3 ml-auto text-emerald-500" />
+                                                <ChevronRight className="h-4 w-4 text-emerald-500" />
                                             )}
                                         </button>
                                     );
@@ -340,386 +349,549 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                             </div>
                         </div>
 
-                        {/* Main Content - Mint green scrollbar */}
-                        <div className="flex-1 overflow-y-auto scrollbar-mint">
-                            <div className="p-6">
-                                {/* Profile Settings - Primary Section */}
-                                {activeSection === 'profile' && (
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h2 className="text-base font-semibold text-gray-900 mb-1">Profile Settings</h2>
-                                            <p className="text-xs text-gray-500">Update your personal information</p>
+                        {/* Main content */}
+                        <div className="flex-1 overflow-y-auto scrollbar-mint bg-gray-50/30">
+                            <div className="p-6 space-y-5">
+                                {/* Section header + verified badge */}
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-lg font-semibold text-gray-900">
+                                            {sectionMeta[activeSection].title}
+                                        </h2>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {
+                                                sectionMeta[activeSection]
+                                                    .description
+                                            }
+                                        </p>
+                                    </div>
+                                    {activeSection === "account" && (
+                                        <div
+                                            className={`flex items-center gap-2 px-3 py-2 rounded-xl flex-shrink-0 ${
+                                                isVerified
+                                                    ? "bg-emerald-50 border border-emerald-100"
+                                                    : "bg-amber-50 border border-amber-100"
+                                            }`}
+                                        >
+                                            <CheckCircle2
+                                                className={`h-4 w-4 ${
+                                                    isVerified
+                                                        ? "text-emerald-600"
+                                                        : "text-amber-600"
+                                                }`}
+                                            />
+                                            <div className="leading-none">
+                                                <p
+                                                    className={`text-xs font-semibold leading-none ${
+                                                        isVerified
+                                                            ? "text-emerald-700"
+                                                            : "text-amber-600"
+                                                    }`}
+                                                >
+                                                    {isVerified
+                                                        ? "Verified Account"
+                                                        : "Unverified Account"}
+                                                </p>
+
+                                                <p
+                                                    className={`text-[10px] leading-none -mt-1 whitespace-nowrap ${
+                                                        isVerified
+                                                            ? "text-emerald-600"
+                                                            : "text-amber-600"
+                                                    }`}
+                                                >
+                                                    {isVerified
+                                                        ? "Your account is verified and ready to use"
+                                                        : "Please verify your account to access all features"}
+                                                </p>
+                                            </div>
                                         </div>
+                                    )}
+                                </div>
 
-                                        {/* Avatar Section */}
-                                        <div className="flex items-center gap-6 pb-4 border-b border-gray-100">
-                                            <div className="relative">
-                                                <div className="h-20 w-20 rounded-full overflow-hidden border-2 border-emerald-500 shadow-md">
-                                                    <img
-                                                        src={
-                                                            currentUser?.profile_image?.startsWith("blob:")
-                                                                ? currentUser.profile_image
-                                                                : getImageUrl(currentUser?.profile_image) || fallback
-                                                        }
-                                                        alt="Profile"
-                                                        className="w-full h-full object-cover"
-                                                        onLoad={() => console.log("✅ IMAGE LOADED")}
-                                                        onError={(e) => {
-                                                            console.log("❌ IMAGE FAILED:", currentUser?.profile_image);
+                                {/* Account Settings */}
+                                {activeSection === "account" && (
+                                    <>
+                                        {/* Profile Information card */}
+                                        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-5">
+                                            <div className="flex items-center justify-between flex-wrap gap-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-9 w-9 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                                                        <User className="h-5 w-5 text-emerald-600" />
+                                                    </div>
 
-                                                            // fallback if image fails
-                                                            e.currentTarget.src = fallback;
-                                                        }}
-                                                    />
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900 leading-none">
+                                                            Profile Information
+                                                        </p>
+
+                                                        <p className="text-xs text-gray-500 leading-none -mt-1 whitespace-nowrap">
+                                                            Keep your
+                                                            information up to
+                                                            date for a better
+                                                            experience
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <label className="absolute -bottom-1 -right-1 p-1.5 bg-white rounded-full shadow-md border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer">
-                                                    <Camera className="h-3 w-3 text-gray-600" />
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        onChange={handleImageChange}
-                                                        className="hidden"
-                                                    />
-                                                </label>
-                                            </div>
-                                            <div className="leading-tight space-y-0.5">
-                                                <p className="text-sm font-semibold text-gray-900">
-                                                    {profile.first_name} {profile.last_name}
-                                                </p>
-                                                <p className="text-[11px] text-gray-500">
-                                                    {profile.email}
-                                                </p>
-                                                <p className="text-[11px] text-gray-400">
-                                                    Role: {user?.role || 'Staff'}
-                                                </p>
-                                            </div>
-                                        </div>
 
-                                        {/* Profile Form */}
-                                        <div className="space-y-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="relative">
+                                                        <div className="h-14 w-14 rounded-full overflow-hidden border-2 border-emerald-500">
+                                                            <img
+                                                                src={
+                                                                    currentUser?.profile_image?.startsWith(
+                                                                        "blob:",
+                                                                    )
+                                                                        ? currentUser.profile_image
+                                                                        : getImageUrl(
+                                                                              currentUser?.profile_image,
+                                                                          ) ||
+                                                                          fallback
+                                                                }
+                                                                alt="Profile"
+                                                                className="w-full h-full object-cover"
+                                                                onError={(
+                                                                    e,
+                                                                ) => {
+                                                                    e.currentTarget.src =
+                                                                        fallback;
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        <label className="absolute -bottom-1 -right-1 p-1 bg-white rounded-full shadow-md border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer">
+                                                            <Camera className="h-3 w-3 text-gray-600" />
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
+                                                                onChange={
+                                                                    handleImageChange
+                                                                }
+                                                                className="hidden"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <div className="leading-tight">
+                                                        <p className="text-xs font-medium text-gray-700">
+                                                            Profile Photo
+                                                        </p>
+                                                        <p className="text-[10px] text-gray-400">
+                                                            Upload a new photo.
+                                                            JPG, PNG up to 2MB.
+                                                        </p>
+                                                        <label className="inline-flex items-center gap-1.5 mt-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-lg px-2.5 py-1 cursor-pointer transition-colors">
+                                                            <Camera className="h-3 w-3" />
+                                                            Change Photo
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
+                                                                onChange={
+                                                                    handleImageChange
+                                                                }
+                                                                className="hidden"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="text-sm font-medium text-gray-700 mb-1 block">First Name</label>
-                                                    <input
-                                                        type="text"
-                                                        value={profile.first_name}
-                                                        onChange={(e) => handleProfileChange('first_name', e.target.value)}
-                                                        className="w-full p-2.5 rounded-lg border border-gray-200 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
-                                                    />
+                                                    <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                        First Name
+                                                    </label>
+                                                    <div className="relative">
+                                                        <User className="h-3.5 w-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            type="text"
+                                                            value={
+                                                                profile.first_name
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleProfileChange(
+                                                                    "first_name",
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                        />
+                                                    </div>
                                                 </div>
                                                 <div>
-                                                    <label className="text-sm font-medium text-gray-700 mb-1 block">Last Name</label>
+                                                    <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                        Last Name
+                                                    </label>
+                                                    <div className="relative">
+                                                        <User className="h-3.5 w-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            type="text"
+                                                            value={
+                                                                profile.last_name
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleProfileChange(
+                                                                    "last_name",
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                        Email Address
+                                                    </label>
+                                                    <div className="relative">
+                                                        <Mail className="h-3.5 w-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            type="email"
+                                                            value={
+                                                                profile.email
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleProfileChange(
+                                                                    "email",
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                        Phone Number
+                                                    </label>
+                                                    <div className="relative">
+                                                        <Phone className="h-3.5 w-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                        <input
+                                                            type="tel"
+                                                            value={
+                                                                profile.contact_number
+                                                            }
+                                                            onChange={(e) =>
+                                                                handleProfileChange(
+                                                                    "contact_number",
+                                                                    e.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                            placeholder="+63 912 345 6789"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                    Address
+                                                </label>
+                                                <div className="relative">
+                                                    <MapPin className="h-3.5 w-3.5 text-gray-400 absolute left-3 top-3" />
                                                     <input
                                                         type="text"
-                                                        value={profile.last_name}
-                                                        onChange={(e) => handleProfileChange('last_name', e.target.value)}
-                                                        className="w-full p-2.5 rounded-lg border border-gray-200 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                        value={profile.address}
+                                                        onChange={(e) =>
+                                                            handleProfileChange(
+                                                                "address",
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                        placeholder="Enter your address"
                                                     />
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">Email Address</label>
-                                                <input
-                                                    type="email"
-                                                    value={profile.email}
-                                                    onChange={(e) => handleProfileChange('email', e.target.value)}
-                                                    className="w-full p-2.5 rounded-lg border border-gray-200 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
-                                                />
+                                        </div>
+
+                                        {/* Account Information card */}
+                                        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+                                            {/* Account Information Header */}
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-9 w-9 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                                                    <Shield className="h-5 w-5 text-emerald-600" />
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900 leading-none">
+                                                        Account Information
+                                                    </p>
+
+                                                    <p className="text-xs text-gray-500 leading-none -mt-1">
+                                                        View your account
+                                                        details and status
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">Contact Number</label>
-                                                <input
-                                                    type="tel"
-                                                    value={profile.contact_number}
-                                                    onChange={(e) => handleProfileChange('contact_number', e.target.value)}
-                                                    className="w-full p-2.5 rounded-lg border border-gray-200 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
-                                                    placeholder="+63 912 345 6789"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">Address</label>
-                                                <textarea
-                                                    value={profile.address}
-                                                    onChange={(e) => handleProfileChange('address', e.target.value)}
-                                                    className="w-full p-2.5 rounded-lg border border-gray-200 bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm resize-none"
-                                                    rows={2}
-                                                    placeholder="Enter your address"
-                                                />
+
+                                            {/* Account Information Details */}
+                                            <div className="grid grid-cols-3 bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                                                {/* Account Status */}
+                                                <div className="p-4">
+                                                    <p className="text-[11px] font-medium text-gray-400 mb-2">
+                                                        Account Status
+                                                    </p>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <CheckCircle2
+                                                            className={`h-4 w-4 ${
+                                                                isVerified
+                                                                    ? "text-emerald-600"
+                                                                    : "text-amber-500"
+                                                            }`}
+                                                        />
+
+                                                        <span
+                                                            className={`text-sm font-medium ${
+                                                                isVerified
+                                                                    ? "text-emerald-700"
+                                                                    : "text-amber-600"
+                                                            }`}
+                                                        >
+                                                            {isVerified
+                                                                ? "Verified"
+                                                                : "Unverified"}
+                                                        </span>
+                                                    </div>
+
+                                                    <p className="text-[10px] text-gray-400 mt-1.5 whitespace-nowrap">
+                                                        Your account is verified
+                                                        and ready to use
+                                                    </p>
+                                                </div>
+
+                                                {/* Member Since */}
+                                                <div className="p-4 border-l border-gray-200">
+                                                    <p className="text-[11px] font-medium text-gray-400 mb-2">
+                                                        Member Since
+                                                    </p>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="h-4 w-4 text-gray-400" />
+
+                                                        <span className="text-sm font-medium text-gray-700">
+                                                            {memberSince}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Account Type */}
+                                                <div className="p-4 border-l border-gray-200">
+                                                    <p className="text-[11px] font-medium text-gray-400 mb-2">
+                                                        Account Type
+                                                    </p>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <User className="h-4 w-4 text-gray-400" />
+
+                                                        <span className="text-sm font-medium text-gray-700">
+                                                            {user?.role
+                                                                ? user.role
+                                                                      .charAt(0)
+                                                                      .toUpperCase() +
+                                                                  user.role.slice(
+                                                                      1,
+                                                                  )
+                                                                : "Guest"}
+                                                        </span>
+                                                    </div>
+
+                                                    <p className="text-[10px] text-gray-400 mt-1.5">
+                                                        Regular user
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    </>
                                 )}
 
-                                {/* General Settings */}
-                                {activeSection === 'general' && (
-                                    <div className="space-y-6">
+                                {/* Change Password */}
+                                {activeSection === "security" && (
+                                    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
                                         <div>
-                                            <h2 className="text-base font-semibold text-gray-900 mb-1">General Settings</h2>
-                                            <p className="text-xs text-gray-500">Customize your application appearance and language</p>
-                                        </div>
-
-                                        {/* Theme */}
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-gray-700">Theme</label>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {themes.map((themeOption) => {
-                                                    const Icon = themeOption.icon;
-                                                    const isSelected = theme === themeOption.id;
-                                                    return (
-                                                        <button
-                                                            key={themeOption.id}
-                                                            onClick={() => setTheme(themeOption.id)}
-                                                            className={`
-                                                                flex items-center justify-center gap-2 p-2 rounded-lg border transition-all text-sm
-                                                                ${isSelected
-                                                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                                                                    : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                                                                }
-                                                            `}
-                                                        >
-                                                            <Icon className={`h-4 w-4 ${isSelected ? 'text-emerald-600' : 'text-gray-400'}`} />
-                                                            <span>{themeOption.name}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Language */}
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-gray-700">Language</label>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <button className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors bg-white text-sm">
-                                                        <div className="flex items-center gap-2">
-                                                            <Globe className="h-4 w-4 text-gray-400" />
-                                                            <span className="text-gray-700">
-                                                                {languages.find(l => l.code === language)?.name || 'Select Language'}
-                                                            </span>
-                                                            <span className="text-sm">
-                                                                {languages.find(l => l.code === language)?.flag}
-                                                            </span>
-                                                        </div>
-                                                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                                                    </button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="start" className="w-72 bg-white border border-gray-200 shadow-lg rounded-lg max-h-64 overflow-y-auto">
-                                                    {languages.map((lang) => (
-                                                        <DropdownMenuItem
-                                                            key={lang.code}
-                                                            onClick={() => setLanguage(lang.code)}
-                                                            className="cursor-pointer hover:bg-gray-50 px-3 py-2 text-sm"
-                                                        >
-                                                            <div className="flex items-center justify-between w-full">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-base">{lang.flag}</span>
-                                                                    <span>{lang.name}</span>
-                                                                </div>
-                                                                {language === lang.code && (
-                                                                    <Check className="h-3 w-3 text-emerald-600" />
-                                                                )}
-                                                            </div>
-                                                        </DropdownMenuItem>
-                                                    ))}
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-
-                                        {/* Notifications */}
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-gray-700">Notifications</label>
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-700">Email Notifications</p>
-                                                        <p className="text-xs text-gray-500">Receive updates via email</p>
-                                                    </div>
-                                                    <Switch
-                                                        checked={emailNotifications}
-                                                        onCheckedChange={setEmailNotifications}
-                                                        className="data-[state=checked]:bg-emerald-600"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-700">Push Notifications</p>
-                                                        <p className="text-xs text-gray-500">Get real-time alerts</p>
-                                                    </div>
-                                                    <Switch
-                                                        checked={pushNotifications}
-                                                        onCheckedChange={setPushNotifications}
-                                                        className="data-[state=checked]:bg-emerald-600"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Security Settings */}
-                                {activeSection === 'security' && (
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h2 className="text-base font-semibold text-gray-900 mb-1">Security</h2>
-                                            <p className="text-xs text-gray-500">Manage your account security</p>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">Current Password</label>
-                                                <input
-                                                    type="password"
-                                                    value={passwordData.current_password}
-                                                    onChange={(e) =>
-                                                        setPasswordData({ ...passwordData, current_password: e.target.value })
-                                                    }
-                                                    className="w-full p-2.5 rounded-lg border ..."
-                                                    placeholder="Enter current password"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">New Password</label>
-                                                <input
-                                                    type="password"
-                                                    value={passwordData.new_password}
-                                                    onChange={(e) =>
-                                                        setPasswordData({ ...passwordData, new_password: e.target.value })
-                                                    }
-                                                    className="w-full p-2.5 rounded-lg border ..."
-                                                    placeholder="Enter new password"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-sm font-medium text-gray-700 mb-1 block">Confirm New Password</label>
-                                                <input
-                                                    type="password"
-                                                    value={passwordData.confirm_password}
-                                                    onChange={(e) =>
-                                                        setPasswordData({ ...passwordData, confirm_password: e.target.value })
-                                                    }
-                                                    className="w-full p-2.5 rounded-lg border ..."
-                                                    placeholder="Confirm new password"
-                                                />
-                                            </div>
-                                            <Button
-                                                onClick={handleChangePassword}
-                                                disabled={
-                                                    !passwordData.current_password ||
-                                                    !passwordData.new_password ||
-                                                    !passwordData.confirm_password
+                                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                Current Password
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={
+                                                    passwordData.current_password
                                                 }
-                                                className="bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:opacity-50"
-                                            >
-                                                Change Password
-                                            </Button>
+                                                onChange={(e) =>
+                                                    setPasswordData({
+                                                        ...passwordData,
+                                                        current_password:
+                                                            e.target.value,
+                                                    })
+                                                }
+                                                className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                placeholder="Enter current password"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                New Password
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={
+                                                    passwordData.new_password
+                                                }
+                                                onChange={(e) =>
+                                                    setPasswordData({
+                                                        ...passwordData,
+                                                        new_password:
+                                                            e.target.value,
+                                                    })
+                                                }
+                                                className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                placeholder="Enter new password"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                                                Confirm New Password
+                                            </label>
+                                            <input
+                                                type="password"
+                                                value={
+                                                    passwordData.confirm_password
+                                                }
+                                                onChange={(e) =>
+                                                    setPasswordData({
+                                                        ...passwordData,
+                                                        confirm_password:
+                                                            e.target.value,
+                                                    })
+                                                }
+                                                className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-sm"
+                                                placeholder="Confirm new password"
+                                            />
+                                        </div>
+                                        <Button
+                                            onClick={handleChangePassword}
+                                            disabled={
+                                                !passwordData.current_password ||
+                                                !passwordData.new_password ||
+                                                !passwordData.confirm_password
+                                            }
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white w-full disabled:opacity-50"
+                                        >
+                                            Change Password
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Notification Settings */}
+                                {activeSection === "notifications" && (
+                                    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-700">
+                                                    Email Notifications
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    Receive updates via email
+                                                </p>
+                                            </div>
+                                            <Switch
+                                                checked={emailNotifications}
+                                                onCheckedChange={
+                                                    setEmailNotifications
+                                                }
+                                                className="data-[state=checked]:bg-emerald-600"
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-700">
+                                                    Push Notifications
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    Get real-time alerts
+                                                </p>
+                                            </div>
+                                            <Switch
+                                                checked={pushNotifications}
+                                                onCheckedChange={
+                                                    setPushNotifications
+                                                }
+                                                className="data-[state=checked]:bg-emerald-600"
+                                            />
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Preferences */}
-                                {activeSection === 'preferences' && (
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h2 className="text-base font-semibold text-gray-900 mb-1">Preferences</h2>
-                                            <p className="text-xs text-gray-500">Customize your experience</p>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Compact Mode</p>
-                                                    <p className="text-xs text-gray-500">Reduce spacing between items</p>
-                                                </div>
-                                                <Switch className="data-[state=checked]:bg-emerald-600" />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Auto-save</p>
-                                                    <p className="text-xs text-gray-500">Automatically save changes</p>
-                                                </div>
-                                                <Switch defaultChecked className="data-[state=checked]:bg-emerald-600" />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Show Animations</p>
-                                                    <p className="text-xs text-gray-500">Enable smooth transitions</p>
-                                                </div>
-                                                <Switch defaultChecked className="data-[state=checked]:bg-emerald-600" />
-                                            </div>
-                                        </div>
+                                {/* Privacy & Security */}
+                                {activeSection === "privacy" && (
+                                    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                                        <p className="text-sm text-gray-600">
+                                            Your data is protected. Contact
+                                            support to request a data export or
+                                            account deletion.
+                                        </p>
                                     </div>
                                 )}
 
-                                {/* About */}
-                                {activeSection === 'about' && (
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h2 className="text-base font-semibold text-gray-900 mb-1">About Lyn Enia's Inn</h2>
-                                            <p className="text-xs text-gray-500">Application information and resources</p>
+                                {/* Help & Support */}
+                                {activeSection === "help" && (
+                                    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-1">
+                                        <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                            <HelpCircle className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-700">
+                                                    Support
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    Get help from our team
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="bg-gray-50 rounded-xl p-4">
-                                            <div className="flex items-center gap-3 mb-3">
-                                                <div className="h-10 w-10 bg-emerald-600 rounded-lg flex items-center justify-center">
-                                                    <span className="text-white font-bold text-lg">L</span>
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-semibold text-gray-900">Lyn Enia's Inn</h3>
-                                                    <p className="text-xs text-gray-500">Version 1.0.0</p>
-                                                </div>
-                                            </div>
-                                            <p className="text-sm text-gray-600">
-                                                A comprehensive hotel management system designed to streamline operations,
-                                                manage bookings, and enhance guest experiences.
-                                            </p>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                                <FileText className="h-4 w-4 text-gray-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Documentation</p>
-                                                    <p className="text-xs text-gray-500">Learn how to use the system</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                                <HelpCircle className="h-4 w-4 text-gray-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Support</p>
-                                                    <p className="text-xs text-gray-500">Get help from our team</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                                <Shield className="h-4 w-4 text-gray-400" />
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-700">Privacy Policy</p>
-                                                    <p className="text-xs text-gray-500">Read our privacy policy</p>
-                                                </div>
+                                        <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                            <Shield className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-700">
+                                                    Privacy Policy
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    Read our privacy policy
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
                                 )}
 
                                 {/* Save Button */}
-                                <div className="mt-6 pt-4 border-t border-gray-200">
-                                    <div className="flex justify-end gap-2">
-                                        <Button onClick={onClose} variant="outline" size="sm" disabled={isSaving}>
-                                            Cancel
-                                        </Button>
-                                        <Button
-                                            onClick={handleSave}
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                            disabled={isSaving}
-                                        >
-                                            {isSaving ? (
-                                                <>
-                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                    Saving...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Save className="h-4 w-4 mr-1" />
-                                                    Save Changes
-                                                </>
-                                            )}
-                                        </Button>
-                                    </div>
+                                <div className="flex justify-end gap-2 pt-1">
+                                    <Button
+                                        onClick={onClose}
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={isSaving}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={handleSave}
+                                        className="bg-emerald-700 hover:bg-emerald-800 text-white"
+                                        disabled={isSaving}
+                                    >
+                                        {isSaving ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                Saving...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="h-4 w-4 mr-1" />
+                                                Save Changes
+                                            </>
+                                        )}
+                                    </Button>
                                 </div>
                             </div>
                         </div>

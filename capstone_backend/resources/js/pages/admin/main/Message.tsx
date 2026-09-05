@@ -23,6 +23,19 @@ import { Textarea } from "@/components/ui/textarea";
 
 import api from "@/services/api";
 import Echo from "@/services/echo";
+import PageLoader from "@/components/PageLoader";
+import nProgress from "nprogress";
+import "nprogress/nprogress.css";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+// Configure NProgress
+nProgress.configure({
+    minimum: 0.2,
+    easing: "ease",
+    speed: 500,
+    showSpinner: false,
+    trickleSpeed: 200,
+});
 
 interface ChatUser {
     id: number;
@@ -43,9 +56,7 @@ interface Conversation {
 function fullName(u: ChatUser | null | undefined): string {
     if (!u) return "Guest";
 
-    return [u.first_name, u.last_name]
-        .filter(Boolean)
-        .join(" ");
+    return [u.first_name, u.last_name].filter(Boolean).join(" ");
 }
 
 function initial(u: ChatUser | null | undefined): string {
@@ -85,8 +96,7 @@ function MessageThread({
         if (!bottomRef.current) return;
 
         if (isAtBottom.current) {
-            bottomRef.current.scrollTop =
-                bottomRef.current.scrollHeight;
+            bottomRef.current.scrollTop = bottomRef.current.scrollHeight;
         }
     }, [messages]);
 
@@ -96,9 +106,7 @@ function MessageThread({
 
     const markAsRead = async () => {
         try {
-            await api.put(
-                `/messages/read/${currentUser.id}/${userId}`,
-            );
+            await api.put(`/messages/read/${currentUser.id}/${userId}`);
         } catch (err) {
             console.error(err);
         }
@@ -118,9 +126,7 @@ function MessageThread({
                 `/messages/conversation/${currentUser.id}/${userId}`,
             );
 
-            const data = Array.isArray(res.data)
-                ? res.data
-                : [];
+            const data = Array.isArray(res.data) ? res.data : [];
 
             setMessages(data);
 
@@ -165,9 +171,7 @@ function MessageThread({
                 };
 
                 setMessages((prev) => {
-                    const exists = prev.some(
-                        (m) => m.id === incoming.id,
-                    );
+                    const exists = prev.some((m) => m.id === incoming.id);
 
                     if (exists) return prev;
 
@@ -232,10 +236,8 @@ function MessageThread({
                               id: realTarget.id,
                               is_read: realTarget.is_read,
                               message: {
-                                  message:
-                                      messageData.message,
-                                  sender_id:
-                                      messageData.sender_id,
+                                  message: messageData.message,
+                                  sender_id: messageData.sender_id,
                               },
                               status: "sent",
                           }
@@ -264,7 +266,6 @@ function MessageThread({
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-
             {/* ==================================================
                 MESSAGES
             ================================================== */}
@@ -275,9 +276,7 @@ function MessageThread({
                     const el = e.currentTarget;
 
                     const isBottom =
-                        el.scrollHeight -
-                            el.scrollTop <=
-                        el.clientHeight + 20;
+                        el.scrollHeight - el.scrollTop <= el.clientHeight + 20;
 
                     isAtBottom.current = isBottom;
                 }}
@@ -314,21 +313,15 @@ function MessageThread({
                     <div className="space-y-3">
                         {messages.map((m) => {
                             const isMine =
-                                m.message?.sender_id ===
-                                currentUser.id;
+                                m.message?.sender_id === currentUser.id;
 
                             const messageText =
-                                m.message?.message ||
-                                "No message";
+                                m.message?.message || "No message";
 
                             return (
                                 <ShadcnMessage
                                     key={m.id}
-                                    align={
-                                        isMine
-                                            ? "end"
-                                            : "start"
-                                    }
+                                    align={isMine ? "end" : "start"}
                                     className="w-full"
                                 >
                                     {/* AVATAR */}
@@ -350,12 +343,8 @@ function MessageThread({
                                                 }
                                             >
                                                 {isMine
-                                                    ? initial(
-                                                          currentUser,
-                                                      )
-                                                    : initial(
-                                                          otherUser,
-                                                      )}
+                                                    ? initial(currentUser)
+                                                    : initial(otherUser)}
                                             </AvatarFallback>
                                         </Avatar>
                                     </MessageAvatar>
@@ -364,9 +353,7 @@ function MessageThread({
                                     <MessageContent>
                                         <Bubble
                                             variant={
-                                                isMine
-                                                    ? "default"
-                                                    : "secondary"
+                                                isMine ? "default" : "secondary"
                                             }
                                             className={
                                                 isMine
@@ -382,16 +369,13 @@ function MessageThread({
                                         {/* STATUS */}
                                         {isMine && (
                                             <MessageFooter className="mt-1 text-[10px] text-slate-400">
-                                                {m.status ===
-                                                    "sending" &&
+                                                {m.status === "sending" &&
                                                     "Sending..."}
 
-                                                {m.status ===
-                                                    "failed" &&
+                                                {m.status === "failed" &&
                                                     "Failed"}
 
-                                                {m.status ===
-                                                    "sent" &&
+                                                {m.status === "sent" &&
                                                     (m.is_read
                                                         ? "Seen"
                                                         : "Sent")}
@@ -411,22 +395,18 @@ function MessageThread({
 
             <div className="shrink-0 border-t border-slate-100 bg-white p-3">
                 <div className="flex items-end gap-2">
-
                     <Textarea
                         value={newMessage}
                         onChange={(e) => {
                             setNewMessage(e.target.value);
 
-                            e.target.style.height =
-                                "auto";
+                            e.target.style.height = "auto";
 
                             const maxHeight = 120;
 
                             e.target.style.height =
-                                Math.min(
-                                    e.target.scrollHeight,
-                                    maxHeight,
-                                ) + "px";
+                                Math.min(e.target.scrollHeight, maxHeight) +
+                                "px";
                         }}
                         onKeyDown={(e) => {
                             if (
@@ -447,10 +427,7 @@ function MessageThread({
                     <button
                         type="button"
                         onClick={sendMessage}
-                        disabled={
-                            !newMessage.trim() ||
-                            sending
-                        }
+                        disabled={!newMessage.trim() || sending}
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-40"
                     >
                         {sending ? (
@@ -470,117 +447,158 @@ function MessageThread({
 // ======================================================
 
 export default function Message() {
-    const user = JSON.parse(
-        localStorage.getItem("user") || "null",
-    );
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    const queryClient = useQueryClient();
 
-    const [conversations, setConversations] =
-        useState<Conversation[]>([]);
+    const [conversations, setConversations] = useState<Conversation[]>([]);
 
     const [loading, setLoading] = useState(true);
 
-    const [error, setError] = useState<string | null>(
-        null,
-    );
+    const [error, setError] = useState<string | null>(null);
 
-    const [selectedUserId, setSelectedUserId] =
-        useState<number | null>(null);
+    const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
     const [search, setSearch] = useState("");
 
-    const [roleFilter, setRoleFilter] = useState<
-        "all" | "guest" | "staff"
-    >("all");
+    const [roleFilter, setRoleFilter] = useState<"all" | "guest" | "staff">(
+        "all",
+    );
 
-    const [showUserPicker, setShowUserPicker] =
-        useState(false);
+    const [showUserPicker, setShowUserPicker] = useState(false);
 
-    const [allUsers, setAllUsers] = useState<
-        ChatUser[]
-    >([]);
+    const [allUsers, setAllUsers] = useState<ChatUser[]>([]);
 
-    const [allUsersLoading, setAllUsersLoading] =
-        useState(false);
+    const [allUsersLoading, setAllUsersLoading] = useState(false);
 
     const isFetching = useRef(false);
 
     // ==================================================
-    // LOAD CONVERSATIONS
+    // LOAD CONVERSATIONS WITH TANSTACK QUERY
     // ==================================================
 
-    const loadConversations = useCallback(async () => {
-        if (!user?.id || isFetching.current) return;
+    const { data: conversationsData, isLoading: isConversationsLoading } =
+        useQuery({
+            queryKey: ["conversations"],
+            queryFn: async () => {
+                const res = await api.get("/messages/conversations");
+                return Array.isArray(res.data) ? res.data : [];
+            },
+            enabled: !!user?.id,
+        });
 
-        isFetching.current = true;
+    // ==================================================
+    // LOAD USERS WITH TANSTACK QUERY
+    // ==================================================
 
-        setLoading(true);
-        setError(null);
+    const { data: usersData, isLoading: isUsersLoading } = useQuery({
+        queryKey: ["chat-users"],
+        queryFn: async () => {
+            const res = await api.get("/chat/users");
+            return Array.isArray(res.data) ? res.data : [];
+        },
+        enabled: !!user?.id && showUserPicker,
+    });
 
-        try {
-            const res = await api.get(
-                "/messages/conversations",
-            );
+    // ==================================================
+    // EFFECTS FOR SETTING DATA
+    // ==================================================
 
-            const data = Array.isArray(res.data)
-                ? res.data
-                : [];
-
-            setConversations(data);
-
-            if (
-                data.length &&
-                selectedUserId === null
-            ) {
-                setSelectedUserId(
-                    data[0].user.id,
-                );
-            }
-        } catch (e) {
-            setError(
-                e instanceof Error
-                    ? e.message
-                    : "Failed to load messages",
-            );
-        } finally {
-            isFetching.current = false;
+    useEffect(() => {
+        if (conversationsData) {
+            setConversations(conversationsData);
             setLoading(false);
         }
+    }, [conversationsData]);
 
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // ==================================================
-    // LOAD USERS
-    // ==================================================
-
-    const fetchAllUsers = async () => {
-        setAllUsersLoading(true);
-
-        try {
-            const res = await api.get("/chat/users");
-
-            setAllUsers(
-                Array.isArray(res.data)
-                    ? res.data
-                    : [],
-            );
-        } catch (err) {
-            console.error(
-                "Failed to fetch chat users:",
-                err,
-            );
-        } finally {
+    useEffect(() => {
+        if (usersData) {
+            setAllUsers(usersData);
             setAllUsersLoading(false);
         }
-    };
+    }, [usersData]);
 
     // ==================================================
     // INITIAL LOAD
     // ==================================================
 
     useEffect(() => {
-        loadConversations();
-    }, [loadConversations]);
+        nProgress.start();
+
+        if (!isConversationsLoading && conversationsData) {
+            nProgress.done();
+        }
+
+        return () => {
+            nProgress.done();
+        };
+    }, [isConversationsLoading, conversationsData]);
+
+    // ==================================================
+    // LOAD CONVERSATIONS (for manual refresh)
+    // ==================================================
+
+    const loadConversations = useCallback(async () => {
+        if (!user?.id) return;
+
+        nProgress.start();
+        setLoading(true);
+        setError(null);
+
+        try {
+            const data = await queryClient.fetchQuery({
+                queryKey: ["conversations"],
+                queryFn: async () => {
+                    const res = await api.get("/messages/conversations");
+                    return Array.isArray(res.data) ? res.data : [];
+                },
+            });
+            setConversations(data);
+        } catch (e) {
+            setError(
+                e instanceof Error ? e.message : "Failed to load messages",
+            );
+        } finally {
+            setLoading(false);
+            nProgress.done();
+        }
+    }, [user?.id, queryClient]);
+
+    // ==================================================
+    // LOAD USERS (for manual refresh)
+    // ==================================================
+
+    const fetchAllUsers = useCallback(async () => {
+        if (!user?.id) return;
+
+        nProgress.start();
+        setAllUsersLoading(true);
+
+        try {
+            const data = await queryClient.fetchQuery({
+                queryKey: ["chat-users"],
+                queryFn: async () => {
+                    const res = await api.get("/chat/users");
+                    return Array.isArray(res.data) ? res.data : [];
+                },
+            });
+            setAllUsers(data);
+        } catch (err) {
+            console.error("Failed to fetch chat users:", err);
+        } finally {
+            setAllUsersLoading(false);
+            nProgress.done();
+        }
+    }, [user?.id, queryClient]);
+
+    // ==================================================
+    // INITIAL LOAD EFFECT
+    // ==================================================
+
+    useEffect(() => {
+        if (user?.id) {
+            loadConversations();
+        }
+    }, [user?.id]);
 
     // ==================================================
     // FILTER
@@ -592,54 +610,36 @@ export default function Message() {
         return conversations.filter((c) => {
             if (
                 roleFilter !== "all" &&
-                c.user?.role?.toLowerCase() !==
-                    roleFilter
+                c.user?.role?.toLowerCase() !== roleFilter
             ) {
                 return false;
             }
 
             if (!q) return true;
 
-            return fullName(c.user)
-                .toLowerCase()
-                .includes(q);
+            return fullName(c.user).toLowerCase().includes(q);
         });
-    }, [
-        conversations,
-        search,
-        roleFilter,
-    ]);
+    }, [conversations, search, roleFilter]);
 
     // ==================================================
     // SELECTED CONVERSATION
     // ==================================================
 
     const selectedConversation = useMemo(
-        () =>
-            conversations.find(
-                (c) =>
-                    c.user.id === selectedUserId,
-            ) ?? null,
-        [
-            conversations,
-            selectedUserId,
-        ],
+        () => conversations.find((c) => c.user.id === selectedUserId) ?? null,
+        [conversations, selectedUserId],
     );
 
     const selectedUser: ChatUser | null =
         selectedConversation?.user ??
-        allUsers.find(
-            (u) => u.id === selectedUserId,
-        ) ??
+        allUsers.find((u) => u.id === selectedUserId) ??
         null;
 
     // ==================================================
     // SELECT CONVERSATION
     // ==================================================
 
-    const handleSelectConversation = (
-        c: Conversation,
-    ) => {
+    const handleSelectConversation = (c: Conversation) => {
         setSelectedUserId(c.user.id);
 
         setShowUserPicker(false);
@@ -660,35 +660,51 @@ export default function Message() {
     // SELECT NEW USER
     // ==================================================
 
-    const handleSelectNewUser = (
-        u: ChatUser,
-    ) => {
+    const handleSelectNewUser = (u: ChatUser) => {
         setSelectedUserId(u.id);
         setShowUserPicker(false);
     };
 
-    if (!user) return null;
+    if (isConversationsLoading && !conversationsData) {
+        return <PageLoader />;
+    }
+
+    if (!user) {
+        nProgress.done();
+        return null;
+    }
 
     return (
         <div className="flex h-full w-full overflow-hidden bg-slate-50 text-slate-900">
-
+            <style>
+                {`
+                    /* NProgress custom colors to match your emerald theme */
+                    #nprogress .bar {
+                        background: #10b981 !important;
+                        height: 3px !important;
+                    }
+                    #nprogress .peg {
+                        box-shadow: 0 0 10px #10b981, 0 0 5px #10b981 !important;
+                    }
+                    #nprogress .spinner-icon {
+                        border-top-color: #10b981 !important;
+                        border-left-color: #10b981 !important;
+                    }
+                `}
+            </style>
             {/* ==================================================
                 SIDEBAR
             ================================================== */}
 
             <aside className="hidden h-full w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
-
                 {/* HEADER */}
 
                 <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3.5">
                     <h2 className="text-sm font-semibold text-slate-700">
-                        {showUserPicker
-                            ? "New Message"
-                            : "Conversations"}
+                        {showUserPicker ? "New Message" : "Conversations"}
                     </h2>
 
                     <div className="flex items-center gap-2">
-
                         {/* REFRESH */}
 
                         <button
@@ -698,18 +714,12 @@ export default function Message() {
                                     : loadConversations()
                             }
                             disabled={
-                                showUserPicker
-                                    ? allUsersLoading
-                                    : loading
+                                showUserPicker ? allUsersLoading : loading
                             }
                             className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
                             title="Refresh"
                         >
-                            {(
-                                showUserPicker
-                                    ? allUsersLoading
-                                    : loading
-                            ) ? (
+                            {(showUserPicker ? allUsersLoading : loading) ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                                 <RefreshCw className="h-3.5 w-3.5" />
@@ -720,23 +730,16 @@ export default function Message() {
 
                         <button
                             onClick={() => {
-                                const next =
-                                    !showUserPicker;
+                                const next = !showUserPicker;
 
-                                setShowUserPicker(
-                                    next,
-                                );
+                                setShowUserPicker(next);
 
                                 if (next) {
                                     fetchAllUsers();
                                 }
                             }}
                             className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600"
-                            title={
-                                showUserPicker
-                                    ? "Back"
-                                    : "New message"
-                            }
+                            title={showUserPicker ? "Back" : "New message"}
                         >
                             {showUserPicker ? (
                                 <ChevronRight className="h-3.5 w-3.5 rotate-180" />
@@ -751,38 +754,24 @@ export default function Message() {
 
                 {!showUserPicker && (
                     <div className="shrink-0 space-y-2 border-b border-slate-100 px-3 py-3">
-
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
 
                             <input
                                 value={search}
-                                onChange={(e) =>
-                                    setSearch(
-                                        e.target.value,
-                                    )
-                                }
+                                onChange={(e) => setSearch(e.target.value)}
                                 placeholder="Search conversations…"
                                 className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                             />
                         </div>
 
                         <div className="flex gap-1.5">
-                            {[
-                                "all",
-                                "guest",
-                                "staff",
-                            ].map((type) => (
+                            {["all", "guest", "staff"].map((type) => (
                                 <button
                                     key={type}
-                                    onClick={() =>
-                                        setRoleFilter(
-                                            type as any,
-                                        )
-                                    }
+                                    onClick={() => setRoleFilter(type as any)}
                                     className={`flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition ${
-                                        roleFilter ===
-                                        type
+                                        roleFilter === type
                                             ? "bg-emerald-600 text-white"
                                             : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                     }`}
@@ -799,7 +788,6 @@ export default function Message() {
                 ================================================== */}
 
                 <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
-
                     {/* NEW USERS */}
 
                     {showUserPicker ? (
@@ -821,18 +809,12 @@ export default function Message() {
                             allUsers.map((u) => (
                                 <button
                                     key={u.id}
-                                    onClick={() =>
-                                        handleSelectNewUser(
-                                            u,
-                                        )
-                                    }
-                                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                                    onClick={() => handleSelectNewUser(u)}
+                                    className="flex w-full items-center gap-3 px-4 py-2 text-left transition hover:bg-slate-50"
                                 >
                                     <Avatar className="h-8 w-8 shrink-0 overflow-hidden border-0 ring-0 shadow-none">
                                         <AvatarImage
-                                            src={
-                                                u.avatar_url
-                                            }
+                                            src={u.avatar_url}
                                             className="h-full w-full object-cover"
                                         />
 
@@ -872,19 +854,13 @@ export default function Message() {
                     ) : (
                         filteredList.map((c) => {
                             const isActive =
-                                c.user.id ===
-                                    selectedUserId &&
-                                !showUserPicker;
+                                c.user.id === selectedUserId && !showUserPicker;
 
                             return (
                                 <button
                                     key={c.user.id}
-                                    onClick={() =>
-                                        handleSelectConversation(
-                                            c,
-                                        )
-                                    }
-                                    className={`relative flex w-full items-start gap-3 px-4 py-3 text-left transition ${
+                                    onClick={() => handleSelectConversation(c)}
+                                    className={`relative flex w-full items-center gap-3 px-4 py-2 text-left transition ${
                                         isActive
                                             ? "bg-emerald-50"
                                             : "hover:bg-slate-50"
@@ -892,44 +868,31 @@ export default function Message() {
                                 >
                                     <Avatar className="h-8 w-8 shrink-0 overflow-hidden border-0 ring-0 shadow-none">
                                         <AvatarImage
-                                            src={
-                                                c.user
-                                                    .avatar_url
-                                            }
+                                            src={c.user.avatar_url}
                                             className="h-full w-full object-cover"
                                         />
 
                                         <AvatarFallback className="flex h-full w-full items-center justify-center bg-slate-200 text-xs font-semibold text-slate-600">
-                                            {initial(
-                                                c.user,
-                                            )}
+                                            {initial(c.user)}
                                         </AvatarFallback>
                                     </Avatar>
 
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center justify-between gap-2">
                                             <p className="truncate text-sm font-semibold text-slate-900">
-                                                {fullName(
-                                                    c.user,
-                                                )}
+                                                {fullName(c.user)}
                                             </p>
 
-                                            {c.unread >
-                                                0 && (
+                                            {c.unread > 0 && (
                                                 <span className="shrink-0 rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                                                    {
-                                                        c.unread
-                                                    }
+                                                    {c.unread}
                                                 </span>
                                             )}
                                         </div>
 
                                         <p className="-mt-0.5 truncate text-xs text-slate-400">
-                                            {c.last_sender_id ===
-                                                user?.id && (
-                                                <span>
-                                                    You:{" "}
-                                                </span>
+                                            {c.last_sender_id === user?.id && (
+                                                <span>You: </span>
                                             )}
 
                                             {c.last_message}
@@ -955,24 +918,20 @@ export default function Message() {
             ================================================== */}
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-
                 {/* BREADCRUMB */}
 
                 <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-white px-3 py-2.5 text-sm text-slate-400 md:px-5">
                     <span>Messages</span>
 
-                    {selectedUser &&
-                        !showUserPicker && (
-                            <>
-                                <ChevronRight className="h-3.5 w-3.5" />
+                    {selectedUser && !showUserPicker && (
+                        <>
+                            <ChevronRight className="h-3.5 w-3.5" />
 
-                                <span className="max-w-[160px] truncate font-medium text-slate-600 sm:max-w-none">
-                                    {fullName(
-                                        selectedUser,
-                                    )}
-                                </span>
-                            </>
-                        )}
+                            <span className="max-w-[160px] truncate font-medium text-slate-600 sm:max-w-none">
+                                {fullName(selectedUser)}
+                            </span>
+                        </>
+                    )}
                 </div>
 
                 {/* ERROR */}
@@ -980,7 +939,6 @@ export default function Message() {
                 {error && (
                     <div className="mx-3 mt-3 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 md:mx-5">
                         {error}{" "}
-
                         <button
                             onClick={loadConversations}
                             className="font-semibold underline"
@@ -994,37 +952,29 @@ export default function Message() {
                     SELECTED USER
                 ================================================== */}
 
-                {selectedUser &&
-                !showUserPicker ? (
+                {selectedUser && !showUserPicker ? (
                     <>
                         {/* USER HEADER */}
 
                         <div className="flex shrink-0 items-center gap-3 px-3 py-4 md:px-5">
                             <Avatar className="h-10 w-10 overflow-hidden border-0 ring-0 shadow-none">
                                 <AvatarImage
-                                    src={
-                                        selectedUser.avatar_url
-                                    }
+                                    src={selectedUser.avatar_url}
                                     className="h-full w-full object-cover"
                                 />
 
                                 <AvatarFallback className="flex h-full w-full items-center justify-center bg-emerald-500 text-sm font-semibold text-white">
-                                    {initial(
-                                        selectedUser,
-                                    )}
+                                    {initial(selectedUser)}
                                 </AvatarFallback>
                             </Avatar>
 
                             <div>
                                 <h1 className="text-base font-semibold text-slate-900">
-                                    {fullName(
-                                        selectedUser,
-                                    )}
+                                    {fullName(selectedUser)}
                                 </h1>
 
                                 <p className="-mt-0.5 text-xs capitalize text-slate-400">
-                                    {selectedUser.role ??
-                                        "Guest"}
+                                    {selectedUser.role ?? "Guest"}
                                 </p>
                             </div>
                         </div>
@@ -1033,19 +983,11 @@ export default function Message() {
 
                         <div className="min-h-0 flex-1 px-3 pb-4 md:px-5">
                             <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-
                                 <MessageThread
-                                    userId={
-                                        selectedUser.id
-                                    }
-                                    otherUser={
-                                        selectedUser
-                                    }
-                                    onMessageSent={() =>
-                                        loadConversations()
-                                    }
+                                    userId={selectedUser.id}
+                                    otherUser={selectedUser}
+                                    onMessageSent={() => loadConversations()}
                                 />
-
                             </div>
                         </div>
                     </>

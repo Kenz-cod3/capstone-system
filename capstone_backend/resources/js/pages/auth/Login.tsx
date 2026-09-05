@@ -55,6 +55,9 @@ export default function Login() {
         if (user.role === "cashier" && currentPath !== "/restaurant") {
             window.location.replace("/restaurant");
         }
+        if (user.role === "guest" && currentPath !== "/guest") {
+            window.location.replace("/guest");
+        }
     }, []);
 
     // login request
@@ -81,6 +84,8 @@ export default function Login() {
                 window.location.replace("/staff"); // hotel staff
             } else if (user.role === "cashier") {
                 window.location.replace("/restaurant"); // cashier
+            } else if (user.role === "guest") {
+                window.location.replace("/guest-dashboard"); // guest
             } else {
                 setError("Access denied.");
                 localStorage.clear();
@@ -124,7 +129,9 @@ export default function Login() {
                                 src={src}
                                 alt=""
                                 className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
-                                    i === slideIndex ? "opacity-100" : "opacity-0"
+                                    i === slideIndex
+                                        ? "opacity-100"
+                                        : "opacity-0"
                                 } ${i % 2 === 0 ? "pan-ltr" : "pan-rtl"}`}
                                 style={{
                                     animationPlayState:
@@ -183,8 +190,9 @@ export default function Login() {
                                 />
                             </div>
                             <p className="text-sm text-teal-50/90 leading-relaxed max-w-xs">
-                                Sign in to access your dashboard as an Admin, Staff,
-                                or Cashier and manage your system efficiently.
+                                Sign in to access your dashboard as an Admin,
+                                Staff, or Cashier and manage your system
+                                efficiently.
                             </p>
                         </div>
 
@@ -194,7 +202,9 @@ export default function Login() {
                                 <ShieldCheck className="h-5 w-5 text-teal-300" />
                             </div>
                             <div className="space-y-0 leading-none mb-2">
-                                <p className="text-xs font-semibold leading-tight translate-y-2">Secure Access</p>
+                                <p className="text-xs font-semibold leading-tight translate-y-2">
+                                    Secure Access
+                                </p>
                                 <p className="text-[10px] text-teal-50/70 leading-tight">
                                     Your data is protected with
                                     <br />
@@ -206,7 +216,10 @@ export default function Login() {
 
                     {/* RIGHT: FORM PANEL */}
                     <div className="flex items-center justify-center p-8 sm:p-12 md:p-16">
-                        <form onSubmit={handleLogin} className="w-full max-w-sm space-y-7">
+                        <form
+                            onSubmit={handleLogin}
+                            className="w-full max-w-sm space-y-7"
+                        >
                             <div className="flex flex-col items-center text-center space-y-3">
                                 <div className="h-20 w-20 rounded-full bg-teal-100 flex items-center justify-center">
                                     <div className="relative h-11 w-11 flex items-center justify-center">
@@ -225,7 +238,8 @@ export default function Login() {
                                         Login to your account
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Enter your email below to login to your account
+                                        Enter your email below to login to your
+                                        account
                                     </p>
                                 </div>
                             </div>
@@ -245,7 +259,9 @@ export default function Login() {
                                         type="email"
                                         placeholder=" "
                                         value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
+                                        onChange={(e) =>
+                                            setEmail(e.target.value)
+                                        }
                                         className="peer w-full h-12 pl-9 pr-3 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none transition-colors focus:border-teal-400 focus:ring-0"
                                         required
                                     />
@@ -264,10 +280,14 @@ export default function Login() {
                                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 peer-focus:text-teal-500 z-10" />
                                     <input
                                         id="password"
-                                        type={showPassword ? "text" : "password"}
+                                        type={
+                                            showPassword ? "text" : "password"
+                                        }
                                         placeholder=" "
                                         value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
+                                        onChange={(e) =>
+                                            setPassword(e.target.value)
+                                        }
                                         className="peer w-full h-12 pl-9 pr-9 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none transition-colors focus:border-teal-400 focus:ring-0"
                                         required
                                     />
@@ -281,10 +301,14 @@ export default function Login() {
                                     </label>
                                     <button
                                         type="button"
-                                        onClick={() => setShowPassword((s) => !s)}
+                                        onClick={() =>
+                                            setShowPassword((s) => !s)
+                                        }
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
                                         aria-label={
-                                            showPassword ? "Hide password" : "Show password"
+                                            showPassword
+                                                ? "Hide password"
+                                                : "Show password"
                                         }
                                     >
                                         {showPassword ? (
@@ -301,7 +325,9 @@ export default function Login() {
                                         <Checkbox
                                             id="remember"
                                             checked={remember}
-                                            onCheckedChange={(v) => setRemember(!!v)}
+                                            onCheckedChange={(v) =>
+                                                setRemember(!!v)
+                                            }
                                             className="border-teal-400 focus:ring-0 focus-visible:ring-0 data-[state=checked]:bg-teal-400 data-[state=checked]:border-teal-400 data-[state=checked]:text-white"
                                         />
                                         <label
@@ -355,7 +381,8 @@ export default function Login() {
             {/* Copyright footer */}
             <footer className="pb-6 text-center">
                 <p className="text-xs text-gray-400">
-                    © {new Date().getFullYear()} Travelers Inn. All rights reserved.
+                    © {new Date().getFullYear()} Travelers Inn. All rights
+                    reserved.
                 </p>
             </footer>
         </div>

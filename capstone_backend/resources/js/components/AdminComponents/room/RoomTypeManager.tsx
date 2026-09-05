@@ -947,7 +947,7 @@ export default function RoomTypeManager({
                                     <input
                                         type="number"
                                         min={0}
-                                        step={100}
+                                        step={1}
                                         {...register("base_price", {
                                             required: "Required",
                                             min: {
@@ -978,7 +978,7 @@ export default function RoomTypeManager({
                                     <input
                                         type="number"
                                         min={0}
-                                        step={50}
+                                        step={1}
                                         {...register("short_stay_price", {
                                             min: {
                                                 value: 0,

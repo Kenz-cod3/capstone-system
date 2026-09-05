@@ -23,8 +23,24 @@ class User extends Authenticatable
         'is_active',
         'is_verified',
         'email_verified_at',
+        'profile_image',
     ];
 
+    protected $appends = ['avatar_url'];
+
+    public function getAvatarUrlAttribute()
+    {
+        if (!$this->profile_image) {
+            return null;
+        }
+
+        // Kung naka-store na ito bilang full URL na, ibalik na lang as-is
+        if (str_starts_with($this->profile_image, 'http')) {
+            return $this->profile_image;
+        }
+
+        return asset('storage/' . $this->profile_image);
+    }
     protected $hidden = [
         'password',
         'remember_token',

@@ -20,6 +20,7 @@ class BookedRoomController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
 
         $query = BookedRoom::with([
             'room.roomType',
@@ -47,6 +48,10 @@ class BookedRoomController extends Controller
                         });
                 });
             });
+
+        if (!empty($status) && $status !== 'all') {
+            $query->where('status', $status);
+        }
 
         if (!empty($search)) {
 
@@ -154,6 +159,8 @@ class BookedRoomController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
+        $paymentStatus = $request->payment_status;
 
         $query = BookedRoom::with([
             'room.roomType',
@@ -181,6 +188,16 @@ class BookedRoomController extends Controller
                         });
                 });
             });
+
+        if (!empty($status) && $status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if (!empty($paymentStatus) && $paymentStatus !== 'all') {
+            $query->whereHas('booking.payments', function ($q) use ($paymentStatus) {
+                $q->where('payment_status', $paymentStatus);
+            });
+        }
 
         if (!empty($search)) {
 
@@ -279,6 +296,7 @@ class BookedRoomController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
 
         $query = BookedRoom::with([
             'room.roomType',
@@ -290,6 +308,10 @@ class BookedRoomController extends Controller
             'bookingAddOns.addOn',
         ])
             ->whereNotNull('archived_at');
+
+        if (!empty($status) && $status !== 'all' && $status !== 'archived') {
+            $query->where('status', $status);
+        }
 
         if (!empty($search)) {
 

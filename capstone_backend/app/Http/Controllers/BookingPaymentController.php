@@ -77,7 +77,7 @@ class BookingPaymentController extends Controller
         $validated = $request->validate([
             'booking_id' =>      'required|exists:bookings,id',
             'amount' =>          'required|numeric|min:0',
-            'payment_method' =>  'required|in:cash,gcash,bank',
+            'payment_method' => 'required|in:cash,gcash,bank,qrph',
             'payment_status' =>  'nullable|in:pending,paid,refunded,failed',
             'gcash_reference' => 'nullable|string',
             'bank_reference' =>  'nullable|string',
@@ -111,9 +111,14 @@ class BookingPaymentController extends Controller
 
             $receiptNumber = 'OR-' . date('Y') . '-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
 
-            $shift = Shift::whereNull('closed_at')
-                ->latest()
-                ->first();
+            $shift = null;
+
+            if ($validated['payment_method'] === 'cash') {
+                $shift = Shift::where('opened_by', Auth::id())
+                    ->whereNull('closed_at')
+                    ->latest('opened_at')
+                    ->first();
+            }
 
             $totalPaid = BookingPayment::where('booking_id', $booking->id)
                 ->where('payment_status', 'paid')
@@ -435,7 +440,7 @@ class BookingPaymentController extends Controller
         $validated = $request->validate([
 
             'amount' =>          'sometimes|numeric|min:0',
-            'payment_method' =>  'sometimes|in:cash,gcash,bank',
+            'payment_method' => 'sometimes|in:cash,gcash,bank,qrph',
             'payment_status' =>  'sometimes|in:pending,paid,refunded,failed',
             'gcash_reference' => 'nullable|string',
             'bank_reference' =>  'nullable|string',

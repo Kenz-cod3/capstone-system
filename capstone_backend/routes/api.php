@@ -28,8 +28,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     require __DIR__ . '/api/housekeeper.php';
 
-    // require __DIR__ . '/api/paymongo.php';
-    Route::post('/paymongo/create-payment', [PayMongoController::class, 'createPayment']);
+    require __DIR__ . '/api/paymongo.php';
+    // Route::post('/paymongo/create-payment', [PayMongoController::class, 'createPayment']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();

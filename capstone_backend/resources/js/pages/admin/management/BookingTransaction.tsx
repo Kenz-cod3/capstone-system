@@ -198,9 +198,15 @@ export default function TransactionsPage() {
             };
         });
 
+        // Calculate total amount
+        let totalAmount = 0;
+
         rows.forEach((item, index) => {
             const rowIndex = index + 3;
             const row = worksheet.getRow(rowIndex);
+
+            const amount = Number(item.amount || 0);
+            totalAmount += amount;
 
             const dateStr = item.date
                 ? new Date(item.date).toLocaleString("en-PH", {
@@ -218,7 +224,7 @@ export default function TransactionsPage() {
             row.getCell(3).value = item.booking_type;
             row.getCell(4).value = item.rooms;
             row.getCell(5).value = item.total_rooms;
-            row.getCell(6).value = Number(item.amount || 0);
+            row.getCell(6).value = amount;
             row.getCell(7).value = item.payment_method?.toUpperCase() ?? "N/A";
             row.getCell(8).value = dateStr;
 
@@ -251,6 +257,61 @@ export default function TransactionsPage() {
                 };
             });
         });
+
+        // ─── ADD TOTAL ROW ─────────────────────────────────────────────────────
+        const totalRowIndex = rows.length + 3;
+        const totalRow = worksheet.getRow(totalRowIndex);
+
+        // Merge cells from A to E for the "TOTAL" label
+        worksheet.mergeCells(`A${totalRowIndex}:E${totalRowIndex}`);
+        totalRow.getCell(1).value = "TOTAL";
+        totalRow.getCell(1).font = { bold: true, size: 12 };
+        totalRow.getCell(1).alignment = { horizontal: "right", vertical: "middle" };
+
+        // Set total amount in column F
+        totalRow.getCell(6).value = totalAmount;
+        totalRow.getCell(6).numFmt = "₱#,##0.00";
+        totalRow.getCell(6).font = { bold: true, size: 12 };
+        totalRow.getCell(6).alignment = { horizontal: "right", vertical: "middle" };
+
+        // Style total row borders
+        totalRow.eachCell((cell, colNumber) => {
+            const border: any = {
+                top: { style: "double" },
+                bottom: { style: "medium" },
+                left: { style: "thin" },
+                right: { style: "thin" },
+            };
+
+            if (colNumber === 1) border.left = { style: "medium" };
+            if (colNumber === colCount) border.right = { style: "medium" };
+
+            cell.border = border;
+        });
+
+        // Fill the total row with a subtle background
+        totalRow.eachCell((cell) => {
+            cell.fill = {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: "FFF0F8F4" }, // Light green tint
+            };
+        });
+
+        // ─── Also add a summary section below the total ──────────────────────
+        const summaryRowIndex = totalRowIndex + 2;
+        const summaryRow = worksheet.getRow(summaryRowIndex);
+
+        worksheet.mergeCells(`A${summaryRowIndex}:E${summaryRowIndex}`);
+        summaryRow.getCell(1).value = `Total Transactions: ${rows.length}`;
+        summaryRow.getCell(1).font = { size: 11 };
+        summaryRow.getCell(1).alignment = { horizontal: "left" };
+
+        worksheet.mergeCells(`F${summaryRowIndex}:H${summaryRowIndex}`);
+        summaryRow.getCell(6).value = `Total Income: ₱${totalAmount.toLocaleString()}`;
+        summaryRow.getCell(6).font = { bold: true, size: 11 };
+        summaryRow.getCell(6).alignment = { horizontal: "right" };
+        // ──────────────────────────────────────────────────────────────────────
 
         if (rows.length > 0) {
             const lastRow = worksheet.getRow(rows.length + 2);

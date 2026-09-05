@@ -4,10 +4,10 @@ configureEcho({
     broadcaster: "reverb",
 });
 import { useLoadingStore } from "@/stores/useLoadingStore";
-import LoadingScreen from "@/components/LoadingScreen";
+import SplashScreen from "@/components/SplashScreen";
 import NoInternetScreen from "@/components/NoInternetScreen";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Wifi } from "lucide-react";
 import "pannellum/build/pannellum.css";
@@ -21,6 +21,7 @@ import Bookings from "./pages/admin/management/BookingManagement";
 import BookingManagement from "./pages/admin/management/BookingManagement";
 import BookingTransaction from "./pages/admin/management/BookingTransaction";
 import IncidentsRooms from "./pages/admin/management/incidents";
+import BookingDetailsPageWrapper from "@/components/AdminComponents/booking/BookingDetailsPageWrapper";
 
 import GuestDetails from "./components/AdminComponents/users/[id]";
 
@@ -53,6 +54,17 @@ import RestaurantDashboard from "./pages/cashier/RestaurantDashboard";
 import Orders from "./pages/cashier/Orders";
 import Menu from "./pages/cashier/Menu";
 import Product from "./pages/cashier/Product";
+
+// GUEST
+import GuestLayout from "./layouts/GuestLayout";
+import GuestDashboard from "./pages/guest/GuestDashboard";
+import GuestBookings from "./pages/guest/GuestBookings";
+import GuestBookingDetails from "./pages/guest/GuestBookingDetails";
+import GuestProfile from "./pages/guest/GuestProfile";
+import GuestReserve from "./pages/guest/GuestReserve";
+import GuestConfirmReservation from "./pages/guest/GuestConfirmReservation";
+import GuestPayment from "./pages/guest/GuestPayment";
+
 // AUTH
 import Login from "./pages/auth/Login";
 
@@ -60,8 +72,7 @@ export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
     const { loading, setLoading } = useLoadingStore();
 
-    const [progress, setProgress] = useState(0);
-    const location = useLocation(); // current route
+    const location = useLocation();
 
     // check if login page
     const isLoginPage = location.pathname === "/login";
@@ -88,35 +99,11 @@ export default function App() {
     }, [isOnline]);
 
     useEffect(() => {
-        let value = 0;
-
-        const interval = setInterval(() => {
-            value += Math.random() * 8;
-
-            if (value > 90) {
-                value = 90;
-            }
-
-            setProgress(value);
-        }, 120);
-
-        // Simulate app loading
         const timer = setTimeout(() => {
-            clearInterval(interval);
+            setLoading(false);
+        }, 1200);
 
-            // Finish to 100%
-            setProgress(100);
-
-            // Let the user see 100%
-            setTimeout(() => {
-                setLoading(false);
-            }, 500);
-        }, 1500);
-
-        return () => {
-            clearInterval(interval);
-            clearTimeout(timer);
-        };
+        return () => clearTimeout(timer);
     }, [setLoading]);
 
     // Show loading screen ONLY (Routes not mounted yet), so that once it's
@@ -130,7 +117,7 @@ export default function App() {
             {!isOnline && !isLoginPage ? (
                 <NoInternetScreen />
             ) : showLoadingScreen ? (
-                <LoadingScreen progress={progress} />
+                <SplashScreen />
             ) : (
                 <Routes>
                     {/*  PUBLIC ROUTE */}
@@ -153,6 +140,10 @@ export default function App() {
                             <Route
                                 path="/booking-management"
                                 element={<BookingManagement />}
+                            />
+                            <Route
+                                path="/booking-details/:id"
+                                element={<BookingDetailsPageWrapper />}
                             />
                             <Route
                                 path="/booking-transaction"
@@ -223,6 +214,10 @@ export default function App() {
                                 element={<BookingStaff />}
                             />
                             <Route
+                                path="/booking-details/:id"
+                                element={<BookingDetailsPageWrapper />}
+                            />
+                            <Route
                                 path="/transactions"
                                 element={<Transaction />}
                             />
@@ -263,6 +258,50 @@ export default function App() {
                             <Route
                                 path="*"
                                 element={<Navigate to="/restaurant" />}
+                            />
+                        </Route>
+                    )}
+
+                    {/* GUEST ROUTES */}
+                    {user?.role === "guest" && (
+                        <Route element={<GuestLayout />}>
+                            <Route
+                                path="/"
+                                element={<Navigate to="/guest-dashboard" />}
+                            />
+                            <Route
+                                path="/guest-dashboard"
+                                element={<GuestDashboard />}
+                            />
+                            <Route
+                                path="/guest/bookings"
+                                element={<GuestBookings />}
+                            />
+                            <Route
+                                path="/guest/bookings/:id"
+                                element={<GuestBookingDetails />}
+                            />
+                            <Route
+                                path="/guest/rooms/:id"
+                                element={<GuestReserve />}
+                            />
+                            <Route
+                                path="/guest/rooms/:id/confirm"
+                                element={<GuestConfirmReservation />}
+                            />
+                            <Route
+                                path="/guest/profile"
+                                element={<GuestProfile />}
+                            />
+                            <Route
+                                path="/guest/rooms/:id/payment"
+                                element={<GuestPayment />}
+                            />
+
+                            {/* DEFAULT */}
+                            <Route
+                                path="*"
+                                element={<Navigate to="/guest-dashboard" />}
                             />
                         </Route>
                     )}

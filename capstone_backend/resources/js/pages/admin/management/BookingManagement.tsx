@@ -7,14 +7,6 @@ import {
 import debounce from "lodash/debounce";
 import {
     MoreOutlined,
-    CloseOutlined,
-    UserOutlined,
-    PhoneOutlined,
-    EnvironmentOutlined,
-    CalendarOutlined,
-    TagOutlined,
-    ClockCircleOutlined,
-    HistoryOutlined,
     DeleteOutlined,
     CheckCircleOutlined,
     SearchOutlined,
@@ -27,6 +19,7 @@ import {
     SyncOutlined,
     CopyOutlined,
     FilterOutlined,
+    HistoryOutlined,
 } from "@ant-design/icons";
 import {
     Table,
@@ -38,22 +31,15 @@ import {
     Dropdown,
     Alert,
     Typography,
-    Drawer,
-    Descriptions,
-    Space,
-    Divider,
     Card,
-    Badge,
-    Timeline,
     Row,
     Col,
     Avatar,
-    Select,
     Popover,
 } from "antd";
 import type { MenuProps } from "antd";
 import api from "@/services/api";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 
 const { Title, Text } = Typography;
 
@@ -329,13 +315,6 @@ interface ExtendResponse {
     booked_room: BookedRoom;
 }
 
-interface GuestDetails {
-    name: string;
-    email?: string | undefined;
-    phone?: string | undefined;
-    address?: string | undefined;
-}
-
 interface PaginatedResponse {
     data: BookedRoom[];
     current_page: number;
@@ -346,72 +325,36 @@ interface PaginatedResponse {
     to: number | null;
 }
 
-// Helper function to check if object is BookedRoom
-const isBookedRoom = (obj: any): obj is BookedRoom => {
-    return obj && typeof obj === "object" && "room" in obj && "status" in obj;
-};
-
-// Helper function to convert BookedRoom to Booking
-const bookedRoomToBooking = (bookedRoom: BookedRoom): Booking => {
-    const bookingData = bookedRoom.booking;
-
-    return {
-        id: bookingData?.id || bookedRoom.id,
-        booking_reference:
-            bookingData?.booking_reference || `BR-${bookedRoom.id}`,
-        booking_type:
-            (bookingData?.booking_type as "online" | "walk_in") || "walk_in",
-        booking_status:
-            (bookingData?.booking_status as Booking["booking_status"]) ||
-            bookedRoom.status,
-        stay_type:
-            (bookingData?.stay_type as "short_stay" | "overnight") ||
-            bookedRoom.stay_type,
-        check_in_date: bookingData?.check_in_date || bookedRoom.check_in_date,
-        check_out_date:
-            bookingData?.check_out_date || bookedRoom.check_out_date,
-        total_price:
-            bookingData?.total_price ||
-            bookedRoom.total_price ||
-            bookedRoom.subtotal ||
-            0,
-        created_at: bookingData?.created_at || bookedRoom.created_at,
-        deleted_at: bookingData?.deleted_at || bookedRoom.deleted_at || null,
-        user: bookingData?.user || bookedRoom.user,
-        walk_in_guest: bookingData?.walk_in_guest || bookedRoom.walk_in_guest,
-        payments: bookingData?.payments || bookedRoom.payments || [],
-        histories: bookingData?.histories || bookedRoom.histories || [],
-        created_by: bookingData?.created_by || bookedRoom.created_by,
-        booked_rooms: [bookedRoom],
-    };
-};
-
 export default function Bookings() {
+    const location = useLocation();
+    const navigate = useNavigate();
+    const navigationType = useNavigationType();
+
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [pageSize, setPageSize] = useState<number>(10);
     const [total, setTotal] = useState<number>(0);
-    const [activeTab, setActiveTab] = useState<string>("active");
+    const [activeTab, setActiveTab] = useState<string>(
+        (location.state as any)?.activeTab || "active",
+    );
     const [searchInput, setSearchInput] = useState("");
     const [searchText, setSearchText] = useState("");
-    const [detailsVisible, setDetailsVisible] = useState<boolean>(false);
-    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(
-        null,
-    );
-    const [selectedBookingRow, setSelectedBookingRow] =
-        useState<BookingRow | null>(null);
-    const [selectedBookedRoomId, setSelectedBookedRoomId] = useState<
-        number | null
-    >(null);
     const [userRole, setUserRole] = useState<string>("staff");
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
     const [filterStatus, setFilterStatus] = useState<string>("all");
+    const [filterPaymentStatus, setFilterPaymentStatus] =
+        useState<string>("all");
     const [filterPopoverOpen, setFilterPopoverOpen] = useState<boolean>(false);
 
-    const location = useLocation();
-    const navigate = useNavigate();
-
     const bookingId = location.state?.bookingId;
-    const bookedRoomId = location.state?.bookedRoomId;
+
+    // Read tab from location state when coming back from details
+    useEffect(() => {
+        const state = location.state as any;
+        if (state?.activeTab) {
+            setActiveTab(state.activeTab);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state]);
 
     // Refs for tab animation
     const tabContainerRef = useRef<HTMLDivElement>(null);
@@ -424,13 +367,16 @@ export default function Bookings() {
     useEffect(() => {
         setCurrentPage(1);
         setSearchText("");
+        setFilterStatus("all");
+        setFilterPaymentStatus("all");
     }, [activeTab]);
 
     // Update indicator position when active tab changes
     useEffect(() => {
         if (activeTabRef.current && tabContainerRef.current) {
             const tabRect = activeTabRef.current.getBoundingClientRect();
-            const containerRect = tabContainerRef.current.getBoundingClientRect();
+            const containerRect =
+                tabContainerRef.current.getBoundingClientRect();
             setIndicatorStyle({
                 left: tabRect.left - containerRect.left,
                 width: tabRect.width,
@@ -453,7 +399,48 @@ export default function Bookings() {
 
     const queryClient = useQueryClient();
 
-    // Fetch all booked rooms based on active tab using the booked-rooms endpoints
+    // Get filter options based on active tab
+    const getFilterOptions = () => {
+        if (activeTab === "active") {
+            return {
+                type: "status" as const,
+                options: [
+                    { value: "all", label: "All Status" },
+                    { value: "pending", label: "Pending" },
+                    { value: "confirmed", label: "Confirmed" },
+                    { value: "checked_in", label: "Checked In" },
+                    { value: "cancelled", label: "Cancelled" },
+                ],
+            };
+        } else if (activeTab === "history") {
+            return {
+                type: "both" as const,
+                statusOptions: [
+                    { value: "all", label: "All Booking Status" },
+                    { value: "checked_out", label: "Checked Out" },
+                    { value: "refunded", label: "Refunded" },
+                ],
+                paymentOptions: [
+                    { value: "all", label: "All Payment Status" },
+                    { value: "paid", label: "Paid" },
+                    { value: "pending", label: "Pending Payment" },
+                    { value: "refunded", label: "Refunded Payment" },
+                    { value: "failed", label: "Failed" },
+                ],
+            };
+        } else {
+            // trash
+            return {
+                type: "status" as const,
+                options: [
+                    { value: "all", label: "All" },
+                    { value: "archived", label: "Archived" },
+                ],
+            };
+        }
+    };
+
+    // Fetch all booked rooms based on active tab
     const bookingQuery = useQuery({
         queryKey: [
             "booked-rooms",
@@ -462,6 +449,7 @@ export default function Bookings() {
             pageSize,
             searchText,
             filterStatus,
+            filterPaymentStatus,
         ],
         queryFn: async () => {
             let endpoint = "/booked-rooms";
@@ -474,7 +462,6 @@ export default function Bookings() {
                 endpoint = "/booked-rooms/trash";
             }
 
-            // Add pagination and search parameters
             const params = new URLSearchParams({
                 page: currentPage.toString(),
                 per_page: pageSize.toString(),
@@ -488,13 +475,15 @@ export default function Bookings() {
                 params.append("status", filterStatus);
             }
 
+            if (activeTab === "history" && filterPaymentStatus !== "all") {
+                params.append("payment_status", filterPaymentStatus);
+            }
+
             const { data } = await api.get<PaginatedResponse>(
                 `${endpoint}?${params.toString()}`,
             );
 
-            // Update total from response
             setTotal(data.total || 0);
-
             return data.data || [];
         },
         staleTime: 0,
@@ -508,18 +497,14 @@ export default function Bookings() {
 
     useEffect(() => {
         bookingQuery.refetch();
-    }, [activeTab, filterStatus]);
+    }, [activeTab, filterStatus, filterPaymentStatus]);
 
-    // Remove client-side filtering since we're doing server-side pagination
     const filteredData = bookings;
-
-    // Remove client-side pagination since we're doing server-side pagination
     const paginatedData = filteredData;
 
-    // Reset to page 1 when search changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchText, activeTab, filterStatus]);
+    }, [searchText, activeTab, filterStatus, filterPaymentStatus]);
 
     // Transform BookedRoom data to BookingRow for table display
     const tableData: BookingRow[] = paginatedData.map((bookedRoom) => {
@@ -552,23 +537,17 @@ export default function Bookings() {
             booking_reference: bookingData.booking_reference,
             booking_type: bookingData.booking_type,
             booking_status: bookingData.booking_status,
-
             stay_type: bookedRoom.stay_type,
-
             check_in_date: bookedRoom.check_in_date,
             check_out_date: bookedRoom.check_out_date,
-
             total_price: bookingData.total_price || bookedRoom.subtotal,
-
             created_at: bookingData.created_at,
             deleted_at: bookingData.deleted_at,
-
             user: bookingData.user,
             walk_in_guest: bookingData.walk_in_guest,
             payments: bookingData.payments || [],
             histories: bookingData.histories || [],
             created_by: bookingData.created_by,
-
             booked_room_id: bookedRoom.id,
             room: bookedRoom.room,
             status: bookedRoom.status,
@@ -607,87 +586,15 @@ export default function Bookings() {
         };
     }, [bookings]);
 
-    // Get the selected booked room
-    const selectedBookedRoom = (() => {
-        if (selectedBooking?.booked_rooms) {
-            const found = selectedBooking.booked_rooms.find(
-                (br) => br.id === selectedBookedRoomId,
-            );
-            if (found) return found;
-        }
-        const row = tableData.find(
-            (r) => r.booked_room_id === selectedBookedRoomId,
-        );
-        if (row && isBookedRoom(row)) {
-            return row;
-        }
-        return bookings.find((b) => b.id === selectedBookedRoomId);
-    })();
-
-    // Safely get booking_add_ons
-    const getBookingAddOns = (): {
-        id: number;
-        quantity: number;
-        subtotal: number;
-        add_on: { id: number; add_on_name: string; price: number };
-    }[] => {
-        if (!selectedBookedRoom) return [];
-        if (isBookedRoom(selectedBookedRoom)) {
-            return (selectedBookedRoom as any).booking_add_ons || [];
-        }
-        return [];
-    };
-
-    // Safely get payments
-    const getPayments = (): BookingPayment[] => {
-        if (selectedBooking?.payments) {
-            return selectedBooking.payments;
-        }
-        if (
-            selectedBookedRoom &&
-            isBookedRoom(selectedBookedRoom) &&
-            (selectedBookedRoom as any).payments
-        ) {
-            return (selectedBookedRoom as any).payments;
-        }
-        return [];
-    };
-
-    const roomCharges = Number((selectedBookedRoom as any)?.subtotal ?? 0);
-
-    const addOnTotal = getBookingAddOns().reduce(
-        (total, addon) => total + Number(addon.subtotal ?? 0),
-        0,
-    );
-
-    const paymentSubtotal = roomCharges + addOnTotal;
-
-    const firstPayment = getPayments()[0];
-
     const hasOpenedFromNavigation = useRef(false);
 
     useEffect(() => {
         if (hasOpenedFromNavigation.current) return;
-
-        if (!bookingId || !bookedRoomId) return;
-
-        const row = tableData.find(
-            (r) => r.id === bookingId && r.booked_room_id === bookedRoomId,
-        );
-
-        if (!row) return;
+        if (!bookingId) return;
 
         hasOpenedFromNavigation.current = true;
-
-        setSelectedBookedRoomId(bookedRoomId);
-
-        showDetails(row);
-
-        navigate(location.pathname, {
-            replace: true,
-            state: null,
-        });
-    }, [bookingId, bookedRoomId, tableData]);
+        navigate(`/booking-details/${bookingId}`, { replace: true });
+    }, [bookingId]);
 
     const totalRows = total;
 
@@ -793,7 +700,6 @@ export default function Bookings() {
                     override_reason: reason,
                 });
 
-                // Update local state
                 queryClient.setQueryData(
                     [
                         "booked-rooms",
@@ -802,6 +708,7 @@ export default function Bookings() {
                         pageSize,
                         searchText,
                         filterStatus,
+                        filterPaymentStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         if (!old) return old;
@@ -883,16 +790,22 @@ export default function Bookings() {
                 });
             }
 
-            // Update local state
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                [
+                    "booked-rooms",
+                    activeTab,
+                    currentPage,
+                    pageSize,
+                    searchText,
+                    filterStatus,
+                    filterPaymentStatus,
+                ],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== bookingId);
                 },
             );
 
-            // Move to history tab
             const checkedOutBooking = bookings.find((b) => b.id === bookingId);
             if (checkedOutBooking) {
                 const updatedBookedRoom: BookedRoom = {
@@ -907,6 +820,7 @@ export default function Bookings() {
                         pageSize,
                         searchText,
                         filterStatus,
+                        filterPaymentStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [updatedBookedRoom, ...(old || [])];
@@ -928,7 +842,15 @@ export default function Bookings() {
             );
 
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                [
+                    "booked-rooms",
+                    activeTab,
+                    currentPage,
+                    pageSize,
+                    searchText,
+                    filterStatus,
+                    filterPaymentStatus,
+                ],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.map((b) =>
@@ -973,6 +895,7 @@ export default function Bookings() {
                                 pageSize,
                                 searchText,
                                 filterStatus,
+                                filterPaymentStatus,
                             ],
                             (old: BookedRoom[] | undefined) => {
                                 if (!old) return old;
@@ -1043,7 +966,15 @@ export default function Bookings() {
             });
 
             queryClient.setQueryData(
-                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                [
+                    "booked-rooms",
+                    activeTab,
+                    currentPage,
+                    pageSize,
+                    searchText,
+                    filterStatus,
+                    filterPaymentStatus,
+                ],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== record.id);
@@ -1060,16 +991,12 @@ export default function Bookings() {
                         pageSize,
                         searchText,
                         filterStatus,
+                        filterPaymentStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [deletedItem, ...(old || [])];
                     },
                 );
-            }
-
-            if (selectedBooking && selectedBooking.id === record.id) {
-                setDetailsVisible(false);
-                setSelectedBooking(null);
             }
 
             message.success("Booking moved to trash");
@@ -1099,7 +1026,15 @@ export default function Bookings() {
             await api.post(`/booked-rooms/${record.booked_room_id}/restore`);
 
             queryClient.setQueryData(
-                ["booked-rooms", "trash", currentPage, pageSize, searchText, filterStatus],
+                [
+                    "booked-rooms",
+                    "trash",
+                    currentPage,
+                    pageSize,
+                    searchText,
+                    filterStatus,
+                    filterPaymentStatus,
+                ],
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.filter((b) => b.id !== record.id);
@@ -1121,6 +1056,7 @@ export default function Bookings() {
                         pageSize,
                         searchText,
                         filterStatus,
+                        filterPaymentStatus,
                     ],
                     (old: BookedRoom[] | undefined) => {
                         return [cleanRestored, ...(old || [])];
@@ -1168,17 +1104,13 @@ export default function Bookings() {
                             pageSize,
                             searchText,
                             filterStatus,
+                            filterPaymentStatus,
                         ],
                         (old: BookedRoom[] | undefined) => {
                             if (!old) return old;
                             return old.filter((b) => b.id !== record.id);
                         },
                     );
-
-                    if (selectedBooking && selectedBooking.id === record.id) {
-                        setDetailsVisible(false);
-                        setSelectedBooking(null);
-                    }
 
                     message.success(`Booking permanently deleted`);
                     queryClient.invalidateQueries({
@@ -1193,57 +1125,13 @@ export default function Bookings() {
     };
 
     const showDetails = (record: BookingRow) => {
-        const bookedRoom = bookings.find((b) => b.id === record.booked_room_id);
-
-        if (bookedRoom && bookedRoom.booking) {
-            const fullBooking: Booking = {
-                ...bookedRoom.booking,
-                booked_rooms: [bookedRoom],
-                id: bookedRoom.booking.id || bookedRoom.id,
-            } as Booking;
-            setSelectedBooking(fullBooking);
-        } else if (bookedRoom) {
-            const fullBooking = bookedRoomToBooking(bookedRoom);
-            setSelectedBooking(fullBooking);
-        } else {
-            const minimalBooking: Booking = {
-                id: record.id,
-                booking_reference:
-                    record.booking_reference || `BR-${record.id}`,
-                booking_type: record.booking_type || "walk_in",
-                booking_status: record.status as Booking["booking_status"],
-                stay_type: record.stay_type as Booking["stay_type"],
-                check_in_date: record.check_in_date,
-                check_out_date: record.check_out_date,
-                total_price: record.total_price || record.subtotal,
-                created_at: record.created_at,
-                deleted_at: record.deleted_at || null,
-                user: record.user,
-                walk_in_guest: record.walk_in_guest,
-                booked_rooms: [
-                    {
-                        id: record.booked_room_id,
-                        room: record.room!,
-                        status: record.status as BookedRoom["status"],
-                        stay_type: record.stay_type,
-                        check_in_date: record.check_in_date,
-                        check_out_date: record.check_out_date,
-                        subtotal: record.subtotal,
-                        price_at_time_of_booking: record.subtotal,
-                        is_extended: record.is_extended,
-                        booking_add_ons: [],
-                    },
-                ],
-                payments: record.payments || [],
-                histories: record.histories || [],
-                created_by: record.created_by,
-            };
-            setSelectedBooking(minimalBooking);
-        }
-
-        setSelectedBookingRow(record);
-        setSelectedBookedRoomId(record.booked_room_id);
-        setDetailsVisible(true);
+        navigate(location.pathname, {
+            replace: true,
+            state: { activeTab },
+        });
+        navigate(`/booking-details/${record.id}`, {
+            state: { from: location.pathname, fromTab: activeTab },
+        });
     };
 
     const formatDate = (date: string): string => {
@@ -1255,30 +1143,12 @@ export default function Bookings() {
         });
     };
 
-    const formatDateTime = (datetime: string): string => {
-        if (!datetime) return "-";
-        return new Date(datetime).toLocaleString("en-PH", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    };
-
     const formatTime = (datetime: string): string => {
         if (!datetime) return "-";
         return new Date(datetime).toLocaleTimeString("en-PH", {
             hour: "2-digit",
             minute: "2-digit",
         });
-    };
-
-    const getExpectedCheckoutDate = (bookedRoom?: BookedRoom): string => {
-        if (!bookedRoom?.check_out_date) {
-            return "-";
-        }
-        return formatDate(bookedRoom.check_out_date);
     };
 
     const getStatusColor = (status: string): string => {
@@ -1289,28 +1159,6 @@ export default function Bookings() {
             checked_out: "default",
             cancelled: "red",
             refunded: "purple",
-        };
-        return colors[status] || "default";
-    };
-
-    const getStatusBadgeColor = (status: string): string => {
-        const colors: Record<string, string> = {
-            pending: "#faad14",
-            confirmed: MINT_GREEN,
-            checked_in: "#1890ff",
-            checked_out: "#8c8c8c",
-            cancelled: "#ff4d4f",
-            refunded: "#722ed1",
-        };
-        return colors[status] || "#8c8c8c";
-    };
-
-    const getPaymentStatusColor = (status: string): string => {
-        const colors: Record<string, string> = {
-            paid: "green",
-            pending: "orange",
-            refunded: "purple",
-            failed: "red",
         };
         return colors[status] || "default";
     };
@@ -1345,43 +1193,21 @@ export default function Bookings() {
         }
     };
 
-    const getGuestDetails = (booking: Booking): GuestDetails => {
-        if (booking.booking_type === "online") {
-            const result: GuestDetails = {
-                name: `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim(),
-            };
-            if (booking.user?.email !== undefined)
-                result.email = booking.user.email;
-            if (booking.user?.phone !== undefined)
-                result.phone = booking.user.phone;
-            if (booking.user?.address !== undefined)
-                result.address = booking.user.address;
-            return result;
-        } else {
-            const result: GuestDetails = {
-                name: booking.walk_in_guest?.full_name || "Guest",
-            };
-            if (booking.walk_in_guest?.contact_number !== undefined)
-                result.phone = booking.walk_in_guest.contact_number;
-            if (booking.walk_in_guest?.address !== undefined)
-                result.address = booking.walk_in_guest.address;
-            return result;
-        }
-    };
-
     const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            message.success("Copied to clipboard!");
-        }).catch(() => {
-            message.error("Failed to copy");
-        });
+        navigator.clipboard
+            .writeText(text)
+            .then(() => {
+                message.success("Copied to clipboard!");
+            })
+            .catch(() => {
+                message.error("Failed to copy");
+            });
     };
 
     const getActionMenu = (record: BookingRow, type: string): MenuProps => {
         const items: MenuProps["items"] = [];
 
         if (type === "active") {
-            // Pending
             if (record.status === "pending") {
                 items.push(
                     {
@@ -1408,7 +1234,6 @@ export default function Bookings() {
                 );
             }
 
-            // Confirmed
             if (record.status === "confirmed") {
                 items.push(
                     {
@@ -1435,7 +1260,6 @@ export default function Bookings() {
                 );
             }
 
-            // Checked In
             if (record.status === "checked_in") {
                 items.push(
                     {
@@ -1462,7 +1286,6 @@ export default function Bookings() {
                 );
             }
 
-            // Cancelled
             if (record.status === "cancelled") {
                 items.push({
                     key: "refund",
@@ -1472,7 +1295,6 @@ export default function Bookings() {
                 });
             }
 
-            // Move to Trash
             items.push({
                 key: "trash",
                 label: "Move to Trash",
@@ -1531,10 +1353,6 @@ export default function Bookings() {
         return { items };
     };
 
-    const handleActionClick = (e: React.MouseEvent, record: Booking) => {
-        e.stopPropagation();
-    };
-
     // Updated columns with copy icon on reference
     const columns = [
         {
@@ -1556,19 +1374,28 @@ export default function Bookings() {
             render: (_: any, record: BookingRow) => (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <div>
-                        <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                        <Text
+                            strong
+                            style={{ fontSize: "12px", color: "#0f172a" }}
+                        >
                             {record.booking_reference}
                         </Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: "8.5px" }}>
                             Booked on{" "}
-                            {formatDate(record.created_at || record.check_in_date)}
+                            {formatDate(
+                                record.created_at || record.check_in_date,
+                            )}
                         </Text>
                     </div>
                     <Button
                         type="text"
                         size="small"
-                        icon={<CopyOutlined style={{ fontSize: "12px", color: "#94a3b8" }} />}
+                        icon={
+                            <CopyOutlined
+                                style={{ fontSize: "12px", color: "#94a3b8" }}
+                            />
+                        }
                         onClick={(e) => {
                             e.stopPropagation();
                             copyToClipboard(record.booking_reference);
@@ -1602,7 +1429,6 @@ export default function Bookings() {
                     .join("")
                     .toUpperCase()
                     .slice(0, 2);
-                const guestDetails = record.user || record.walk_in_guest;
                 let phone: string | undefined;
 
                 if (record.user) {
@@ -1700,7 +1526,12 @@ export default function Bookings() {
             render: (_: any, record: BookingRow) => {
                 const statusMap: Record<
                     string,
-                    { color: string; bg: string; label: string; icon: React.ReactNode }
+                    {
+                        color: string;
+                        bg: string;
+                        label: string;
+                        icon: React.ReactNode;
+                    }
                 > = {
                     pending: {
                         color: "#faad14",
@@ -1718,7 +1549,9 @@ export default function Bookings() {
                         color: "#1890ff",
                         bg: "#e6f7ff",
                         label: "CHECKED IN",
-                        icon: <CheckCircleOutlined style={{ fontSize: "10px" }} />,
+                        icon: (
+                            <CheckCircleOutlined style={{ fontSize: "10px" }} />
+                        ),
                     },
                     checked_out: {
                         color: "#8c8c8c",
@@ -1730,7 +1563,9 @@ export default function Bookings() {
                         color: "#ff4d4f",
                         bg: "#fff1f0",
                         label: "CANCELLED",
-                        icon: <CloseCircleOutlined style={{ fontSize: "10px" }} />,
+                        icon: (
+                            <CloseCircleOutlined style={{ fontSize: "10px" }} />
+                        ),
                     },
                     refunded: {
                         color: "#722ed1",
@@ -1885,9 +1720,12 @@ export default function Bookings() {
                 const payment = record.payments?.[0];
                 const status = payment?.payment_status ?? "pending";
                 const color = status === "paid" ? "green" : "orange";
-                const icon = status === "paid" 
-                    ? <CheckCircleOutlined style={{ fontSize: "10px" }} /> 
-                    : <SyncOutlined style={{ fontSize: "10px" }} />;
+                const icon =
+                    status === "paid" ? (
+                        <CheckCircleOutlined style={{ fontSize: "10px" }} />
+                    ) : (
+                        <SyncOutlined style={{ fontSize: "10px" }} />
+                    );
                 return (
                     <Tag
                         color={color}
@@ -1992,13 +1830,11 @@ export default function Bookings() {
         return {
             onClick: () => showDetails(record),
             className:
-                selectedBookedRoomId === record.booked_room_id
-                    ? "selected-booking-row"
-                    : overdueDays >= 3
-                      ? "critical-overdue-row"
-                      : overdueDays >= 1
-                        ? "warning-overdue-row"
-                        : "clickable-row",
+                overdueDays >= 3
+                    ? "critical-overdue-row"
+                    : overdueDays >= 1
+                      ? "warning-overdue-row"
+                      : "clickable-row",
         };
     };
 
@@ -2135,7 +1971,14 @@ export default function Bookings() {
                             />
                         </div>
                         <div>
-                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "10px",
+                                    letterSpacing: "0.3px",
+                                    textTransform: "uppercase",
+                                }}
+                            >
                                 Total Active
                             </Text>
                             <div
@@ -2148,7 +1991,10 @@ export default function Bookings() {
                             >
                                 {stats.totalActive}
                             </div>
-                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            <Text
+                                type="secondary"
+                                style={{ fontSize: "8.5px" }}
+                            >
                                 Currently active reservations
                             </Text>
                         </div>
@@ -2187,7 +2033,14 @@ export default function Bookings() {
                             />
                         </div>
                         <div>
-                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "10px",
+                                    letterSpacing: "0.3px",
+                                    textTransform: "uppercase",
+                                }}
+                            >
                                 Checked In
                             </Text>
                             <div
@@ -2200,7 +2053,10 @@ export default function Bookings() {
                             >
                                 {stats.checkedIn}
                             </div>
-                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            <Text
+                                type="secondary"
+                                style={{ fontSize: "8.5px" }}
+                            >
                                 Guests currently staying
                             </Text>
                         </div>
@@ -2239,7 +2095,14 @@ export default function Bookings() {
                             />
                         </div>
                         <div>
-                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "10px",
+                                    letterSpacing: "0.3px",
+                                    textTransform: "uppercase",
+                                }}
+                            >
                                 Upcoming
                             </Text>
                             <div
@@ -2252,7 +2115,10 @@ export default function Bookings() {
                             >
                                 {stats.upcoming}
                             </div>
-                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            <Text
+                                type="secondary"
+                                style={{ fontSize: "8.5px" }}
+                            >
                                 Arriving today or later
                             </Text>
                         </div>
@@ -2291,7 +2157,14 @@ export default function Bookings() {
                             />
                         </div>
                         <div>
-                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "10px",
+                                    letterSpacing: "0.3px",
+                                    textTransform: "uppercase",
+                                }}
+                            >
                                 Total Revenue
                             </Text>
                             <div
@@ -2304,7 +2177,10 @@ export default function Bookings() {
                             >
                                 ₱{stats.totalRevenue.toLocaleString()}
                             </div>
-                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            <Text
+                                type="secondary"
+                                style={{ fontSize: "8.5px" }}
+                            >
                                 From active bookings
                             </Text>
                         </div>
@@ -2314,1054 +2190,103 @@ export default function Bookings() {
         </Row>
     );
 
-    // Render booking details drawer (keeping it compact)
-    const renderBookingDetails = () => {
-        if (!selectedBooking) return null;
+    // Render filter content based on active tab
+    const renderFilterContent = () => {
+        const filterOptions = getFilterOptions();
 
-        const guestDetails = getGuestDetails(selectedBooking);
-        const guestName = getGuestName(selectedBooking);
-        const status =
-            (selectedBookedRoom as any)?.status ??
-            selectedBooking?.booking_status ??
-            "pending";
-        const statusColor = getStatusBadgeColor(status);
-        const histories = selectedBooking.histories || [];
-
-        const confirmedBy = histories.find((h) => h.new_status === "confirmed");
-        const checkedInBy = histories.find(
-            (h) => h.new_status === "checked_in",
-        );
-        const checkedOutBy = histories.find(
-            (h) => h.new_status === "checked_out",
-        );
-        const override = histories.find((h) => h.is_override);
-
-        const overdueDays =
-            selectedBookedRoom && isBookedRoom(selectedBookedRoom)
-                ? getOverdueDays(selectedBookedRoom)
-                : 0;
-
-        const displayAddOns = getBookingAddOns();
-        const displayPayments = getPayments();
-        const roomStatus = (selectedBookedRoom as any)?.status ?? "pending";
-
-        const paymentStatus = roomStatus === "refunded" ? "refunded" : "paid";
-
-        const paymentToShow =
-            paymentStatus === "refunded"
-                ? displayPayments.find((p) => p.payment_status === "refunded")
-                : displayPayments.find((p) => p.payment_status === "paid");
-
-        const receiverLabel =
-            paymentStatus === "refunded" ? "Refunded By" : "Received By";
-
-        const paymentDateLabel =
-            paymentStatus === "refunded" ? "Refund Date" : "Payment Date";
-
-        return (
-            <Drawer
-                title={
+        if (filterOptions.type === "both") {
+            return (
+                <div style={{ minWidth: 200 }}>
                     <div
                         style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
+                            padding: "8px 0 4px 0",
+                            fontWeight: 600,
+                            fontSize: "11px",
+                            color: "#64748b",
                         }}
                     >
-                        <Space size={8}>
-                            <Text
-                                strong
-                                style={{ fontSize: "13px", fontWeight: 600 }}
-                            >
-                                {guestName}
-                            </Text>
-                        </Space>
+                        Booking Status
                     </div>
-                }
-                placement="right"
-                open={detailsVisible}
-                onClose={() => {
-                    setDetailsVisible(false);
-                    setSelectedBookedRoomId(null);
-                }}
-                width={480}
-                closable={true}
-                closeIcon={<CloseOutlined style={{ fontSize: "13px" }} />}
-                extra={
-                    <Dropdown
-                        menu={
-                            selectedBookingRow
-                                ? getActionMenu(selectedBookingRow, activeTab)
-                                : { items: [] }
-                        }
-                        trigger={["click"]}
-                    >
-                        <Button
-                            type="primary"
-                            icon={<MoreOutlined />}
-                            size="small"
-                            style={{ borderRadius: "6px", fontSize: "10px", background: MINT_GREEN, borderColor: MINT_GREEN }}
-                        >
-                            Actions
-                        </Button>
-                    </Dropdown>
-                }
-            >
-                <div style={{ marginBottom: 20, textAlign: "center" }}>
-                    <Badge
-                        color={statusColor}
-                        text={
-                            <Text
-                                strong
-                                style={{
-                                    fontSize: "13px",
-                                    color: statusColor,
-                                    fontWeight: 600,
-                                }}
-                            >
-                                {status.replace(/_/g, " ").toUpperCase()}
-                            </Text>
-                        }
-                    />
-                </div>
-
-                {overdueDays > 0 && (
-                    <Alert
-                        type="error"
-                        showIcon
-                        style={{
-                            marginBottom: 14,
-                            borderRadius: "10px",
-                            alignItems: "center",
-                            fontSize: "10px",
-                        }}
-                        message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
-                        description="Guest exceeded expected checkout date."
-                    />
-                )}
-
-                <Card
-                    title={
-                        <Space size={6}>
-                            <UserOutlined style={{ fontSize: "11px" }} />
-                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                                Guest Information
-                            </span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{
-                        marginBottom: 14,
-                        borderRadius: "10px",
-                        border: "1px solid #f0f0f0",
-                    }}
-                >
-                    <Descriptions column={1} size="small">
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Name
-                                </span>
-                            }
-                        >
-                            <Text strong style={{ fontSize: "11px" }}>
-                                {guestDetails.name}
-                            </Text>
-                        </Descriptions.Item>
-                        {guestDetails.email !== undefined && (
-                            <Descriptions.Item
-                                label={
-                                    <span
-                                        style={{
-                                            fontSize: "10px",
-                                            fontWeight: 500,
-                                        }}
-                                    >
-                                        Email
-                                    </span>
-                                }
-                            >
-                                <Text style={{ fontSize: "11px" }}>
-                                    {guestDetails.email}
-                                </Text>
-                            </Descriptions.Item>
-                        )}
-                        {guestDetails.phone !== undefined && (
-                            <Descriptions.Item
-                                label={
-                                    <span
-                                        style={{
-                                            fontSize: "10px",
-                                            fontWeight: 500,
-                                        }}
-                                    >
-                                        Phone
-                                    </span>
-                                }
-                            >
-                                <Space size={4}>
-                                    <PhoneOutlined
-                                        style={{ fontSize: "10px" }}
-                                    />
-                                    <Text style={{ fontSize: "11px" }}>
-                                        {guestDetails.phone}
-                                    </Text>
-                                </Space>
-                            </Descriptions.Item>
-                        )}
-                        {guestDetails.address !== undefined && (
-                            <Descriptions.Item
-                                label={
-                                    <span
-                                        style={{
-                                            fontSize: "10px",
-                                            fontWeight: 500,
-                                        }}
-                                    >
-                                        Address
-                                    </span>
-                                }
-                            >
-                                <Space size={4}>
-                                    <EnvironmentOutlined
-                                        style={{ fontSize: "10px" }}
-                                    />
-                                    <Text style={{ fontSize: "11px" }}>
-                                        {guestDetails.address}
-                                    </Text>
-                                </Space>
-                            </Descriptions.Item>
-                        )}
-                    </Descriptions>
-                </Card>
-
-                <Card
-                    title={
-                        <Space size={6}>
-                            <CalendarOutlined style={{ fontSize: "11px" }} />
-                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                                Booking Details
-                            </span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{
-                        marginBottom: 14,
-                        borderRadius: "10px",
-                        border: "1px solid #f0f0f0",
-                    }}
-                >
-                    <Descriptions column={1} size="small">
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Booking Type
-                                </span>
-                            }
-                        >
-                            <Tag
-                                color={
-                                    selectedBooking.booking_type === "walk_in"
-                                        ? "blue"
-                                        : "green"
-                                }
-                                style={{
-                                    fontSize: "10px",
-                                    borderRadius: "4px",
-                                }}
-                            >
-                                {selectedBooking.booking_type === "walk_in"
-                                    ? "Walk-in"
-                                    : "Online"}
-                            </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Stay Type
-                                </span>
-                            }
-                        >
-                            {(() => {
-                                const type =
-                                    (selectedBookedRoom as any)?.stay_type ??
-                                    selectedBooking.stay_type;
-                                return (
-                                    <Tag
-                                        color={
-                                            type === "short_stay"
-                                                ? "purple"
-                                                : "cyan"
-                                        }
-                                        style={{
-                                            fontSize: "10px",
-                                            borderRadius: "4px",
-                                        }}
-                                    >
-                                        {type === "short_stay"
-                                            ? "Short Stay"
-                                            : "Overnight"}
-                                    </Tag>
-                                );
-                            })()}
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Booking Reference
-                                </span>
-                            }
-                        >
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <Text code style={{ fontSize: "10px" }}>
-                                    {selectedBooking.booking_reference}
-                                </Text>
-                                <Button
-                                    type="text"
-                                    size="small"
-                                    icon={<CopyOutlined style={{ fontSize: "11px", color: "#94a3b8" }} />}
-                                    onClick={() => copyToClipboard(selectedBooking.booking_reference)}
-                                    style={{ padding: "2px 4px", height: "auto" }}
-                                />
-                            </div>
-                        </Descriptions.Item>
-
-                        {(() => {
-                            const isWalkIn =
-                                selectedBooking.booking_type === "walk_in";
-                            const formatUser = (user: any) => {
-                                if (!user) return "N/A";
-                                return (
-                                    <>
-                                        {user.first_name} {user.last_name}
-                                        {user.role && (
-                                            <Text
-                                                type="secondary"
-                                                style={{ marginLeft: 4, fontSize: "9px" }}
-                                            >
-                                                ({user.role})
-                                            </Text>
-                                        )}
-                                    </>
-                                );
-                            };
-
-                            return (
-                                <>
-                                    {isWalkIn ? (
-                                        <Descriptions.Item label="Handled By">
-                                            {formatUser(
-                                                selectedBooking.created_by,
-                                            )}
-                                        </Descriptions.Item>
-                                    ) : (
-                                        <>
-                                            <Descriptions.Item label="Created By">
-                                                {selectedBooking.created_by
-                                                    ? formatUser(
-                                                          selectedBooking.created_by,
-                                                      )
-                                                    : "Customer"}
-                                            </Descriptions.Item>
-                                            <Descriptions.Item label="Confirmed By">
-                                                {confirmedBy?.user ? (
-                                                    formatUser(confirmedBy.user)
-                                                ) : (
-                                                    <Text type="secondary" style={{ fontSize: "10px" }}>
-                                                        Not confirmed
-                                                    </Text>
-                                                )}
-                                            </Descriptions.Item>
-                                        </>
-                                    )}
-                                    {checkedInBy?.user && (
-                                        <Descriptions.Item label="Checked-in By">
-                                            {formatUser(checkedInBy.user)}
-                                        </Descriptions.Item>
-                                    )}
-                                    {checkedOutBy?.user && (
-                                        <Descriptions.Item label="Checked-out By">
-                                            {formatUser(checkedOutBy.user)}
-                                        </Descriptions.Item>
-                                    )}
-                                    {override?.user && (
-                                        <Descriptions.Item label="Override By">
-                                            <Text type="danger" style={{ fontSize: "10px" }}>
-                                                {formatUser(override.user)}
-                                            </Text>
-                                        </Descriptions.Item>
-                                    )}
-                                </>
-                            );
-                        })()}
-
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Created At
-                                </span>
-                            }
-                        >
-                            <Space size={4}>
-                                <CalendarOutlined
-                                    style={{ fontSize: "10px" }}
-                                />
-                                <Text style={{ fontSize: "11px" }}>
-                                    {formatDateTime(
-                                        selectedBooking.created_at || "",
-                                    )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Check-in Date
-                                </span>
-                            }
-                        >
-                            <Space size={4}>
-                                <CalendarOutlined
-                                    style={{ fontSize: "10px" }}
-                                />
-                                <Text style={{ fontSize: "11px" }}>
-                                    {formatDate(
-                                        (selectedBookedRoom as any)
-                                            ?.check_in_date || "",
-                                    )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Expected Check-out
-                                </span>
-                            }
-                        >
-                            <Space size={4}>
-                                <CalendarOutlined
-                                    style={{ fontSize: "10px" }}
-                                />
-                                <Text style={{ fontSize: "11px" }}>
-                                    {formatDate(
-                                        (selectedBookedRoom as any)
-                                            ?.check_out_date || "",
-                                    )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Check-in Time
-                                </span>
-                            }
-                        >
-                            <Space size={4}>
-                                <ClockCircleOutlined
-                                    style={{ fontSize: "10px" }}
-                                />
-                                <Text style={{ fontSize: "11px" }}>
-                                    {formatTime(
-                                        (selectedBookedRoom as any)
-                                            ?.check_in_time || "",
-                                    )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                            label={
-                                <span
-                                    style={{
-                                        fontSize: "10px",
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Check-out Time
-                                </span>
-                            }
-                        >
-                            <Space size={4}>
-                                <ClockCircleOutlined
-                                    style={{ fontSize: "10px" }}
-                                />
-                                <Text style={{ fontSize: "11px" }}>
-                                    {formatTime(
-                                        (selectedBookedRoom as any)
-                                            ?.check_out_time || "",
-                                    )}
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-                    </Descriptions>
-                </Card>
-
-                <Card
-                    title={
-                        <Space size={6}>
-                            <TagOutlined style={{ fontSize: "11px" }} />
-                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                                Rooms
-                            </span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{
-                        marginBottom: 14,
-                        borderRadius: "10px",
-                        border: "1px solid #f0f0f0",
-                    }}
-                >
-                    {selectedBookedRoom ? (
-                        <div>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    padding: "8px 12px",
-                                    background: "#f8fafc",
-                                    borderRadius: "8px",
-                                    border: "1px solid #e2e8f0",
-                                }}
-                            >
-                                <Space size={6}>
-                                    <Tag
-                                        color="blue"
-                                        style={{
-                                            fontSize: "10px",
-                                            borderRadius: "4px",
-                                        }}
-                                    >
-                                        Room{" "}
-                                        {(selectedBookedRoom as any).room
-                                            ?.room_number || "N/A"}
-                                    </Tag>
-                                    <Text
-                                        type="secondary"
-                                        style={{ fontSize: "10px" }}
-                                    >
-                                        {(selectedBookedRoom as any).room
-                                            ?.room_type?.type_name ?? "-"}
-                                    </Text>
-                                </Space>
-                                <Space
-                                    direction="vertical"
-                                    size={0}
-                                    align="end"
-                                >
-                                    {(selectedBookedRoom as any).room?.room_type
-                                        ?.base_price && (
-                                        <Text
-                                            type="secondary"
-                                            style={{ fontSize: "9px" }}
-                                        >
-                                            Original: ₱
-                                            {Number(
-                                                (selectedBookedRoom as any).room
-                                                    .room_type.base_price ?? 0,
-                                            ).toLocaleString()}
-                                        </Text>
-                                    )}
-                                    <Text
-                                        strong
-                                        style={{
-                                            color: MINT_GREEN,
-                                            fontSize: "11px",
-                                            fontWeight: 600,
-                                        }}
-                                    >
-                                        {(selectedBookedRoom as any)
-                                            .stay_type === "short_stay"
-                                            ? "Short Stay"
-                                            : "Overnight"}
-                                        : ₱
-                                        {Number(
-                                            (selectedBookedRoom as any)
-                                                .subtotal ??
-                                                (selectedBookedRoom as any)
-                                                    .price_at_time_of_booking,
-                                        ).toLocaleString()}
-                                    </Text>
-                                </Space>
-                            </div>
-                        </div>
-                    ) : (
-                        <Text type="secondary" style={{ fontSize: "11px" }}>
-                            No rooms assigned
-                        </Text>
-                    )}
-                </Card>
-
-                <Card
-                    title={
-                        <Space size={6}>
-                            <TagOutlined style={{ fontSize: "11px" }} />
-                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                                Add-ons
-                            </span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{
-                        marginBottom: 14,
-                        borderRadius: "10px",
-                        border: "1px solid #f0f0f0",
-                    }}
-                >
-                    {displayAddOns.length > 0 ? (
-                        displayAddOns.map((addon) => (
-                            <div
-                                key={addon.id}
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    padding: "8px 12px",
-                                    background: "#f8fafc",
-                                    borderRadius: "8px",
-                                    border: "1px solid #e2e8f0",
-                                    marginBottom: 8,
-                                }}
-                            >
-                                <div>
-                                    <div
-                                        style={{
-                                            fontWeight: 600,
-                                            fontSize: "11px",
-                                        }}
-                                    >
-                                        {addon.add_on?.add_on_name}
-                                    </div>
-                                    <div
-                                        style={{
-                                            color: "#64748b",
-                                            fontSize: "10px",
-                                        }}
-                                    >
-                                        ₱
-                                        {Number(
-                                            addon.add_on?.price ?? 0,
-                                        ).toLocaleString()}{" "}
-                                        × {addon.quantity}
-                                    </div>
-                                </div>
-                                <div
-                                    style={{
-                                        color: MINT_GREEN,
-                                        fontWeight: 700,
-                                        fontSize: "11px",
-                                    }}
-                                >
-                                    ₱{Number(addon.subtotal).toLocaleString()}
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <Text type="secondary" style={{ fontSize: "11px" }}>
-                            No add-ons purchased
-                        </Text>
-                    )}
-                </Card>
-
-                <Card
-                    title={
-                        <Space size={6}>
-                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                                Payment Summary
-                            </span>
-                        </Space>
-                    }
-                    size="small"
-                    style={{
-                        marginBottom: 14,
-                        borderRadius: "10px",
-                        border: "1px solid #f0f0f0",
-                        position: "relative",
-                        overflow: "hidden",
-                    }}
-                >
-                    {paymentStatus === "refunded" && (
+                    {filterOptions.statusOptions.map((option) => (
                         <div
-                            style={{
-                                position: "absolute",
-                                top: "50%",
-                                left: "50%",
-                                transform:
-                                    "translate(-50%, -50%) rotate(-18deg)",
-                                zIndex: 100,
-                                pointerEvents: "none",
-                                border: "4px double #d9363e",
-                                color: "#d9363e",
-                                padding: "8px 28px",
-                                borderRadius: 6,
-                                fontSize: 32,
-                                fontWeight: 900,
-                                letterSpacing: 3,
-                                opacity: 0.35,
-                                background: "rgba(255,255,255,0.12)",
-                                textTransform: "uppercase",
-                                whiteSpace: "nowrap",
+                            key={option.value}
+                            className={`filter-option ${filterStatus === option.value ? "active" : ""}`}
+                            onClick={() => {
+                                setFilterStatus(option.value);
+                                setFilterPopoverOpen(false);
                             }}
                         >
-                            REFUNDED
+                            {option.label}
                         </div>
-                    )}
-                    <div style={{ marginBottom: 14 }}>
-                        <div style={{ marginBottom: 6 }}>
-                            <Text type="secondary" style={{ fontSize: "10px" }}>
-                                Payment Method:
-                            </Text>
-                            <Tag color="green" style={{ marginLeft: 6, fontSize: "10px" }}>
-                                {paymentToShow?.payment_method?.toUpperCase() ||
-                                    "N/A"}
-                            </Tag>
-                        </div>
+                    ))}
 
-                        <div style={{ marginBottom: 6 }}>
-                            <Text type="secondary" style={{ fontSize: "10px" }}>
-                                Payment Status:
-                            </Text>
-                            <Tag
-                                color={getPaymentStatusColor(paymentStatus)}
-                                style={{ marginLeft: 6, fontSize: "10px" }}
-                            >
-                                {paymentStatus.toUpperCase()}
-                            </Tag>
-                        </div>
-
-                        {paymentToShow?.payment_method !== "cash" && (
-                            <div style={{ marginTop: 6 }}>
-                                <Text type="secondary" style={{ fontSize: "10px" }}>
-                                    Reference:
-                                </Text>
-                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
-                                    {paymentToShow?.gcash_reference ||
-                                        paymentToShow?.bank_reference ||
-                                        "N/A"}
-                                </Text>
-                            </div>
-                        )}
-
-                        {paymentToShow?.receipt_number && (
-                            <div style={{ marginTop: 6 }}>
-                                <Text type="secondary" style={{ fontSize: "10px" }}>
-                                    Receipt Number:
-                                </Text>
-                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
-                                    {paymentToShow.receipt_number}
-                                </Text>
-                            </div>
-                        )}
-
-                        {paymentToShow?.payment_date && (
-                            <div style={{ marginTop: 6 }}>
-                                <Text type="secondary" style={{ fontSize: "10px" }}>
-                                    {paymentDateLabel}:
-                                </Text>
-                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
-                                    {formatDateTime(paymentToShow.payment_date)}
-                                </Text>
-                            </div>
-                        )}
-
-                        {paymentToShow?.receiver && (
-                            <div style={{ marginTop: 6 }}>
-                                <Text type="secondary" style={{ fontSize: "10px" }}>
-                                    {receiverLabel}:
-                                </Text>
-                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
-                                    {paymentToShow.receiver.first_name}{" "}
-                                    {paymentToShow.receiver.last_name}
-                                    <Text type="secondary" style={{ fontSize: "9px" }}>
-                                        {" "}
-                                        ({paymentToShow.receiver.role})
-                                    </Text>
-                                </Text>
-                            </div>
-                        )}
-
-                        <div style={{ marginTop: 6 }}>
-                            <Text type="secondary" style={{ fontSize: "10px" }}>
-                                {paymentStatus === "refunded"
-                                    ? "Refund Amount"
-                                    : "Amount Paid"}
-                                :
-                            </Text>
-                            <Text
-                                strong
-                                style={{
-                                    marginLeft: 6,
-                                    fontSize: "12px",
-                                    color:
-                                        paymentStatus === "refunded"
-                                            ? "#cf1322"
-                                            : MINT_GREEN,
-                                }}
-                            >
-                                ₱
-                                {paymentSubtotal.toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                })}
-                            </Text>
-                        </div>
+                    <div
+                        style={{
+                            padding: "8px 0 4px 0",
+                            marginTop: 8,
+                            fontWeight: 600,
+                            fontSize: "11px",
+                            color: "#64748b",
+                            borderTop: "1px solid #e8edf2",
+                        }}
+                    >
+                        Payment Status
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                        <div style={{ marginBottom: 6 }}>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    marginBottom: 4,
-                                }}
-                            >
-                                <Text
-                                    type="secondary"
-                                    style={{ fontSize: "10px" }}
-                                >
-                                    Room Charges
-                                </Text>
-                                <Text style={{ fontSize: "11px" }}>
-                                    ₱
-                                    {roomCharges.toLocaleString(undefined, {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                    })}
-                                </Text>
-                            </div>
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    marginBottom: 4,
-                                }}
-                            >
-                                <Text
-                                    type="secondary"
-                                    style={{ fontSize: "10px" }}
-                                >
-                                    Add-ons
-                                </Text>
-                                <Text style={{ fontSize: "11px" }}>
-                                    ₱
-                                    {addOnTotal.toLocaleString(undefined, {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                    })}
-                                </Text>
-                            </div>
-                            {(selectedBookedRoom as any)?.is_extended && (
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        marginBottom: 4,
-                                    }}
-                                >
-                                    <Text
-                                        type="secondary"
-                                        style={{ fontSize: "10px" }}
-                                    >
-                                        Extended
-                                    </Text>
-                                    <Text
-                                        strong
-                                        style={{
-                                            fontSize: "11px",
-                                            color: MINT_GREEN,
-                                        }}
-                                    >
-                                        Yes
-                                    </Text>
-                                </div>
-                            )}
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                }}
-                            >
-                                <Text
-                                    type="secondary"
-                                    style={{ fontSize: "10px" }}
-                                >
-                                    Subtotal:
-                                </Text>
-                                <Text
-                                    strong
-                                    style={{
-                                        fontSize: "12px",
-                                        color: MINT_GREEN,
-                                        marginLeft: 12,
-                                        fontWeight: 700,
-                                    }}
-                                >
-                                    ₱
-                                    {paymentSubtotal.toLocaleString(undefined, {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                    })}
-                                </Text>
-                            </div>
-                        </div>
-                        <Divider style={{ margin: "6px 0" }} />
-                        <div>
-                            <Text
-                                strong
-                                style={{ fontSize: "11px", fontWeight: 600 }}
-                            >
-                                Total:
-                            </Text>
-                            <Text
-                                strong
-                                style={{
-                                    fontSize: "13px",
-                                    color: MINT_GREEN,
-                                    marginLeft: 12,
-                                    fontWeight: 700,
-                                }}
-                            >
-                                ₱
-                                {paymentSubtotal.toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                })}
-                            </Text>
-                        </div>
-                    </div>
-                </Card>
-
-                {selectedBooking.histories &&
-                    selectedBooking.histories.length > 0 && (
-                        <Card
-                            title={
-                                <span
-                                    style={{
-                                        fontSize: "11px",
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    Activity Log
-                                </span>
-                            }
-                            size="small"
-                            style={{
-                                borderRadius: "10px",
-                                border: "1px solid #f0f0f0",
+                    {filterOptions.paymentOptions.map((option) => (
+                        <div
+                            key={option.value}
+                            className={`filter-option ${filterPaymentStatus === option.value ? "active" : ""}`}
+                            onClick={() => {
+                                setFilterPaymentStatus(option.value);
+                                setFilterPopoverOpen(false);
                             }}
                         >
-                            <Timeline
-                                items={selectedBooking.histories.map(
-                                    (history: History) => ({
-                                        color:
-                                            history.new_status === "checked_out"
-                                                ? "green"
-                                                : "blue",
-                                        children: (
-                                            <div>
-                                                <Text
-                                                    strong
-                                                    style={{
-                                                        fontSize: "10px",
-                                                        color: history.is_override
-                                                            ? "red"
-                                                            : undefined,
-                                                        fontWeight: 600,
-                                                    }}
-                                                >
-                                                    {history.change_note ||
-                                                        "Status Updated"}
-                                                </Text>
-                                                {history.is_override &&
-                                                    history.override_reason && (
-                                                        <>
-                                                            <br />
-                                                            <Text
-                                                                type="danger"
-                                                                style={{
-                                                                    fontSize:
-                                                                        "9px",
-                                                                }}
-                                                            >
-                                                                Override Reason:{" "}
-                                                                {
-                                                                    history.override_reason
-                                                                }
-                                                            </Text>
-                                                        </>
-                                                    )}
-                                                <br />
-                                                <Text
-                                                    type="secondary"
-                                                    style={{ fontSize: "9px" }}
-                                                >
-                                                    From: {history.old_status} →
-                                                    To: {history.new_status}
-                                                </Text>
-                                                <br />
-                                                <Text
-                                                    type="secondary"
-                                                    style={{ fontSize: "9px" }}
-                                                >
-                                                    {formatDateTime(
-                                                        history.changed_at,
-                                                    )}
-                                                </Text>
-                                            </div>
-                                        ),
-                                    }),
-                                )}
-                            />
-                        </Card>
-                    )}
-            </Drawer>
+                            {option.label}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // Type is "status", so options is available
+        return (
+            <div style={{ minWidth: 150 }}>
+                {filterOptions.options.map((option) => (
+                    <div
+                        key={option.value}
+                        className={`filter-option ${filterStatus === option.value ? "active" : ""}`}
+                        onClick={() => {
+                            setFilterStatus(option.value);
+                            setFilterPopoverOpen(false);
+                        }}
+                    >
+                        {option.label}
+                    </div>
+                ))}
+            </div>
         );
+    };
+
+    // Get filter badge count
+    const getFilterBadge = () => {
+        if (activeTab === "history") {
+            if (filterStatus !== "all" && filterPaymentStatus !== "all") {
+                return "2";
+            } else if (
+                filterStatus !== "all" ||
+                filterPaymentStatus !== "all"
+            ) {
+                return "1";
+            }
+            return null;
+        }
+        return filterStatus !== "all" ? "1" : null;
     };
 
     return (
         <div
+            key={location.key}
+            className={`page-transition ${navigationType === "POP" ? "slide-ltr" : "slide-rtl"}`}
             style={{
                 padding: "0 0 24px 0",
                 background: "#f8fafc",
@@ -3370,238 +2295,254 @@ export default function Bookings() {
         >
             <style>
                 {`
-                    .clickable-row { cursor: pointer; transition: background 0.15s; }
-                    .clickable-row:hover td { background: #f1f5f9 !important; }
-                    
-                    .selected-booking-row td { background: ${MINT_GREEN_BG} !important; }
-                    .selected-booking-row:hover td { background: ${MINT_GREEN_LIGHT} !important; }
-                    .selected-booking-row td:first-child { border-left: 3px solid ${MINT_GREEN} !important; }
-                    .warning-overdue-row td:first-child { border-left: 3px solid #faad14 !important; }
-                    .critical-overdue-row td:first-child { border-left: 3px solid #ff4d4f !important; }
-                    
-                    .premium-table .ant-table {
-                        background: white;
-                        border-radius: 12px;
-                        overflow: hidden;
-                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-                    }
-                    .premium-table .ant-table-thead > tr > th {
-                        font-size: 10px !important;
-                        font-weight: 600 !important;
-                        padding: 10px 10px !important;
-                        background-color: #fafbfc !important;
-                        border-bottom: 1px solid #e8edf2 !important;
-                        color: #64748b !important;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                    }
-                    .premium-table .ant-table-tbody > tr > td {
-                        font-size: 11px !important;
-                        padding: 10px 10px !important;
-                        border-bottom: 1px solid #f1f5f9 !important;
-                        color: #0f172a !important;
-                        vertical-align: middle;
-                    }
-                    .premium-table .ant-table-tbody > tr:last-child > td {
-                        border-bottom: none !important;
-                    }
-                    
-                    .ant-card {
-                        border-radius: 10px !important;
-                    }
-                    .ant-card-body {
-                        padding: 14px !important;
-                    }
-                    .ant-card-head-title {
-                        font-size: 11px !important;
-                        font-weight: 600 !important;
-                        color: #1e293b !important;
-                    }
-                    
-                    .ant-descriptions-item-label {
-                        font-size: 10px !important;
-                        font-weight: 500 !important;
-                        color: #64748b !important;
-                    }
-                    .ant-descriptions-item-content {
-                        font-size: 11px !important;
-                        color: #1e293b !important;
-                    }
-                    .ant-timeline-item-content {
-                        font-size: 10px !important;
-                    }
-                    .ant-tag {
-                        font-size: 10px !important;
-                        border-radius: 4px !important;
-                        padding: 2px 10px !important;
-                    }
-                    .ant-badge-status-text {
-                        font-size: 11px !important;
-                    }
-                    .ant-btn {
-                        font-size: 11px !important;
-                        border-radius: 6px !important;
-                    }
-                    .ant-btn-primary {
-                        background: ${MINT_GREEN} !important;
-                        border-color: ${MINT_GREEN} !important;
-                    }
-                    .ant-btn-primary:hover {
-                        background: ${MINT_GREEN_HOVER} !important;
-                        border-color: ${MINT_GREEN_HOVER} !important;
-                    }
-                    .ant-modal-content {
-                        border-radius: 12px !important;
-                    }
-                    .ant-modal-header {
-                        border-radius: 12px 12px 0 0 !important;
-                    }
-                    
-                    .ant-select-selector {
-                        border-radius: 8px !important;
-                        border-color: #e2e8f0 !important;
-                        font-size: 11px !important;
-                        height: 38px !important;
-                    }
-                    .ant-select-selection-item {
-                        font-size: 11px !important;
-                        line-height: 36px !important;
-                    }
-                    
-                    /* shadcn-style tabs - sliding indicator */
-                    .tabs-container {
-                        position: relative;
-                        display: flex;
-                        gap: 4px;
-                        padding: 4px;
-                        background: #f1f5f9;
-                        border-radius: 10px;
-                        width: fit-content;
-                    }
-                    .tab-indicator {
-                        position: absolute;
-                        top: 4px;
-                        bottom: 4px;
-                        background: ${MINT_GREEN};
-                        border-radius: 8px;
-                        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                        box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
-                        z-index: 0;
-                    }
-                    .shadcn-tabs-trigger {
-                        position: relative;
-                        z-index: 1;
-                        padding: 8px 18px;
-                        font-size: 13px;
-                        font-weight: 500;
-                        color: #64748b;
-                        background: transparent;
-                        border: none;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        transition: color 0.2s ease;
-                        font-family: inherit;
-                    }
-                    .shadcn-tabs-trigger:hover {
-                        color: #0f172a;
-                    }
-                    .shadcn-tabs-trigger.active {
-                        color: #ffffff !important;
-                        font-weight: 600;
-                    }
-                    .shadcn-tabs-trigger.active .anticon {
-                        color: #ffffff !important;
-                    }
-                    .shadcn-tabs-content {
-                        display: block;
-                    }
-
-                    /* Filter popover */
-                    .filter-popover .ant-popover-inner {
-                        border-radius: 10px;
-                        padding: 8px;
-                        min-width: 160px;
-                    }
-                    .filter-option {
-                        padding: 6px 12px;
-                        border-radius: 6px;
-                        cursor: pointer;
-                        font-size: 12px;
-                        transition: all 0.15s ease;
-                    }
-                    .filter-option:hover {
-                        background: #f1f5f9;
-                    }
-                    .filter-option.active {
-                        background: ${MINT_GREEN_BG};
-                        color: ${MINT_GREEN};
-                        font-weight: 500;
-                    }
-                    .filter-option.active:hover {
-                        background: ${MINT_GREEN_LIGHT};
-                    }
-
-                    .filter-btn {
-                        border-radius: 8px !important;
-                        border: 1px solid #e2e8f0 !important;
-                        height: 38px !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        gap: 4px !important;
-                        color: #64748b !important;
-                        background: white !important;
-                    }
-                    .filter-btn:hover {
-                        border-color: ${MINT_GREEN} !important;
-                        color: ${MINT_GREEN} !important;
-                    }
-                    .filter-btn.active {
-                        border-color: ${MINT_GREEN} !important;
-                        color: white !important;
-                        background: ${MINT_GREEN} !important;
-                    }
-                    .filter-btn.active:hover {
-                        background: ${MINT_GREEN_HOVER} !important;
-                        border-color: ${MINT_GREEN_HOVER} !important;
-                    }
-                    .filter-badge {
-                        font-size: 8px;
-                        background: white;
-                        color: ${MINT_GREEN};
-                        border-radius: 50%;
-                        width: 16px;
-                        height: 16px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-weight: 600;
-                    }
-                    .filter-btn.active .filter-badge {
-                        background: white;
-                        color: ${MINT_GREEN};
-                    }
-                    
-                    @media (max-width: 768px) {
-                        .ant-table { font-size: 10px; }
-                        .ant-table-thead > tr > th { font-size: 9px !important; }
-                        .ant-table-tbody > tr > td { font-size: 10px !important; }
-                        .shadcn-tabs-trigger {
-                            padding: 6px 12px;
-                            font-size: 11px;
+                        @keyframes slideInRTL {
+                            from { transform: translateX(24px); opacity: 0; }
+                            to   { transform: translateX(0);    opacity: 1; }
                         }
+                        @keyframes slideInLTR {
+                            from { transform: translateX(-24px); opacity: 0; }
+                            to   { transform: translateX(0);     opacity: 1; }
+                        }
+                        .page-transition {
+                            animation-duration: 0.28s;
+                            animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+                            animation-fill-mode: both;
+                        }
+                        .page-transition.slide-rtl { animation-name: slideInRTL; }
+                        .page-transition.slide-ltr { animation-name: slideInLTR; }
+
+                        .clickable-row { cursor: pointer; transition: background 0.15s; }
+                        .clickable-row:hover td { background: #f1f5f9 !important; }
+                        
+                        .selected-booking-row td { background: ${MINT_GREEN_BG} !important; }
+                        .selected-booking-row:hover td { background: ${MINT_GREEN_LIGHT} !important; }
+                        .selected-booking-row td:first-child { border-left: 3px solid ${MINT_GREEN} !important; }
+                        .warning-overdue-row td:first-child { border-left: 3px solid #faad14 !important; }
+                        .critical-overdue-row td:first-child { border-left: 3px solid #ff4d4f !important; }
+                        
+                        .premium-table .ant-table {
+                            background: white;
+                            border-radius: 12px;
+                            overflow: hidden;
+                            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                        }
+                        .premium-table .ant-table-thead > tr > th {
+                            font-size: 10px !important;
+                            font-weight: 600 !important;
+                            padding: 10px 10px !important;
+                            background-color: #fafbfc !important;
+                            border-bottom: 1px solid #e8edf2 !important;
+                            color: #64748b !important;
+                            text-transform: uppercase;
+                            letter-spacing: 0.5px;
+                        }
+                        .premium-table .ant-table-tbody > tr > td {
+                            font-size: 11px !important;
+                            padding: 10px 10px !important;
+                            border-bottom: 1px solid #f1f5f9 !important;
+                            color: #0f172a !important;
+                            vertical-align: middle;
+                        }
+                        .premium-table .ant-table-tbody > tr:last-child > td {
+                            border-bottom: none !important;
+                        }
+                        
+                        .ant-card {
+                            border-radius: 10px !important;
+                        }
+                        .ant-card-body {
+                            padding: 14px !important;
+                        }
+                        .ant-card-head-title {
+                            font-size: 11px !important;
+                            font-weight: 600 !important;
+                            color: #1e293b !important;
+                        }
+                        
+                        .ant-descriptions-item-label {
+                            font-size: 10px !important;
+                            font-weight: 500 !important;
+                            color: #64748b !important;
+                        }
+                        .ant-descriptions-item-content {
+                            font-size: 11px !important;
+                            color: #1e293b !important;
+                        }
+                        .ant-timeline-item-content {
+                            font-size: 10px !important;
+                        }
+                        .ant-tag {
+                            font-size: 10px !important;
+                            border-radius: 4px !important;
+                            padding: 2px 10px !important;
+                        }
+                        .ant-badge-status-text {
+                            font-size: 11px !important;
+                        }
+                        .ant-btn {
+                            font-size: 11px !important;
+                            border-radius: 6px !important;
+                        }
+                        .ant-btn-primary {
+                            background: ${MINT_GREEN} !important;
+                            border-color: ${MINT_GREEN} !important;
+                        }
+                        .ant-btn-primary:hover {
+                            background: ${MINT_GREEN_HOVER} !important;
+                            border-color: ${MINT_GREEN_HOVER} !important;
+                        }
+                        .ant-modal-content {
+                            border-radius: 12px !important;
+                        }
+                        .ant-modal-header {
+                            border-radius: 12px 12px 0 0 !important;
+                        }
+                        
+                        .ant-select-selector {
+                            border-radius: 8px !important;
+                            border-color: #e2e8f0 !important;
+                            font-size: 11px !important;
+                            height: 38px !important;
+                        }
+                        .ant-select-selection-item {
+                            font-size: 11px !important;
+                            line-height: 36px !important;
+                        }
+                        
+                        /* shadcn-style tabs - sliding indicator */
                         .tabs-container {
-                            flex-wrap: wrap;
-                            width: 100%;
+                            position: relative;
+                            display: flex;
+                            gap: 4px;
+                            padding: 4px;
+                            background: #f1f5f9;
+                            border-radius: 10px;
+                            width: fit-content;
                         }
-                        .search-filter-wrapper {
-                            flex-wrap: wrap;
-                            width: 100%;
+                        .tab-indicator {
+                            position: absolute;
+                            top: 4px;
+                            bottom: 4px;
+                            background: ${MINT_GREEN};
+                            border-radius: 8px;
+                            transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                            box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+                            z-index: 0;
                         }
-                    }
-                `}
+                        .shadcn-tabs-trigger {
+                            position: relative;
+                            z-index: 1;
+                            padding: 8px 18px;
+                            font-size: 13px;
+                            font-weight: 500;
+                            color: #64748b;
+                            background: transparent;
+                            border: none;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            transition: color 0.2s ease;
+                            font-family: inherit;
+                        }
+                        .shadcn-tabs-trigger:hover {
+                            color: #0f172a;
+                        }
+                        .shadcn-tabs-trigger.active {
+                            color: #ffffff !important;
+                            font-weight: 600;
+                        }
+                        .shadcn-tabs-trigger.active .anticon {
+                            color: #ffffff !important;
+                        }
+                        .shadcn-tabs-content {
+                            display: block;
+                        }
+
+                        /* Filter popover */
+                        .filter-popover .ant-popover-inner {
+                            border-radius: 10px;
+                            padding: 8px;
+                            min-width: 160px;
+                        }
+                        .filter-option {
+                            padding: 6px 12px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 12px;
+                            transition: all 0.15s ease;
+                        }
+                        .filter-option:hover {
+                            background: #f1f5f9;
+                        }
+                        .filter-option.active {
+                            background: ${MINT_GREEN_BG};
+                            color: ${MINT_GREEN};
+                            font-weight: 500;
+                        }
+                        .filter-option.active:hover {
+                            background: ${MINT_GREEN_LIGHT};
+                        }
+
+                        .filter-btn {
+                            border-radius: 8px !important;
+                            border: 1px solid #e2e8f0 !important;
+                            height: 38px !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            gap: 4px !important;
+                            color: #64748b !important;
+                            background: white !important;
+                        }
+                        .filter-btn:hover {
+                            border-color: ${MINT_GREEN} !important;
+                            color: ${MINT_GREEN} !important;
+                        }
+                        .filter-btn.active {
+                            border-color: ${MINT_GREEN} !important;
+                            color: white !important;
+                            background: ${MINT_GREEN} !important;
+                        }
+                        .filter-btn.active:hover {
+                            background: ${MINT_GREEN_HOVER} !important;
+                            border-color: ${MINT_GREEN_HOVER} !important;
+                        }
+                        .filter-badge {
+                            font-size: 8px;
+                            background: white;
+                            color: ${MINT_GREEN};
+                            border-radius: 50%;
+                            width: 16px;
+                            height: 16px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-weight: 600;
+                        }
+                        .filter-btn.active .filter-badge {
+                            background: white;
+                            color: ${MINT_GREEN};
+                        }
+                        
+                        @media (max-width: 768px) {
+                            .ant-table { font-size: 10px; }
+                            .ant-table-thead > tr > th { font-size: 9px !important; }
+                            .ant-table-tbody > tr > td { font-size: 10px !important; }
+                            .shadcn-tabs-trigger {
+                                padding: 6px 12px;
+                                font-size: 11px;
+                            }
+                            .tabs-container {
+                                flex-wrap: wrap;
+                                width: 100%;
+                            }
+                            .search-filter-wrapper {
+                                flex-wrap: wrap;
+                                width: 100%;
+                            }
+                        }
+                    `}
             </style>
 
             {/* Header */}
@@ -3627,21 +2568,32 @@ export default function Bookings() {
                     >
                         Booking List
                     </Title>
-                    <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>
+                    <Text
+                        type="secondary"
+                        style={{ fontSize: "12px", color: "#64748b" }}
+                    >
                         Manage and track all reservations
                     </Text>
                 </div>
             </div>
 
             {/* shadcn-style Tabs with sliding indicator */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
+                }}
+            >
                 <div className="tabs-container" ref={tabContainerRef}>
-                    <div 
-                        className="tab-indicator" 
-                        style={{ 
-                            left: indicatorStyle.left, 
-                            width: indicatorStyle.width 
-                        }} 
+                    <div
+                        className="tab-indicator"
+                        style={{
+                            left: indicatorStyle.left,
+                            width: indicatorStyle.width,
+                        }}
                     />
                     <button
                         ref={activeTab === "active" ? activeTabRef : null}
@@ -3679,7 +2631,10 @@ export default function Bookings() {
                 </div>
 
                 {/* Right side - Search with gap and Filter on the right with mint green */}
-                <div className="search-filter-wrapper" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                    className="search-filter-wrapper"
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                >
                     <Input
                         placeholder="Search by name, ID, or type..."
                         allowClear
@@ -3703,73 +2658,7 @@ export default function Bookings() {
                         }}
                     />
                     <Popover
-                        content={
-                            <div style={{ minWidth: 150 }}>
-                                <div
-                                    className={`filter-option ${filterStatus === "all" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("all");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    All Status
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "pending" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("pending");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Pending
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "confirmed" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("confirmed");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Confirmed
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "checked_in" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("checked_in");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Checked In
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "checked_out" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("checked_out");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Checked Out
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "cancelled" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("cancelled");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Cancelled
-                                </div>
-                                <div
-                                    className={`filter-option ${filterStatus === "refunded" ? "active" : ""}`}
-                                    onClick={() => {
-                                        setFilterStatus("refunded");
-                                        setFilterPopoverOpen(false);
-                                    }}
-                                >
-                                    Refunded
-                                </div>
-                            </div>
-                        }
+                        content={renderFilterContent()}
                         trigger="click"
                         open={filterPopoverOpen}
                         onOpenChange={setFilterPopoverOpen}
@@ -3777,8 +2666,10 @@ export default function Bookings() {
                         overlayClassName="filter-popover"
                     >
                         <Button
-                            className={`filter-btn ${filterStatus !== "all" ? "active" : ""}`}
-                            onClick={() => setFilterPopoverOpen(!filterPopoverOpen)}
+                            className={`filter-btn ${filterStatus !== "all" || filterPaymentStatus !== "all" ? "active" : ""}`}
+                            onClick={() =>
+                                setFilterPopoverOpen(!filterPopoverOpen)
+                            }
                             style={{
                                 borderRadius: "8px",
                                 border: "1px solid #e2e8f0",
@@ -3786,20 +2677,28 @@ export default function Bookings() {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 4,
-                                color: filterStatus !== "all" ? "white" : "#64748b",
-                                borderColor: filterStatus !== "all" ? MINT_GREEN : "#e2e8f0",
-                                background: filterStatus !== "all" ? MINT_GREEN : "white",
+                                color:
+                                    filterStatus !== "all" ||
+                                    filterPaymentStatus !== "all"
+                                        ? "white"
+                                        : "#64748b",
+                                borderColor:
+                                    filterStatus !== "all" ||
+                                    filterPaymentStatus !== "all"
+                                        ? MINT_GREEN
+                                        : "#e2e8f0",
+                                background:
+                                    filterStatus !== "all" ||
+                                    filterPaymentStatus !== "all"
+                                        ? MINT_GREEN
+                                        : "white",
                             }}
                         >
                             <FilterOutlined style={{ fontSize: 14 }} />
-                            {filterStatus !== "all" && (
+                            {(filterStatus !== "all" ||
+                                filterPaymentStatus !== "all") && (
                                 <span className="filter-badge">
-                                    {filterStatus === "pending" ? "P" : 
-                                     filterStatus === "confirmed" ? "C" :
-                                     filterStatus === "checked_in" ? "I" :
-                                     filterStatus === "checked_out" ? "O" :
-                                     filterStatus === "cancelled" ? "X" :
-                                     filterStatus === "refunded" ? "R" : "1"}
+                                    {getFilterBadge()}
                                 </span>
                             )}
                         </Button>
@@ -3843,8 +2742,6 @@ export default function Bookings() {
                     </>
                 )}
             </div>
-
-            {renderBookingDetails()}
         </div>
     );
 }

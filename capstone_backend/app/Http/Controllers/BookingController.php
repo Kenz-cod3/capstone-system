@@ -102,6 +102,7 @@ class BookingController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
 
         $query = Booking::with([
             'user',
@@ -118,13 +119,17 @@ class BookingController extends Controller
                 ]);
             }
         ])
-            ->whereNull('archived_at')
             ->whereNull('deleted_at')
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereNotIn('status', [
-                    'checked_out',
-                    'refunded'
-                ]);
+            ->whereHas('bookedRooms', function ($q) use ($status) {
+                $q->whereNull('archived_at')
+                    ->whereNotIn('status', [
+                        'checked_out',
+                        'refunded'
+                    ]);
+
+                if (!empty($status) && $status !== 'all') {
+                    $q->where('status', $status);
+                }
             });
 
         if (!in_array(Auth::user()->role, ['admin', 'staff'])) {
@@ -223,16 +228,20 @@ class BookingController extends Controller
             ->orderByDesc('updated_at')
             ->paginate($perPage);
 
-        $bookings->getCollection()->transform(function ($booking) {
+        $bookings->getCollection()->transform(function ($booking) use ($status) {
 
-            $booking->setRelation(
-                'bookedRooms',
-
-                $booking->bookedRooms->whereNotIn('status', [
+            $rooms = $booking->bookedRooms
+                ->whereNull('archived_at')
+                ->whereNotIn('status', [
                     'checked_out',
                     'refunded'
-                ])->values()
-            );
+                ]);
+
+            if (!empty($status) && $status !== 'all') {
+                $rooms = $rooms->where('status', $status);
+            }
+
+            $booking->setRelation('bookedRooms', $rooms->values());
 
             return $booking;
         });
@@ -269,6 +278,8 @@ class BookingController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
+        $paymentStatus = $request->payment_status;
 
         $query = Booking::with([
             'user',
@@ -285,17 +296,28 @@ class BookingController extends Controller
                 ]);
             }
         ])
-            ->whereNull('archived_at')
             ->whereNull('deleted_at')
-            ->whereHas('bookedRooms', function ($q) {
-                $q->whereIn('status', [
-                    'checked_out',
-                    'refunded'
-                ]);
+            ->whereHas('bookedRooms', function ($q) use ($status) {
+                $q->whereNull('archived_at')
+                    ->whereIn('status', [
+                        'checked_out',
+                        'refunded'
+                    ]);
+
+                if (!empty($status) && $status !== 'all') {
+                    $q->where('status', $status);
+                }
             });
 
         if (!in_array(Auth::user()->role, ['admin', 'staff'])) {
             $query->where('user_id', Auth::id());
+        }
+
+        // Apply payment status filter for history
+        if (!empty($paymentStatus) && $paymentStatus !== 'all') {
+            $query->whereHas('payments', function ($q) use ($paymentStatus) {
+                $q->where('payment_status', $paymentStatus);
+            });
         }
 
         if (!empty($search)) {
@@ -389,16 +411,20 @@ class BookingController extends Controller
             ->orderByDesc('updated_at')
             ->paginate($perPage);
 
-        $bookings->getCollection()->transform(function ($booking) {
+        $bookings->getCollection()->transform(function ($booking) use ($status) {
 
-            $booking->setRelation(
-                'bookedRooms',
-
-                $booking->bookedRooms->whereIn('status', [
+            $rooms = $booking->bookedRooms
+                ->whereNull('archived_at')
+                ->whereIn('status', [
                     'checked_out',
                     'refunded'
-                ])->values()
-            );
+                ]);
+
+            if (!empty($status) && $status !== 'all') {
+                $rooms = $rooms->where('status', $status);
+            }
+
+            $booking->setRelation('bookedRooms', $rooms->values());
 
             return $booking;
         });
@@ -448,9 +474,16 @@ class BookingController extends Controller
     {
         $perPage = $request->per_page ?? 10;
         $search = $request->search;
+        $status = $request->status;
 
-        $query = Booking::whereNotNull('archived_at')
-            ->whereNull('deleted_at')
+        $query = Booking::whereNull('deleted_at')
+            ->whereHas('bookedRooms', function ($q) use ($status) {
+                $q->whereNotNull('archived_at');
+
+                if (!empty($status) && $status !== 'all' && $status !== 'archived') {
+                    $q->where('status', $status);
+                }
+            })
             ->with([
                 'user',
                 'walkInGuest',
@@ -545,6 +578,18 @@ class BookingController extends Controller
             ->orderByDesc('updated_at')
             ->paginate($perPage);
 
+        $bookings->getCollection()->transform(function ($booking) use ($status) {
+
+            $rooms = $booking->bookedRooms->whereNotNull('archived_at');
+
+            if (!empty($status) && $status !== 'all' && $status !== 'archived') {
+                $rooms = $rooms->where('status', $status);
+            }
+
+            $booking->setRelation('bookedRooms', $rooms->values());
+
+            return $booking;
+        });
 
         return response()->json($bookings);
     }
@@ -741,6 +786,7 @@ class BookingController extends Controller
             'user',
             'walkInGuest',
             'createdBy',
+            'histories.user',
             'payments.receiver',
             'payments.shift',
             'bookedRooms.bookingAddOns.addOn',
@@ -751,6 +797,34 @@ class BookingController extends Controller
                 ]);
             }
         ])->findOrFail($id);
+
+        // Add image_url to each room
+        foreach ($booking->bookedRooms as $bookedRoom) {
+            $room = $bookedRoom->room;
+
+            if (!$room) {
+                continue;
+            }
+
+            // Filter valid images that exist on disk
+            $validImages = $room->images->filter(function ($img) {
+                return Storage::disk('public')->exists($img->image_path);
+            })->values();
+
+            // Get the best normal image (most recent)
+            $normalImage = $validImages
+                ->where('image_type', 'normal')
+                ->sortByDesc('id')
+                ->first();
+
+            // Add image_url to the room
+            $room->image_url = $normalImage
+                ? asset('storage/' . $normalImage->image_path)
+                : null;
+
+            // Keep the filtered images array
+            $room->images = $validImages;
+        }
 
         return response()->json($booking);
     }
@@ -785,14 +859,274 @@ class BookingController extends Controller
     // ===============================
     // UPDATE STATUS
     // ===============================
+    // public function update(Request $request, $id)
+    // {
+
+    //     $request->validate([
+    //         'status' => 'required|in:pending,confirmed,checked_in,checked_out,cancelled',
+    //         'override_reason' => 'nullable|string',
+    //     ]);
+
+    //     $booking = Booking::with([
+    //         'bookedRooms.room',
+    //         'payments'
+    //     ])->findOrFail($id);
+
+    //     $newStatus = $request->status;
+    //     $reason = $request->override_reason ?? null;
+
+    //     $oldStatus = $booking->bookedRooms->first()?->status ?? 'pending';
+
+    //     $type = $booking->walk_in_guest_id ? 'Walk-in' : 'Guest';
+
+    //     if ($newStatus === 'confirmed') {
+
+    //         $shift = \App\Models\Shift::where('opened_by', Auth::id())
+    //             ->whereNull('closed_at')
+    //             ->latest()
+    //             ->first();
+
+    //         if (!$shift) {
+
+    //             return response()->json([
+    //                 'message' => 'Please open a shift first before confirming bookings.'
+    //             ], 400);
+    //         }
+
+    //         foreach ($booking->bookedRooms as $bookedRoom) {
+
+    //             $bookedRoom->update([
+    //                 'status' => 'confirmed'
+    //             ]);
+    //         }
+
+    //         $payment = $booking->payments()->first();
+
+    //         if ($payment) {
+
+    //             $payment->update([
+    //                 'shift_id' => $shift?->id,
+    //                 'received_by' => Auth::id(),
+    //             ]);
+    //         }
+    //         // Notify all Admins and Staff
+    //         $users = User::whereIn('role', ['admin', 'staff'])
+    //             ->where('id', '!=', Auth::id()) // Don't notify the user who confirmed
+    //             ->get();
+
+    //         $staffName = Auth::user()->first_name . ' ' . Auth::user()->last_name;
+
+    //         foreach ($users as $user) {
+
+    //             $notification = Notification::create([
+    //                 'user_id' => $user->id,
+    //                 'title' => 'Booking Confirmed',
+    //                 'message' => $staffName . ' confirmed booking ' . $booking->booking_reference . '.',
+    //                 'is_read' => false,
+    //             ]);
+
+    //             broadcast(new NotificationCreated($notification));
+    //         }
+
+    //         // Notify the guest
+    //         if ($booking->user_id) {
+
+    //             $notification = Notification::create([
+    //                 'user_id' => $booking->user_id,
+    //                 'title' => 'Booking Confirmed',
+    //                 'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
+    //                 'is_read' => false,
+    //             ]);
+
+    //             broadcast(new NotificationCreated($notification));
+    //         }
+    //     } elseif ($newStatus === 'checked_in') {
+
+    //         // RECALCULATE TOTAL
+    //         $total = $booking->bookedRooms->sum('subtotal');
+    //         foreach ($booking->bookedRooms as $bookedRoom) {
+
+    //             $bookedRoom->update([
+    //                 'status' => 'checked_in',
+    //                 'check_in_time' => $bookedRoom->check_in_time ?? now(),
+    //             ]);
+    //         }
+
+    //         $booking->update([
+    //             'total_price' => $total
+    //         ]);
+
+    //         NotificationService::notifyAdmins(
+    //             $type . ' Check-in',
+    //             $type . ' booking ' . $booking->booking_reference . ' checked in'
+    //         );
+
+    //         $notification = Notification::create([
+    //             'user_id' => $booking->user_id,
+    //             'title' => 'Checked In',
+    //             'message' => 'Your booking checked in.',
+    //             'is_read' => false
+    //         ]);
+
+    //         broadcast(new NotificationCreated($notification));
+
+    //         $roomIds = $booking->bookedRooms
+    //             ->pluck('room_id');
+
+    //         Room::whereIn('id', $roomIds)
+    //             ->update([
+    //                 'status' => Room::STATUS_OCCUPIED
+    //             ]);
+    //     } elseif ($newStatus === 'checked_out') {
+    //         foreach ($booking->bookedRooms as $bookedRoom) {
+
+    //             $bookedRoom->update([
+    //                 'status' => 'checked_out',
+    //                 'check_out_time' => now(),
+    //             ]);
+    //         }
+
+    //         NotificationService::notifyAdmins(
+    //             $type . ' Check-out',
+    //             $type . ' booking ' . $booking->booking_reference . ' checked out'
+    //         );
+
+    //         if ($booking->user_id) {
+    //             $notification = Notification::create([
+    //                 'user_id' => $booking->user_id,
+    //                 'title' => 'Checked Out',
+    //                 'message' => 'Your booking ' . $booking->booking_reference . ' has been checked out.',
+    //                 'is_read' => false
+    //             ]);
+
+    //             broadcast(new NotificationCreated($notification));
+    //         }
+
+    //         foreach ($booking->bookedRooms as $bookedRoom) {
+
+    //             $room = $bookedRoom->room;
+
+    //             if (!$room) {
+    //                 continue;
+    //             }
+
+    //             // Update room status to DIRTY (needs cleaning)
+    //             $room->status = Room::STATUS_DIRTY;
+    //             $room->save();
+    //         }
+    //     } elseif ($newStatus === 'cancelled') {
+    //         // When cancelled, make rooms available again
+
+    //         foreach ($booking->bookedRooms as $bookedRoom) {
+
+    //             $bookedRoom->update([
+    //                 'status' => 'cancelled'
+    //             ]);
+
+    //             $room = $bookedRoom->room;
+
+    //             if (!$room) {
+    //                 continue;
+    //             }
+    //             $room->status = Room::STATUS_AVAILABLE;
+    //             $room->save();
+    //         }
+
+    //         NotificationService::notifyAdmins(
+    //             $type . ' Booking Cancelled',
+    //             $type . ' booking ' . $booking->booking_reference . ' has been cancelled'
+    //         );
+
+    //         if ($booking->user_id) {
+    //             $notification = Notification::create([
+    //                 'user_id' => $booking->user_id,
+    //                 'title' => 'Booking Cancelled',
+    //                 'message' => 'Your booking ' . $booking->booking_reference . ' has been cancelled.',
+    //                 'is_read' => false
+    //             ]);
+
+    //             broadcast(new NotificationCreated($notification));
+    //         }
+    //     }
+
+    //     Cache::flush();
+
+    //     $this->log(
+    //         $booking->id,
+    //         $oldStatus,
+    //         $newStatus,
+    //         'Status updated',
+    //         $reason
+    //     );
+
+    //     if (Auth::user()?->role === 'staff') {
+    //         StaffActivityLog::create([
+    //             'user_id' => Auth::id(),
+    //             'action' => 'Update Booking Status',
+    //             'details' =>
+    //             'Booking ' . $booking->booking_reference .
+    //                 ' updated to ' . $newStatus,
+    //             'ip_address' => request()->ip(),
+    //             'total_amount' => $booking->total_price,
+    //             'timestamp' => now(),
+    //         ]);
+    //     }
+
+    //     event(new DashboardUpdated());
+
+    //     // Load the updated booking with images
+    //     $updatedBooking = Booking::with([
+    //         'user',
+    //         'walkInGuest',
+    //         'createdBy',
+    //         'histories.user',
+    //         'bookedRooms.bookingAddOns.addOn',
+    //         'payments.receiver',
+    //         'payments.shift',
+    //         'bookedRooms.room' => function ($q) {
+    //             $q->withTrashed()->with([
+    //                 'roomType',
+    //                 'images'
+    //             ]);
+    //         }
+    //     ])->find($booking->id);
+
+    //     // Add image_url to each room
+    //     foreach ($updatedBooking->bookedRooms as $bookedRoom) {
+    //         $room = $bookedRoom->room;
+
+    //         if (!$room) {
+    //             continue;
+    //         }
+
+    //         $validImages = $room->images->filter(function ($img) {
+    //             return Storage::disk('public')->exists($img->image_path);
+    //         })->values();
+
+    //         $normalImage = $validImages
+    //             ->where('image_type', 'normal')
+    //             ->sortByDesc('id')
+    //             ->first();
+
+    //         $room->image_url = $normalImage
+    //             ? asset('storage/' . $normalImage->image_path)
+    //             : null;
+
+    //         $room->images = $validImages;
+    //     }
+
+    //     return response()->json([
+    //         'message' => 'Status updated',
+    //         'data' => $updatedBooking
+    //     ]);
+    // }
+
     public function update(Request $request, $id)
     {
-
         $request->validate([
             'status' => 'required|in:pending,confirmed,checked_in,checked_out,cancelled',
             'override_reason' => 'nullable|string',
         ]);
-
 
         $booking = Booking::with([
             'bookedRooms.room',
@@ -808,43 +1142,19 @@ class BookingController extends Controller
 
         if ($newStatus === 'confirmed') {
 
-            $shift = \App\Models\Shift::where('opened_by', Auth::id())
-                ->whereNull('closed_at')
-                ->latest()
-                ->first();
-
-            if (!$shift) {
-
-                return response()->json([
-                    'message' => 'Please open a shift first before confirming bookings.'
-                ], 400);
-            }
-
             foreach ($booking->bookedRooms as $bookedRoom) {
-
                 $bookedRoom->update([
                     'status' => 'confirmed'
                 ]);
             }
 
-            $payment = $booking->payments()->first();
-
-            if ($payment) {
-
-                $payment->update([
-                    'shift_id' => $shift?->id,
-                    'received_by' => Auth::id(),
-                ]);
-            }
-            // Notify all Admins and Staff
             $users = User::whereIn('role', ['admin', 'staff'])
-                ->where('id', '!=', Auth::id()) // Don't notify the user who confirmed
+                ->where('id', '!=', Auth::id())
                 ->get();
 
             $staffName = Auth::user()->first_name . ' ' . Auth::user()->last_name;
 
             foreach ($users as $user) {
-
                 $notification = Notification::create([
                     'user_id' => $user->id,
                     'title' => 'Booking Confirmed',
@@ -855,24 +1165,42 @@ class BookingController extends Controller
                 broadcast(new NotificationCreated($notification));
             }
 
-            // Notify the guest
             if ($booking->user_id) {
-
                 $notification = Notification::create([
                     'user_id' => $booking->user_id,
                     'title' => 'Booking Confirmed',
                     'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
-                    'is_read' => false,
+                    'is_read' => false
                 ]);
 
                 broadcast(new NotificationCreated($notification));
             }
         } elseif ($newStatus === 'checked_in') {
 
-            // RECALCULATE TOTAL
-            $total = $booking->bookedRooms->sum('subtotal');
-            foreach ($booking->bookedRooms as $bookedRoom) {
+            $receivedBy = Auth::id();
 
+            $shift = \App\Models\Shift::where('opened_by', $receivedBy)
+                ->whereNull('closed_at')
+                ->latest('opened_at')
+                ->first();
+
+            if (!$shift) {
+                return response()->json([
+                    'message' => 'Please open a shift first before checking in.'
+                ], 400);
+            }
+
+            $booking->payments()
+                ->where('payment_status', 'paid')
+                ->whereNull('received_by')
+                ->update([
+                    'received_by' => $receivedBy,
+                    'shift_id' => $shift->id,
+                ]);
+
+            $total = $booking->bookedRooms->sum('subtotal');
+
+            foreach ($booking->bookedRooms as $bookedRoom) {
                 $bookedRoom->update([
                     'status' => 'checked_in',
                     'check_in_time' => $bookedRoom->check_in_time ?? now(),
@@ -888,25 +1216,26 @@ class BookingController extends Controller
                 $type . ' booking ' . $booking->booking_reference . ' checked in'
             );
 
-            $notification = Notification::create([
-                'user_id' => $booking->user_id,
-                'title' => 'Checked In',
-                'message' => 'Your booking checked in.',
-                'is_read' => false
-            ]);
+            if ($booking->user_id) {
+                $notification = Notification::create([
+                    'user_id' => $booking->user_id,
+                    'title' => 'Checked In',
+                    'message' => 'Your booking checked in.',
+                    'is_read' => false
+                ]);
 
-            broadcast(new NotificationCreated($notification));
+                broadcast(new NotificationCreated($notification));
+            }
 
-            $roomIds = $booking->bookedRooms
-                ->pluck('room_id');
+            $roomIds = $booking->bookedRooms->pluck('room_id');
 
             Room::whereIn('id', $roomIds)
                 ->update([
                     'status' => Room::STATUS_OCCUPIED
                 ]);
         } elseif ($newStatus === 'checked_out') {
-            foreach ($booking->bookedRooms as $bookedRoom) {
 
+            foreach ($booking->bookedRooms as $bookedRoom) {
                 $bookedRoom->update([
                     'status' => 'checked_out',
                     'check_out_time' => now(),
@@ -929,24 +1258,19 @@ class BookingController extends Controller
                 broadcast(new NotificationCreated($notification));
             }
 
-
             foreach ($booking->bookedRooms as $bookedRoom) {
-
                 $room = $bookedRoom->room;
 
                 if (!$room) {
                     continue;
                 }
 
-                // Update room status to DIRTY (needs cleaning)
                 $room->status = Room::STATUS_DIRTY;
                 $room->save();
             }
         } elseif ($newStatus === 'cancelled') {
-            // When cancelled, make rooms available again
 
             foreach ($booking->bookedRooms as $bookedRoom) {
-
                 $bookedRoom->update([
                     'status' => 'cancelled'
                 ]);
@@ -956,6 +1280,7 @@ class BookingController extends Controller
                 if (!$room) {
                     continue;
                 }
+
                 $room->status = Room::STATUS_AVAILABLE;
                 $room->save();
             }
@@ -1002,25 +1327,52 @@ class BookingController extends Controller
 
         event(new DashboardUpdated());
 
+        $updatedBooking = Booking::with([
+            'user',
+            'walkInGuest',
+            'createdBy',
+            'histories.user',
+            'bookedRooms.bookingAddOns.addOn',
+            'payments.receiver',
+            'payments.shift',
+            'bookedRooms.room' => function ($q) {
+                $q->withTrashed()->with([
+                    'roomType',
+                    'images'
+                ]);
+            }
+        ])->find($booking->id);
+
+        foreach ($updatedBooking->bookedRooms as $bookedRoom) {
+            $room = $bookedRoom->room;
+
+            if (!$room) {
+                continue;
+            }
+
+            $validImages = $room->images->filter(function ($img) {
+                return Storage::disk('public')->exists($img->image_path);
+            })->values();
+
+            $normalImage = $validImages
+                ->where('image_type', 'normal')
+                ->sortByDesc('id')
+                ->first();
+
+            $room->image_url = $normalImage
+                ? asset('storage/' . $normalImage->image_path)
+                : null;
+
+            $room->images = $validImages;
+        }
+
         return response()->json([
             'message' => 'Status updated',
-            'data' => Booking::with([
-                'user',
-                'walkInGuest',
-                'createdBy',
-                'histories.user',
-                'bookedRooms.bookingAddOns.addOn',
-                'payments.receiver',
-                'payments.shift',
-                'bookedRooms.room' => function ($q) {
-                    $q->withTrashed()->with([
-                        'roomType',
-                        'images'
-                    ]);
-                }
-            ])->find($booking->id)
+            'data' => $updatedBooking
         ]);
     }
+
+
 
     public function extend($bookingId, $bookedRoomId)
     {

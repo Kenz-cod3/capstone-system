@@ -2,7 +2,7 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const api = axios.create({
-  baseURL: "http://192.168.8.117:8000/api",
+  baseURL: "http://192.168.254.188:8000/api",
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 // STORAGE BASE (ADD THIS)
-const STORAGE_BASE = "http://192.168.8.117:8000/storage/";
+const STORAGE_BASE = "http://192.168.254.188:8000/storage/";
 
 // IMAGE HELPER (ADD THIS)
 export const getImageUrl = (path?: string | null) => {

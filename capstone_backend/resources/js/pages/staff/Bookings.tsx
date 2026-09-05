@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import {
+    useQuery,
+    useQueryClient,
+    keepPreviousData,
+} from "@tanstack/react-query";
+import debounce from "lodash/debounce";
 import {
     MoreOutlined,
     CloseOutlined,
@@ -6,16 +12,24 @@ import {
     PhoneOutlined,
     EnvironmentOutlined,
     CalendarOutlined,
-    DollarOutlined,
     TagOutlined,
     ClockCircleOutlined,
     HistoryOutlined,
     DeleteOutlined,
-    CheckCircleOutlined
+    CheckCircleOutlined,
+    SearchOutlined,
+    HomeOutlined,
+    DollarOutlined,
+    TeamOutlined,
+    CalendarOutlined as CalendarIcon,
+    CheckOutlined,
+    CloseCircleOutlined,
+    SyncOutlined,
+    CopyOutlined,
+    FilterOutlined,
 } from "@ant-design/icons";
 import {
     Table,
-    Tabs,
     Input,
     Button,
     message,
@@ -30,13 +44,34 @@ import {
     Divider,
     Card,
     Badge,
-    Timeline
+    Timeline,
+    Row,
+    Col,
+    Avatar,
+    Select,
+    Popover,
 } from "antd";
-import type { MenuProps, TabsProps } from "antd";
+import type { MenuProps } from "antd";
 import api from "@/services/api";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const { Title, Text } = Typography;
-const { Search } = Input;
+
+const MINT_GREEN = "#10b981";
+const MINT_GREEN_LIGHT = "#d1fae5";
+const MINT_GREEN_BG = "#ecfdf5";
+const MINT_GREEN_HOVER = "#059669";
+const MINT_GREEN_DARK = "#065f46";
+
+interface AddOn {
+    id: number;
+    add_on_name: string;
+    price: number;
+    pivot?: {
+        quantity: number;
+        subtotal: number;
+    };
+}
 
 interface Room {
     id: number;
@@ -50,7 +85,148 @@ interface Room {
         subtotal: number;
         price_at_time_of_booking: number;
         stay_type?: "short_stay" | "overnight";
+        check_in_date?: string;
+        check_out_date?: string;
         check_out_time?: string;
+    };
+}
+
+interface BookingPayment {
+    id: number;
+    amount: number;
+    payment_method: "cash" | "gcash" | "bank";
+    payment_status: "pending" | "paid" | "refunded" | "failed";
+    gcash_reference?: string;
+    bank_reference?: string;
+    receipt_number?: string;
+    payment_date: string;
+    received_by?: number;
+    receiver?: {
+        id: number;
+        first_name: string;
+        last_name: string;
+        role?: string;
+    };
+}
+
+interface BookedRoom {
+    id: number;
+    room: Room;
+    status:
+        | "pending"
+        | "confirmed"
+        | "checked_in"
+        | "checked_out"
+        | "cancelled"
+        | "refunded";
+    stay_type: "overnight" | "short_stay";
+    check_in_date: string;
+    check_out_date: string;
+    check_in_time?: string | null;
+    check_out_time?: string | null;
+    subtotal: number;
+    price_at_time_of_booking: number;
+    is_extended: boolean;
+    booking_add_ons?: {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: {
+            id: number;
+            add_on_name: string;
+            price: number;
+        };
+    }[];
+    booking?: {
+        id: number;
+        booking_reference: string;
+        booking_type: "online" | "walk_in";
+        booking_status: string;
+        stay_type: string;
+        check_in_date: string;
+        check_out_date: string;
+        total_price: number;
+        created_at?: string;
+        deleted_at?: string | null;
+        user?: {
+            id: number;
+            first_name?: string;
+            last_name?: string;
+            email?: string;
+            phone?: string;
+            address?: string;
+        };
+        walk_in_guest?: {
+            id: number;
+            first_name: string;
+            last_name: string;
+            full_name?: string;
+            contact_number?: string;
+            address?: string;
+        };
+        payments?: BookingPayment[];
+        histories?: {
+            id: number;
+            old_status: string;
+            new_status: string;
+            change_note: string;
+            override_reason?: string;
+            is_override?: boolean;
+            changed_at: string;
+            changed_by?: number;
+            user?: {
+                first_name?: string;
+                last_name?: string;
+            };
+        }[];
+        created_by?: {
+            id: number;
+            first_name?: string;
+            last_name?: string;
+            role?: string;
+        };
+    };
+    booking_reference?: string;
+    booking_type?: "online" | "walk_in";
+    total_price?: number;
+    created_at?: string;
+    deleted_at?: string | null;
+    user?: {
+        id: number;
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        phone?: string;
+        address?: string;
+    };
+    walk_in_guest?: {
+        id: number;
+        first_name: string;
+        last_name: string;
+        full_name?: string;
+        contact_number?: string;
+        address?: string;
+    };
+    payments?: BookingPayment[];
+    histories?: {
+        id: number;
+        old_status: string;
+        new_status: string;
+        change_note: string;
+        override_reason?: string;
+        is_override?: boolean;
+        changed_at: string;
+        changed_by?: number;
+        user?: {
+            first_name?: string;
+            last_name?: string;
+        };
+    }[];
+    created_by?: {
+        id: number;
+        first_name?: string;
+        last_name?: string;
+        role?: string;
     };
 }
 
@@ -59,6 +235,8 @@ interface History {
     old_status: string;
     new_status: string;
     change_note: string;
+    override_reason?: string;
+    is_override?: boolean;
     changed_at: string;
     changed_by?: number;
     user?: {
@@ -70,6 +248,7 @@ interface History {
 interface User {
     id: number;
     first_name?: string;
+    middle_name?: string;
     last_name?: string;
     email?: string;
     phone?: string;
@@ -78,7 +257,10 @@ interface User {
 
 interface WalkInGuest {
     id: number;
-    guest_name: string;
+    first_name: string;
+    middle_name?: string;
+    last_name: string;
+    full_name?: string;
     contact_number?: string;
     address?: string;
 }
@@ -87,14 +269,24 @@ interface CreatedByUser {
     id: number;
     first_name?: string;
     last_name?: string;
-    email?: string;
+    role?: string;
 }
 
 interface Booking {
     id: number;
+    payment_method?: string;
+    gcash_reference?: string;
+    bank_reference?: string;
+    add_ons?: AddOn[];
     booking_reference: string;
     booking_type: "online" | "walk_in";
-    booking_status: "pending" | "confirmed" | "checked_in" | "checked_out" | "cancelled";
+    booking_status:
+        | "pending"
+        | "confirmed"
+        | "checked_in"
+        | "checked_out"
+        | "cancelled"
+        | "refunded";
     stay_type: "short_stay" | "overnight";
     check_in_date: string;
     check_out_date: string;
@@ -105,17 +297,36 @@ interface Booking {
     deleted_at?: string | null;
     user?: User;
     walk_in_guest?: WalkInGuest;
-    rooms?: Room[];
+    booked_rooms?: BookedRoom[];
     histories?: History[];
     created_by?: CreatedByUser;
+    payments?: BookingPayment[];
 }
 
-interface PaginatedResponse {
-    data: Booking[];
-    current_page: number;
-    last_page: number;
-    total: number;
-    per_page: number;
+interface BookingRow extends Booking {
+    booked_room_id: number;
+    room?: Room;
+    status: string;
+    stay_type: "overnight" | "short_stay";
+    subtotal: number;
+    is_extended: boolean;
+    check_in_date: string;
+    check_out_date: string;
+    booking_add_ons?: {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: {
+            id: number;
+            add_on_name: string;
+            price: number;
+        };
+    }[];
+}
+
+interface ExtendResponse {
+    total_price: number;
+    booked_room: BookedRoom;
 }
 
 interface GuestDetails {
@@ -125,227 +336,819 @@ interface GuestDetails {
     address?: string | undefined;
 }
 
+interface PaginatedResponse {
+    data: BookedRoom[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+}
+
+// Helper function to check if object is BookedRoom
+const isBookedRoom = (obj: any): obj is BookedRoom => {
+    return obj && typeof obj === "object" && "room" in obj && "status" in obj;
+};
+
+// Helper function to convert BookedRoom to Booking
+const bookedRoomToBooking = (bookedRoom: BookedRoom): Booking => {
+    const bookingData = bookedRoom.booking;
+
+    return {
+        id: bookingData?.id || bookedRoom.id,
+        booking_reference:
+            bookingData?.booking_reference || `BR-${bookedRoom.id}`,
+        booking_type:
+            (bookingData?.booking_type as "online" | "walk_in") || "walk_in",
+        booking_status:
+            (bookingData?.booking_status as Booking["booking_status"]) ||
+            bookedRoom.status,
+        stay_type:
+            (bookingData?.stay_type as "short_stay" | "overnight") ||
+            bookedRoom.stay_type,
+        check_in_date: bookingData?.check_in_date || bookedRoom.check_in_date,
+        check_out_date:
+            bookingData?.check_out_date || bookedRoom.check_out_date,
+        total_price:
+            bookingData?.total_price ||
+            bookedRoom.total_price ||
+            bookedRoom.subtotal ||
+            0,
+        created_at: bookingData?.created_at || bookedRoom.created_at,
+        deleted_at: bookingData?.deleted_at || bookedRoom.deleted_at || null,
+        user: bookingData?.user || bookedRoom.user,
+        walk_in_guest: bookingData?.walk_in_guest || bookedRoom.walk_in_guest,
+        payments: bookingData?.payments || bookedRoom.payments || [],
+        histories: bookingData?.histories || bookedRoom.histories || [],
+        created_by: bookingData?.created_by || bookedRoom.created_by,
+        booked_rooms: [bookedRoom],
+    };
+};
+
 export default function Bookings() {
     const [currentPage, setCurrentPage] = useState<number>(1);
     const [pageSize, setPageSize] = useState<number>(10);
     const [total, setTotal] = useState<number>(0);
-    const [active, setActive] = useState<Booking[]>([]);
-    const [history, setHistory] = useState<Booking[]>([]);
-    const [trash, setTrash] = useState<Booking[]>([]);
     const [activeTab, setActiveTab] = useState<string>("active");
-    const [loading, setLoading] = useState<boolean>(false);
-    const [searchText, setSearchText] = useState<string>("");
+    const [searchInput, setSearchInput] = useState("");
+    const [searchText, setSearchText] = useState("");
     const [detailsVisible, setDetailsVisible] = useState<boolean>(false);
-    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(
+        null,
+    );
+    const [selectedBookingRow, setSelectedBookingRow] =
+        useState<BookingRow | null>(null);
+    const [selectedBookedRoomId, setSelectedBookedRoomId] = useState<
+        number | null
+    >(null);
+    const [userRole, setUserRole] = useState<string>("staff");
+    const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const [filterStatus, setFilterStatus] = useState<string>("all");
+    const [filterPopoverOpen, setFilterPopoverOpen] = useState<boolean>(false);
+
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    const bookingId = location.state?.bookingId;
+    const bookedRoomId = location.state?.bookedRoomId;
+
+    // Refs for tab animation
+    const tabContainerRef = useRef<HTMLDivElement>(null);
+    const activeTabRef = useRef<HTMLButtonElement>(null);
+    const [indicatorStyle, setIndicatorStyle] = useState<{
+        left: number;
+        width: number;
+    }>({ left: 0, width: 0 });
 
     useEffect(() => {
         setCurrentPage(1);
         setSearchText("");
     }, [activeTab]);
 
+    // Update indicator position when active tab changes
     useEffect(() => {
-        fetchAll(currentPage, pageSize);
-    }, [activeTab, currentPage, pageSize]);
-
-    const fetchAll = async (page: number = currentPage, perPage: number = pageSize) => {
-        setLoading(true);
-
-        try {
-            let endpoint = "/bookings/active";
-
-            if (activeTab === "history") endpoint = "/bookings/history";
-            if (activeTab === "trash") endpoint = "/bookings/trash";
-
-            const res = await api.get<PaginatedResponse>(`${endpoint}?page=${page}&per_page=${perPage}`);
-
-            const response = res.data;
-
-            if (response.current_page > response.last_page) {
-                setCurrentPage(response.last_page || 1);
-                return;
-            }
-
-            const data = response.data || [];
-
-            if (activeTab === "active") {
-                setActive(data);
-            } else if (activeTab === "history") {
-                setHistory(data);
-            } else if (activeTab === "trash") {
-                setTrash(data);
-            }
-
-            setTotal(response.total ?? 0);
-
-        } catch (err) {
-            console.error(err);
-            message.error("Failed to load bookings");
-        } finally {
-            setLoading(false);
+        if (activeTabRef.current && tabContainerRef.current) {
+            const tabRect = activeTabRef.current.getBoundingClientRect();
+            const containerRect = tabContainerRef.current.getBoundingClientRect();
+            setIndicatorStyle({
+                left: tabRect.left - containerRect.left,
+                width: tabRect.width,
+            });
         }
+    }, [activeTab]);
+
+    // Get user role on mount
+    useEffect(() => {
+        const getUserRole = async () => {
+            try {
+                const response = await api.get("/user");
+                setUserRole(response.data.role);
+            } catch (error) {
+                console.error("Failed to get user role:", error);
+            }
+        };
+        getUserRole();
+    }, []);
+
+    const queryClient = useQueryClient();
+
+    // Fetch all booked rooms based on active tab using the booked-rooms endpoints
+    const bookingQuery = useQuery({
+        queryKey: [
+            "booked-rooms",
+            activeTab,
+            currentPage,
+            pageSize,
+            searchText,
+            filterStatus,
+        ],
+        queryFn: async () => {
+            let endpoint = "/booked-rooms";
+
+            if (activeTab === "history") {
+                endpoint = "/booked-rooms/history";
+            }
+
+            if (activeTab === "trash") {
+                endpoint = "/booked-rooms/trash";
+            }
+
+            // Add pagination and search parameters
+            const params = new URLSearchParams({
+                page: currentPage.toString(),
+                per_page: pageSize.toString(),
+            });
+
+            if (searchText.trim()) {
+                params.append("search", searchText.trim());
+            }
+
+            if (filterStatus !== "all") {
+                params.append("status", filterStatus);
+            }
+
+            const { data } = await api.get<PaginatedResponse>(
+                `${endpoint}?${params.toString()}`,
+            );
+
+            // Update total from response
+            setTotal(data.total || 0);
+
+            return data.data || [];
+        },
+        staleTime: 0,
+        gcTime: 300000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        placeholderData: keepPreviousData,
+    });
+
+    const bookings = bookingQuery.data ?? [];
+
+    useEffect(() => {
+        bookingQuery.refetch();
+    }, [activeTab, filterStatus]);
+
+    // Remove client-side filtering since we're doing server-side pagination
+    const filteredData = bookings;
+
+    // Remove client-side pagination since we're doing server-side pagination
+    const paginatedData = filteredData;
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchText, activeTab, filterStatus]);
+
+    // Transform BookedRoom data to BookingRow for table display
+    const tableData: BookingRow[] = paginatedData.map((bookedRoom) => {
+        const bookingData = bookedRoom.booking;
+
+        if (!bookingData) {
+            return {
+                id: bookedRoom.id,
+                booked_room_id: bookedRoom.id,
+                room: bookedRoom.room,
+                status: bookedRoom.status,
+                stay_type: bookedRoom.stay_type,
+                subtotal: Number(bookedRoom.subtotal ?? 0),
+                is_extended: bookedRoom.is_extended,
+                check_in_date: bookedRoom.check_in_date,
+                check_out_date: bookedRoom.check_out_date,
+                booking_reference: `BR-${bookedRoom.id}`,
+                booking_type: "walk_in" as const,
+                booking_status: bookedRoom.status as Booking["booking_status"],
+                total_price: Number(bookedRoom.subtotal ?? 0),
+                payments: [],
+                histories: [],
+                created_at: undefined,
+                deleted_at: null,
+            } as BookingRow;
+        }
+
+        return {
+            id: bookingData.id || bookedRoom.id,
+            booking_reference: bookingData.booking_reference,
+            booking_type: bookingData.booking_type,
+            booking_status: bookingData.booking_status,
+
+            stay_type: bookedRoom.stay_type,
+
+            check_in_date: bookedRoom.check_in_date,
+            check_out_date: bookedRoom.check_out_date,
+
+            total_price: bookingData.total_price || bookedRoom.subtotal,
+
+            created_at: bookingData.created_at,
+            deleted_at: bookingData.deleted_at,
+
+            user: bookingData.user,
+            walk_in_guest: bookingData.walk_in_guest,
+            payments: bookingData.payments || [],
+            histories: bookingData.histories || [],
+            created_by: bookingData.created_by,
+
+            booked_room_id: bookedRoom.id,
+            room: bookedRoom.room,
+            status: bookedRoom.status,
+            subtotal: Number(bookedRoom.subtotal),
+            is_extended: bookedRoom.is_extended,
+            booking_add_ons: bookedRoom.booking_add_ons || [],
+        } as BookingRow;
+    });
+
+    // Calculate statistics
+    const stats = useMemo(() => {
+        const activeBookings = bookings.filter(
+            (b) =>
+                b.status === "checked_in" ||
+                b.status === "confirmed" ||
+                b.status === "pending",
+        );
+        const checkedIn = bookings.filter((b) => b.status === "checked_in");
+        const upcoming = bookings.filter((b) => {
+            if (b.status !== "confirmed") return false;
+            const checkIn = new Date(b.check_in_date);
+            const today = new Date();
+            return checkIn >= today;
+        });
+        const totalRevenue = bookings
+            .filter(
+                (b) => b.status === "checked_in" || b.status === "checked_out",
+            )
+            .reduce((sum, b) => sum + Number(b.subtotal || 0), 0);
+
+        return {
+            totalActive: activeBookings.length,
+            checkedIn: checkedIn.length,
+            upcoming: upcoming.length,
+            totalRevenue: totalRevenue,
+        };
+    }, [bookings]);
+
+    // Get the selected booked room
+    const selectedBookedRoom = (() => {
+        if (selectedBooking?.booked_rooms) {
+            const found = selectedBooking.booked_rooms.find(
+                (br) => br.id === selectedBookedRoomId,
+            );
+            if (found) return found;
+        }
+        const row = tableData.find(
+            (r) => r.booked_room_id === selectedBookedRoomId,
+        );
+        if (row && isBookedRoom(row)) {
+            return row;
+        }
+        return bookings.find((b) => b.id === selectedBookedRoomId);
+    })();
+
+    // Safely get booking_add_ons
+    const getBookingAddOns = (): {
+        id: number;
+        quantity: number;
+        subtotal: number;
+        add_on: { id: number; add_on_name: string; price: number };
+    }[] => {
+        if (!selectedBookedRoom) return [];
+        if (isBookedRoom(selectedBookedRoom)) {
+            return (selectedBookedRoom as any).booking_add_ons || [];
+        }
+        return [];
     };
 
-    const filterData = (data: Booking[]): Booking[] => {
-        if (!searchText) return data;
-        if (!Array.isArray(data)) return [];
+    // Safely get payments
+    const getPayments = (): BookingPayment[] => {
+        if (selectedBooking?.payments) {
+            return selectedBooking.payments;
+        }
+        if (
+            selectedBookedRoom &&
+            isBookedRoom(selectedBookedRoom) &&
+            (selectedBookedRoom as any).payments
+        ) {
+            return (selectedBookedRoom as any).payments;
+        }
+        return [];
+    };
 
-        return data.filter((b) => {
-            const name = b.booking_type === "online"
-                ? `${b.user?.first_name ?? ""} ${b.user?.last_name ?? ""}`.trim()
-                : b.walk_in_guest?.guest_name ?? "";
+    const roomCharges = Number((selectedBookedRoom as any)?.subtotal ?? 0);
 
-            return (
-                name.toLowerCase().includes(searchText.toLowerCase()) ||
-                b.booking_type?.toLowerCase().includes(searchText.toLowerCase()) ||
-                String(b.id).includes(searchText)
-            );
+    const addOnTotal = getBookingAddOns().reduce(
+        (total, addon) => total + Number(addon.subtotal ?? 0),
+        0,
+    );
+
+    const paymentSubtotal = roomCharges + addOnTotal;
+
+    const firstPayment = getPayments()[0];
+
+    const hasOpenedFromNavigation = useRef(false);
+
+    useEffect(() => {
+        if (hasOpenedFromNavigation.current) return;
+
+        if (!bookingId || !bookedRoomId) return;
+
+        const row = tableData.find(
+            (r) => r.id === bookingId && r.booked_room_id === bookedRoomId,
+        );
+
+        if (!row) return;
+
+        hasOpenedFromNavigation.current = true;
+
+        setSelectedBookedRoomId(bookedRoomId);
+
+        showDetails(row);
+
+        navigate(location.pathname, {
+            replace: true,
+            state: null,
+        });
+    }, [bookingId, bookedRoomId, tableData]);
+
+    const totalRows = total;
+
+    const debouncedSearch = useMemo(
+        () =>
+            debounce((value: string) => {
+                setSearchText(value);
+            }, 500),
+        [],
+    );
+
+    useEffect(() => {
+        return () => {
+            debouncedSearch.cancel();
+        };
+    }, [debouncedSearch]);
+
+    // Reusable function for actions with admin override
+    const handleActionWithOverride = (
+        action: (reason?: string) => Promise<void>,
+        actionName: string,
+        bookingId?: number,
+        requiresReason: boolean = true,
+    ) => {
+        if (userRole === "staff") {
+            action();
+            return;
+        }
+
+        let reason = "";
+
+        const modalContent = (
+            <div>
+                <Text style={{ fontSize: "11px" }}>
+                    You are about to perform an override action:{" "}
+                    <strong>{actionName}</strong>
+                </Text>
+                {requiresReason && (
+                    <div style={{ marginTop: 14 }}>
+                        <Text style={{ fontSize: "11px" }}>
+                            Reason for override (optional):
+                        </Text>
+                        <Input.TextArea
+                            rows={3}
+                            placeholder="Enter reason for this override action..."
+                            onChange={(e) => (reason = e.target.value)}
+                            style={{ marginTop: 6, fontSize: "11px" }}
+                        />
+                    </div>
+                )}
+            </div>
+        );
+
+        Modal.confirm({
+            title: `Admin Override: ${actionName}`,
+            content: modalContent,
+            okText: "Proceed",
+            cancelText: "Cancel",
+            okButtonProps: { danger: true },
+            centered: true,
+            width: 480,
+            onOk: async () => {
+                if (reason) {
+                    console.log(
+                        `[ADMIN OVERRIDE] ${actionName} on booking #${bookingId}: ${reason}`,
+                    );
+                    try {
+                        await api
+                            .post(`/bookings/${bookingId}/log-override`, {
+                                action: actionName,
+                                reason: reason,
+                                timestamp: new Date().toISOString(),
+                                user_role: userRole,
+                            })
+                            .catch(() => {});
+                    } catch (error) {
+                        console.error("Failed to log override:", error);
+                    }
+                }
+
+                await action(reason);
+
+                if (reason) {
+                    message.success(
+                        `${actionName} completed with override reason logged`,
+                    );
+                } else {
+                    message.success(`${actionName} completed`);
+                }
+            },
         });
     };
 
-    const handleUpdateStatus = async (id: number, status: string) => {
-        try {
-            await api.put(`/bookings/${id}`, { booking_status: status });
+    const handleUpdateStatus = async (
+        id: number,
+        status: string,
+        actionName: string,
+    ) => {
+        const action = async (reason?: string) => {
+            try {
+                const response = await api.put(`/booked-rooms/${id}`, {
+                    status: status,
+                    override_reason: reason,
+                });
 
-            await fetchAll();
-
-            if (selectedBooking && selectedBooking.id === id) {
-                setSelectedBooking((prev) =>
-                    prev ? { ...prev, booking_status: status as Booking["booking_status"] } : null
+                // Update local state
+                queryClient.setQueryData(
+                    [
+                        "booked-rooms",
+                        activeTab,
+                        currentPage,
+                        pageSize,
+                        searchText,
+                        filterStatus,
+                    ],
+                    (old: BookedRoom[] | undefined) => {
+                        if (!old) return old;
+                        return old.map((bookedRoom) =>
+                            bookedRoom.id === id
+                                ? {
+                                      ...bookedRoom,
+                                      status: status as BookedRoom["status"],
+                                      ...(status === "checked_in"
+                                          ? {
+                                                check_in_time:
+                                                    new Date().toISOString(),
+                                            }
+                                          : {}),
+                                      ...(status === "checked_out"
+                                          ? {
+                                                check_out_time:
+                                                    new Date().toISOString(),
+                                            }
+                                          : {}),
+                                      ...response.data.data,
+                                  }
+                                : bookedRoom,
+                        );
+                    },
                 );
-            }
 
-            message.success(`Booking #${id} status updated to ${status}`);
-        } catch (err) {
-            console.error(err);
-            message.error("Failed to update status");
+                message.success(`${actionName} successful`);
+                queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+            } catch (err) {
+                console.error(err);
+                message.error(`${actionName} failed`);
+            }
+        };
+
+        if (userRole === "admin") {
+            let overrideReason = "";
+            Modal.confirm({
+                title: `Admin Override: ${actionName}`,
+                centered: true,
+                width: 480,
+                okText: "Proceed",
+                cancelText: "Cancel",
+                content: (
+                    <Input.TextArea
+                        rows={3}
+                        placeholder="Enter reason..."
+                        onChange={(e) => (overrideReason = e.target.value)}
+                        style={{ fontSize: "11px" }}
+                    />
+                ),
+                onOk: () => action(overrideReason),
+            });
+        } else {
+            await action();
         }
     };
 
-    const handleCheckout = async (bookingId: number) => {
-        try {
-            await api.post(`/walk-in-guests/${bookingId}/checkout`);
+    const handleCheckoutAction = async (bookingId: number) => {
+        console.log("Checkout clicked:", bookingId);
+        const action = async (reason?: string) => {
+            const booking = bookings.find((b) => b.id === bookingId);
 
-            const checkedOutBooking = active.find(b => b.id === bookingId);
+            if (!booking) return;
 
+            const bookingType =
+                booking.booking_type ||
+                (booking.booking?.booking_type as "online" | "walk_in") ||
+                "walk_in";
+
+            if (bookingType === "walk_in") {
+                await api.post(`/walk-in-guests/${bookingId}/checkout`, {
+                    override_reason: reason,
+                });
+            } else {
+                await api.put(`/bookings/${bookingId}`, {
+                    booking_status: "checked_out",
+                    override_reason: reason,
+                });
+            }
+
+            // Update local state
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== bookingId);
+                },
+            );
+
+            // Move to history tab
+            const checkedOutBooking = bookings.find((b) => b.id === bookingId);
             if (checkedOutBooking) {
-                const updatedBooking: Booking = { ...checkedOutBooking, booking_status: "checked_out" };
-                setHistory((prev: Booking[]) => [updatedBooking, ...prev]);
-                setActive((prev: Booking[]) => prev.filter(b => b.id !== bookingId));
-            }
-
-            if (selectedBooking && selectedBooking.id === bookingId) {
-                setSelectedBooking((prev: Booking | null) =>
-                    prev ? { ...prev, booking_status: "checked_out" } : null
+                const updatedBookedRoom: BookedRoom = {
+                    ...checkedOutBooking,
+                    status: "checked_out" as BookedRoom["status"],
+                };
+                queryClient.setQueryData(
+                    [
+                        "booked-rooms",
+                        "history",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                        filterStatus,
+                    ],
+                    (old: BookedRoom[] | undefined) => {
+                        return [updatedBookedRoom, ...(old || [])];
+                    },
                 );
             }
 
-            message.success(`Booking #${bookingId} checked out successfully`);
-        } catch (error) {
-            console.error(error);
-            message.error("Checkout failed");
+            message.success("Check Out successful");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+        };
+
+        await handleActionWithOverride(action, "Check Out", bookingId, true);
+    };
+
+    const handleExtendAction = async (booking: BookingRow) => {
+        const action = async () => {
+            const res = await api.post<ExtendResponse>(
+                `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
+            );
+
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.map((b) =>
+                        b.id === booking.id
+                            ? { ...b, total_price: res.data.total_price }
+                            : b,
+                    );
+                },
+            );
+
+            message.success("Stay extended successfully");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+        };
+
+        await handleActionWithOverride(
+            action,
+            "Extend Stay",
+            booking.id,
+            false,
+        );
+    };
+
+    const handleExtend = (booking: BookingRow) => {
+        if (userRole === "staff") {
+            Modal.confirm({
+                title: "Extend Stay",
+                content: "Add 1 hour (₱100)?",
+                okText: "Extend",
+                cancelText: "Cancel",
+                centered: true,
+                onOk: async () => {
+                    try {
+                        const res = await api.post<ExtendResponse>(
+                            `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
+                        );
+
+                        queryClient.setQueryData(
+                            [
+                                "booked-rooms",
+                                activeTab,
+                                currentPage,
+                                pageSize,
+                                searchText,
+                                filterStatus,
+                            ],
+                            (old: BookedRoom[] | undefined) => {
+                                if (!old) return old;
+                                return old.map((b) =>
+                                    b.id === booking.id
+                                        ? {
+                                              ...b,
+                                              total_price: res.data.total_price,
+                                          }
+                                        : b,
+                                );
+                            },
+                        );
+
+                        message.success("Stay extended successfully");
+                        queryClient.invalidateQueries({
+                            queryKey: ["booked-rooms"],
+                        });
+                    } catch (err) {
+                        console.error(err);
+                        message.error("Failed to extend stay");
+                    }
+                },
+            });
+        } else {
+            handleExtendAction(booking);
         }
     };
 
-    const handleExtend = (booking: Booking) => {
+    const handleRefund = async (record: BookingRow) => {
         Modal.confirm({
-            title: "Extend Stay",
-            content: "Add 1 hour (₱100)?",
-            okText: "Extend",
+            title: "Refund Room",
+            content:
+                "Are you sure you want to refund this room? This action cannot be undone.",
+            okText: "Refund",
+            okButtonProps: {
+                danger: true,
+            },
             cancelText: "Cancel",
             centered: true,
             onOk: async () => {
                 try {
-                    const res = await api.post<{ total_price: number }>(`/bookings/${booking.id}/extend`);
+                    await api.post("/booking-payments/refund", {
+                        booking_id: record.id,
+                        booked_room_id: record.booked_room_id,
+                    });
 
-                    setActive((prev: Booking[]) =>
-                        prev.map(b =>
-                            b.id === booking.id
-                                ? { ...b, total_price: res.data.total_price }
-                                : b
-                        )
-                    );
+                    message.success("Room refunded successfully");
 
-                    if (selectedBooking && selectedBooking.id === booking.id) {
-                        setSelectedBooking((prev: Booking | null) =>
-                            prev ? { ...prev, total_price: res.data.total_price } : null
-                        );
-                    }
-
-                    message.success("Stay extended successfully");
-                } catch (err) {
-                    console.error(err);
-                    message.error("Failed to extend stay");
+                    queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    });
+                } catch (error) {
+                    console.error(error);
+                    message.error("Failed to refund room");
                 }
-            }
+            },
         });
     };
 
-    const handleDelete = async (id: number) => {
-        Modal.confirm({
-            title: "Move to Trash",
-            content: "Are you sure you want to move this booking to trash?",
-            okText: "Yes",
-            cancelText: "Cancel",
-            okButtonProps: { danger: true },
-            onOk: async () => {
-                try {
-                    await api.delete(`/bookings/${id}`);
+    const handleDeleteAction = async (record: BookingRow) => {
+        const action = async (reason?: string) => {
+            await api.delete(`/bookings/${record.id}`, {
+                data: {
+                    booked_room_id: record.booked_room_id,
+                    override_reason: reason,
+                },
+            });
 
-                    const deleted = active.find(b => b.id === id) || history.find(b => b.id === id);
+            queryClient.setQueryData(
+                ["booked-rooms", activeTab, currentPage, pageSize, searchText, filterStatus],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== record.id);
+                },
+            );
 
-                    setActive((prev: Booking[]) => prev.filter(b => b.id !== id));
-                    setHistory((prev: Booking[]) => prev.filter(b => b.id !== id));
-
-                    if (deleted) {
-                        const deletedBooking: Booking = { ...deleted, deleted_at: new Date().toISOString() };
-                        setTrash((prev: Booking[]) => [deletedBooking, ...prev]);
-                    }
-
-                    if (selectedBooking && selectedBooking.id === id) {
-                        setDetailsVisible(false);
-                        setSelectedBooking(null);
-                    }
-
-                    message.success(`Booking #${id} moved to trash`);
-                } catch (err) {
-                    console.error(err);
-                    message.error("Failed to move booking to trash");
-                }
+            const deletedItem = bookings.find((b) => b.id === record.id);
+            if (deletedItem) {
+                queryClient.setQueryData(
+                    [
+                        "booked-rooms",
+                        "trash",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                        filterStatus,
+                    ],
+                    (old: BookedRoom[] | undefined) => {
+                        return [deletedItem, ...(old || [])];
+                    },
+                );
             }
-        });
+
+            if (selectedBooking && selectedBooking.id === record.id) {
+                setDetailsVisible(false);
+                setSelectedBooking(null);
+            }
+
+            message.success("Booking moved to trash");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+        };
+
+        if (userRole === "staff") {
+            Modal.warning({
+                title: "Access Restricted",
+                content: "Only administrators can move bookings to trash.",
+                okText: "OK",
+                centered: true,
+            });
+            return;
+        }
+
+        await handleActionWithOverride(
+            action,
+            "Move to Trash",
+            record.id,
+            true,
+        );
     };
 
-    const handleRestore = async (id: number) => {
+    const handleRestore = async (record: BookingRow) => {
         try {
-            await api.post(`/bookings/${id}/restore`);
+            await api.post(`/booked-rooms/${record.booked_room_id}/restore`);
 
-            const restored = trash.find(b => b.id === id);
-            setTrash((prev: Booking[]) => prev.filter(b => b.id !== id));
+            queryClient.setQueryData(
+                ["booked-rooms", "trash", currentPage, pageSize, searchText, filterStatus],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.filter((b) => b.id !== record.id);
+                },
+            );
 
-            if (restored) {
-                const { deleted_at, ...cleanRestored } = restored;
-                if (restored.booking_status === "checked_out" || restored.booking_status === "cancelled") {
-                    setHistory((prev: Booking[]) => [cleanRestored as Booking, ...prev]);
-                } else {
-                    setActive((prev: Booking[]) => [cleanRestored as Booking, ...prev]);
-                }
+            const restoredItem = bookings.find((b) => b.id === record.id);
+            if (restoredItem) {
+                const cleanRestored = {
+                    ...restoredItem,
+                    deleted_at: undefined,
+                };
+                delete cleanRestored.deleted_at;
+                queryClient.setQueryData(
+                    [
+                        "booked-rooms",
+                        "active",
+                        currentPage,
+                        pageSize,
+                        searchText,
+                        filterStatus,
+                    ],
+                    (old: BookedRoom[] | undefined) => {
+                        return [cleanRestored, ...(old || [])];
+                    },
+                );
             }
 
             message.success("Booking restored successfully");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
         } catch (err) {
             console.error(err);
             message.error("Failed to restore booking");
         }
     };
 
-    const handleForceDelete = async (id: number) => {
+    const handleForceDelete = async (record: BookingRow) => {
         Modal.confirm({
             title: "Permanent Deletion",
             content: (
                 <div>
-                    <Text type="danger">⚠️ This action cannot be undone!</Text>
+                    <Text type="danger" style={{ fontSize: "11px" }}>
+                        ⚠️ This action cannot be undone!
+                    </Text>
                     <br />
-                    <Text>Are you sure you want to permanently delete this booking?</Text>
+                    <Text style={{ fontSize: "11px" }}>
+                        Are you sure you want to permanently delete this
+                        booking?
+                    </Text>
                 </div>
             ),
             okText: "Delete Forever",
@@ -353,25 +1156,93 @@ export default function Bookings() {
             okButtonProps: { danger: true },
             onOk: async () => {
                 try {
-                    await api.delete(`/bookings/${id}/force-delete`);
-                    setTrash((prev: Booking[]) => prev.filter(b => b.id !== id));
+                    await api.delete(
+                        `/booked-rooms/${record.booked_room_id}/force-delete`,
+                    );
 
-                    if (selectedBooking && selectedBooking.id === id) {
+                    queryClient.setQueryData(
+                        [
+                            "booked-rooms",
+                            "trash",
+                            currentPage,
+                            pageSize,
+                            searchText,
+                            filterStatus,
+                        ],
+                        (old: BookedRoom[] | undefined) => {
+                            if (!old) return old;
+                            return old.filter((b) => b.id !== record.id);
+                        },
+                    );
+
+                    if (selectedBooking && selectedBooking.id === record.id) {
                         setDetailsVisible(false);
                         setSelectedBooking(null);
                     }
 
-                    message.success(`Booking #${id} permanently deleted`);
+                    message.success(`Booking permanently deleted`);
+                    queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    });
                 } catch (err) {
                     console.error(err);
                     message.error("Failed to delete booking permanently");
                 }
-            }
+            },
         });
     };
 
-    const showDetails = (record: Booking) => {
-        setSelectedBooking(record);
+    const showDetails = (record: BookingRow) => {
+        const bookedRoom = bookings.find((b) => b.id === record.booked_room_id);
+
+        if (bookedRoom && bookedRoom.booking) {
+            const fullBooking: Booking = {
+                ...bookedRoom.booking,
+                booked_rooms: [bookedRoom],
+                id: bookedRoom.booking.id || bookedRoom.id,
+            } as Booking;
+            setSelectedBooking(fullBooking);
+        } else if (bookedRoom) {
+            const fullBooking = bookedRoomToBooking(bookedRoom);
+            setSelectedBooking(fullBooking);
+        } else {
+            const minimalBooking: Booking = {
+                id: record.id,
+                booking_reference:
+                    record.booking_reference || `BR-${record.id}`,
+                booking_type: record.booking_type || "walk_in",
+                booking_status: record.status as Booking["booking_status"],
+                stay_type: record.stay_type as Booking["stay_type"],
+                check_in_date: record.check_in_date,
+                check_out_date: record.check_out_date,
+                total_price: record.total_price || record.subtotal,
+                created_at: record.created_at,
+                deleted_at: record.deleted_at || null,
+                user: record.user,
+                walk_in_guest: record.walk_in_guest,
+                booked_rooms: [
+                    {
+                        id: record.booked_room_id,
+                        room: record.room!,
+                        status: record.status as BookedRoom["status"],
+                        stay_type: record.stay_type,
+                        check_in_date: record.check_in_date,
+                        check_out_date: record.check_out_date,
+                        subtotal: record.subtotal,
+                        price_at_time_of_booking: record.subtotal,
+                        is_extended: record.is_extended,
+                        booking_add_ons: [],
+                    },
+                ],
+                payments: record.payments || [],
+                histories: record.histories || [],
+                created_by: record.created_by,
+            };
+            setSelectedBooking(minimalBooking);
+        }
+
+        setSelectedBookingRow(record);
+        setSelectedBookedRoomId(record.booked_room_id);
         setDetailsVisible(true);
     };
 
@@ -380,7 +1251,7 @@ export default function Bookings() {
         return new Date(date).toLocaleDateString("en-PH", {
             year: "numeric",
             month: "short",
-            day: "numeric"
+            day: "numeric",
         });
     };
 
@@ -391,7 +1262,7 @@ export default function Bookings() {
             month: "short",
             day: "numeric",
             hour: "2-digit",
-            minute: "2-digit"
+            minute: "2-digit",
         });
     };
 
@@ -399,29 +1270,15 @@ export default function Bookings() {
         if (!datetime) return "-";
         return new Date(datetime).toLocaleTimeString("en-PH", {
             hour: "2-digit",
-            minute: "2-digit"
+            minute: "2-digit",
         });
     };
 
-    const getExpectedCheckoutDate = (booking: Booking): string => {
-        if (!booking.check_in_date) return "-";
-
-        const date = new Date(booking.check_in_date);
-        date.setDate(date.getDate() + 1);
-
-        return formatDate(date.toISOString());
-    };
-
-    const getCheckoutTime = (booking: Booking): string => {
-        if (!booking.rooms || booking.rooms.length === 0) return "-";
-
-        const room = booking.rooms[0];
-
-        if (room?.pivot?.check_out_time) {
-            return formatTime(room.pivot.check_out_time);
+    const getExpectedCheckoutDate = (bookedRoom?: BookedRoom): string => {
+        if (!bookedRoom?.check_out_date) {
+            return "-";
         }
-
-        return "-";
+        return formatDate(bookedRoom.check_out_date);
     };
 
     const getStatusColor = (status: string): string => {
@@ -430,7 +1287,8 @@ export default function Bookings() {
             confirmed: "green",
             checked_in: "blue",
             checked_out: "default",
-            cancelled: "red"
+            cancelled: "red",
+            refunded: "purple",
         };
         return colors[status] || "default";
     };
@@ -438,12 +1296,43 @@ export default function Bookings() {
     const getStatusBadgeColor = (status: string): string => {
         const colors: Record<string, string> = {
             pending: "#faad14",
-            confirmed: "#52c41a",
+            confirmed: MINT_GREEN,
             checked_in: "#1890ff",
             checked_out: "#8c8c8c",
-            cancelled: "#ff4d4f"
+            cancelled: "#ff4d4f",
+            refunded: "#722ed1",
         };
         return colors[status] || "#8c8c8c";
+    };
+
+    const getPaymentStatusColor = (status: string): string => {
+        const colors: Record<string, string> = {
+            paid: "green",
+            pending: "orange",
+            refunded: "purple",
+            failed: "red",
+        };
+        return colors[status] || "default";
+    };
+
+    const getOverdueDays = (bookedRoom?: BookedRoom): number => {
+        if (
+            !bookedRoom ||
+            bookedRoom.status !== "checked_in" ||
+            !bookedRoom.check_out_date
+        ) {
+            return 0;
+        }
+
+        const checkoutDate = new Date(bookedRoom.check_out_date);
+        const today = new Date();
+        checkoutDate.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+
+        const diff = today.getTime() - checkoutDate.getTime();
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+        return days > 0 ? days : 0;
     };
 
     const getGuestName = (booking: Booking): string => {
@@ -452,112 +1341,190 @@ export default function Bookings() {
             const lastName = booking.user?.last_name ?? "";
             return `${firstName} ${lastName}`.trim() || "N/A";
         } else {
-            return booking.walk_in_guest?.guest_name || "Guest";
+            return booking.walk_in_guest?.full_name || "Guest";
         }
     };
 
     const getGuestDetails = (booking: Booking): GuestDetails => {
         if (booking.booking_type === "online") {
             const result: GuestDetails = {
-                name: `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim()
+                name: `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim(),
             };
-            if (booking.user?.email !== undefined) result.email = booking.user.email;
-            if (booking.user?.phone !== undefined) result.phone = booking.user.phone;
-            if (booking.user?.address !== undefined) result.address = booking.user.address;
+            if (booking.user?.email !== undefined)
+                result.email = booking.user.email;
+            if (booking.user?.phone !== undefined)
+                result.phone = booking.user.phone;
+            if (booking.user?.address !== undefined)
+                result.address = booking.user.address;
             return result;
         } else {
             const result: GuestDetails = {
-                name: booking.walk_in_guest?.guest_name || "Guest"
+                name: booking.walk_in_guest?.full_name || "Guest",
             };
-            if (booking.walk_in_guest?.contact_number !== undefined) result.phone = booking.walk_in_guest.contact_number;
-            if (booking.walk_in_guest?.address !== undefined) result.address = booking.walk_in_guest.address;
+            if (booking.walk_in_guest?.contact_number !== undefined)
+                result.phone = booking.walk_in_guest.contact_number;
+            if (booking.walk_in_guest?.address !== undefined)
+                result.address = booking.walk_in_guest.address;
             return result;
         }
     };
 
-    const getRoomPrice = (room: Room, stayType: string): number => {
-        if (room.pivot?.subtotal != null) {
-            return Number(room.pivot.subtotal);
-        }
-
-        if (room.pivot?.price_at_time_of_booking != null) {
-            if (stayType === "short_stay") {
-                return Number(room.pivot.price_at_time_of_booking) / 2;
-            }
-            return Number(room.pivot.price_at_time_of_booking);
-        }
-
-        if (room.room_type) {
-            if (stayType === "short_stay" && room.room_type.short_stay_price) {
-                return room.room_type.short_stay_price;
-            }
-            return room.room_type.base_price || 0;
-        }
-
-        return 0;
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            message.success("Copied to clipboard!");
+        }).catch(() => {
+            message.error("Failed to copy");
+        });
     };
 
-    const getActionMenu = (record: Booking, type: string): MenuProps => {
+    const getActionMenu = (record: BookingRow, type: string): MenuProps => {
         const items: MenuProps["items"] = [];
 
         if (type === "active") {
-            if (record.booking_status === "pending") {
+            // Pending
+            if (record.status === "pending") {
+                items.push(
+                    {
+                        key: "confirm",
+                        label: "Confirm",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "confirmed",
+                                "Confirm Booking",
+                            ),
+                    },
+                    {
+                        key: "cancel",
+                        label: "Cancel Booking",
+                        danger: true,
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "cancelled",
+                                "Cancel Booking",
+                            ),
+                    },
+                );
+            }
+
+            // Confirmed
+            if (record.status === "confirmed") {
+                items.push(
+                    {
+                        key: "checkin",
+                        label: "Check In",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "checked_in",
+                                "Check In",
+                            ),
+                    },
+                    {
+                        key: "cancel",
+                        label: "Cancel Booking",
+                        danger: true,
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "cancelled",
+                                "Cancel Booking",
+                            ),
+                    },
+                );
+            }
+
+            // Checked In
+            if (record.status === "checked_in") {
+                items.push(
+                    {
+                        key: "checkout",
+                        label: "Check Out",
+                        onClick: () =>
+                            handleUpdateStatus(
+                                record.booked_room_id,
+                                "checked_out",
+                                "Check Out",
+                            ),
+                    },
+                    {
+                        key: "extend",
+                        label: "Extend Stay",
+                        onClick: () => handleExtend(record),
+                    },
+                    {
+                        key: "refund",
+                        label: "Refund Room",
+                        danger: true,
+                        onClick: () => handleRefund(record),
+                    },
+                );
+            }
+
+            // Cancelled
+            if (record.status === "cancelled") {
                 items.push({
-                    key: "confirm",
-                    label: "Confirm",
-                    onClick: () => handleUpdateStatus(record.id, "confirmed")
+                    key: "refund",
+                    label: "Refund Room",
+                    danger: true,
+                    onClick: () => handleRefund(record),
                 });
             }
 
-            if (record.booking_status === "confirmed") {
-                items.push({
-                    key: "checkin",
-                    label: "Check In",
-                    onClick: () => handleUpdateStatus(record.id, "checked_in")
-                });
-            }
-
-            if (record.booking_status === "checked_in") {
-                items.push({
-                    key: "extend",
-                    label: "Extend Stay",
-                    onClick: () => handleExtend(record)
-                });
-                items.push({
-                    key: "checkout",
-                    label: "Check Out",
-                    onClick: () => {
-                        handleUpdateStatus(record.id, "checked_out");
-                    }
-                });
-            }
-
+            // Move to Trash
             items.push({
                 key: "trash",
                 label: "Move to Trash",
                 danger: true,
-                onClick: () => handleDelete(record.id)
+                onClick: () => handleDeleteAction(record),
             });
         } else if (type === "history") {
             items.push({
                 key: "trash",
                 label: "Move to Trash",
                 danger: true,
-                onClick: () => handleDelete(record.id)
+                onClick: () => handleDeleteAction(record),
             });
         } else if (type === "trash") {
             items.push(
                 {
                     key: "restore",
                     label: "Restore",
-                    onClick: () => handleRestore(record.id)
+                    onClick: () => {
+                        if (userRole === "staff") {
+                            Modal.warning({
+                                title: "Access Restricted",
+                                content:
+                                    "Only administrators can restore bookings.",
+                                okText: "OK",
+                                centered: true,
+                            });
+                            return;
+                        }
+
+                        handleRestore(record);
+                    },
                 },
                 {
                     key: "delete",
                     label: "Delete Forever",
                     danger: true,
-                    onClick: () => handleForceDelete(record.id)
-                }
+                    onClick: () => {
+                        if (userRole === "staff") {
+                            Modal.warning({
+                                title: "Access Restricted",
+                                content:
+                                    "Only administrators can permanently delete bookings.",
+                                okText: "OK",
+                                centered: true,
+                            });
+                            return;
+                        }
+
+                        handleForceDelete(record);
+                    },
+                },
             );
         }
 
@@ -568,352 +1535,1005 @@ export default function Bookings() {
         e.stopPropagation();
     };
 
+    // Updated columns with copy icon on reference
     const columns = [
         {
-            title: "Booking ID",
-            key: "booking_id",
-            width: 180,
-            render: (_: any, record: Booking) => (
-                <Text>
-                    {record.booking_reference}-{record.id}
-                </Text>
-            )
-        },
-        {
-            title: "Guest Name",
-            key: "guest_name",
-            width: 200,
-            render: (_: any, record: Booking) => (
-                <Text
-                    style={{ color: "#000", cursor: "pointer" }}
-                    onClick={() => showDetails(record)}
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
                 >
-                    {getGuestName(record)}
-                </Text>
-            )
+                    Booking Reference
+                </span>
+            ),
+            key: "booking_id",
+            width: "14%",
+            render: (_: any, record: BookingRow) => (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div>
+                        <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                            {record.booking_reference}
+                        </Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            Booked on{" "}
+                            {formatDate(record.created_at || record.check_in_date)}
+                        </Text>
+                    </div>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined style={{ fontSize: "12px", color: "#94a3b8" }} />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(record.booking_reference);
+                        }}
+                        style={{ padding: "2px 4px", height: "auto" }}
+                    />
+                </div>
+            ),
         },
         {
-            title: "Room",
-            key: "room",
-            width: 120,
-            align: "center" as const,
-            render: (_: any, record: Booking) => (
-                <Text>{record.rooms?.length ? record.rooms.map((r: Room) => r.room_number).join(", ") : "N/A"}</Text>
-            )
-        },
-        {
-            title: "Type",
-            key: "type",
-            width: 100,
-            render: (_: any, record: Booking) => (
-                <Tag color={record.booking_type === "walk_in" ? "blue" : "green"} style={{ fontSize: "12px", padding: "4px 10px" }}>
-                    {record.booking_type === "walk_in" ? "Walk-in" : "Online"}
-                </Tag>
-            )
-        },
-        {
-            title: "Status",
-            key: "status",
-            width: 120,
-            render: (_: any, record: Booking) => (
-                <Tag color={getStatusColor(record.booking_status)} style={{ fontSize: "12px", padding: "4px 10px" }}>
-                    {record.booking_status?.replace(/_/g, " ").toUpperCase()}
-                </Tag>
-            )
-        },
-        {
-            title: "Stay Type",
-            key: "stay_type",
-            width: 140,
-            render: (_: any, record: Booking) => {
-                const type =
-                    record.rooms?.[0]?.pivot?.stay_type || record.stay_type;
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Guest
+                </span>
+            ),
+            key: "guest",
+            width: "16%",
+            render: (_: any, record: BookingRow) => {
+                const name = getGuestName(record);
+                const initials = name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2);
+                const guestDetails = record.user || record.walk_in_guest;
+                let phone: string | undefined;
+
+                if (record.user) {
+                    phone = record.user.phone;
+                } else if (record.walk_in_guest) {
+                    phone = record.walk_in_guest.contact_number;
+                }
 
                 return (
-                    <Tag
-                        color={type === "short_stay" ? "purple" : "cyan"}
-                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                        }}
                     >
-                        {type === "short_stay" ? "Short Stay" : "Overnight"}
+                        <Avatar
+                            style={{
+                                backgroundColor: MINT_GREEN_LIGHT,
+                                color: MINT_GREEN,
+                                fontSize: "10px",
+                                fontWeight: 600,
+                                flexShrink: 0,
+                            }}
+                            size={28}
+                        >
+                            {initials || "G"}
+                        </Avatar>
+                        <div>
+                            <Text
+                                strong
+                                style={{ fontSize: "11px", color: "#0f172a" }}
+                            >
+                                {name}
+                            </Text>
+                            {phone && (
+                                <div
+                                    style={{
+                                        fontSize: "8.5px",
+                                        color: "#64748b",
+                                    }}
+                                >
+                                    {phone}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            },
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Room
+                </span>
+            ),
+            key: "room",
+            width: "12%",
+            render: (_: any, record: BookingRow) => (
+                <div>
+                    <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                        {record.room?.room_number ?? "N/A"}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {record.room?.room_type?.type_name || "-"}
+                    </Text>
+                </div>
+            ),
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Status
+                </span>
+            ),
+            key: "status",
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const statusMap: Record<
+                    string,
+                    { color: string; bg: string; label: string; icon: React.ReactNode }
+                > = {
+                    pending: {
+                        color: "#faad14",
+                        bg: "#fff7e6",
+                        label: "PENDING",
+                        icon: <SyncOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    confirmed: {
+                        color: MINT_GREEN,
+                        bg: MINT_GREEN_BG,
+                        label: "CONFIRMED",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    checked_in: {
+                        color: "#1890ff",
+                        bg: "#e6f7ff",
+                        label: "CHECKED IN",
+                        icon: <CheckCircleOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    checked_out: {
+                        color: "#8c8c8c",
+                        bg: "#f5f5f5",
+                        label: "CHECKED OUT",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    cancelled: {
+                        color: "#ff4d4f",
+                        bg: "#fff1f0",
+                        label: "CANCELLED",
+                        icon: <CloseCircleOutlined style={{ fontSize: "10px" }} />,
+                    },
+                    refunded: {
+                        color: "#722ed1",
+                        bg: "#f9f0ff",
+                        label: "REFUNDED",
+                        icon: <CheckOutlined style={{ fontSize: "10px" }} />,
+                    },
+                };
+                const defaultStatus = {
+                    color: "#faad14",
+                    bg: "#fff7e6",
+                    label: "PENDING",
+                    icon: <SyncOutlined style={{ fontSize: "10px" }} />,
+                };
+                const status =
+                    statusMap[record.status as string] || defaultStatus;
+                return (
+                    <div
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "3px 10px",
+                            borderRadius: "16px",
+                            backgroundColor: status.bg,
+                            color: status.color,
+                            fontSize: "8.5px",
+                            fontWeight: 600,
+                            letterSpacing: "0.5px",
+                        }}
+                    >
+                        {status.icon}
+                        {status.label}
+                    </div>
+                );
+            },
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Stay Type
+                </span>
+            ),
+            key: "stay_type",
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const type = record.room?.pivot?.stay_type ?? record.stay_type;
+                const isWalkIn = record.booking_type === "walk_in";
+                return (
+                    <div>
+                        <Tag
+                            color={type === "short_stay" ? "purple" : "cyan"}
+                            style={{
+                                fontSize: "8.5px",
+                                borderRadius: "3px",
+                                padding: "1px 8px",
+                                margin: 0,
+                                lineHeight: 1.5,
+                            }}
+                        >
+                            {type === "short_stay" ? "Short Stay" : "Overnight"}
+                        </Tag>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            {isWalkIn ? "Walk-in" : "Online"}
+                        </Text>
+                    </div>
+                );
+            },
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Check In
+                </span>
+            ),
+            key: "check_in",
+            width: "12%",
+            render: (_: any, record: BookingRow) => (
+                <div>
+                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                        {formatDate(record.check_in_date)}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {formatTime(record.check_in_date)}
+                    </Text>
+                </div>
+            ),
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Check Out
+                </span>
+            ),
+            key: "check_out",
+            width: "12%",
+            render: (_: any, record: BookingRow) => (
+                <div>
+                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                        {formatDate(record.check_out_date)}
+                    </Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                        {formatTime(record.check_out_date)}
+                    </Text>
+                </div>
+            ),
+        },
+        {
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Payment
+                </span>
+            ),
+            key: "payment",
+            width: "8%",
+            render: (_: any, record: BookingRow) => {
+                const payment = record.payments?.[0];
+                const status = payment?.payment_status ?? "pending";
+                const color = status === "paid" ? "green" : "orange";
+                const icon = status === "paid" 
+                    ? <CheckCircleOutlined style={{ fontSize: "10px" }} /> 
+                    : <SyncOutlined style={{ fontSize: "10px" }} />;
+                return (
+                    <Tag
+                        color={color}
+                        style={{
+                            fontSize: "8.5px",
+                            borderRadius: "3px",
+                            padding: "1px 10px",
+                            fontWeight: 500,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                        }}
+                    >
+                        {icon}
+                        {status.toUpperCase()}
                     </Tag>
                 );
-            }
+            },
         },
         {
-            title: "Check In",
-            key: "check_in",
-            width: 110,
-            render: (_: any, record: Booking) => (
-                <Text>{formatDate(record.check_in_date)}</Text>
-            )
-
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Amount
+                </span>
+            ),
+            key: "amount",
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const addOnTotal =
+                    record.booking_add_ons?.reduce(
+                        (sum, addon) => sum + Number(addon.subtotal ?? 0),
+                        0,
+                    ) ?? 0;
+                const total = Number(record.subtotal) + addOnTotal;
+                return (
+                    <Text
+                        strong
+                        style={{
+                            color: MINT_GREEN,
+                            fontSize: "12px",
+                            fontWeight: 700,
+                        }}
+                    >
+                        ₱
+                        {total.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                        })}
+                    </Text>
+                );
+            },
         },
         {
-            title: "Check-In Time",
-            key: "check_in_time",
-            width: 120,
-            align: "center" as const,
-            render: (_: any, record: Booking) => (
-                <Text>{formatTime(record.check_in_time || "")}</Text>
-            )
-        },
-        {
-            title: "Check Out",
-            key: "check_out",
-            width: 110,
-            render: (_: any, record: Booking) => (
-                <Text>{formatDate(record.check_out_date)}</Text>
-            )
-        },
-        {
-            title: "Total",
-            key: "total",
-            width: 110,
-            render: (_: any, record: Booking) => (
-                <Text strong style={{ color: "#52c41a", fontSize: "14px" }}>
-                    ₱{record.total_price?.toLocaleString()}
-                </Text>
-            )
-        },
-        {
-            title: "Action",
+            title: (
+                <span
+                    style={{
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                    }}
+                >
+                    Action
+                </span>
+            ),
             key: "action",
-            width: 80,
+            width: "6%",
             align: "center" as const,
-            render: (_: any, record: Booking) => (
-                <div onClick={(e) => handleActionClick(e, record)}>
-                    <Dropdown menu={getActionMenu(record, activeTab)} trigger={["click"]}>
-                        <Button type="text" icon={<MoreOutlined />} size="middle" />
+            render: (_: any, record: BookingRow) => (
+                <div onClick={(e) => e.stopPropagation()}>
+                    <Dropdown
+                        menu={getActionMenu(record, activeTab)}
+                        trigger={["click"]}
+                    >
+                        <Button
+                            type="text"
+                            icon={<MoreOutlined />}
+                            size="small"
+                            style={{ fontSize: "14px" }}
+                        />
                     </Dropdown>
                 </div>
-            )
-        }
+            ),
+        },
     ];
 
-    const rowProps = (record: Booking) => {
+    const rowProps = (record: BookingRow) => {
+        const bookedRoom = record.booked_rooms?.find(
+            (br) => br.id === record.booked_room_id,
+        );
+        const overdueDays = getOverdueDays(bookedRoom);
+
         return {
             onClick: () => showDetails(record),
-            style: { cursor: "pointer" },
-            className: "clickable-row"
+            className:
+                selectedBookedRoomId === record.booked_room_id
+                    ? "selected-booking-row"
+                    : overdueDays >= 3
+                      ? "critical-overdue-row"
+                      : overdueDays >= 1
+                        ? "warning-overdue-row"
+                        : "clickable-row",
         };
     };
 
-    const getTableData = (): Booking[] => {
-        switch (activeTab) {
-            case "active":
-                return filterData(active);
-            case "history":
-                return filterData(history);
-            case "trash":
-                return filterData(trash);
-            default:
-                return [];
-        }
-    };
-
     const renderTable = () => (
-        <Table<Booking>
-            className="no-border-table clickable-rows"
+        <Table<BookingRow>
+            className="premium-table"
             columns={columns}
-            dataSource={getTableData()}
-            rowKey="id"
-            loading={loading}
-            size="large"
+            dataSource={tableData}
+            rowKey={(record) => record.booked_room_id}
+            loading={bookingQuery.isLoading}
+            size="middle"
             bordered={false}
             pagination={false}
             onRow={rowProps}
         />
     );
 
-    const renderPagination = () => (
-        <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 16,
-            flexWrap: "wrap",
-            gap: 16
-        }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <Button
-                    disabled={currentPage === 1 || loading}
-                    onClick={() => setCurrentPage((prev: number) => prev - 1)}
-                >
-                    Prev
-                </Button>
+    const renderPagination = () => {
+        const totalPages = Math.ceil(totalRows / pageSize) || 1;
 
-                <Text>
-                    Page {currentPage} of {Math.ceil(total / pageSize) || 1}
-                </Text>
+        return (
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: 14,
+                    flexWrap: "wrap",
+                    gap: 12,
+                    padding: "8px 0",
+                }}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Button
+                        size="small"
+                        disabled={currentPage === 1 || bookingQuery.isLoading}
+                        onClick={() =>
+                            setCurrentPage((prev: number) => prev - 1)
+                        }
+                        style={{ borderRadius: "6px", fontSize: "10px" }}
+                    >
+                        Prev
+                    </Button>
 
-                <Button
-                    disabled={currentPage >= Math.ceil(total / pageSize) || loading}
-                    onClick={() => setCurrentPage((prev: number) => prev + 1)}
-                >
-                    Next
-                </Button>
-            </div>
+                    <Text style={{ fontSize: "10px" }}>
+                        Page {currentPage} of {totalPages}
+                    </Text>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <Text>Total: {total}</Text>
+                    <Button
+                        size="small"
+                        disabled={
+                            currentPage >= totalPages || bookingQuery.isLoading
+                        }
+                        onClick={() =>
+                            setCurrentPage((prev: number) => prev + 1)
+                        }
+                        style={{ borderRadius: "6px", fontSize: "10px" }}
+                    >
+                        Next
+                    </Button>
+                </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Text>Rows:</Text>
-                    <select
-                        value={pageSize}
-                        onChange={(e) => {
-                            setPageSize(Number(e.target.value));
-                            setCurrentPage(1);
-                        }}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <Text style={{ fontSize: "10px" }}>Total: {totalRows}</Text>
+
+                    <div
                         style={{
-                            padding: "4px 8px",
-                            borderRadius: 6,
-                            border: "1px solid #d9d9d9"
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
                         }}
                     >
-                        <option value={10}>10</option>
-                        <option value={20}>20</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                    </select>
-                    <Text>/ page</Text>
+                        <Text style={{ fontSize: "10px" }}>Rows:</Text>
+                        <select
+                            value={pageSize}
+                            onChange={(e) => {
+                                setPageSize(Number(e.target.value));
+                                setCurrentPage(1);
+                            }}
+                            style={{
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid #e5e7eb",
+                                fontSize: "10px",
+                                backgroundColor: "white",
+                                cursor: "pointer",
+                                outline: "none",
+                            }}
+                        >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
+                        <Text style={{ fontSize: "10px" }}>/ page</Text>
+                    </div>
                 </div>
             </div>
-        </div>
+        );
+    };
+
+    // Render statistics cards
+    const renderStats = () => (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <HomeOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Total Active
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.totalActive}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Currently active reservations
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <TeamOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Checked In
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.checkedIn}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Guests currently staying
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <CalendarIcon
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Upcoming
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "18px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                {stats.upcoming}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                Arriving today or later
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+                <Card
+                    style={{
+                        borderRadius: "10px",
+                        border: "1px solid #e8edf2",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: "8px",
+                                backgroundColor: MINT_GREEN_BG,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                            }}
+                        >
+                            <DollarOutlined
+                                style={{ fontSize: 16, color: MINT_GREEN }}
+                            />
+                        </div>
+                        <div>
+                            <Text type="secondary" style={{ fontSize: "10px", letterSpacing: "0.3px", textTransform: "uppercase" }}>
+                                Total Revenue
+                            </Text>
+                            <div
+                                style={{
+                                    fontSize: "16px",
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    lineHeight: 1.2,
+                                }}
+                            >
+                                ₱{stats.totalRevenue.toLocaleString()}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                                From active bookings
+                            </Text>
+                        </div>
+                    </div>
+                </Card>
+            </Col>
+        </Row>
     );
 
-    const tabItems: TabsProps["items"] = [
-        {
-            key: "active",
-            label: (
-                <Space>
-                    <CheckCircleOutlined />
-                    Active ({active.length})
-                </Space>
-            ),
-            children: (
-                <>
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            )
-        },
-        {
-            key: "history",
-            label: (
-                <Space>
-                    <HistoryOutlined />
-                    History ({history.length})
-                </Space>
-            ),
-            children: (
-                <>
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            )
-        },
-        {
-            key: "trash",
-            label: (
-                <Space>
-                    <DeleteOutlined />
-                    Trash ({trash.length})
-                </Space>
-            ),
-            children: (
-                <>
-                    {trash.length > 0 && (
-                        <Alert
-                            message="Warning"
-                            description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
-                            type="warning"
-                            showIcon
-                            closable
-                            style={{ marginBottom: 16 }}
-                        />
-                    )}
-                    {renderTable()}
-                    {renderPagination()}
-                </>
-            )
-        }
-    ];
-
+    // Render booking details drawer (keeping it compact)
     const renderBookingDetails = () => {
         if (!selectedBooking) return null;
 
         const guestDetails = getGuestDetails(selectedBooking);
         const guestName = getGuestName(selectedBooking);
-        const statusColor = getStatusBadgeColor(selectedBooking.booking_status);
+        const status =
+            (selectedBookedRoom as any)?.status ??
+            selectedBooking?.booking_status ??
+            "pending";
+        const statusColor = getStatusBadgeColor(status);
+        const histories = selectedBooking.histories || [];
+
+        const confirmedBy = histories.find((h) => h.new_status === "confirmed");
+        const checkedInBy = histories.find(
+            (h) => h.new_status === "checked_in",
+        );
+        const checkedOutBy = histories.find(
+            (h) => h.new_status === "checked_out",
+        );
+        const override = histories.find((h) => h.is_override);
+
+        const overdueDays =
+            selectedBookedRoom && isBookedRoom(selectedBookedRoom)
+                ? getOverdueDays(selectedBookedRoom)
+                : 0;
+
+        const displayAddOns = getBookingAddOns();
+        const displayPayments = getPayments();
+        const roomStatus = (selectedBookedRoom as any)?.status ?? "pending";
+
+        const paymentStatus = roomStatus === "refunded" ? "refunded" : "paid";
+
+        const paymentToShow =
+            paymentStatus === "refunded"
+                ? displayPayments.find((p) => p.payment_status === "refunded")
+                : displayPayments.find((p) => p.payment_status === "paid");
+
+        const receiverLabel =
+            paymentStatus === "refunded" ? "Refunded By" : "Received By";
+
+        const paymentDateLabel =
+            paymentStatus === "refunded" ? "Refund Date" : "Payment Date";
 
         return (
             <Drawer
                 title={
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <Space>
-                            <Tag color="blue">#{selectedBooking.id}</Tag>
-                            <Text strong style={{ fontSize: "16px" }}>{guestName}</Text>
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                        }}
+                    >
+                        <Space size={8}>
+                            <Text
+                                strong
+                                style={{ fontSize: "13px", fontWeight: 600 }}
+                            >
+                                {guestName}
+                            </Text>
                         </Space>
                     </div>
                 }
                 placement="right"
                 open={detailsVisible}
-                onClose={() => setDetailsVisible(false)}
-                width={500}
+                onClose={() => {
+                    setDetailsVisible(false);
+                    setSelectedBookedRoomId(null);
+                }}
+                width={480}
                 closable={true}
-                closeIcon={<CloseOutlined />}
+                closeIcon={<CloseOutlined style={{ fontSize: "13px" }} />}
                 extra={
-                    <Dropdown menu={getActionMenu(selectedBooking, activeTab)} trigger={["click"]}>
-                        <Button type="primary" icon={<MoreOutlined />}>
+                    <Dropdown
+                        menu={
+                            selectedBookingRow
+                                ? getActionMenu(selectedBookingRow, activeTab)
+                                : { items: [] }
+                        }
+                        trigger={["click"]}
+                    >
+                        <Button
+                            type="primary"
+                            icon={<MoreOutlined />}
+                            size="small"
+                            style={{ borderRadius: "6px", fontSize: "10px", background: MINT_GREEN, borderColor: MINT_GREEN }}
+                        >
                             Actions
                         </Button>
                     </Dropdown>
                 }
             >
-                <div style={{ marginBottom: 24, textAlign: "center" }}>
+                <div style={{ marginBottom: 20, textAlign: "center" }}>
                     <Badge
                         color={statusColor}
                         text={
-                            <Text strong style={{ fontSize: "16px", color: statusColor }}>
-                                {selectedBooking.booking_status?.replace(/_/g, " ").toUpperCase()}
+                            <Text
+                                strong
+                                style={{
+                                    fontSize: "13px",
+                                    color: statusColor,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                {status.replace(/_/g, " ").toUpperCase()}
                             </Text>
                         }
                     />
                 </div>
 
+                {overdueDays > 0 && (
+                    <Alert
+                        type="error"
+                        showIcon
+                        style={{
+                            marginBottom: 14,
+                            borderRadius: "10px",
+                            alignItems: "center",
+                            fontSize: "10px",
+                        }}
+                        message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
+                        description="Guest exceeded expected checkout date."
+                    />
+                )}
+
                 <Card
                     title={
-                        <Space>
-                            <UserOutlined />
-                            <span>Guest Information</span>
+                        <Space size={6}>
+                            <UserOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                                Guest Information
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: 10 }}
+                    style={{
+                        marginBottom: 14,
+                        borderRadius: "10px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
                     <Descriptions column={1} size="small">
-                        <Descriptions.Item label="Name">
-                            <Text strong>{guestDetails.name}</Text>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Name
+                                </span>
+                            }
+                        >
+                            <Text strong style={{ fontSize: "11px" }}>
+                                {guestDetails.name}
+                            </Text>
                         </Descriptions.Item>
                         {guestDetails.email !== undefined && (
-                            <Descriptions.Item label="Email">
-                                {guestDetails.email}
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "10px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Email
+                                    </span>
+                                }
+                            >
+                                <Text style={{ fontSize: "11px" }}>
+                                    {guestDetails.email}
+                                </Text>
                             </Descriptions.Item>
                         )}
                         {guestDetails.phone !== undefined && (
-                            <Descriptions.Item label="Phone">
-                                <Space>
-                                    <PhoneOutlined />
-                                    {guestDetails.phone}
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "10px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Phone
+                                    </span>
+                                }
+                            >
+                                <Space size={4}>
+                                    <PhoneOutlined
+                                        style={{ fontSize: "10px" }}
+                                    />
+                                    <Text style={{ fontSize: "11px" }}>
+                                        {guestDetails.phone}
+                                    </Text>
                                 </Space>
                             </Descriptions.Item>
                         )}
                         {guestDetails.address !== undefined && (
-                            <Descriptions.Item label="Address">
-                                <Space>
-                                    <EnvironmentOutlined />
-                                    {guestDetails.address}
+                            <Descriptions.Item
+                                label={
+                                    <span
+                                        style={{
+                                            fontSize: "10px",
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        Address
+                                    </span>
+                                }
+                            >
+                                <Space size={4}>
+                                    <EnvironmentOutlined
+                                        style={{ fontSize: "10px" }}
+                                    />
+                                    <Text style={{ fontSize: "11px" }}>
+                                        {guestDetails.address}
+                                    </Text>
                                 </Space>
                             </Descriptions.Item>
                         )}
@@ -922,88 +2542,296 @@ export default function Bookings() {
 
                 <Card
                     title={
-                        <Space>
-                            <CalendarOutlined />
-                            <span>Booking Details</span>
+                        <Space size={6}>
+                            <CalendarOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                                Booking Details
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: 10 }}
+                    style={{
+                        marginBottom: 14,
+                        borderRadius: "10px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
                     <Descriptions column={1} size="small">
-                        <Descriptions.Item label="Booking Type">
-                            <Tag color={selectedBooking.booking_type === "walk_in" ? "blue" : "green"}>
-                                {selectedBooking.booking_type === "walk_in" ? "Walk-in" : "Online"}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Booking Type
+                                </span>
+                            }
+                        >
+                            <Tag
+                                color={
+                                    selectedBooking.booking_type === "walk_in"
+                                        ? "blue"
+                                        : "green"
+                                }
+                                style={{
+                                    fontSize: "10px",
+                                    borderRadius: "4px",
+                                }}
+                            >
+                                {selectedBooking.booking_type === "walk_in"
+                                    ? "Walk-in"
+                                    : "Online"}
                             </Tag>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Stay Type">
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Stay Type
+                                </span>
+                            }
+                        >
                             {(() => {
                                 const type =
-                                    selectedBooking.rooms?.[0]?.pivot?.stay_type ||
+                                    (selectedBookedRoom as any)?.stay_type ??
                                     selectedBooking.stay_type;
-
                                 return (
                                     <Tag
-                                        color={type === "short_stay" ? "purple" : "cyan"}
-                                        style={{ fontSize: "12px", borderRadius: "6px" }}
+                                        color={
+                                            type === "short_stay"
+                                                ? "purple"
+                                                : "cyan"
+                                        }
+                                        style={{
+                                            fontSize: "10px",
+                                            borderRadius: "4px",
+                                        }}
                                     >
-                                        {type === "short_stay" ? "Short Stay" : "Overnight"}
+                                        {type === "short_stay"
+                                            ? "Short Stay"
+                                            : "Overnight"}
                                     </Tag>
                                 );
                             })()}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Booking Reference">
-                            <Text code>{selectedBooking.booking_reference}</Text>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Booking Reference
+                                </span>
+                            }
+                        >
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <Text code style={{ fontSize: "10px" }}>
+                                    {selectedBooking.booking_reference}
+                                </Text>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<CopyOutlined style={{ fontSize: "11px", color: "#94a3b8" }} />}
+                                    onClick={() => copyToClipboard(selectedBooking.booking_reference)}
+                                    style={{ padding: "2px 4px", height: "auto" }}
+                                />
+                            </div>
                         </Descriptions.Item>
 
-                        {/* Created By Section */}
-                        <Descriptions.Item label="Created By">
-                            <Space>
-                                <UserOutlined />
-                                {selectedBooking.created_by ? (
-                                    <Text>
-                                        {selectedBooking.created_by.first_name} {selectedBooking.created_by.last_name}
-                                        {selectedBooking.created_by.email && (
-                                            <Text type="secondary" style={{ fontSize: "12px", marginLeft: 8 }}>
-                                                ({selectedBooking.created_by.email})
+                        {(() => {
+                            const isWalkIn =
+                                selectedBooking.booking_type === "walk_in";
+                            const formatUser = (user: any) => {
+                                if (!user) return "N/A";
+                                return (
+                                    <>
+                                        {user.first_name} {user.last_name}
+                                        {user.role && (
+                                            <Text
+                                                type="secondary"
+                                                style={{ marginLeft: 4, fontSize: "9px" }}
+                                            >
+                                                ({user.role})
                                             </Text>
                                         )}
-                                    </Text>
-                                ) : (
-                                    <Text type="secondary">System / N/A</Text>
-                                )}
-                            </Space>
-                        </Descriptions.Item>
+                                    </>
+                                );
+                            };
 
-                        <Descriptions.Item label="Created At">
-                            <Space>
-                                <CalendarOutlined />
-                                {formatDateTime(selectedBooking.created_at || "")}
-                            </Space>
-                        </Descriptions.Item>
+                            return (
+                                <>
+                                    {isWalkIn ? (
+                                        <Descriptions.Item label="Handled By">
+                                            {formatUser(
+                                                selectedBooking.created_by,
+                                            )}
+                                        </Descriptions.Item>
+                                    ) : (
+                                        <>
+                                            <Descriptions.Item label="Created By">
+                                                {selectedBooking.created_by
+                                                    ? formatUser(
+                                                          selectedBooking.created_by,
+                                                      )
+                                                    : "Customer"}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label="Confirmed By">
+                                                {confirmedBy?.user ? (
+                                                    formatUser(confirmedBy.user)
+                                                ) : (
+                                                    <Text type="secondary" style={{ fontSize: "10px" }}>
+                                                        Not confirmed
+                                                    </Text>
+                                                )}
+                                            </Descriptions.Item>
+                                        </>
+                                    )}
+                                    {checkedInBy?.user && (
+                                        <Descriptions.Item label="Checked-in By">
+                                            {formatUser(checkedInBy.user)}
+                                        </Descriptions.Item>
+                                    )}
+                                    {checkedOutBy?.user && (
+                                        <Descriptions.Item label="Checked-out By">
+                                            {formatUser(checkedOutBy.user)}
+                                        </Descriptions.Item>
+                                    )}
+                                    {override?.user && (
+                                        <Descriptions.Item label="Override By">
+                                            <Text type="danger" style={{ fontSize: "10px" }}>
+                                                {formatUser(override.user)}
+                                            </Text>
+                                        </Descriptions.Item>
+                                    )}
+                                </>
+                            );
+                        })()}
 
-                        <Descriptions.Item label="Check-in Date">
-                            <Space>
-                                <CalendarOutlined />
-                                {formatDate(selectedBooking.check_in_date)}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Created At
+                                </span>
+                            }
+                        >
+                            <Space size={4}>
+                                <CalendarOutlined
+                                    style={{ fontSize: "10px" }}
+                                />
+                                <Text style={{ fontSize: "11px" }}>
+                                    {formatDateTime(
+                                        selectedBooking.created_at || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Check-in Time">
-                            <Space>
-                                <ClockCircleOutlined />
-                                {formatTime(selectedBooking.check_in_time || "")}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-in Date
+                                </span>
+                            }
+                        >
+                            <Space size={4}>
+                                <CalendarOutlined
+                                    style={{ fontSize: "10px" }}
+                                />
+                                <Text style={{ fontSize: "11px" }}>
+                                    {formatDate(
+                                        (selectedBookedRoom as any)
+                                            ?.check_in_date || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Expected Check-out">
-                            <Space>
-                                <CalendarOutlined />
-                                {getExpectedCheckoutDate(selectedBooking)}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Expected Check-out
+                                </span>
+                            }
+                        >
+                            <Space size={4}>
+                                <CalendarOutlined
+                                    style={{ fontSize: "10px" }}
+                                />
+                                <Text style={{ fontSize: "11px" }}>
+                                    {formatDate(
+                                        (selectedBookedRoom as any)
+                                            ?.check_out_date || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Check-out Time">
-                            <Space>
-                                <ClockCircleOutlined />
-                                {getCheckoutTime(selectedBooking)}
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-in Time
+                                </span>
+                            }
+                        >
+                            <Space size={4}>
+                                <ClockCircleOutlined
+                                    style={{ fontSize: "10px" }}
+                                />
+                                <Text style={{ fontSize: "11px" }}>
+                                    {formatTime(
+                                        (selectedBookedRoom as any)
+                                            ?.check_in_time || "",
+                                    )}
+                                </Text>
+                            </Space>
+                        </Descriptions.Item>
+                        <Descriptions.Item
+                            label={
+                                <span
+                                    style={{
+                                        fontSize: "10px",
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    Check-out Time
+                                </span>
+                            }
+                        >
+                            <Space size={4}>
+                                <ClockCircleOutlined
+                                    style={{ fontSize: "10px" }}
+                                />
+                                <Text style={{ fontSize: "11px" }}>
+                                    {formatTime(
+                                        (selectedBookedRoom as any)
+                                            ?.check_out_time || "",
+                                    )}
+                                </Text>
                             </Space>
                         </Descriptions.Item>
                     </Descriptions>
@@ -1011,161 +2839,1010 @@ export default function Bookings() {
 
                 <Card
                     title={
-                        <Space>
-                            <TagOutlined />
-                            <span>Rooms</span>
+                        <Space size={6}>
+                            <TagOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                                Rooms
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: 10 }}
+                    style={{
+                        marginBottom: 14,
+                        borderRadius: "10px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
-                    {selectedBooking.rooms && selectedBooking.rooms.length > 0 ? (
-                        selectedBooking.rooms.map((room: Room, index: number) => {
-                            const roomStayType = room.pivot?.stay_type || selectedBooking.stay_type;
-                            const roomPrice = getRoomPrice(room, roomStayType);
-                            return (
-                                <div key={room.id} style={{ marginBottom: index === (selectedBooking.rooms?.length ?? 0) - 1 ? 0 : 12 }}>
-                                    <div style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        padding: "8px 12px",
-                                        background: "#f5f5f5",
-                                        borderRadius: 8
-                                    }}>
-                                        <Space>
-                                            <Tag color="blue">Room {room.room_number}</Tag>
-                                            <Text type="secondary">
-                                                {room.room_type?.type_name ?? "-"}
-                                            </Text>
-                                        </Space>
-                                        <Space direction="vertical" size={0} align="end">
-                                            {room.room_type?.base_price && (
-                                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                                    Original: ₱{room.room_type.base_price.toLocaleString()}
-                                                </Text>
-                                            )}
-                                            <Text strong style={{ color: "#52c41a" }}>
-                                                {roomStayType === "short_stay" ? "Short Stay" : "Overnight"}: ₱{roomPrice.toLocaleString()}
-                                            </Text>
-                                        </Space>
-                                    </div>
-                                </div>
-                            );
-                        })
+                    {selectedBookedRoom ? (
+                        <div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "8px 12px",
+                                    background: "#f8fafc",
+                                    borderRadius: "8px",
+                                    border: "1px solid #e2e8f0",
+                                }}
+                            >
+                                <Space size={6}>
+                                    <Tag
+                                        color="blue"
+                                        style={{
+                                            fontSize: "10px",
+                                            borderRadius: "4px",
+                                        }}
+                                    >
+                                        Room{" "}
+                                        {(selectedBookedRoom as any).room
+                                            ?.room_number || "N/A"}
+                                    </Tag>
+                                    <Text
+                                        type="secondary"
+                                        style={{ fontSize: "10px" }}
+                                    >
+                                        {(selectedBookedRoom as any).room
+                                            ?.room_type?.type_name ?? "-"}
+                                    </Text>
+                                </Space>
+                                <Space
+                                    direction="vertical"
+                                    size={0}
+                                    align="end"
+                                >
+                                    {(selectedBookedRoom as any).room?.room_type
+                                        ?.base_price && (
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "9px" }}
+                                        >
+                                            Original: ₱
+                                            {Number(
+                                                (selectedBookedRoom as any).room
+                                                    .room_type.base_price ?? 0,
+                                            ).toLocaleString()}
+                                        </Text>
+                                    )}
+                                    <Text
+                                        strong
+                                        style={{
+                                            color: MINT_GREEN,
+                                            fontSize: "11px",
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        {(selectedBookedRoom as any)
+                                            .stay_type === "short_stay"
+                                            ? "Short Stay"
+                                            : "Overnight"}
+                                        : ₱
+                                        {Number(
+                                            (selectedBookedRoom as any)
+                                                .subtotal ??
+                                                (selectedBookedRoom as any)
+                                                    .price_at_time_of_booking,
+                                        ).toLocaleString()}
+                                    </Text>
+                                </Space>
+                            </div>
+                        </div>
                     ) : (
-                        <Text type="secondary">No rooms assigned</Text>
+                        <Text type="secondary" style={{ fontSize: "11px" }}>
+                            No rooms assigned
+                        </Text>
                     )}
                 </Card>
 
                 <Card
                     title={
-                        <Space>
-                            <DollarOutlined />
-                            <span>Payment Summary</span>
+                        <Space size={6}>
+                            <TagOutlined style={{ fontSize: "11px" }} />
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                                Add-ons
+                            </span>
                         </Space>
                     }
                     size="small"
-                    style={{ marginBottom: 16, borderRadius: 10 }}
+                    style={{
+                        marginBottom: 14,
+                        borderRadius: "10px",
+                        border: "1px solid #f0f0f0",
+                    }}
                 >
-                    <div style={{ textAlign: "right" }}>
-                        <div style={{ marginBottom: 8 }}>
-                            <Text type="secondary">Subtotal:</Text>
-                            <Text style={{ marginLeft: 16 }}>₱{selectedBooking.total_price?.toLocaleString()}</Text>
+                    {displayAddOns.length > 0 ? (
+                        displayAddOns.map((addon) => (
+                            <div
+                                key={addon.id}
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "8px 12px",
+                                    background: "#f8fafc",
+                                    borderRadius: "8px",
+                                    border: "1px solid #e2e8f0",
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <div>
+                                    <div
+                                        style={{
+                                            fontWeight: 600,
+                                            fontSize: "11px",
+                                        }}
+                                    >
+                                        {addon.add_on?.add_on_name}
+                                    </div>
+                                    <div
+                                        style={{
+                                            color: "#64748b",
+                                            fontSize: "10px",
+                                        }}
+                                    >
+                                        ₱
+                                        {Number(
+                                            addon.add_on?.price ?? 0,
+                                        ).toLocaleString()}{" "}
+                                        × {addon.quantity}
+                                    </div>
+                                </div>
+                                <div
+                                    style={{
+                                        color: MINT_GREEN,
+                                        fontWeight: 700,
+                                        fontSize: "11px",
+                                    }}
+                                >
+                                    ₱{Number(addon.subtotal).toLocaleString()}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <Text type="secondary" style={{ fontSize: "11px" }}>
+                            No add-ons purchased
+                        </Text>
+                    )}
+                </Card>
+
+                <Card
+                    title={
+                        <Space size={6}>
+                            <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                                Payment Summary
+                            </span>
+                        </Space>
+                    }
+                    size="small"
+                    style={{
+                        marginBottom: 14,
+                        borderRadius: "10px",
+                        border: "1px solid #f0f0f0",
+                        position: "relative",
+                        overflow: "hidden",
+                    }}
+                >
+                    {paymentStatus === "refunded" && (
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: "50%",
+                                left: "50%",
+                                transform:
+                                    "translate(-50%, -50%) rotate(-18deg)",
+                                zIndex: 100,
+                                pointerEvents: "none",
+                                border: "4px double #d9363e",
+                                color: "#d9363e",
+                                padding: "8px 28px",
+                                borderRadius: 6,
+                                fontSize: 32,
+                                fontWeight: 900,
+                                letterSpacing: 3,
+                                opacity: 0.35,
+                                background: "rgba(255,255,255,0.12)",
+                                textTransform: "uppercase",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            REFUNDED
                         </div>
-                        <Divider style={{ margin: "8px 0" }} />
+                    )}
+                    <div style={{ marginBottom: 14 }}>
+                        <div style={{ marginBottom: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
+                                Payment Method:
+                            </Text>
+                            <Tag color="green" style={{ marginLeft: 6, fontSize: "10px" }}>
+                                {paymentToShow?.payment_method?.toUpperCase() ||
+                                    "N/A"}
+                            </Tag>
+                        </div>
+
+                        <div style={{ marginBottom: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
+                                Payment Status:
+                            </Text>
+                            <Tag
+                                color={getPaymentStatusColor(paymentStatus)}
+                                style={{ marginLeft: 6, fontSize: "10px" }}
+                            >
+                                {paymentStatus.toUpperCase()}
+                            </Tag>
+                        </div>
+
+                        {paymentToShow?.payment_method !== "cash" && (
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    Reference:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
+                                    {paymentToShow?.gcash_reference ||
+                                        paymentToShow?.bank_reference ||
+                                        "N/A"}
+                                </Text>
+                            </div>
+                        )}
+
+                        {paymentToShow?.receipt_number && (
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    Receipt Number:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
+                                    {paymentToShow.receipt_number}
+                                </Text>
+                            </div>
+                        )}
+
+                        {paymentToShow?.payment_date && (
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    {paymentDateLabel}:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
+                                    {formatDateTime(paymentToShow.payment_date)}
+                                </Text>
+                            </div>
+                        )}
+
+                        {paymentToShow?.receiver && (
+                            <div style={{ marginTop: 6 }}>
+                                <Text type="secondary" style={{ fontSize: "10px" }}>
+                                    {receiverLabel}:
+                                </Text>
+                                <Text strong style={{ marginLeft: 6, fontSize: "11px" }}>
+                                    {paymentToShow.receiver.first_name}{" "}
+                                    {paymentToShow.receiver.last_name}
+                                    <Text type="secondary" style={{ fontSize: "9px" }}>
+                                        {" "}
+                                        ({paymentToShow.receiver.role})
+                                    </Text>
+                                </Text>
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: 6 }}>
+                            <Text type="secondary" style={{ fontSize: "10px" }}>
+                                {paymentStatus === "refunded"
+                                    ? "Refund Amount"
+                                    : "Amount Paid"}
+                                :
+                            </Text>
+                            <Text
+                                strong
+                                style={{
+                                    marginLeft: 6,
+                                    fontSize: "12px",
+                                    color:
+                                        paymentStatus === "refunded"
+                                            ? "#cf1322"
+                                            : MINT_GREEN,
+                                }}
+                            >
+                                ₱
+                                {paymentSubtotal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
+                            </Text>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                        <div style={{ marginBottom: 6 }}>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginBottom: 4,
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "10px" }}
+                                >
+                                    Room Charges
+                                </Text>
+                                <Text style={{ fontSize: "11px" }}>
+                                    ₱
+                                    {roomCharges.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginBottom: 4,
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "10px" }}
+                                >
+                                    Add-ons
+                                </Text>
+                                <Text style={{ fontSize: "11px" }}>
+                                    ₱
+                                    {addOnTotal.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
+                            {(selectedBookedRoom as any)?.is_extended && (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        marginBottom: 4,
+                                    }}
+                                >
+                                    <Text
+                                        type="secondary"
+                                        style={{ fontSize: "10px" }}
+                                    >
+                                        Extended
+                                    </Text>
+                                    <Text
+                                        strong
+                                        style={{
+                                            fontSize: "11px",
+                                            color: MINT_GREEN,
+                                        }}
+                                    >
+                                        Yes
+                                    </Text>
+                                </div>
+                            )}
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                }}
+                            >
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: "10px" }}
+                                >
+                                    Subtotal:
+                                </Text>
+                                <Text
+                                    strong
+                                    style={{
+                                        fontSize: "12px",
+                                        color: MINT_GREEN,
+                                        marginLeft: 12,
+                                        fontWeight: 700,
+                                    }}
+                                >
+                                    ₱
+                                    {paymentSubtotal.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </Text>
+                            </div>
+                        </div>
+                        <Divider style={{ margin: "6px 0" }} />
                         <div>
-                            <Text strong style={{ fontSize: "16px" }}>Total:</Text>
-                            <Text strong style={{ fontSize: "18px", color: "#52c41a", marginLeft: 16 }}>
-                                ₱{selectedBooking.total_price?.toLocaleString()}
+                            <Text
+                                strong
+                                style={{ fontSize: "11px", fontWeight: 600 }}
+                            >
+                                Total:
+                            </Text>
+                            <Text
+                                strong
+                                style={{
+                                    fontSize: "13px",
+                                    color: MINT_GREEN,
+                                    marginLeft: 12,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                ₱
+                                {paymentSubtotal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
                             </Text>
                         </div>
                     </div>
                 </Card>
 
-                {selectedBooking.histories && selectedBooking.histories.length > 0 && (
-                    <Card
-                        title="Activity Log"
-                        size="small"
-                        style={{ borderRadius: 10 }}
-                    >
-                        <Timeline
-                            items={selectedBooking.histories.map((history: History) => ({
-                                color: history.new_status === "checked_out" ? "green" : "blue",
-                                children: (
-                                    <div>
-                                        <Text strong>{history.change_note || "Status Updated"}</Text>
-                                        <br />
-                                        <Text type="secondary" style={{ fontSize: "12px" }}>
-                                            From: {history.old_status} → To: {history.new_status}
-                                        </Text>
-                                        <br />
-                                        <Text type="secondary" style={{ fontSize: "11px" }}>
-                                            {formatDateTime(history.changed_at)}
-                                        </Text>
-                                    </div>
-                                )
-                            }))}
-                        />
-                    </Card>
-                )}
+                {selectedBooking.histories &&
+                    selectedBooking.histories.length > 0 && (
+                        <Card
+                            title={
+                                <span
+                                    style={{
+                                        fontSize: "11px",
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    Activity Log
+                                </span>
+                            }
+                            size="small"
+                            style={{
+                                borderRadius: "10px",
+                                border: "1px solid #f0f0f0",
+                            }}
+                        >
+                            <Timeline
+                                items={selectedBooking.histories.map(
+                                    (history: History) => ({
+                                        color:
+                                            history.new_status === "checked_out"
+                                                ? "green"
+                                                : "blue",
+                                        children: (
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "10px",
+                                                        color: history.is_override
+                                                            ? "red"
+                                                            : undefined,
+                                                        fontWeight: 600,
+                                                    }}
+                                                >
+                                                    {history.change_note ||
+                                                        "Status Updated"}
+                                                </Text>
+                                                {history.is_override &&
+                                                    history.override_reason && (
+                                                        <>
+                                                            <br />
+                                                            <Text
+                                                                type="danger"
+                                                                style={{
+                                                                    fontSize:
+                                                                        "9px",
+                                                                }}
+                                                            >
+                                                                Override Reason:{" "}
+                                                                {
+                                                                    history.override_reason
+                                                                }
+                                                            </Text>
+                                                        </>
+                                                    )}
+                                                <br />
+                                                <Text
+                                                    type="secondary"
+                                                    style={{ fontSize: "9px" }}
+                                                >
+                                                    From: {history.old_status} →
+                                                    To: {history.new_status}
+                                                </Text>
+                                                <br />
+                                                <Text
+                                                    type="secondary"
+                                                    style={{ fontSize: "9px" }}
+                                                >
+                                                    {formatDateTime(
+                                                        history.changed_at,
+                                                    )}
+                                                </Text>
+                                            </div>
+                                        ),
+                                    }),
+                                )}
+                            />
+                        </Card>
+                    )}
             </Drawer>
         );
     };
 
     return (
-        <div style={{
-            padding: "24px 40px",
-            maxWidth: "1700px",
-            width: "100%",
-            margin: "0 auto"
-        }}>
+        <div
+            style={{
+                padding: "0 0 24px 0",
+                background: "#f8fafc",
+                minHeight: "100vh",
+            }}
+        >
             <style>
                 {`
-                    .clickable-rows tbody tr:hover {
-                        background-color: #f5f5f5;
+                    .clickable-row { cursor: pointer; transition: background 0.15s; }
+                    .clickable-row:hover td { background: #f1f5f9 !important; }
+                    
+                    .selected-booking-row td { background: ${MINT_GREEN_BG} !important; }
+                    .selected-booking-row:hover td { background: ${MINT_GREEN_LIGHT} !important; }
+                    .selected-booking-row td:first-child { border-left: 3px solid ${MINT_GREEN} !important; }
+                    .warning-overdue-row td:first-child { border-left: 3px solid #faad14 !important; }
+                    .critical-overdue-row td:first-child { border-left: 3px solid #ff4d4f !important; }
+                    
+                    .premium-table .ant-table {
+                        background: white;
+                        border-radius: 12px;
+                        overflow: hidden;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                    }
+                    .premium-table .ant-table-thead > tr > th {
+                        font-size: 10px !important;
+                        font-weight: 600 !important;
+                        padding: 10px 10px !important;
+                        background-color: #fafbfc !important;
+                        border-bottom: 1px solid #e8edf2 !important;
+                        color: #64748b !important;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    .premium-table .ant-table-tbody > tr > td {
+                        font-size: 11px !important;
+                        padding: 10px 10px !important;
+                        border-bottom: 1px solid #f1f5f9 !important;
+                        color: #0f172a !important;
+                        vertical-align: middle;
+                    }
+                    .premium-table .ant-table-tbody > tr:last-child > td {
+                        border-bottom: none !important;
+                    }
+                    
+                    .ant-card {
+                        border-radius: 10px !important;
+                    }
+                    .ant-card-body {
+                        padding: 14px !important;
+                    }
+                    .ant-card-head-title {
+                        font-size: 11px !important;
+                        font-weight: 600 !important;
+                        color: #1e293b !important;
+                    }
+                    
+                    .ant-descriptions-item-label {
+                        font-size: 10px !important;
+                        font-weight: 500 !important;
+                        color: #64748b !important;
+                    }
+                    .ant-descriptions-item-content {
+                        font-size: 11px !important;
+                        color: #1e293b !important;
+                    }
+                    .ant-timeline-item-content {
+                        font-size: 10px !important;
+                    }
+                    .ant-tag {
+                        font-size: 10px !important;
+                        border-radius: 4px !important;
+                        padding: 2px 10px !important;
+                    }
+                    .ant-badge-status-text {
+                        font-size: 11px !important;
+                    }
+                    .ant-btn {
+                        font-size: 11px !important;
+                        border-radius: 6px !important;
+                    }
+                    .ant-btn-primary {
+                        background: ${MINT_GREEN} !important;
+                        border-color: ${MINT_GREEN} !important;
+                    }
+                    .ant-btn-primary:hover {
+                        background: ${MINT_GREEN_HOVER} !important;
+                        border-color: ${MINT_GREEN_HOVER} !important;
+                    }
+                    .ant-modal-content {
+                        border-radius: 12px !important;
+                    }
+                    .ant-modal-header {
+                        border-radius: 12px 12px 0 0 !important;
+                    }
+                    
+                    .ant-select-selector {
+                        border-radius: 8px !important;
+                        border-color: #e2e8f0 !important;
+                        font-size: 11px !important;
+                        height: 38px !important;
+                    }
+                    .ant-select-selection-item {
+                        font-size: 11px !important;
+                        line-height: 36px !important;
+                    }
+                    
+                    /* shadcn-style tabs - sliding indicator */
+                    .tabs-container {
+                        position: relative;
+                        display: flex;
+                        gap: 4px;
+                        padding: 4px;
+                        background: #f1f5f9;
+                        border-radius: 10px;
+                        width: fit-content;
+                    }
+                    .tab-indicator {
+                        position: absolute;
+                        top: 4px;
+                        bottom: 4px;
+                        background: ${MINT_GREEN};
+                        border-radius: 8px;
+                        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+                        z-index: 0;
+                    }
+                    .shadcn-tabs-trigger {
+                        position: relative;
+                        z-index: 1;
+                        padding: 8px 18px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: #64748b;
+                        background: transparent;
+                        border: none;
+                        border-radius: 8px;
                         cursor: pointer;
-                        transition: all 0.3s ease;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        transition: color 0.2s ease;
+                        font-family: inherit;
                     }
-                    .clickable-row {
+                    .shadcn-tabs-trigger:hover {
+                        color: #0f172a;
+                    }
+                    .shadcn-tabs-trigger.active {
+                        color: #ffffff !important;
+                        font-weight: 600;
+                    }
+                    .shadcn-tabs-trigger.active .anticon {
+                        color: #ffffff !important;
+                    }
+                    .shadcn-tabs-content {
+                        display: block;
+                    }
+
+                    /* Filter popover */
+                    .filter-popover .ant-popover-inner {
+                        border-radius: 10px;
+                        padding: 8px;
+                        min-width: 160px;
+                    }
+                    .filter-option {
+                        padding: 6px 12px;
+                        border-radius: 6px;
                         cursor: pointer;
+                        font-size: 12px;
+                        transition: all 0.15s ease;
                     }
-                    .tabs-right .ant-tabs-nav {
-                        justify-content: flex-end !important;
+                    .filter-option:hover {
+                        background: #f1f5f9;
                     }
-                    .tabs-right .ant-tabs-nav-list {
-                        justify-content: flex-end;
+                    .filter-option.active {
+                        background: ${MINT_GREEN_BG};
+                        color: ${MINT_GREEN};
+                        font-weight: 500;
                     }
-                    .mint-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-                        color: #10b981 !important;
+                    .filter-option.active:hover {
+                        background: ${MINT_GREEN_LIGHT};
                     }
-                    .mint-tabs .ant-tabs-ink-bar {
-                        background: #10b981 !important;
+
+                    .filter-btn {
+                        border-radius: 8px !important;
+                        border: 1px solid #e2e8f0 !important;
+                        height: 38px !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        gap: 4px !important;
+                        color: #64748b !important;
+                        background: white !important;
+                    }
+                    .filter-btn:hover {
+                        border-color: ${MINT_GREEN} !important;
+                        color: ${MINT_GREEN} !important;
+                    }
+                    .filter-btn.active {
+                        border-color: ${MINT_GREEN} !important;
+                        color: white !important;
+                        background: ${MINT_GREEN} !important;
+                    }
+                    .filter-btn.active:hover {
+                        background: ${MINT_GREEN_HOVER} !important;
+                        border-color: ${MINT_GREEN_HOVER} !important;
+                    }
+                    .filter-badge {
+                        font-size: 8px;
+                        background: white;
+                        color: ${MINT_GREEN};
+                        border-radius: 50%;
+                        width: 16px;
+                        height: 16px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: 600;
+                    }
+                    .filter-btn.active .filter-badge {
+                        background: white;
+                        color: ${MINT_GREEN};
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .ant-table { font-size: 10px; }
+                        .ant-table-thead > tr > th { font-size: 9px !important; }
+                        .ant-table-tbody > tr > td { font-size: 10px !important; }
+                        .shadcn-tabs-trigger {
+                            padding: 6px 12px;
+                            font-size: 11px;
+                        }
+                        .tabs-container {
+                            flex-wrap: wrap;
+                            width: 100%;
+                        }
+                        .search-filter-wrapper {
+                            flex-wrap: wrap;
+                            width: 100%;
+                        }
                     }
                 `}
             </style>
-            <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+
+            {/* Header */}
+            <div
+                style={{
+                    padding: "16px 0 14px 0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
+                }}
+            >
                 <div>
-                    <Title level={2} style={{ margin: 0 }}>Bookings Management</Title>
-                    <Text type="secondary">Manage and track all reservations</Text>
+                    <Title
+                        level={4}
+                        style={{
+                            margin: 0,
+                            fontSize: "24px",
+                            fontWeight: 700,
+                            color: "#0f172a",
+                        }}
+                    >
+                        Booking List
+                    </Title>
+                    <Text type="secondary" style={{ fontSize: "12px", color: "#64748b" }}>
+                        Manage and track all reservations
+                    </Text>
                 </div>
-                <Search
-                    placeholder="Search by name, ID, or type"
-                    allowClear
-                    onChange={(e) => setSearchText(e.target.value)}
-                    style={{ width: 300 }}
-                    size="large"
-                />
             </div>
 
-            <Tabs
-                className="tabs-right mint-tabs"
-                activeKey={activeTab}
-                onChange={setActiveTab}
-                items={tabItems}
-                size="large"
-                centered={false}
-            />
+            {/* shadcn-style Tabs with sliding indicator */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                <div className="tabs-container" ref={tabContainerRef}>
+                    <div 
+                        className="tab-indicator" 
+                        style={{ 
+                            left: indicatorStyle.left, 
+                            width: indicatorStyle.width 
+                        }} 
+                    />
+                    <button
+                        ref={activeTab === "active" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "active" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("active");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <CheckCircleOutlined style={{ fontSize: "14px" }} />
+                        Overview
+                    </button>
+                    <button
+                        ref={activeTab === "history" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "history" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("history");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <HistoryOutlined style={{ fontSize: "14px" }} />
+                        History
+                    </button>
+                    <button
+                        ref={activeTab === "trash" ? activeTabRef : null}
+                        className={`shadcn-tabs-trigger ${activeTab === "trash" ? "active" : ""}`}
+                        onClick={() => {
+                            setActiveTab("trash");
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <DeleteOutlined style={{ fontSize: "14px" }} />
+                        Trash
+                    </button>
+                </div>
+
+                {/* Right side - Search with gap and Filter on the right with mint green */}
+                <div className="search-filter-wrapper" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Input
+                        placeholder="Search by name, ID, or type..."
+                        allowClear
+                        value={searchInput}
+                        onChange={(e) => {
+                            const value = e.target.value;
+                            setSearchInput(value);
+                            debouncedSearch(value);
+                        }}
+                        prefix={
+                            <SearchOutlined
+                                style={{ color: "#94a3b8", fontSize: 14 }}
+                            />
+                        }
+                        style={{
+                            width: 280,
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            fontSize: "11px",
+                            height: 38,
+                        }}
+                    />
+                    <Popover
+                        content={
+                            <div style={{ minWidth: 150 }}>
+                                <div
+                                    className={`filter-option ${filterStatus === "all" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("all");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    All Status
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "pending" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("pending");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Pending
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "confirmed" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("confirmed");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Confirmed
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "checked_in" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("checked_in");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Checked In
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "checked_out" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("checked_out");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Checked Out
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "cancelled" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("cancelled");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Cancelled
+                                </div>
+                                <div
+                                    className={`filter-option ${filterStatus === "refunded" ? "active" : ""}`}
+                                    onClick={() => {
+                                        setFilterStatus("refunded");
+                                        setFilterPopoverOpen(false);
+                                    }}
+                                >
+                                    Refunded
+                                </div>
+                            </div>
+                        }
+                        trigger="click"
+                        open={filterPopoverOpen}
+                        onOpenChange={setFilterPopoverOpen}
+                        placement="bottomRight"
+                        overlayClassName="filter-popover"
+                    >
+                        <Button
+                            className={`filter-btn ${filterStatus !== "all" ? "active" : ""}`}
+                            onClick={() => setFilterPopoverOpen(!filterPopoverOpen)}
+                            style={{
+                                borderRadius: "8px",
+                                border: "1px solid #e2e8f0",
+                                height: 38,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                color: filterStatus !== "all" ? "white" : "#64748b",
+                                borderColor: filterStatus !== "all" ? MINT_GREEN : "#e2e8f0",
+                                background: filterStatus !== "all" ? MINT_GREEN : "white",
+                            }}
+                        >
+                            <FilterOutlined style={{ fontSize: 14 }} />
+                            {filterStatus !== "all" && (
+                                <span className="filter-badge">
+                                    {filterStatus === "pending" ? "P" : 
+                                     filterStatus === "confirmed" ? "C" :
+                                     filterStatus === "checked_in" ? "I" :
+                                     filterStatus === "checked_out" ? "O" :
+                                     filterStatus === "cancelled" ? "X" :
+                                     filterStatus === "refunded" ? "R" : "1"}
+                                </span>
+                            )}
+                        </Button>
+                    </Popover>
+                </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="shadcn-tabs-content" style={{ marginTop: 16 }}>
+                {activeTab === "active" && (
+                    <>
+                        {renderStats()}
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+                {activeTab === "history" && (
+                    <>
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+                {activeTab === "trash" && (
+                    <>
+                        {bookings.length > 0 && (
+                            <Alert
+                                message="Warning"
+                                description="Items in trash will be permanently deleted. Use 'Delete Forever' with caution."
+                                type="warning"
+                                showIcon
+                                closable
+                                style={{
+                                    marginBottom: 12,
+                                    fontSize: "10px",
+                                    borderRadius: "8px",
+                                }}
+                            />
+                        )}
+                        {renderTable()}
+                        {renderPagination()}
+                    </>
+                )}
+            </div>
 
             {renderBookingDetails()}
         </div>

@@ -113,48 +113,79 @@ class UserController extends Controller
             'contact_number.regex' => 'Phone number must be 11 digits and start with 09.',
         ]);
 
-        // ✅ only admin can change role
+        // only admin can change role
         if ($authUser->role !== 'admin') {
             unset($validated['role']);
         }
 
-        // ✅ HANDLE PASSWORD
+        // HANDLE PASSWORD
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
         } else {
             unset($validated['password']);
         }
 
-        // ✅ HANDLE IMAGE UPLOAD
+        // // HANDLE IMAGE UPLOAD
+        // if ($request->hasFile('profile_image')) {
+
+        //     // delete old image
+        //     if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
+        //         Storage::disk('public')->delete($user->profile_image);
+        //     }
+
+        //     if ($request->hasFile('profile_image')) {
+
+        //         // delete old image
+        //         if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
+        //             Storage::disk('public')->delete($user->profile_image);
+        //         }
+
+        //         $image = $request->file('profile_image');
+
+        //         $manager = new ImageManager(new Driver());
+        //         $img = $manager->read($image)->cover(300, 300);
+
+        //         $filename = time() . '.jpg';
+
+        //         Storage::disk('public')->put(
+        //             "profiles/$filename",
+        //             (string) $img->toJpeg(70)
+        //         );
+
+        //         // ✅ SAVE PATH ONLY
+        //         $user->profile_image = "profiles/$filename";
+        //     }
+        // }
+
+        // HANDLE IMAGE UPLOAD
         if ($request->hasFile('profile_image')) {
 
-            // delete old image
-            if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
+            // Delete old image
+            if (
+                $user->profile_image &&
+                Storage::disk('public')->exists($user->profile_image)
+            ) {
                 Storage::disk('public')->delete($user->profile_image);
             }
 
-            if ($request->hasFile('profile_image')) {
+            $image = $request->file('profile_image');
 
-                // delete old image
-                if ($user->profile_image && Storage::disk('public')->exists($user->profile_image)) {
-                    Storage::disk('public')->delete($user->profile_image);
-                }
+            $manager = new ImageManager(new Driver());
 
-                $image = $request->file('profile_image');
+            $img = $manager
+                ->read($image)
+                ->cover(300, 300);
 
-                $manager = new ImageManager(new Driver());
-                $img = $manager->read($image)->cover(300, 300);
+            $filename = time() . '.jpg';
 
-                $filename = time() . '.jpg';
+            Storage::disk('public')->put(
+                "profiles/$filename",
+                (string) $img->toJpeg(70)
+            );
 
-                Storage::disk('public')->put(
-                    "profiles/$filename",
-                    (string) $img->toJpeg(70)
-                );
-
-                // ✅ SAVE PATH ONLY
-                $user->profile_image = "profiles/$filename";
-            }
+            // IMPORTANT: Save path to validated data
+            // so $user->update() will not overwrite it
+            $validated['profile_image'] = "profiles/$filename";
         }
 
         // ✅ UPDATE OTHER FIELDS

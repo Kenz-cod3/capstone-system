@@ -30,7 +30,7 @@ interface Shift {
     closed_at?: string | null;
     expected_cash?: number;
     starting_cash?: number;
-    cash_payments?: number;
+    payments_handled?: number;
     handled_bookings?: number;
     staff_name?: string;
 }
@@ -375,7 +375,7 @@ export default function CashManagement() {
                                     Starting Cash
                                 </th>
                                 <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
-                                    Cash Payments
+                                    Payments Handle
                                 </th>
                                 <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Expected Cash
@@ -418,7 +418,7 @@ export default function CashManagement() {
                                     <td className="px-5 py-4 text-right font-semibold text-blue-600">
                                         ₱
                                         {Number(
-                                            shift.cash_payments || 0,
+                                            shift.payments_handled || 0,
                                         ).toLocaleString()}
                                     </td>
                                     <td className="px-5 py-4 text-right font-bold text-emerald-600">

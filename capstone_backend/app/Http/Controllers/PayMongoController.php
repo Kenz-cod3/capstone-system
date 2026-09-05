@@ -2,33 +2,39 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\DashboardUpdated;
+use App\Events\NotificationCreated;
 use App\Models\Booking;
+use App\Models\BookingHistory;
 use App\Models\BookingPayment;
 use App\Models\Shift;
 use App\Models\CashTransaction;
+use App\Models\Notification;
+use App\Models\User;
+use App\Services\MailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class PayMongoController extends Controller
 {
-    // CREATE PAYMONGO CHECKOUT SESSION
-    public function createPayment(Request $request)
+    // CREATE PAYMONGO DYNAMIC QRPH PAYMENT
+    public function createQrPayment(Request $request)
     {
         $validated = $request->validate([
-            'booking_id'     => 'required|exists:bookings,id',
-            'amount'         => 'required|numeric|min:1',
-            'payment_method' => 'required|in:gcash,bank',
+            'booking_id' => 'required|exists:bookings,id',
+            'amount'     => 'required|numeric|min:1',
         ]);
 
         $booking = Booking::with('bookedRooms')
             ->findOrFail($validated['booking_id']);
 
-        Log::info([
+        Log::info('Creating Dynamic QRPH payment', [
             'booking_id' => $booking->id,
-            'room_statuses' => $booking->bookedRooms->pluck('status'),
+            'amount' => $validated['amount'],
         ]);
 
+        // Make sure booking still has a room waiting for payment
         $hasPendingRoom = $booking->bookedRooms()
             ->where('status', 'pending')
             ->exists();
@@ -39,70 +45,194 @@ class PayMongoController extends Controller
             ], 400);
         }
 
-        $paymentMethodTypes = $validated['payment_method'] === 'gcash'
-            ? ['gcash']
-            : ['dob'];
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 1: Create Payment Intent
+        |--------------------------------------------------------------------------
+        */
 
-        $response = Http::withBasicAuth(
+        $amountCentavos = (int) round($validated['amount'] * 100);
+
+        $intentResponse = Http::withBasicAuth(
             env('PAYMONGO_SECRET_KEY'),
             ''
         )->post(
-            'https://api.paymongo.com/v1/checkout_sessions',
+            'https://api.paymongo.com/v1/payment_intents',
             [
-                "data" => [
-                    "attributes" => [
-
-                        "line_items" => [
-                            [
-                                "currency" => "PHP",
-                                "amount"   => (int) round($validated['amount'] * 100),
-                                "name"     => "Travelers Inn Booking #{$booking->booking_reference}",
-                                "quantity" => 1,
-                            ]
+                'data' => [
+                    'attributes' => [
+                        'amount' => $amountCentavos,
+                        'currency' => 'PHP',
+                        'payment_method_allowed' => ['qrph'],
+                        'description' =>
+                        "Travelers Inn Booking #{$booking->booking_reference}",
+                        'metadata' => [
+                            'booking_id' => (string) $booking->id,
+                            'payment_method' => 'qrph',
                         ],
-
-                        "payment_method_types" => $paymentMethodTypes,
-
-                        "metadata" => [
-                            "booking_id"     => (string) $booking->id,
-                            "payment_method" => $validated['payment_method'],
-                        ],
-
-                        "success_url" => "https://example.com/success?booking_id={$booking->id}",
-                        "cancel_url"  => "https://example.com/cancel?booking_id={$booking->id}",
-                    ]
-                ]
+                    ],
+                ],
             ]
         );
 
-        Log::info('========== CREATE CHECKOUT ==========');
-
-        Log::info('Checkout Request', [
-            'booking_id' => $booking->id,
-            'payment_method' => $validated['payment_method'],
-            'payment_method_types' => $paymentMethodTypes,
-            'amount' => $validated['amount'],
+        Log::info('Payment Intent Response', [
+            'status' => $intentResponse->status(),
+            'body' => $intentResponse->json(),
         ]);
 
-        Log::info('Checkout Response', [
+        if ($intentResponse->failed()) {
+            return response()->json([
+                'message' => 'Failed to create PayMongo payment intent',
+                'error' => $intentResponse->json(),
+            ], $intentResponse->status());
+        }
+
+        $intentData = $intentResponse->json('data');
+
+        $paymentIntentId = $intentData['id'];
+        $clientKey = $intentData['attributes']['client_key'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 2: Create QRPH Payment Method
+        |--------------------------------------------------------------------------
+        */
+
+        $paymentMethodResponse = Http::withBasicAuth(
+            env('PAYMONGO_PUBLIC_KEY'),
+            ''
+        )->post(
+            'https://api.paymongo.com/v1/payment_methods',
+            [
+                'data' => [
+                    'attributes' => [
+                        'type' => 'qrph',
+                        'expiry_seconds' => 1800,
+                    ],
+                ],
+            ]
+        );
+
+        Log::info('QRPH Payment Method Response', [
+            'status' => $paymentMethodResponse->status(),
+            'body' => $paymentMethodResponse->json(),
+        ]);
+
+        if ($paymentMethodResponse->failed()) {
+            return response()->json([
+                'message' => 'Failed to create QRPH payment method',
+                'error' => $paymentMethodResponse->json(),
+            ], $paymentMethodResponse->status());
+        }
+
+        $paymentMethodId = $paymentMethodResponse->json('data.id');
+
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 3: Attach QRPH Payment Method to Payment Intent
+        |--------------------------------------------------------------------------
+        */
+
+        $attachResponse = Http::withBasicAuth(
+            env('PAYMONGO_PUBLIC_KEY'),
+            ''
+        )->post(
+            "https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}/attach",
+            [
+                'data' => [
+                    'attributes' => [
+                        'payment_method' => $paymentMethodId,
+                        'client_key' => $clientKey,
+                    ],
+                ],
+            ]
+        );
+
+        Log::info('QRPH Attach Response', [
+            'status' => $attachResponse->status(),
+            'body' => $attachResponse->json(),
+        ]);
+
+        if ($attachResponse->failed()) {
+            return response()->json([
+                'message' => 'Failed to generate Dynamic QRPH',
+                'error' => $attachResponse->json(),
+            ], $attachResponse->status());
+        }
+
+        $intent = $attachResponse->json('data');
+
+        /*
+        |--------------------------------------------------------------------------
+        | STEP 4: Get QR Image
+        |--------------------------------------------------------------------------
+        */
+
+        $qrImage = data_get(
+            $intent,
+            'attributes.next_action.code.image_url'
+        );
+
+        $testUrl = data_get(
+            $intent,
+            'attributes.next_action.code.test_url'
+        );
+
+        if (! $qrImage) {
+            return response()->json([
+                'message' => 'PayMongo did not return a QR code',
+                'payment_intent' => $intent,
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Dynamic QRPH generated successfully',
+            'payment_intent_id' => $paymentIntentId,
+            'client_key' => $clientKey,
+            'amount' => $validated['amount'],
+            'qr_image_url' => $qrImage,
+            'test_url' => $testUrl,
+        ], 200);
+    }
+
+    // CHECK QRPH PAYMENT INTENT STATUS (polled by frontend)
+    public function checkQrStatus(Request $request, string $paymentIntentId)
+    {
+        $clientKey = $request->query('client_key');
+
+        if (! $clientKey) {
+            return response()->json([
+                'message' => 'client_key is required'
+            ], 400);
+        }
+
+        $response = Http::withBasicAuth(
+            env('PAYMONGO_PUBLIC_KEY'),
+            ''
+        )->get(
+            "https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}",
+            [
+                'client_key' => $clientKey,
+            ]
+        );
+
+        Log::info('QRPH Status Check Response', [
+            'payment_intent_id' => $paymentIntentId,
             'status' => $response->status(),
             'body' => $response->json(),
         ]);
 
         if ($response->failed()) {
-            Log::error('PayMongo checkout session failed', $response->json() ?? []);
-
             return response()->json([
-                'message' => 'Failed to create payment session',
-                'error'   => $response->json(),
+                'message' => 'Failed to fetch payment intent status',
+                'error' => $response->json(),
             ], $response->status());
         }
 
-        $data = $response->json('data');
+        $status = $response->json('data.attributes.status');
 
         return response()->json([
-            'checkout_url' => $data['attributes']['checkout_url'],
-            'session_id'   => $data['id'],
+            'status' => $status,
         ], 200);
     }
 
@@ -131,7 +261,10 @@ class PayMongoController extends Controller
         $payload = $request->all();
         $eventType = data_get($payload, 'data.attributes.type');
 
-        if ($eventType !== 'checkout_session.payment.paid') {
+        if (!in_array($eventType, [
+            'checkout_session.payment.paid',
+            'payment.paid',
+        ])) {
             return response()->json(['message' => 'Event ignored'], 200);
         }
 
@@ -140,8 +273,13 @@ class PayMongoController extends Controller
         $bookingId     = data_get($session, 'attributes.metadata.booking_id');
         $paymentMethod = data_get($session, 'attributes.metadata.payment_method', 'gcash');
 
-        $paidAmountCentavos = data_get($session, 'attributes.payments.0.attributes.amount');
-        $paymentReference   = data_get($session, 'attributes.payments.0.id');
+        // Direct Payment Intent flow (e.g. QRPH): amount/id sit on the payment object itself.
+        // Checkout Session flow (e.g. gcash/bank via checkout): amount/id sit inside "payments[0]".
+        $paidAmountCentavos = data_get($session, 'attributes.amount')
+            ?? data_get($session, 'attributes.payments.0.attributes.amount');
+
+        $paymentReference = data_get($session, 'id')
+            ?? data_get($session, 'attributes.payments.0.id');
 
         if (! $bookingId || ! $paidAmountCentavos) {
             Log::warning('PayMongo webhook missing booking_id or amount', $payload);
@@ -213,7 +351,7 @@ class PayMongoController extends Controller
             'payment_method'  => $paymentMethod === 'gcash' ? 'gcash' : 'bank',
             'payment_status'  => 'paid',
             'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : null,
-            'bank_reference'  => $paymentMethod === 'bank' ? $paymentReference : null,
+            'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : null,
             'received_by'     => null,
             'payment_date'    => now(),
         ]);
@@ -237,6 +375,71 @@ class PayMongoController extends Controller
         }
 
         Log::info("PayMongo payment recorded for booking {$booking->id}", ['payment_id' => $payment->id]);
+
+        // AUTO-CONFIRM booked rooms now that payment has been received
+        $pendingRooms = $booking->bookedRooms()
+            ->where('status', 'pending')
+            ->get();
+
+        foreach ($pendingRooms as $bookedRoom) {
+            $bookedRoom->update([
+                'status' => 'confirmed',
+            ]);
+        }
+
+        if ($pendingRooms->isNotEmpty()) {
+
+            BookingHistory::create([
+                'booking_id'   => $booking->id,
+                'old_status'   => 'pending',
+                'new_status'   => 'confirmed',
+                'change_note'  => 'Booking automatically confirmed after successful QR Ph payment',
+                'changed_by'   => null,
+                'changed_at'   => now(),
+            ]);
+
+            // Notify Admins and Staff
+            $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])->get();
+
+            foreach ($staffAndAdmins as $user) {
+                $notification = Notification::create([
+                    'user_id' => $user->id,
+                    'title'   => 'Booking Confirmed',
+                    'message' => 'Booking ' . $booking->booking_reference . ' was automatically confirmed after payment via QR Ph.',
+                    'is_read' => false,
+                ]);
+
+                broadcast(new NotificationCreated($notification));
+            }
+
+            // Notify Guest
+            $booking->loadMissing('user');
+
+            if ($booking->user_id) {
+
+                $notification = Notification::create([
+                    'user_id' => $booking->user_id,
+                    'title'   => 'Booking Confirmed',
+                    'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed. Payment received successfully.',
+                    'is_read' => false,
+                ]);
+
+                broadcast(new NotificationCreated($notification));
+
+                if ($booking->user && $booking->user->email) {
+
+                    MailService::sendNotificationEmail(
+                        $booking->user->email,
+                        $booking->user->first_name,
+                        $booking->booking_reference,
+                        $notification->title,
+                        $notification->message
+                    );
+                }
+            }
+
+            broadcast(new DashboardUpdated())->toOthers();
+        }
 
         return response()->json(['message' => 'Payment recorded'], 200);
     }
@@ -295,34 +498,4 @@ class PayMongoController extends Controller
 
         return hash_equals($expectedSignature, $signature);
     }
-
-    // private function verifySignature(string $payload, ?string $signatureHeader): bool
-    // {
-    //     if (! $signatureHeader) {
-    //         return false;
-    //     }
-
-    //     $parts = [];
-    //     foreach (explode(',', $signatureHeader) as $pair) {
-    //         [$key, $value] = array_pad(explode('=', $pair, 2), 2, null);
-    //         $parts[$key] = $value;
-    //     }
-
-    //     $timestamp = $parts['t'] ?? null;
-    //     $signature = $parts['li'] ?? $parts['te'] ?? null;
-
-    //     if (! $timestamp || ! $signature) {
-    //         return false;
-    //     }
-
-    //     $signedPayload = $timestamp . '.' . $payload;
-
-    //     $expectedSignature = hash_hmac(
-    //         'sha256',
-    //         $signedPayload,
-    //         env('PAYMONGO_WEBHOOK_SECRET')
-    //     );
-
-    //     return hash_equals($expectedSignature, $signature);
-    // }
 }

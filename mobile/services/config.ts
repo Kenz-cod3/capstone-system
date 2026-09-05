@@ -1,8 +1,7 @@
 export const WS_CONFIG = {
-  host: "192.168.8.117",
-  port: 8080,
-  appKey: "app-key",
+  cluster: "ap1",
+  appKey: "61f7bf38a6e202280a45",
 };
 
 export const getWsUrl = () =>
-  `ws://${WS_CONFIG.host}:${WS_CONFIG.port}/app/${WS_CONFIG.appKey}`;
+  `wss://ws-${WS_CONFIG.cluster}.pusher.com/app/${WS_CONFIG.appKey}?protocol=7&client=js&version=8.4.0`;

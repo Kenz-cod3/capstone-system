@@ -34,6 +34,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
+import ShiftStatusModal from "@/components/StaffComponents/ShiftStatusModal";
 import {
     Dialog,
     DialogContent,
@@ -60,6 +61,7 @@ const StaffLayout = ({
     });
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
 
     const [messages, setMessages] = useState<any[]>([]);
     const [chatFilter, setChatFilter] = useState<"all" | "guest" | "staff">(
@@ -108,6 +110,8 @@ const StaffLayout = ({
         "/dashboard": "Dashboard",
         "/reservation-monitor": "Reservation Monitor",
         "/bookings": "Bookings",
+        "/booking-management": "Bookings",
+        "/booking-details": "Booking Details",
         "/incidents": "Incidents Reports",
         "/transactions": "Transaction",
         "/walk-in-guests": "Walk-in Guests",
@@ -115,7 +119,86 @@ const StaffLayout = ({
         "/extend-stay": "Extend Booking",
     };
 
+    // Check if current path matches a route (including nested paths)
+    const isActiveRoute = (href: string) => {
+        if (href === "/booking-management") {
+            // Highlight Bookings when on booking-management or booking-details
+            return (
+                location.pathname === "/booking-management" ||
+                location.pathname.startsWith("/booking-details/")
+            );
+        }
+        return location.pathname === href;
+    };
+
+    // Get breadcrumb items based on current path
+    const getBreadcrumbs = () => {
+        const pathname = location.pathname;
+        const breadcrumbs = [{ name: "Dashboard", path: "/dashboard" }];
+
+        if (pathname === "/dashboard") {
+            return breadcrumbs;
+        }
+
+        if (
+            pathname.startsWith("/booking-management") ||
+            pathname === "/bookings"
+        ) {
+            breadcrumbs.push({ name: "Bookings", path: "/booking-management" });
+            return breadcrumbs;
+        }
+
+        if (pathname.startsWith("/booking-details/")) {
+            breadcrumbs.push(
+                { name: "Bookings", path: "/booking-management" },
+                { name: "Booking Details", path: pathname },
+            );
+            return breadcrumbs;
+        }
+
+        if (pathname === "/reservation-monitor") {
+            breadcrumbs.push({
+                name: "Reservation Monitor",
+                path: "/reservation-monitor",
+            });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/incidents") {
+            breadcrumbs.push({ name: "Incidents Reports", path: "/incidents" });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/transactions") {
+            breadcrumbs.push({ name: "Transactions", path: "/transactions" });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/walk-in-guests") {
+            breadcrumbs.push({
+                name: "Walk-in Guests",
+                path: "/walk-in-guests",
+            });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/cash") {
+            breadcrumbs.push({ name: "Cash", path: "/cash" });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/extend-stay") {
+            breadcrumbs.push({ name: "Extend Booking", path: "/extend-stay" });
+            return breadcrumbs;
+        }
+
+        return breadcrumbs;
+    };
+
     const getPageTitle = () => {
+        if (location.pathname.startsWith("/booking-details/")) {
+            return "Booking Details";
+        }
         return routesMap[location.pathname] || "Dashboard";
     };
 
@@ -142,6 +225,20 @@ const StaffLayout = ({
         }
     }, []);
 
+    useEffect(() => {
+        console.log("Shift check — user:", user, "role:", user?.role);
+        if (!user?.id) return;
+        if (user.role?.toLowerCase() !== "staff") return;
+        if (sessionStorage.getItem("shiftPromptShown")) {
+            console.log("Shift prompt already shown this session, skipping.");
+            return;
+        }
+
+        console.log("Opening shift modal...");
+        setIsShiftModalOpen(true);
+        sessionStorage.setItem("shiftPromptShown", "1");
+    }, [user?.id]);
+
     const handleLogout = async () => {
         NProgress.start();
 
@@ -160,6 +257,8 @@ const StaffLayout = ({
         } finally {
             localStorage.removeItem("token");
             localStorage.removeItem("user");
+
+            sessionStorage.removeItem("shiftPromptShown");
 
             navigate("/login", {
                 replace: true,
@@ -462,12 +561,6 @@ const StaffLayout = ({
                     href: "/walk-in-guests",
                     icon: UserPlus,
                 },
-                // {
-                //     name: "Extend Booking",
-                //     description: "Guest Extend Stay",
-                //     href: "/extend-stay",
-                //     icon: BookUser
-                // },
                 {
                     name: "Cash",
                     description: "Cash Management",
@@ -808,6 +901,8 @@ const StaffLayout = ({
 
     const fallback = `https://ui-avatars.com/api/?name=${user?.first_name}+${user?.last_name}&background=10b981&color=fff`;
 
+    const breadcrumbs = getBreadcrumbs();
+
     return (
         <>
             <style>{`
@@ -875,6 +970,25 @@ const StaffLayout = ({
                     max-width: 0;
                     margin: 0 !important;
                 }
+                .breadcrumb-separator {
+                    margin: 0 6px;
+                    color: #94a3b8;
+                    font-size: 10px;
+                }
+                .breadcrumb-link {
+                    color: #64748b;
+                    font-size: 12px;
+                    cursor: pointer;
+                    transition: color 0.2s;
+                }
+                .breadcrumb-link:hover {
+                    color: #10b981;
+                }
+                .breadcrumb-current {
+                    color: #0f172a;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
             `}</style>
 
             <div className="min-h-screen bg-gray-50">
@@ -890,9 +1004,7 @@ const StaffLayout = ({
                         ${isSidebarOpen ? "w-56" : "w-16"} 
                         ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
                 >
-                    <div
-                        className="h-20 flex items-center px-3 shrink-0 border-b border-emerald-800/50"
-                    >
+                    <div className="h-20 flex items-center px-3 shrink-0 border-b border-emerald-800/50">
                         <div
                             onClick={() => handleNavigation("/dashboard")}
                             className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none"
@@ -950,8 +1062,9 @@ const StaffLayout = ({
                                     </p>
                                     <div className="space-y-1">
                                         {group.items.map((item) => {
-                                            const isActive =
-                                                location.pathname === item.href;
+                                            const isActive = isActiveRoute(
+                                                item.href,
+                                            );
                                             return (
                                                 <div
                                                     key={item.name}
@@ -1083,15 +1196,6 @@ const StaffLayout = ({
                                         <span>Settings</span>
                                     </div>
                                 </DropdownMenuItem>
-                                {/* <DropdownMenuItem
-                                    asChild
-                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
-                                >
-                                    <div onClick={() => handleNavigation('/help')} className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50 select-none">
-                                        <LifeBuoy className="h-4 w-4 text-emerald-400" />
-                                        <span>Help Center</span>
-                                    </div>
-                                </DropdownMenuItem> */}
                                 <DropdownMenuItem
                                     onClick={handleLogout}
                                     className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white select-none"
@@ -1125,9 +1229,33 @@ const StaffLayout = ({
                                     />
                                 </Button>
                                 <div className="w-px h-5 bg-gray-300"></div>
-                                <h1 className="text-sm relative top-[3px] font-medium text-gray-600 tracking-wide select-none">
-                                    {getPageTitle()}
-                                </h1>
+                                {/* Breadcrumb */}
+                                <div className="flex items-center">
+                                    {breadcrumbs.map((crumb, index) => (
+                                        <React.Fragment key={index}>
+                                            {index > 0 && (
+                                                <ChevronRight className="breadcrumb-separator h-3 w-3" />
+                                            )}
+                                            {index ===
+                                            breadcrumbs.length - 1 ? (
+                                                <span className="breadcrumb-current">
+                                                    {crumb.name}
+                                                </span>
+                                            ) : (
+                                                <span
+                                                    className="breadcrumb-link"
+                                                    onClick={() =>
+                                                        handleNavigation(
+                                                            crumb.path,
+                                                        )
+                                                    }
+                                                >
+                                                    {crumb.name}
+                                                </span>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-1">
@@ -1265,6 +1393,13 @@ const StaffLayout = ({
 
             {isSettingsOpen && (
                 <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+            )}
+
+            {isShiftModalOpen && (
+                <ShiftStatusModal
+                    open={isShiftModalOpen}
+                    onClose={() => setIsShiftModalOpen(false)}
+                />
             )}
 
             <Dialog

@@ -259,6 +259,72 @@ class AuthController extends Controller
         ], $sent ? 200 : 502);
     }
 
+    // public function adminLogin(Request $request)
+    // {
+    //     $request->validate([
+    //         'email'    => 'required',
+    //         'password' => 'required'
+    //     ]);
+
+    //     $user = User::where('email', $request->email)->first();
+
+    //     if (!$user || !Hash::check($request->password, $user->password)) {
+    //         return response()->json([
+    //             'message' => 'Invalid email or password'
+    //         ], 401);
+    //     }
+
+    //     // ONLY ADMIN + STAFF
+    //     if (!in_array($user->role, ['admin', 'staff', 'cashier'])) {
+    //         return response()->json([
+    //             'message' => 'Access Denied'
+    //         ], 403);
+    //     }
+
+    //     if (!$user->is_active) {
+    //         return response()->json([
+    //             'message' => 'Account inactive'
+    //         ], 403);
+    //     }
+
+    //     $user->last_login = now();
+    //     $user->save();
+
+    //     if (strtolower($user->role) === 'staff') {
+
+    //         $existingShift = Shift::where('opened_by', $user->id)
+    //             ->whereNull('closed_at')
+    //             ->first();
+
+    //         if (!$existingShift) {
+
+    //             $lastShift = Shift::where('opened_by', $user->id)
+    //                 ->whereNotNull('closed_at')
+    //                 ->latest('closed_at')
+    //                 ->first();
+
+    //             $startingCash = $lastShift
+    //                 ? $lastShift->closed_cash
+    //                 : 0;
+
+    //             Shift::create([
+    //                 'shift_number' => 'SHIFT-' . now()->format('Ymd-His'),
+    //                 'opened_by' => $user->id,
+    //                 'starting_cash' => $startingCash,
+    //                 'expected_cash' => $startingCash,
+    //                 'opened_at' => now(),
+    //             ]);
+    //         }
+    //     }
+
+    //     $token = $user->createToken('admin')->plainTextToken;
+
+    //     return response()->json([
+    //         'user' => $user,
+    //         'token' => $token
+    //     ]);
+    // }
+
     public function adminLogin(Request $request)
     {
         $request->validate([
@@ -274,8 +340,8 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // ONLY ADMIN + STAFF
-        if (!in_array($user->role, ['admin', 'staff', 'cashier'])) {
+        // ALLOW ADMIN, STAFF, CASHIER, AND GUEST
+        if (!in_array($user->role, ['admin', 'staff', 'cashier', 'guest'])) {
             return response()->json([
                 'message' => 'Access Denied'
             ], 403);

@@ -1686,7 +1686,8 @@ const AdminLayout = ({
                     <div
                         className={`flex-1 bg-gray-50 ${
                             location.pathname === "/reservation-monitor" ||
-                            location.pathname === "/messages"
+                            location.pathname === "/messages" ||
+                            location.pathname === "/reports"
                                 ? "overflow-hidden"
                                 : "overflow-y-auto scrollbar-mint"
                         }`}
@@ -1694,7 +1695,8 @@ const AdminLayout = ({
                         <div
                             className={
                                 location.pathname === "/reservation-monitor" ||
-                                location.pathname === "/messages"
+                                location.pathname === "/messages" ||
+                                location.pathname === "/reports"
                                     ? "h-full"
                                     : "px-4 sm:px-6 py-4 sm:py-6"
                             }
