@@ -252,7 +252,8 @@ class BookingController extends Controller
 
                 if (
                     $bookedRoom->status === 'checked_in' &&
-                    now()->greaterThan($bookedRoom->check_out_date) &&
+                    $bookedRoom->expected_checkout_at &&
+                    now()->greaterThan($bookedRoom->expected_checkout_at) &&
                     !$bookedRoom->overdue_started_at
                 ) {
 

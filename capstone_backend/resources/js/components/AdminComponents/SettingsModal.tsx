@@ -60,7 +60,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         }));
     };
 
-    // Profile form state - populated from auth (matches your users table)
     const [profile, setProfile] = useState({
         first_name: user?.first_name || "",
         last_name: user?.last_name || "",
@@ -103,7 +102,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         fetchUser();
     }, []);
 
-    // Sidebar sections - matches the reference design
     const sections: { id: SectionId; name: string; icon: typeof User }[] = [
         { id: "account", name: "Profile", icon: User },
         { id: "notifications", name: "General", icon: Settings },
@@ -380,9 +378,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                                                         : "text-amber-600"
                                                 }`}
                                             />
-                                            <div className="leading-none">
+                                            <div className="leading-tight">
                                                 <p
-                                                    className={`text-xs font-semibold leading-none ${
+                                                    className={`text-xs font-semibold ${
                                                         isVerified
                                                             ? "text-emerald-700"
                                                             : "text-amber-600"
@@ -394,7 +392,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                                                 </p>
 
                                                 <p
-                                                    className={`text-[10px] leading-none -mt-1 whitespace-nowrap ${
+                                                    className={`text-[10px] mt-0.5 whitespace-nowrap ${
                                                         isVerified
                                                             ? "text-emerald-600"
                                                             : "text-amber-600"
@@ -420,12 +418,12 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                                                         <User className="h-5 w-5 text-emerald-600" />
                                                     </div>
 
-                                                    <div>
-                                                        <p className="text-sm font-semibold text-gray-900 leading-none">
+                                                    <div className="leading-tight">
+                                                        <p className="text-sm font-semibold text-gray-900">
                                                             Profile Information
                                                         </p>
 
-                                                        <p className="text-xs text-gray-500 leading-none -mt-1 whitespace-nowrap">
+                                                        <p className="text-xs text-gray-500 mt-0.5 whitespace-nowrap">
                                                             Keep your
                                                             information up to
                                                             date for a better
@@ -616,12 +614,12 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                                                     <Shield className="h-5 w-5 text-emerald-600" />
                                                 </div>
 
-                                                <div>
-                                                    <p className="text-sm font-semibold text-gray-900 leading-none">
+                                                <div className="leading-tight">
+                                                    <p className="text-sm font-semibold text-gray-900">
                                                         Account Information
                                                     </p>
 
-                                                    <p className="text-xs text-gray-500 leading-none -mt-1">
+                                                    <p className="text-xs text-gray-500 mt-0.5">
                                                         View your account
                                                         details and status
                                                     </p>

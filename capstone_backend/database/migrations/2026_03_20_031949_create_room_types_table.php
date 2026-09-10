@@ -18,6 +18,11 @@ return new class extends Migration
             $table->integer('max_occupancy');
             $table->decimal('base_price', 10, 2);
             $table->decimal('short_stay_price', 10, 2)->nullable();
+            $table->unsignedInteger('short_stay_hours')->default(3);
+            $table->time('overnight_checkout_time')->default('11:00:00');
+            $table->time('standard_checkin_time')->default('14:00:00');      
+            $table->decimal('early_checkin_fee', 10, 2)->default(0);          
+            $table->decimal('late_checkout_fee', 10, 2)->default(0);
             $table->timestamps();
         });
     }

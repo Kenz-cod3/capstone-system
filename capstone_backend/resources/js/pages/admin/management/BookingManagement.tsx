@@ -139,7 +139,7 @@ interface BookedRoom {
             first_name?: string;
             last_name?: string;
             email?: string;
-            phone?: string;
+            contact_number?: string;
             address?: string;
         };
         walk_in_guest?: {
@@ -182,7 +182,7 @@ interface BookedRoom {
         first_name?: string;
         last_name?: string;
         email?: string;
-        phone?: string;
+        contact_number?: string;
         address?: string;
     };
     walk_in_guest?: {
@@ -237,7 +237,7 @@ interface User {
     middle_name?: string;
     last_name?: string;
     email?: string;
-    phone?: string;
+    contact_number?: string;
     address?: string;
 }
 
@@ -521,6 +521,8 @@ export default function Bookings() {
                 is_extended: bookedRoom.is_extended,
                 check_in_date: bookedRoom.check_in_date,
                 check_out_date: bookedRoom.check_out_date,
+                check_in_time: bookedRoom.check_in_time ?? undefined,
+                check_out_time: bookedRoom.check_out_time ?? undefined,
                 booking_reference: `BR-${bookedRoom.id}`,
                 booking_type: "walk_in" as const,
                 booking_status: bookedRoom.status as Booking["booking_status"],
@@ -540,6 +542,8 @@ export default function Bookings() {
             stay_type: bookedRoom.stay_type,
             check_in_date: bookedRoom.check_in_date,
             check_out_date: bookedRoom.check_out_date,
+            check_in_time: bookedRoom.check_in_time ?? undefined,
+            check_out_time: bookedRoom.check_out_time ?? undefined,
             total_price: bookingData.total_price || bookedRoom.subtotal,
             created_at: bookingData.created_at,
             deleted_at: bookingData.deleted_at,
@@ -1432,7 +1436,7 @@ export default function Bookings() {
                 let phone: string | undefined;
 
                 if (record.user) {
-                    phone = record.user.phone;
+                    phone = record.user.contact_number;
                 } else if (record.walk_in_guest) {
                     phone = record.walk_in_guest.contact_number;
                 }
@@ -1667,7 +1671,9 @@ export default function Bookings() {
                     </Text>
                     <br />
                     <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                        {formatTime(record.check_in_date)}
+                        {record.check_in_time
+                            ? formatTime(record.check_in_time)
+                            : "-"}
                     </Text>
                 </div>
             ),
@@ -1695,7 +1701,9 @@ export default function Bookings() {
                     </Text>
                     <br />
                     <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                        {formatTime(record.check_out_date)}
+                        {record.check_out_time
+                            ? formatTime(record.check_out_time)
+                            : "-"}
                     </Text>
                 </div>
             ),

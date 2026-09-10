@@ -1,6 +1,128 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+// ---- Countdown helpers ----
+function useCountdown(targetIso?: string | null, intervalMs = 30_000) {
+    const [remainingMs, setRemainingMs] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!targetIso) {
+            setRemainingMs(null);
+            return;
+        }
+        const target = new Date(targetIso).getTime();
+        const tick = () => {
+            const diff = target - Date.now();
+            setRemainingMs(diff);
+        };
+        tick();
+        const id = setInterval(tick, intervalMs);
+        return () => clearInterval(id);
+    }, [targetIso, intervalMs]);
+
+    return remainingMs;
+}
+
+function formatDuration(ms: number) {
+    const totalMinutes = Math.floor(Math.abs(ms) / 60000);
+
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+
+    if (days > 0) {
+        return `${days}d ${hours}h ${minutes}m`;
+    }
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+
+    return `${minutes}m`;
+}
+
+// HH:MM:SS format
+function formatHMS(ms: number) {
+    const totalSeconds = Math.floor(Math.abs(ms) / 1000);
+
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+
+    if (days > 0) {
+        return `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+// Countdown rectangle displayed on grid cells
+function CountdownRectangle({
+    expectedCheckoutAt,
+}: {
+    expectedCheckoutAt?: string | null;
+}) {
+    const remainingMs = useCountdown(expectedCheckoutAt, 1000);
+    if (remainingMs === null) return null;
+
+    const overdue = remainingMs < 0;
+    const label = formatHMS(remainingMs);
+
+    // Overdue = red, still counting down = blue (same blue used elsewhere for Occupied). No animation.
+    const colorClasses = overdue
+        ? "bg-red-600 text-white"
+        : "bg-blue-500 text-white";
+
+    return (
+        <div
+            className={`absolute bottom-1 left-1 right-1 rounded-md py-1 flex items-center justify-center ${colorClasses}`}
+            title={overdue ? `Overdue by ${label}` : `Checkout in ${label}`}
+        >
+            <span className="text-[10px] font-mono font-semibold tabular-nums">
+                {overdue ? `-${label}` : label}
+            </span>
+        </div>
+    );
+}
+
+// Thin colored strip on the right edge
+function CheckoutBadge({
+    expectedCheckoutAt,
+}: {
+    expectedCheckoutAt?: string | null;
+}) {
+    const remainingMs = useCountdown(expectedCheckoutAt);
+    if (remainingMs === null) return null;
+
+    const overdue = remainingMs < 0;
+    const label = formatDuration(remainingMs);
+
+    // Overdue = red, still counting down = blue (same blue used elsewhere for Occupied). No animation.
+    const colorClasses = overdue
+        ? "bg-red-600 text-white"
+        : "bg-blue-500 text-white";
+
+    return (
+        <div
+            className={`absolute right-0 top-0 h-full w-5 rounded-r-lg flex items-center justify-center ${colorClasses}`}
+            title={overdue ? `Overdue by ${label}` : `Checkout in ${label}`}
+        >
+            <span
+                className="text-[9px] font-semibold whitespace-nowrap"
+                style={{
+                    writingMode: "vertical-rl",
+                    transform: "rotate(180deg)",
+                }}
+            >
+                {overdue ? `-${label}` : label}
+            </span>
+        </div>
+    );
+}
+
 export default function RoomStatusGrid({ rooms = [] }: any) {
     const navigate = useNavigate();
     const [page, setPage] = useState(0);
@@ -41,7 +163,6 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
         }
     };
 
-    // White tooltip, accented by status color: border, arrow, divider, and label text
     const getTooltipTheme = (status: string) => {
         switch (status) {
             case "available":
@@ -123,8 +244,17 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
         });
     };
 
-    // Recompute tooltip position once mounted and we know its real size,
-    // clamping to the viewport so it never gets cut off.
+    const formatDateTime = (date: string | null | undefined) => {
+        if (!date) return null;
+        return new Date(date).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+        });
+    };
+
     useLayoutEffect(() => {
         if (!hovered || !tooltipRef.current) {
             setTooltipPos(null);
@@ -132,12 +262,11 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
         }
 
         const margin = 8;
-        const gap = 12; // space between cell and tooltip
+        const gap = 12;
         const { rect } = hovered;
         const tw = tooltipRef.current.offsetWidth;
         const th = tooltipRef.current.offsetHeight;
 
-        // Horizontal: prefer right side, flip to left if not enough room
         const spaceRight = window.innerWidth - rect.right;
         const spaceLeft = rect.left;
         let placement: "right" | "left" = "right";
@@ -155,11 +284,9 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
             window.innerWidth - tw - margin,
         );
 
-        // Vertical: center on cell, clamp within viewport
         let top = rect.top + rect.height / 2 - th / 2;
         top = Math.min(Math.max(top, margin), window.innerHeight - th - margin);
 
-        // Arrow should still point at the cell's vertical center
         const cellCenter = rect.top + rect.height / 2;
         const arrowTop = Math.min(Math.max(cellCenter - top, 16), th - 16);
 
@@ -175,11 +302,9 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
         setHovered(null);
     };
 
-    // Navigate to the Booking List page and auto-open this room's booking details
     const handleDoubleClick = (room: any) => {
         if (!room) return;
 
-        // Only navigate if the room actually has an associated booking
         const bookingId = room.booking_id;
         const bookedRoomId = room.booked_room_id;
 
@@ -196,11 +321,28 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
     const slots = Array.from({ length: itemsPerPage });
     const theme = hovered ? getTooltipTheme(hovered.room.status) : null;
 
+    // Count rooms with active checkout countdowns for stats
+    const roomsWithCountdown = rooms.filter(
+        (room: any) => room.expected_checkout_at && room.status === "occupied",
+    ).length;
+
     return (
         <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col h-full">
-            {/* HEADER */}
-            <div className="flex justify-between items-center mb-3">
+            {/* HEADER with countdown stats */}
+            <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                 <h2 className="text-lg font-semibold">Room Status Panel</h2>
+
+                {roomsWithCountdown > 0 && (
+                    <div className="flex items-center gap-2 text-sm bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                        <span className="relative flex h-2 w-2">
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                        <span className="text-amber-700 font-medium">
+                            {roomsWithCountdown} checkout
+                            {roomsWithCountdown > 1 ? "s" : ""} counting down
+                        </span>
+                    </div>
+                )}
 
                 <div className="flex gap-4 text-sm flex-wrap">
                     <span className="flex items-center gap-2 text-gray-600">
@@ -256,6 +398,24 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                                     <p className="text-xs opacity-70 capitalize leading-none mt-1">
                                         {room.status}
                                     </p>
+                                    {/* Countdown rectangle - shows for occupied rooms with expected checkout */}
+                                    {room.status === "occupied" &&
+                                        room.expected_checkout_at && (
+                                            <CountdownRectangle
+                                                expectedCheckoutAt={
+                                                    room.expected_checkout_at
+                                                }
+                                            />
+                                        )}
+                                    {/* Small indicator dot for other statuses with countdown */}
+                                    {room.status !== "occupied" &&
+                                        room.expected_checkout_at && (
+                                            <div className="absolute top-1 right-1">
+                                                <span className="relative flex h-2 w-2">
+                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                                </span>
+                                            </div>
+                                        )}
                                 </>
                             ) : (
                                 <p className="text-xs opacity-50">Empty</p>
@@ -265,7 +425,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                 })}
             </div>
 
-            {/* TOOLTIP: rendered once, positioned via fixed coords, clamped to viewport, white bg with status accent */}
+            {/* TOOLTIP */}
             {hovered && theme && (
                 <div
                     ref={tooltipRef}
@@ -325,6 +485,35 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                         </div>
                     )}
 
+                    {hovered.room.expected_checkout_at && (
+                        <div className="mb-2">
+                            <p className={`text-[11px] ${theme.subtle}`}>
+                                Expected Checkout
+                            </p>
+                            <p className="text-sm">
+                                {formatDateTime(
+                                    hovered.room.expected_checkout_at,
+                                )}
+                            </p>
+                            <TooltipCountdown
+                                expectedCheckoutAt={
+                                    hovered.room.expected_checkout_at
+                                }
+                            />
+                        </div>
+                    )}
+
+                    {hovered.room.stay_type && (
+                        <div className="mb-2">
+                            <p className={`text-[11px] ${theme.subtle}`}>
+                                Stay Type
+                            </p>
+                            <p className="text-sm capitalize">
+                                {hovered.room.stay_type}
+                            </p>
+                        </div>
+                    )}
+
                     {hovered.room.booking_reference && (
                         <div>
                             <p className={`text-[11px] ${theme.subtle}`}>
@@ -375,5 +564,28 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                 </button>
             </div>
         </div>
+    );
+}
+
+// Small text countdown for inside the tooltip
+function TooltipCountdown({
+    expectedCheckoutAt,
+}: {
+    expectedCheckoutAt?: string | null;
+}) {
+    const remainingMs = useCountdown(expectedCheckoutAt, 1000);
+    if (remainingMs === null) return null;
+
+    const overdue = remainingMs < 0;
+    const label = formatHMS(remainingMs);
+
+    return (
+        <p
+            className={`text-xs font-mono font-semibold mt-0.5 tabular-nums ${
+                overdue ? "text-red-600" : "text-blue-600"
+            }`}
+        >
+            {overdue ? `⚠ Overdue by ${label}` : `⏱ ${label} left`}
+        </p>
     );
 }

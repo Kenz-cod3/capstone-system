@@ -59,6 +59,12 @@ class RoomTypeController extends Controller
             'base_price' => 'required|numeric|min:0',
             'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'required|integer|min:1',
+
+            'short_stay_hours' => 'nullable|integer|min:1',
+            'overnight_checkout_time' => 'nullable|date_format:H:i',
+            'standard_checkin_time' => 'nullable|date_format:H:i',
+            'early_checkin_fee' => 'nullable|numeric|min:0',
+            'late_checkout_fee' => 'nullable|numeric|min:0',
         ], [
             'type_name.unique' => 'This room type already exists.',
         ]);
@@ -109,6 +115,12 @@ class RoomTypeController extends Controller
             'base_price' => 'sometimes|numeric|min:0',
             'short_stay_price' => 'nullable|numeric|min:0',
             'max_occupancy' => 'sometimes|integer|min:1',
+
+            'short_stay_hours' => 'sometimes|integer|min:1',
+            'overnight_checkout_time' => 'sometimes|date_format:H:i',
+            'standard_checkin_time' => 'sometimes|date_format:H:i',
+            'early_checkin_fee' => 'sometimes|numeric|min:0',
+            'late_checkout_fee' => 'sometimes|numeric|min:0',
         ], [
             'type_name.unique' => 'This room type already exists.',
         ]);

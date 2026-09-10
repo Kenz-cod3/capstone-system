@@ -44,6 +44,12 @@ return new class extends Migration
             ])->default('pending');
 
             $table->timestamp('check_in_time')->nullable();
+            $table->timestamp('expected_checkout_at')->nullable();
+            $table->enum('checkout_status', ['ontime', 'overdue'])->default('ontime');
+            $table->boolean('is_early_checkin')->default(false);
+            $table->decimal('early_checkin_fee', 10, 2)->default(0);
+            $table->boolean('is_late_checkout')->default(false);
+            $table->decimal('late_checkout_fee', 10, 2)->default(0);
             $table->timestamp('check_out_time')->nullable();
             $table->timestamp('overdue_started_at')->nullable();
             $table->timestamps();

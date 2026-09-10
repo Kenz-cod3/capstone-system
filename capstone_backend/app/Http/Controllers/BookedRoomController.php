@@ -569,6 +569,38 @@ class BookedRoomController extends Controller
                 case 'checked_in':
                     $bookedRoom->check_in_time = now();
 
+                    $roomType = $bookedRoom->room->roomType;
+
+                    if ($bookedRoom->stay_type === 'short_stay') {
+                        // Short stay: 3 hours gikan sa actual check-in time
+                        $bookedRoom->expected_checkout_at = now()
+                            ->addHours((int) $roomType->short_stay_hours);
+
+                        $bookedRoom->is_early_checkin = false;
+                        $bookedRoom->early_checkin_fee = 0;
+                    } else {
+                        // Overnight: FIXED na oras sa susunod na araw,
+                        // base sa check_in_date (hindi sa actual arrival time)
+                        $bookedRoom->expected_checkout_at = \Carbon\Carbon::parse($bookedRoom->check_in_date)
+                            ->addDay()
+                            ->setTimeFromTimeString($roomType->overnight_checkout_time);
+
+                        // Check kung early check-in (before standard_checkin_time, e.g. 2pm)
+                        $standardCheckIn = \Carbon\Carbon::parse($bookedRoom->check_in_date)
+                            ->setTimeFromTimeString($roomType->standard_checkin_time);
+
+                        if (now()->lt($standardCheckIn)) {
+                            $bookedRoom->is_early_checkin = true;
+                            $bookedRoom->early_checkin_fee = $roomType->early_checkin_fee;
+                            $bookedRoom->subtotal += $roomType->early_checkin_fee;
+                        } else {
+                            $bookedRoom->is_early_checkin = false;
+                            $bookedRoom->early_checkin_fee = 0;
+                        }
+                    }
+
+                    $bookedRoom->checkout_status = 'ontime';
+
                     if ($bookedRoom->room) {
                         $bookedRoom->room->update([
                             'status' => Room::STATUS_OCCUPIED,
@@ -595,6 +627,19 @@ class BookedRoomController extends Controller
 
                 case 'checked_out':
                     $bookedRoom->check_out_time = now();
+
+                    $roomType = $bookedRoom->room->roomType;
+
+                    if ($bookedRoom->expected_checkout_at && now()->gt($bookedRoom->expected_checkout_at)) {
+                        $bookedRoom->is_late_checkout = true;
+                        $bookedRoom->late_checkout_fee = $roomType->late_checkout_fee;
+                        $bookedRoom->checkout_status = 'overdue';
+                        $bookedRoom->subtotal += $roomType->late_checkout_fee;
+                    } else {
+                        $bookedRoom->is_late_checkout = false;
+                        $bookedRoom->late_checkout_fee = 0;
+                        $bookedRoom->checkout_status = 'ontime';
+                    }
 
                     if ($bookedRoom->room) {
                         $bookedRoom->room->update([

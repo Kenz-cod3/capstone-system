@@ -60,24 +60,12 @@ class RoomController extends Controller
         );
     }
 
-    // LIGHTWEIGHT REALTIME ROOM GRID
-    // public function statusGrid()
-    // {
-    //     $rooms = Room::select(
-    //         'id',
-    //         'room_number',
-    //         'status'
-    //     )
-    //         ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
-    //         ->get();
-
-    //     return response()->json($rooms);
-    // }
     public function statusGrid()
     {
         $rooms = Room::with([
             'bookedRooms.booking.user',
             'bookedRooms.booking.walkInGuest',
+            'bookedRooms.room.roomType',
         ])
             ->select(
                 'id',
@@ -128,6 +116,10 @@ class RoomController extends Controller
                 );
             }
 
+            // ============================================
+            // BASIC BOOKING DATA
+            // ============================================
+
             $room->current_guest = $guestName;
             $room->booking_status = $bookedRoom?->status;
             $room->check_in_date = $bookedRoom?->check_in_date;
@@ -135,12 +127,99 @@ class RoomController extends Controller
             $room->booking_reference = $booking?->booking_reference;
             $room->booked_room_id = $bookedRoom?->id;
             $room->booking_id = $booking?->id;
+
+            // ============================================
+            // CHECKOUT COUNTDOWN
+            // ============================================
+
+            $room->stay_type = $bookedRoom?->stay_type;
+            $room->check_in_time = $bookedRoom?->check_in_time;
+            $room->checkout_status = $bookedRoom?->checkout_status;
+
+            // Get existing expected checkout time
+            $expectedCheckoutAt = $bookedRoom?->expected_checkout_at;
+
+            // ============================================
+            // CALCULATE EXPECTED CHECKOUT IF MISSING
+            // ============================================
+
+            if (
+                $bookedRoom &&
+                $bookedRoom->status === 'checked_in' &&
+                !$expectedCheckoutAt &&
+                $bookedRoom->room?->roomType
+            ) {
+
+                $roomType = $bookedRoom->room->roomType;
+
+                // SHORT STAY
+                if ($bookedRoom->stay_type === 'short_stay') {
+
+                    $expectedCheckoutAt = \Carbon\Carbon::parse(
+                        $bookedRoom->check_in_time ?? now()
+                    )->addHours(
+                        (int) ($roomType->short_stay_hours ?? 3)
+                    );
+                }
+
+                // OVERNIGHT
+                else {
+
+                    $expectedCheckoutAt = \Carbon\Carbon::parse(
+                        $bookedRoom->check_in_date
+                    )
+                        ->addDay()
+                        ->setTimeFromTimeString(
+                            $roomType->overnight_checkout_time
+                        );
+                }
+            }
+
+            // ============================================
+            // AUTO MARK AS OVERDUE
+            // ============================================
+
+            if (
+                $bookedRoom &&
+                $bookedRoom->status === 'checked_in' &&
+                $expectedCheckoutAt
+            ) {
+
+                $expectedCheckout = \Carbon\Carbon::parse(
+                    $expectedCheckoutAt
+                );
+
+                // Guest is already past checkout time
+                if (
+                    now()->greaterThanOrEqualTo($expectedCheckout) &&
+                    !$bookedRoom->overdue_started_at
+                ) {
+
+                    $bookedRoom->overdue_started_at = $expectedCheckout;
+                    $bookedRoom->checkout_status = 'overdue';
+
+                    $bookedRoom->save();
+                }
+            }
+
+            // ============================================
+            // RETURN COUNTDOWN DATA
+            // ============================================
+
+            $room->expected_checkout_at = $expectedCheckoutAt;
+
+            $room->overdue_started_at =
+                $bookedRoom?->overdue_started_at;
+
+            $room->checkout_status =
+                $bookedRoom?->checkout_status;
         });
 
         return response()->json($rooms);
     }
 
 
+    
     // CREATE ROOM
     public function store(Request $request)
     {

@@ -367,18 +367,18 @@ export default function GuestDashboard() {
     }, [demoActive]);
 
     return (
-        <div className="bg-[#f7f8f5] min-h-screen pb-16 font-['Inter']">
+        <div className="bg-[#f7f8f5] min-h-dvh pb-4 sm:pb-16 font-['Inter']">
             {/* Hide native scrollbar on the filter row (Chrome/Safari/Edge) */}
             <style>{`
                 .filter-scroll::-webkit-scrollbar { display: none; }
             `}</style>
 
-            <div className="max-w-[100rem] mx-auto px-6 lg:px-8 pt-6">
+            <div className="max-w-[100rem] mx-auto px-4 sm:px-6 lg:px-8 pt-6">
                 {/* ── HERO ── */}
-                <div
-                    className="relative overflow-hidden rounded-3xl mb-10"
-                    style={{ minHeight: 420 }}
-                >
+                {/* min-h grows on mobile since the decorative search bar
+                    stacks its five fields vertically there and needs more
+                    room than it does on larger screens where it's one row. */}
+                <div className="relative overflow-hidden rounded-3xl mb-10 min-h-[560px] sm:min-h-[420px]">
                     <div
                         className="absolute inset-0"
                         style={{
@@ -399,18 +399,15 @@ export default function GuestDashboard() {
                         }}
                     />
 
-                    <div
-                        className="relative flex flex-col h-full px-8 pt-10 pb-8"
-                        style={{ minHeight: 420 }}
-                    >
+                    <div className="relative flex flex-col h-full min-h-[560px] sm:min-h-[420px] px-5 sm:px-8 pt-10 pb-8">
                         <div className="flex-1">
                             <p className="text-[#c9a96e] text-xs tracking-[4px] uppercase mb-2">
                                 Welcome back
                             </p>
-                            <h1 className="text-white text-4xl font-bold leading-tight mb-3 font-['Playfair_Display']">
+                            <h1 className="text-white text-3xl sm:text-4xl font-bold leading-tight mb-3 font-['Playfair_Display']">
                                 {user?.first_name || "Guest"} 👋
                             </h1>
-                            <p className="text-white text-lg mb-1">
+                            <p className="text-white text-base sm:text-lg mb-1">
                                 Find your perfect stay at Lyn Enia's Traveler's
                                 Inn
                             </p>
@@ -607,7 +604,7 @@ export default function GuestDashboard() {
                 </div>
             </div>
 
-            <div className="max-w-[100rem] mx-auto px-10 lg:px-24">
+            <div className="max-w-[100rem] mx-auto px-4 sm:px-6 lg:px-24">
                 {/* ── SECTION HEADER + FILTERS ── */}
                 <div
                     ref={availableRoomsRef}
@@ -622,10 +619,13 @@ export default function GuestDashboard() {
                         </p>
                     </div>
 
-                    {/* Availability toggle + scrollable type filter row */}
-                    <div className="flex items-center gap-3 min-w-0 md:max-w-[70%]">
+                    {/* Availability toggle + scrollable type filter row.
+                        Stacks on mobile so the switch and the filter pills
+                        each get their own full-width row instead of being
+                        squeezed side by side. */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0 md:max-w-[70%]">
                         {/* Available-only switch */}
-                        <label className="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 shrink-0 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 shrink-0 cursor-pointer select-none self-start sm:self-auto">
                             <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
                                 <input
                                     type="checkbox"
@@ -777,10 +777,11 @@ export default function GuestDashboard() {
                             return (
                                 <div
                                     key={item.id}
-                                    className="bg-white rounded-3xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row gap-4 h-[300px] sm:h-[300px]"
+                                    className="bg-white rounded-3xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row gap-4 h-auto sm:h-[300px]"
                                 >
-                                    {/* Image - fills the fixed card height */}
-                                    <div className="relative sm:w-[42%] shrink-0 h-48 sm:h-full rounded-2xl overflow-hidden">
+                                    {/* Image - fixed height on mobile, fills
+                                        the card height from sm: up */}
+                                    <div className="relative w-full sm:w-[42%] shrink-0 h-48 sm:h-full rounded-2xl overflow-hidden">
                                         <img
                                             src={
                                                 item.image_url ||
@@ -822,8 +823,10 @@ export default function GuestDashboard() {
                                         </div>
                                     </div>
 
-                                    {/* Info - constrained to fixed card height */}
-                                    <div className="flex-1 py-0.5 flex flex-col h-full overflow-hidden">
+                                    {/* Info - natural height on mobile so
+                                        nothing gets clipped; constrained to
+                                        the fixed card height from sm: up */}
+                                    <div className="flex-1 py-0.5 flex flex-col sm:h-full sm:overflow-hidden">
                                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                                             <h3 className="text-[#0d2e1f] text-xl font-bold font-['Playfair_Display']">
                                                 Room {item.room_number}
@@ -953,7 +956,7 @@ export default function GuestDashboard() {
                 )}
 
                 {/* ── FEATURES STRIP ── */}
-                <div className="bg-[#eaf3ea] rounded-3xl px-8 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-[#eaf3ea] rounded-3xl px-5 sm:px-8 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
                         {
                             icon: ShieldCheck,

@@ -200,7 +200,6 @@ export default function ReservationMonitor() {
             const list: Booking[] = Array.isArray(data)
                 ? data
                 : (data.data ?? []);
-            console.log(list);
             setBookings(list);
             if (list.length && selectedId === null) {
                 setSelectedId(list[0]!.id);
@@ -248,13 +247,7 @@ export default function ReservationMonitor() {
         [bookings, selectedId],
     );
 
-    useEffect(() => {
-        console.log("Selected:", selected);
-    }, [selected]);
-
     const handleSelect = (b: Booking) => {
-        console.log("Clicked:", b.id, b.room.room_number);
-
         setSelectedId(b.id);
         setCalendarMonth(new Date(b.check_in_date));
     };
@@ -318,9 +311,6 @@ export default function ReservationMonitor() {
                         </div>
                     ) : (
                         filteredList.map((b) => {
-                            const style =
-                                STATUS_STYLES[b.booking_status] ??
-                                STATUS_STYLES.pending;
                             const isActive = b.id === selectedId;
                             return (
                                 <button
@@ -335,11 +325,11 @@ export default function ReservationMonitor() {
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500">
                                         {initial(guestOf(b))}
                                     </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm font-semibold text-slate-900">
+                                    <div className="min-w-0 flex-1 space-y-0.5">
+                                        <p className="truncate text-sm font-semibold leading-tight text-slate-900">
                                             {fullName(guestOf(b))}
                                         </p>
-                                        <p className="-mt-3 truncate text-xs text-slate-400">
+                                        <p className="truncate text-xs leading-tight text-slate-400">
                                             REF# {b.booking_reference}
                                         </p>
                                     </div>
@@ -366,15 +356,22 @@ export default function ReservationMonitor() {
             </div>
 
             {/* MAIN */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {/*
+              CHANGED: overflow-hidden -> overflow-y-auto so this column can
+              scroll vertically once its content (breadcrumb + header +
+              filters + calendar/details) is taller than the viewport gives
+              it. Previously content that overflowed was simply clipped with
+              no way to reach it.
+            */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
                 {/* BREADCRUMB */}
                 <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-white px-3 md:px-5 py-2.5 text-sm text-slate-400">
                     <span className="hidden sm:inline">Reservations</span>
                     <span className="sm:hidden">Bookings</span>
                     {selected && (
                         <>
-                            <ChevronRight className="h-3.5 w-3.5" />
-                            <span className="font-medium text-slate-600 truncate max-w-[120px] sm:max-w-none">
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 truncate font-medium text-slate-600">
                                 {fullName(guestOf(selected))}
                             </span>
                         </>
@@ -397,19 +394,17 @@ export default function ReservationMonitor() {
                     <>
                         {/* GUEST HEADER */}
                         <div className="flex flex-col sm:flex-row shrink-0 items-start sm:items-center justify-between gap-3 px-3 md:px-5 py-4 md:py-5">
-                            <div className="flex items-start gap-3">
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-slate-900 truncate max-w-[180px] sm:max-w-none">
-                                            {fullName(guestOf(selected))}
-                                        </h1>
-                                    </div>
-                                    <div className="-mt-2 flex flex-wrap items-center gap-1.5">
-                                        <span className="text-[10px] font-medium text-slate-400">
+                            <div className="flex min-w-0 items-start gap-3">
+                                <div className="min-w-0 space-y-0.5">
+                                    <h1 className="truncate text-lg sm:text-xl font-semibold leading-tight tracking-tight text-slate-900">
+                                        {fullName(guestOf(selected))}
+                                    </h1>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-[10px] font-medium leading-tight text-slate-400">
                                             REF# {selected.booking_reference}
                                         </span>
                                     </div>
-                                    <p className="mt-0.5 text-[10px] font-medium text-slate-500 truncate max-w-[200px] sm:max-w-none">
+                                    <p className="truncate text-[10px] font-medium leading-tight text-slate-500">
                                         {formatShort(selected.check_in_date)} –{" "}
                                         {formatShort(selected.check_out_date)},{" "}
                                         {new Date(
@@ -436,9 +431,9 @@ export default function ReservationMonitor() {
                                 </div>
                             </div>
 
-                            <div className="flex w-full sm:w-auto flex-wrap items-center gap-2 sm:gap-3">
-                                <button className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-                                    <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-400" />
+                            <div className="flex w-full sm:w-auto shrink-0 flex-wrap items-center gap-2 sm:gap-3">
+                                <button className="flex flex-1 sm:flex-none items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+                                    <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-slate-400" />
                                     <span className="hidden sm:inline">
                                         {formatShort(selected.check_in_date)} –{" "}
                                         {formatLong(selected.check_out_date)}
@@ -449,9 +444,9 @@ export default function ReservationMonitor() {
                                 </button>
                                 <button
                                     onClick={handleExport}
-                                    className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                                    className="flex flex-1 sm:flex-none items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
                                 >
-                                    <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                    <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                                     <span className="hidden sm:inline">
                                         Export
                                     </span>
@@ -460,7 +455,7 @@ export default function ReservationMonitor() {
                         </div>
 
                         {/* SEARCH / FILTERS */}
-                        <div className="-mt-4 flex flex-col sm:flex-row shrink-0 flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 px-3 md:px-5">
+                        <div className="flex flex-col sm:flex-row shrink-0 flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 px-3 md:px-5">
                             <div className="relative min-w-[140px] sm:min-w-[220px] flex-1">
                                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input
@@ -505,16 +500,33 @@ export default function ReservationMonitor() {
                         </div>
 
                         {/* CALENDAR + DETAILS */}
-                        <div className="mt-2 flex-1 min-h-0 flex flex-col lg:grid xl:grid-cols-[1fr_300px] gap-3 px-5 pb-4">
-                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                        {/*
+                          CHANGED: removed `min-h-0` from this row. `flex-1
+                          min-h-0` forces the row to compress to whatever
+                          space is left, which fights against the calendar
+                          and details panel ever growing taller than the
+                          viewport. Without `min-h-0` the row is free to grow
+                          with its content, and the parent's
+                          `overflow-y-auto` (added above) picks up the slack.
+                        */}
+                        <div className="mt-2 flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_300px] gap-3 px-3 md:px-5 pb-4">
+                            {/*
+                              CHANGED: calendar card wrapper no longer pins
+                              itself to `h-full min-h-0` with an internal
+                              `overflow-hidden`. That combination was made
+                              for a fixed-height card with its own internal
+                              scroll region; since the whole page scrolls now,
+                              the card just grows to fit its content.
+                            */}
+                            <div className="flex flex-col min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
                                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 sm:px-4 py-2 sm:py-3">
                                     <h2 className="text-sm sm:text-base font-semibold text-slate-900">
                                         Reservation Calendar
                                     </h2>
                                     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                        <Calendar className="h-4 w-4 text-emerald-600" />
+                                        <Calendar className="h-4 w-4 shrink-0 text-emerald-600" />
 
-                                        <span className="text-sm font-medium text-slate-700">
+                                        <span className="whitespace-nowrap text-sm font-medium text-slate-700">
                                             {formatLong(selected.check_in_date)}
                                         </span>
 
@@ -522,7 +534,7 @@ export default function ReservationMonitor() {
                                             —
                                         </span>
 
-                                        <span className="text-sm font-medium text-slate-700">
+                                        <span className="whitespace-nowrap text-sm font-medium text-slate-700">
                                             {formatLong(
                                                 selected.check_out_date,
                                             )}
@@ -537,7 +549,7 @@ export default function ReservationMonitor() {
                                 />
 
                                 <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-500">
-                                    <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-emerald-500" />
+                                    <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0 rounded-full bg-emerald-500" />
                                     <span className="truncate">
                                         {fullName(guestOf(selected))}&apos;s
                                         Reservation
@@ -545,7 +557,7 @@ export default function ReservationMonitor() {
                                 </div>
                             </div>
 
-                            <div className="h-full min-h-0">
+                            <div className="min-w-0">
                                 <DetailsPanel booking={selected} />
                             </div>
                         </div>
@@ -566,8 +578,6 @@ export default function ReservationMonitor() {
 // MONTH GRID
 // ===============================
 function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
-    console.log("MonthGrid booking:", booking.id, booking.room.room_number);
-
     const cells = useMemo(() => {
         const year = month.getFullYear();
         const m = month.getMonth();
@@ -587,7 +597,11 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
     const checkOut = toDateOnly(new Date(booking.check_out_date));
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        // CHANGED: dropped `min-h-0 flex-1 overflow-hidden` — the grid now
+        // renders at its natural height instead of being squeezed to fit a
+        // fixed-height parent. The weekday header + grid rows both take
+        // their full needed height, and the page around them scrolls.
+        <div className="flex flex-col">
             <div className="grid shrink-0 grid-cols-7 border-b border-slate-200 bg-slate-100">
                 {WEEKDAY_LABELS.map((w) => (
                     <div
@@ -599,9 +613,9 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                 ))}
             </div>
             <div
-                className="grid flex-1 grid-cols-7"
+                className="grid grid-cols-7"
                 style={{
-                    gridTemplateRows: `repeat(${cells.length / 7}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${cells.length / 7}, minmax(64px, 1fr))`,
                 }}
             >
                 {cells.map((d) => {
@@ -619,7 +633,7 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                             }`}
                         >
                             <span
-                                className={`flex h-5 w-5 sm:h-7 sm:w-7 items-center justify-center rounded-full text-[10px] sm:text-sm font-semibold ${
+                                className={`flex h-5 w-5 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full text-[10px] sm:text-sm font-semibold ${
                                     isCheckIn || isCheckOut
                                         ? "bg-emerald-600 text-white"
                                         : inMonth
@@ -630,12 +644,12 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                                 {d.getDate()}
                             </span>
                             {isCheckIn && (
-                                <span className="text-[8px] sm:text-[11px] font-medium text-emerald-700">
+                                <span className="text-[8px] sm:text-[11px] font-medium leading-tight text-emerald-700">
                                     Check-in
                                 </span>
                             )}
                             {isCheckOut && (
-                                <span className="text-[8px] sm:text-[11px] font-medium text-emerald-700">
+                                <span className="text-[8px] sm:text-[11px] font-medium leading-tight text-emerald-700">
                                     Check-out
                                 </span>
                             )}
@@ -687,15 +701,17 @@ function DetailsPanel({ booking }: { booking: Booking }) {
     };
 
     return (
-        <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-900">
+        // CHANGED: dropped `h-full overflow-hidden` on this card — it now
+        // sizes to its own content, matching the calendar card beside it,
+        // instead of being forced to match a fixed-height row.
+        <div className="flex flex-col min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+                <h2 className="min-w-0 truncate text-base font-semibold text-slate-900">
                     Reservation Details
                 </h2>
 
                 <button
                     onClick={() => {
-                        console.log("Booking:", booking);
                         navigate("/booking-management", {
                             state: {
                                 bookingId: booking.booking_id,
@@ -703,14 +719,16 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                             },
                         });
                     }}
-                    className="mb-2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600"
+                    className="shrink-0 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600"
                     title="View Booking"
                 >
                     <Eye className="h-4 w-4" />
                 </button>
             </div>
 
-            <div className="mt-3 flex-1 space-y-2.5 text-sm">
+            {/* CHANGED: removed `flex-1 overflow-y-auto` — no longer needs
+                its own inner scroll region since the whole page scrolls. */}
+            <div className="mt-3 space-y-2.5 text-sm">
                 <Field label="Booking Reference">
                     <div className="flex min-w-0 items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
@@ -727,7 +745,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                             <Copy className="h-4 w-4" />
                         </button>
                         {copied && (
-                            <span className="text-[11px] font-medium text-emerald-600">
+                            <span className="shrink-0 text-[11px] font-medium text-emerald-600">
                                 Copied!
                             </span>
                         )}
@@ -745,57 +763,57 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-x-4 sm:gap-x-5 gap-y-4 border-t border-slate-100 pt-4">
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Check-in
                         </p>
-                        <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
                             {formatLong(booking.check_in_date)}
                         </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Check-out
                         </p>
-                        <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
                             {formatLong(booking.check_out_date)}
                         </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Duration
                         </p>
-                        <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
                             {nights} {nights === 1 ? "Night" : "Nights"}
                         </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Room
                         </p>
-                        <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
                             Room {roomLabel(booking)}
                         </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Room Type
                         </p>
-                        <p className="mt-1 text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
                             {roomTypeLabel(booking)}
                         </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Guests
                         </p>
 
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-sm font-semibold text-slate-800">
                             {adults + children}
                         </p>
                     </div>
@@ -806,7 +824,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                         Reservation Amount
                     </p>
 
-                    <p className="mt-1 break-words text-2xl font-bold leading-none text-slate-900">
+                    <p className="mt-1 break-words text-2xl font-bold leading-tight text-slate-900">
                         {formatMoney(booking.subtotal)}
                     </p>
                 </div>
@@ -823,9 +841,9 @@ function Field({
     children: React.ReactNode;
 }) {
     return (
-        <div>
+        <div className="min-w-0">
             <p className="text-[11px] font-medium text-slate-400">{label}</p>
-            <div className="mt-0">{children}</div>
+            <div className="mt-0.5">{children}</div>
         </div>
     );
 }

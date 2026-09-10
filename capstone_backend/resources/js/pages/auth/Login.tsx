@@ -17,23 +17,35 @@ import login from "../../../images/login.png";
 import login1 from "../../../images/login1.png";
 import loginLogo from "../../../images/loginLogo.png";
 
+// Shape of the user object we get back from /auth/login and store in
+// localStorage. Extend this if the backend returns more fields.
+interface AuthUser {
+    role: "admin" | "staff" | "cashier" | "guest" | string;
+    [key: string]: unknown;
+}
+
+interface LoginResponse {
+    user: AuthUser;
+    token: string;
+}
+
 export default function Login() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [showPassword, setShowPassword] = useState(false);
-    const [remember, setRemember] = useState(true);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+    const [email, setEmail] = useState<string>("");
+    const [password, setPassword] = useState<string>("");
+    const [showPassword, setShowPassword] = useState<boolean>(false);
+    const [remember, setRemember] = useState<boolean>(true);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string>("");
 
     // --- Slideshow state ---
-    const slides = [login, login1];
+    const slides: string[] = [login, login1];
     const SLIDE_DURATION = 20000;
-    const [slideIndex, setSlideIndex] = useState(0);
+    const [slideIndex, setSlideIndex] = useState<number>(0);
 
     // change slide every SLIDE_DURATION ms
     useEffect(() => {
         const interval = setInterval(() => {
-            setSlideIndex((prev) => (prev + 1) % slides.length);
+            setSlideIndex((prev: number) => (prev + 1) % slides.length);
         }, SLIDE_DURATION);
         return () => clearInterval(interval);
     }, [slides.length]);
@@ -43,7 +55,7 @@ export default function Login() {
         const storedUser = localStorage.getItem("user");
         if (!storedUser) return;
 
-        const user = JSON.parse(storedUser);
+        const user: AuthUser = JSON.parse(storedUser);
         const currentPath = window.location.pathname;
 
         if (user.role === "admin" && currentPath !== "/dashboard") {
@@ -67,7 +79,10 @@ export default function Login() {
         setError("");
 
         try {
-            const res = await api.post("/auth/login", { email, password });
+            const res = await api.post<LoginResponse>("/auth/login", {
+                email,
+                password,
+            });
             const user = res.data.user;
             const token = res.data.token;
 
@@ -99,7 +114,7 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-screen flex flex-col bg-gradient-to-br from-teal-50 via-white to-teal-100 px-4 sm:px-6 lg:px-8">
+        <div className="min-h-dvh flex flex-col bg-gradient-to-br from-teal-50 via-white to-teal-100 px-4 sm:px-6 lg:px-8">
             {/* pan animation para sa slideshow */}
             <style>{`
                 @keyframes panLTR {
@@ -123,7 +138,7 @@ export default function Login() {
                     {/* LEFT: HERO PANEL — panning slideshow, gradient overlay only on top of it */}
                     <div className="relative hidden md:flex flex-col justify-between p-10 text-white overflow-hidden">
                         {/* slideshow images */}
-                        {slides.map((src, i) => (
+                        {slides.map((src: string, i: number) => (
                             <img
                                 key={`${i}-${slideIndex === i}`}
                                 src={src}
@@ -145,7 +160,7 @@ export default function Login() {
 
                         {/* Slide indicator dots */}
                         <div className="absolute bottom-6 right-6 z-10 flex gap-2">
-                            {slides.map((_, i) => (
+                            {slides.map((_: string, i: number) => (
                                 <button
                                     key={i}
                                     type="button"
@@ -160,17 +175,19 @@ export default function Login() {
                             ))}
                         </div>
 
-                        {/* Logo — upper left, larger mark with text floating over it */}
-                        <div className="relatives -top-4 -ml-5 relative z-10 flex flex-col items-start">
+                        {/* Logo — no more negative margins / absolute-positioned stacking.
+                            Plain flex column with gap so text never overlaps the icon
+                            regardless of which font actually loads. */}
+                        <div className="relative z-10 flex flex-col items-start gap-1.5">
                             <img
                                 src={loginLogo}
                                 alt="Travelers Inn logo"
-                                className="h-20 w-20 object-contain -mb-4 ml-5 drop-shadow-md"
+                                className="h-16 w-16 object-contain drop-shadow-md"
                             />
-                            <p className="font-serif tracking-widest text-sm relative z-10">
+                            <p className="font-serif tracking-widest text-sm leading-tight">
                                 TRAVELERS INN
                             </p>
-                            <p className="px-3 relatives bottom-3 text-[6.8px] uppercase tracking-[0.2em] text-teal-100/80 relative z-10">
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-teal-100/80 leading-tight">
                                 Comfort. Stay. Enjoy.
                             </p>
                         </div>
@@ -196,16 +213,17 @@ export default function Login() {
                             </p>
                         </div>
 
-                        {/* Security badge */}
-                        <div className="relative z-10 flex items-center gap-4 w-fit bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl pl-6 pr-8 py-2">
+                        {/* Security badge — same fix: flex + gap instead of
+                            leading-none/translate-y hacks that assumed one font's metrics */}
+                        <div className="relative z-10 flex items-center gap-4 w-fit bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl px-6 py-3">
                             <div className="h-9 w-9 rounded-lg bg-teal-500/20 flex items-center justify-center shrink-0">
                                 <ShieldCheck className="h-5 w-5 text-teal-300" />
                             </div>
-                            <div className="space-y-0 leading-none mb-2">
-                                <p className="text-xs font-semibold leading-tight translate-y-2">
+                            <div className="flex flex-col gap-0.5">
+                                <p className="text-xs font-semibold leading-snug">
                                     Secure Access
                                 </p>
-                                <p className="text-[10px] text-teal-50/70 leading-tight">
+                                <p className="text-[10px] text-teal-50/70 leading-snug">
                                     Your data is protected with
                                     <br />
                                     enterprise-grade security.
@@ -259,9 +277,9 @@ export default function Login() {
                                         type="email"
                                         placeholder=" "
                                         value={email}
-                                        onChange={(e) =>
-                                            setEmail(e.target.value)
-                                        }
+                                        onChange={(
+                                            e: React.ChangeEvent<HTMLInputElement>,
+                                        ) => setEmail(e.target.value)}
                                         className="peer w-full h-12 pl-9 pr-3 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none transition-colors focus:border-teal-400 focus:ring-0"
                                         required
                                     />
@@ -285,9 +303,9 @@ export default function Login() {
                                         }
                                         placeholder=" "
                                         value={password}
-                                        onChange={(e) =>
-                                            setPassword(e.target.value)
-                                        }
+                                        onChange={(
+                                            e: React.ChangeEvent<HTMLInputElement>,
+                                        ) => setPassword(e.target.value)}
                                         className="peer w-full h-12 pl-9 pr-9 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none transition-colors focus:border-teal-400 focus:ring-0"
                                         required
                                     />
@@ -302,7 +320,7 @@ export default function Login() {
                                     <button
                                         type="button"
                                         onClick={() =>
-                                            setShowPassword((s) => !s)
+                                            setShowPassword((s: boolean) => !s)
                                         }
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
                                         aria-label={
@@ -325,9 +343,9 @@ export default function Login() {
                                         <Checkbox
                                             id="remember"
                                             checked={remember}
-                                            onCheckedChange={(v) =>
-                                                setRemember(!!v)
-                                            }
+                                            onCheckedChange={(
+                                                v: boolean | "indeterminate",
+                                            ) => setRemember(!!v)}
                                             className="border-teal-400 focus:ring-0 focus-visible:ring-0 data-[state=checked]:bg-teal-400 data-[state=checked]:border-teal-400 data-[state=checked]:text-white"
                                         />
                                         <label
@@ -379,7 +397,12 @@ export default function Login() {
             </div>
 
             {/* Copyright footer */}
-            <footer className="pb-6 text-center">
+            <footer
+                className="pb-6 text-center"
+                style={{
+                    paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+                }}
+            >
                 <p className="text-xs text-gray-400">
                     © {new Date().getFullYear()} Travelers Inn. All rights
                     reserved.

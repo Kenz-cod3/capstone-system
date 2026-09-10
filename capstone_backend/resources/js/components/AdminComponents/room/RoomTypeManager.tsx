@@ -51,6 +51,11 @@ interface RoomType {
     max_occupancy: number;
     base_price: number;
     short_stay_price: number | null;
+    short_stay_hours: number;
+    overnight_checkout_time: string;
+    standard_checkin_time: string;
+    early_checkin_fee: number;
+    late_checkout_fee: number;
 }
 
 interface RoomTypePayload {
@@ -59,6 +64,11 @@ interface RoomTypePayload {
     max_occupancy: number;
     base_price: number;
     short_stay_price: number | null;
+    short_stay_hours: number;
+    overnight_checkout_time: string;
+    standard_checkin_time: string;
+    early_checkin_fee: number;
+    late_checkout_fee: number;
 }
 
 interface PaginationMeta {
@@ -86,6 +96,11 @@ interface FormValues {
     max_occupancy: number;
     base_price: number;
     short_stay_price?: number | string;
+    short_stay_hours?: number | string;
+    overnight_checkout_time?: string;
+    standard_checkin_time?: string;
+    early_checkin_fee?: number | string;
+    late_checkout_fee?: number | string;
 }
 
 // ─── Table Columns Configuration ──────────────────────────────────────────
@@ -253,7 +268,13 @@ export default function RoomTypeManager({
 
     const openCreate = () => {
         setEditingRoomType(null);
-        reset({});
+        reset({
+            short_stay_hours: 3,
+            standard_checkin_time: "14:00",
+            overnight_checkout_time: "11:00",
+            early_checkin_fee: 0,
+            late_checkout_fee: 0,
+        });
         setDialogOpen(true);
     };
 
@@ -265,6 +286,13 @@ export default function RoomTypeManager({
             max_occupancy: rt.max_occupancy,
             base_price: rt.base_price,
             short_stay_price: rt.short_stay_price ?? "",
+            short_stay_hours: rt.short_stay_hours ?? 3,
+            overnight_checkout_time:
+                rt.overnight_checkout_time?.slice(0, 5) ?? "11:00",
+            standard_checkin_time:
+                rt.standard_checkin_time?.slice(0, 5) ?? "14:00",
+            early_checkin_fee: rt.early_checkin_fee ?? 0,
+            late_checkout_fee: rt.late_checkout_fee ?? 0,
         });
         setDialogOpen(true);
     };
@@ -288,6 +316,11 @@ export default function RoomTypeManager({
                 values.short_stay_price !== undefined
                     ? Number(values.short_stay_price)
                     : null,
+            short_stay_hours: Number(values.short_stay_hours) || 3,
+            overnight_checkout_time: values.overnight_checkout_time || "11:00",
+            standard_checkin_time: values.standard_checkin_time || "14:00",
+            early_checkin_fee: Number(values.early_checkin_fee) || 0,
+            late_checkout_fee: Number(values.late_checkout_fee) || 0,
         };
 
         if (editingRoomType) {
@@ -992,6 +1025,129 @@ export default function RoomTypeManager({
                                 {errors.short_stay_price && (
                                     <p className="text-xs text-red-500">
                                         {errors.short_stay_price.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Short Stay Duration */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Short Stay Duration (hrs)
+                                </label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={12}
+                                    {...register("short_stay_hours", {
+                                        min: {
+                                            value: 1,
+                                            message: "At least 1 hr",
+                                        },
+                                    })}
+                                    placeholder="e.g. 3"
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                                />
+                                {errors.short_stay_hours && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.short_stay_hours.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Standard Check-in Time */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Standard Check-in Time
+                                </label>
+                                <input
+                                    type="time"
+                                    {...register("standard_checkin_time", {
+                                        required: "Required",
+                                    })}
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 transition-none"
+                                />
+                                {errors.standard_checkin_time && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.standard_checkin_time.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Overnight Checkout Time */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Overnight Checkout Time
+                                </label>
+                                <input
+                                    type="time"
+                                    {...register("overnight_checkout_time", {
+                                        required: "Required",
+                                    })}
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 transition-none"
+                                />
+                                {errors.overnight_checkout_time && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.overnight_checkout_time.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Early Check-in Fee */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Early Check-in Fee
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                                        ₱
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        {...register("early_checkin_fee", {
+                                            min: {
+                                                value: 0,
+                                                message: "Must be positive",
+                                            },
+                                        })}
+                                        placeholder="0"
+                                        className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                                    />
+                                </div>
+                                {errors.early_checkin_fee && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.early_checkin_fee.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Late Checkout Fee */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Late Checkout Fee
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                                        ₱
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        {...register("late_checkout_fee", {
+                                            min: {
+                                                value: 0,
+                                                message: "Must be positive",
+                                            },
+                                        })}
+                                        placeholder="0"
+                                        className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                                    />
+                                </div>
+                                {errors.late_checkout_fee && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.late_checkout_fee.message}
                                     </p>
                                 )}
                             </div>

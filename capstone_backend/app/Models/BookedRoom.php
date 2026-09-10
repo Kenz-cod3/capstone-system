@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -20,6 +21,12 @@ class BookedRoom extends Model
         'is_extended',
         'status',
         'check_in_time',
+        'expected_checkout_at',
+        'checkout_status',
+        'is_early_checkin',
+        'early_checkin_fee',
+        'is_late_checkout',
+        'late_checkout_fee',
         'check_out_time',
         'overdue_started_at',
         'archived_at',
@@ -32,6 +39,11 @@ class BookedRoom extends Model
         'subtotal' => 'decimal:2',
         'is_extended' => 'boolean',
         'check_in_time' => 'datetime',
+        'expected_checkout_at' => 'datetime',
+        'is_early_checkin' => 'boolean',
+        'early_checkin_fee' => 'decimal:2',
+        'is_late_checkout' => 'boolean',
+        'late_checkout_fee' => 'decimal:2',
         'check_out_time' => 'datetime',
         'overdue_started_at' => 'datetime',
         'archived_at' => 'datetime',

@@ -60,6 +60,9 @@ export interface RoomDetail {
     rate: number;
     nights: number;
     guests: string;
+    check_in_time?: string | null;
+    check_out_time?: string | null;
+    expected_checkout_at?: string | null;
     dates: string;
     status: string;
     image_url?: string;
@@ -129,6 +132,7 @@ export interface BookingData {
     add_ons?: AddOnItem[];
     is_extended?: boolean;
     overdue_days?: number;
+    overdue_since?: string | null;
     room_charges?: number;
     add_on_total?: number;
     staff_attribution?: StaffAttribution[];
@@ -225,6 +229,15 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         null,
     );
     const [roomDetailsVisible, setRoomDetailsVisible] = React.useState(false);
+    const [currentTime, setCurrentTime] = React.useState(Date.now());
+
+    React.useEffect(() => {
+        const interval = window.setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 1000);
+
+        return () => window.clearInterval(interval);
+    }, []);
 
     const copyToClipboard = (text: string) => {
         navigator.clipboard
@@ -479,6 +492,23 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
     const isRefunded = booking.payment_status?.toUpperCase() === "REFUNDED";
     const overdueDays = booking.overdue_days ?? 0;
+
+    const overdueSince = booking.overdue_since
+        ? new Date(booking.overdue_since).getTime()
+        : null;
+
+    const overdueDiff =
+        overdueSince !== null ? Math.max(0, currentTime - overdueSince) : 0;
+
+    const overdueTotalSeconds = Math.floor(overdueDiff / 1000);
+
+    const overdueHours = Math.floor(overdueTotalSeconds / 3600);
+    const overdueMinutes = Math.floor((overdueTotalSeconds % 3600) / 60);
+    const overdueSeconds = overdueTotalSeconds % 60;
+
+    const overdueTimer = `${String(overdueHours).padStart(2, "0")}:${String(
+        overdueMinutes,
+    ).padStart(2, "0")}:${String(overdueSeconds).padStart(2, "0")}`;
 
     const addOns = booking.add_ons ?? [];
     const roomCharges =
@@ -1203,13 +1233,41 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
             </div>
 
             {/* Overdue banner */}
-            {overdueDays > 0 && (
+            {(booking.overdue_since || overdueDays > 0) && (
                 <Alert
                     type="error"
                     showIcon
                     icon={<WarningOutlined />}
-                    message={`Overdue by ${overdueDays} day${overdueDays > 1 ? "s" : ""}`}
-                    description="Guest has exceeded the expected checkout date."
+                    message={
+                        <div>
+                            <div
+                                style={{
+                                    fontWeight: 700,
+                                    fontSize: "13px",
+                                }}
+                            >
+                                Guest is Overdue
+                            </div>
+
+                            <div
+                                style={{
+                                    fontSize: "20px",
+                                    fontWeight: 700,
+                                    marginTop: 4,
+                                    letterSpacing: "1px",
+                                }}
+                            >
+                                {overdueTimer}
+                            </div>
+                        </div>
+                    }
+                    description={
+                        overdueDays > 0
+                            ? `Overdue by ${overdueDays} day${
+                                  overdueDays > 1 ? "s" : ""
+                              }`
+                            : "Guest has exceeded the expected checkout date."
+                    }
                     style={{
                         marginBottom: 18,
                         borderRadius: "10px",

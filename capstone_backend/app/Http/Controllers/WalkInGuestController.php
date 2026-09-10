@@ -299,19 +299,32 @@ class WalkInGuestController extends Controller
 
                 $roomNumbers[] = $room->room_number;
 
+                $expectedCheckoutAt = null;
+
+                if ($bookingData['stay_type'] === 'short_stay') {
+                    $shortStayHours = (int) ($room->roomType->short_stay_hours ?? 3);
+
+                    $expectedCheckoutAt = now()->addHours($shortStayHours);
+                } else {
+                    $expectedCheckoutAt = Carbon::parse(
+                        $bookingData['check_out_date']
+                    )->setTimeFromTimeString(
+                        $room->roomType->overnight_checkout_time ?? '11:00:00'
+                    );
+                }
+
                 $bookedRoom = $booking->bookedRooms()->create([
                     'room_id' => $room->id,
-
                     'stay_type' => $bookingData['stay_type'],
-
                     'check_in_date' => $bookingData['check_in_date'],
                     'check_out_date' => $bookingData['check_out_date'],
-
                     'price_at_time_of_booking' => $room->roomType->base_price ?? 0,
                     'subtotal' => $bookingData['room_subtotal'],
-
                     'status' => 'checked_in',
                     'check_in_time' => now(),
+
+                    'expected_checkout_at' => $expectedCheckoutAt,
+                    'checkout_status' => 'ontime',
                 ]);
 
                 // SAVE ADD-ONS
@@ -478,9 +491,34 @@ class WalkInGuestController extends Controller
             // Update all booked rooms
             foreach ($booking->bookedRooms as $bookedRoom) {
 
+                $now = now();
+
+                $isLate = false;
+                $lateCheckoutFee = 0;
+                $checkoutStatus = 'ontime';
+
+                if (
+                    $bookedRoom->expected_checkout_at &&
+                    $now->greaterThan($bookedRoom->expected_checkout_at)
+                ) {
+                    $isLate = true;
+                    $checkoutStatus = 'overdue';
+
+                    $roomType = $bookedRoom->room?->roomType;
+
+                    $lateCheckoutFee = (float) (
+                        $roomType?->late_checkout_fee ?? 0
+                    );
+
+                    $bookedRoom->subtotal += $lateCheckoutFee;
+                }
+
                 $bookedRoom->update([
                     'status' => 'checked_out',
-                    'check_out_time' => now(),
+                    'check_out_time' => $now,
+                    'is_late_checkout' => $isLate,
+                    'late_checkout_fee' => $lateCheckoutFee,
+                    'checkout_status' => $checkoutStatus,
                 ]);
 
                 Room::where('id', $bookedRoom->room_id)

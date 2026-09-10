@@ -71,7 +71,7 @@ const getGuestName = (booking: any): string => {
 
 const getGuestPhone = (booking: any): string => {
     if (booking.booking_type === "online") {
-        return booking.user?.phone || "N/A";
+        return booking.user?.contact_number || "N/A";
     }
     return booking.walk_in_guest?.contact_number || "N/A";
 };
@@ -123,6 +123,7 @@ const deriveBookingStatus = (bookedRooms: any[], fallback: string): string => {
 const mapBookingToBookingData = (booking: any): BookingData => {
     const bookedRooms = booking.booked_rooms || [];
     const histories = booking.histories || [];
+    const firstRoom = bookedRooms[0];
 
     // Build rooms with refund information
     const rooms: RoomDetail[] = bookedRooms.map((br: any) => {
@@ -139,6 +140,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             nights: 1,
             guests: `${booking.user ? 2 : 1} Adults`,
             dates: `${formatDate(br.check_in_date)} - ${formatDate(br.check_out_date)}`,
+            expected_checkout_at: br.expected_checkout_at || null,
             status: (br.status || "pending").replace(/_/g, " ").toUpperCase(),
             image_url: br.room?.image_url || undefined,
             original_price: br.room?.room_type?.base_price || undefined,
@@ -152,7 +154,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
 
     // Helper function to format status
     const formatStatus = (status: string): string => {
-        if (!status || status === 'none') return 'PENDING';
+        if (!status || status === "none") return "PENDING";
         return status.replace(/_/g, " ").toUpperCase();
     };
 
@@ -160,14 +162,20 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     let createdBy = "System";
     let createdRole = "";
     if (booking.created_by) {
-        createdBy = `${booking.created_by.first_name || ""} ${booking.created_by.last_name || ""}`.trim() || "System";
+        createdBy =
+            `${booking.created_by.first_name || ""} ${booking.created_by.last_name || ""}`.trim() ||
+            "System";
         createdRole = booking.created_by.role || "";
     }
-    
+
     timeline.push({
         title: "Booking Created",
         description: "Booking request submitted",
-        time: formatDateTime(booking.created_at || booking.check_in_date || new Date().toISOString()),
+        time: formatDateTime(
+            booking.created_at ||
+                booking.check_in_date ||
+                new Date().toISOString(),
+        ),
         by: createdBy,
         by_role: createdRole,
         status: "completed",
@@ -180,7 +188,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     // 2. Process ALL history entries (NO COMPLEX FILTERING)
     histories.forEach((h: any) => {
         // Skip "none -> pending" entries (these are just the initial creation)
-        if (h.old_status === 'none' && h.new_status === 'pending') {
+        if (h.old_status === "none" && h.new_status === "pending") {
             return;
         }
 
@@ -188,36 +196,52 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         let userRole = "";
 
         if (h.user) {
-            userName = `${h.user.first_name || ""} ${h.user.last_name || ""}`.trim() || "System";
+            userName =
+                `${h.user.first_name || ""} ${h.user.last_name || ""}`.trim() ||
+                "System";
             userRole = h.user.role || "";
         } else if (h.changed_by_user) {
-            userName = `${h.changed_by_user.first_name || ""} ${h.changed_by_user.last_name || ""}`.trim() || "System";
+            userName =
+                `${h.changed_by_user.first_name || ""} ${h.changed_by_user.last_name || ""}`.trim() ||
+                "System";
             userRole = h.changed_by_user.role || "";
         }
 
         // Format statuses with proper handling of 'none'
-        const oldFormatted = h.old_status ? formatStatus(h.old_status) : "PENDING";
-        const newFormatted = h.new_status ? formatStatus(h.new_status) : "PENDING";
+        const oldFormatted = h.old_status
+            ? formatStatus(h.old_status)
+            : "PENDING";
+        const newFormatted = h.new_status
+            ? formatStatus(h.new_status)
+            : "PENDING";
 
         let title = "";
         let description = "";
 
         // Determine title and description based on status change
-        const oldStatus = h.old_status === 'none' ? 'pending' : (h.old_status || 'pending');
-        const newStatus = h.new_status === 'none' ? 'pending' : (h.new_status || 'pending');
+        const oldStatus =
+            h.old_status === "none" ? "pending" : h.old_status || "pending";
+        const newStatus =
+            h.new_status === "none" ? "pending" : h.new_status || "pending";
 
         // Check if this is an archived (trash) entry
-        if (newStatus === 'archived') {
+        if (newStatus === "archived") {
             title = "Room Moved to Trash";
             description = `${oldFormatted} → ${newFormatted}`;
         }
         // Check if this is a restore entry
-        else if (h.change_note && h.change_note.toLowerCase().includes('restored')) {
+        else if (
+            h.change_note &&
+            h.change_note.toLowerCase().includes("restored")
+        ) {
             title = "Room Restored";
             description = `${oldFormatted} → ${newFormatted}`;
         }
         // Check if this is an extend entry
-        else if (h.change_note && h.change_note.toLowerCase().includes('extended')) {
+        else if (
+            h.change_note &&
+            h.change_note.toLowerCase().includes("extended")
+        ) {
             title = "Stay Extended";
             description = h.change_note || `${oldFormatted} → ${newFormatted}`;
         }
@@ -233,10 +257,16 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             description = `${oldFormatted} → ${newFormatted}`;
         } else if (newStatus === "cancelled") {
             title = "Booking Cancelled";
-            description = oldFormatted !== "PENDING" ? `${oldFormatted} → ${newFormatted}` : newFormatted;
+            description =
+                oldFormatted !== "PENDING"
+                    ? `${oldFormatted} → ${newFormatted}`
+                    : newFormatted;
         } else if (newStatus === "refunded") {
             title = "Booking Refunded";
-            description = oldFormatted !== "PENDING" ? `${oldFormatted} → ${newFormatted}` : newFormatted;
+            description =
+                oldFormatted !== "PENDING"
+                    ? `${oldFormatted} → ${newFormatted}`
+                    : newFormatted;
         } else {
             // Use change_note if available
             title = h.change_note || `Status Updated`;
@@ -253,12 +283,18 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             timeline.push({
                 title: title,
                 description: description,
-                time: formatDateTime(h.changed_at || h.created_at || new Date().toISOString()),
+                time: formatDateTime(
+                    h.changed_at || h.created_at || new Date().toISOString(),
+                ),
                 by: userName,
                 by_role: userRole,
                 status: newStatus === "checked_out" ? "completed" : "pending",
-                old_status: h.old_status ? formatStatus(h.old_status) : undefined,
-                new_status: h.new_status ? formatStatus(h.new_status) : undefined,
+                old_status: h.old_status
+                    ? formatStatus(h.old_status)
+                    : undefined,
+                new_status: h.new_status
+                    ? formatStatus(h.new_status)
+                    : undefined,
                 is_override: h.is_override || false,
                 override_reason: h.override_reason || undefined,
             });
@@ -266,7 +302,9 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     });
 
     // Sort by time (oldest first)
-    timeline.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    timeline.sort(
+        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+    );
 
     // Build staff attribution
     const staffAttribution: StaffAttribution[] = [];
@@ -505,20 +543,34 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     // Check if any room is extended
     const isExtended = bookedRooms.some((br: any) => br.is_extended === true);
 
-    // Calculate overdue days if checked in
+    // Calculate overdue time if checked in
     let overdueDays = 0;
+    let overdueSince: string | null = null;
+
     const checkedInRoom = bookedRooms.find(
         (br: any) => br.status === "checked_in",
     );
-    if (checkedInRoom && checkedInRoom.check_out_date) {
-        const checkoutDate = new Date(checkedInRoom.check_out_date);
-        const today = new Date();
-        checkoutDate.setHours(0, 0, 0, 0);
-        today.setHours(0, 0, 0, 0);
-        const diff = today.getTime() - checkoutDate.getTime();
-        overdueDays = diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
-    }
 
+    // Use expected checkout time.
+    // If it is already marked overdue, use overdue_started_at.
+    const overdueStart =
+        checkedInRoom?.expected_checkout_at ??
+        checkedInRoom?.overdue_started_at;
+
+    if (overdueStart) {
+        const checkoutDate = new Date(overdueStart);
+
+        const now = new Date();
+
+        const diff = now.getTime() - checkoutDate.getTime();
+
+        if (diff > 0) {
+            overdueSince = checkoutDate.toISOString();
+
+            overdueDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+        }
+    }
+    
     return {
         id: String(booking.id),
         reference: booking.booking_reference || `BR-${booking.id}`,
@@ -533,9 +585,13 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         stay_type:
             booking.stay_type === "short_stay" ? "Short Stay" : "Overnight",
         check_in_date: formatDate(booking.check_in_date),
-        check_in_time: formatTime(booking.check_in_date),
+        check_in_time: firstRoom?.check_in_time
+            ? formatTime(firstRoom.check_in_time)
+            : "-",
         check_out_date: formatDate(booking.check_out_date),
-        check_out_time: formatTime(booking.check_out_date),
+        check_out_time: firstRoom?.check_out_time
+            ? formatTime(firstRoom.check_out_time)
+            : "-",
         total_rooms: bookedRooms.length || 1,
         adults: booking.user ? 2 : 1,
         children: 0,
@@ -563,6 +619,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         refunded_by: refundedBy,
         is_extended: isExtended,
         overdue_days: overdueDays,
+        overdue_since: overdueSince,
         room_charges: roomCharges,
         add_on_total: addOnTotal,
         add_ons: addOns,
@@ -579,6 +636,15 @@ export default function BookingDetailsPageWrapper() {
 
     const fromTab = (location.state as any)?.fromTab || "active";
     const [userRole, setUserRole] = React.useState<string>("staff");
+    const [currentTime, setCurrentTime] = React.useState(Date.now());
+
+    React.useEffect(() => {
+        const interval = window.setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 1000);
+
+        return () => window.clearInterval(interval);
+    }, []);
 
     // Start NProgress when component mounts
     React.useEffect(() => {

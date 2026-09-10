@@ -325,7 +325,7 @@ export default function GuestLayout() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-[#f7f8f5] font-['Inter'] overflow-x-clip">
+        <div className="min-h-dvh bg-[#f7f8f5] font-['Inter'] overflow-x-clip">
             {/* Loads the two site fonts. For production, move this <link> into
           index.html's <head> instead — it's kept here for portability. */}
             <style>{`
@@ -396,7 +396,8 @@ export default function GuestLayout() {
                         </Link>
 
                         {/*
-                          Nav links.
+                          Nav links (desktop only — mobile uses the fixed
+                          bottom tab bar rendered after the header instead).
                           IMPORTANT: `justify-center` stays constant — it's
                           never toggled, because CSS can't smoothly animate
                           justify-content (it just snaps). Instead we animate
@@ -649,7 +650,9 @@ export default function GuestLayout() {
                         </button>
                     </div>
 
-                    {/* Mobile menu panel */}
+                    {/* Mobile menu panel — search + notifications + account.
+                        Page navigation itself now lives in the fixed bottom
+                        tab bar, so it isn't duplicated here. */}
                     {menuOpen && (
                         <div className="md:hidden pb-4">
                             <div className="flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2.5 mb-3">
@@ -664,29 +667,6 @@ export default function GuestLayout() {
                                     className="bg-transparent outline-none text-sm text-gray-700 placeholder:text-gray-400 w-full"
                                 />
                             </div>
-
-                            <nav className="flex flex-col gap-1 mb-2">
-                                {NAV_TABS.map((tab) => {
-                                    const active = isActive(tab.to);
-                                    return (
-                                        <Link
-                                            key={tab.to}
-                                            to={tab.to}
-                                            onClick={() => setMenuOpen(false)}
-                                            className={`flex items-center gap-3 py-3 px-4 rounded-2xl text-sm transition-colors ${
-                                                active
-                                                    ? "bg-[#0d2e1f] text-white"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            <tab.icon
-                                                className={`w-4 h-4 ${active ? "text-white" : ""}`}
-                                            />
-                                            {tab.label}
-                                        </Link>
-                                    );
-                                })}
-                            </nav>
 
                             {/* Mobile notifications entry point */}
                             <div className="border-t border-gray-100 pt-3 mb-2">
@@ -751,15 +731,46 @@ export default function GuestLayout() {
                 </div>
             </header>
 
+            {/* ── MOBILE BOTTOM NAV — fixed tab bar, mobile only ── */}
+            <nav
+                className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-gray-100 flex items-stretch"
+                style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+            >
+                {NAV_TABS.map((tab) => {
+                    const active = isActive(tab.to);
+                    return (
+                        <Link
+                            key={tab.to}
+                            to={tab.to}
+                            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium transition-colors ${
+                                active ? "text-[#0d2e1f]" : "text-gray-400"
+                            }`}
+                        >
+                            <tab.icon
+                                className={`w-5 h-5 ${
+                                    active ? "text-[#0d2e1f]" : "text-gray-400"
+                                }`}
+                            />
+                            {tab.label}
+                        </Link>
+                    );
+                })}
+            </nav>
+
             {/* ── PAGE CONTENT ── */}
-            <main>
+            {/* pb-20 on mobile keeps content clear of the fixed bottom tab
+                bar; md:pb-0 removes that reservation on desktop where the
+                bottom bar doesn't render. */}
+            <main className="pb-20 md:pb-0">
                 <Outlet />
             </main>
 
             {/* ── FLOATING CHAT BUTTON (persists across all guest tabs) ── */}
+            {/* bottom-20 on mobile clears the fixed bottom tab bar;
+                md:bottom-6 restores the original position on desktop. */}
             <button
                 onClick={() => setChatOpen(true)}
-                className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:opacity-90 transition-opacity ring-1 ring-[#c9a96e]/40 ring-offset-2 ring-offset-[#f7f8f5] z-40"
+                className="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:opacity-90 transition-opacity ring-1 ring-[#c9a96e]/40 ring-offset-2 ring-offset-[#f7f8f5] z-40"
                 style={{
                     background: "linear-gradient(135deg, #1a4a35, #0d2e1f)",
                 }}
