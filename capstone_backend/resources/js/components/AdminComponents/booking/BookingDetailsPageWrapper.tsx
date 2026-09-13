@@ -7,7 +7,7 @@ import {
 } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/services/api";
-import { message, Modal, Input, Typography } from "antd";
+import { message, Modal, Input, Typography, Button } from "antd";
 import { Spin } from "antd";
 import BookingDetails, {
     type BookingData,
@@ -125,10 +125,23 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     const histories = booking.histories || [];
     const firstRoom = bookedRooms[0];
 
-    // Build rooms with refund information
+    // Build rooms with refund + adjustment + per-room add-ons information
     const rooms: RoomDetail[] = bookedRooms.map((br: any) => {
         const isRefunded = br.status === "refunded";
         const refundAmount = isRefunded ? Number(br.subtotal ?? 0) : 0;
+
+        // Per-room add-ons
+        const roomAddOns = (br.booking_add_ons || []).map((addon: any) => ({
+            id: addon.id,
+            name: addon.add_on?.add_on_name || "Unknown",
+            price: Number(addon.add_on?.price || 0),
+            quantity: addon.quantity || 1,
+            subtotal: Number(addon.subtotal || 0),
+        }));
+
+        // Prefer overdue_started_at if present, fallback to expected_checkout_at
+        const effectiveExpectedCheckout =
+            br.overdue_started_at || br.expected_checkout_at || null;
 
         return {
             id: br.id,
@@ -140,12 +153,24 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             nights: 1,
             guests: `${booking.user ? 2 : 1} Adults`,
             dates: `${formatDate(br.check_in_date)} - ${formatDate(br.check_out_date)}`,
-            expected_checkout_at: br.expected_checkout_at || null,
+            expected_checkout_at: effectiveExpectedCheckout,
             status: (br.status || "pending").replace(/_/g, " ").toUpperCase(),
             image_url: br.room?.image_url || undefined,
             original_price: br.room?.room_type?.base_price || undefined,
             refund_amount: refundAmount,
             is_refunded: isRefunded,
+
+            // ✅ NEW FIELDS
+            is_extended: br.is_extended === true,
+            is_early_checkin: br.is_early_checkin === true,
+            early_checkin_fee: Number(br.early_checkin_fee ?? 0),
+            is_late_checkout: br.is_late_checkout === true,
+            late_checkout_fee: Number(br.late_checkout_fee ?? 0),
+            checkout_status: br.checkout_status || "ontime",
+            key_returned: br.key_returned === true,
+            overdue_started_at: br.overdue_started_at || null,
+            stay_type: br.stay_type,
+            add_ons: roomAddOns,
         };
     });
 
@@ -185,7 +210,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         override_reason: undefined,
     });
 
-    // 2. Process ALL history entries (NO COMPLEX FILTERING)
+    // 2. Process ALL history entries
     histories.forEach((h: any) => {
         // Skip "none -> pending" entries (these are just the initial creation)
         if (h.old_status === "none" && h.new_status === "pending") {
@@ -254,7 +279,12 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             description = `${oldFormatted} → ${newFormatted}`;
         } else if (oldStatus === "checked_in" && newStatus === "checked_out") {
             title = "Guest Checked Out";
-            description = `${oldFormatted} → ${newFormatted}`;
+
+            const checkInDate = booking.check_in_date
+                ? formatDate(booking.check_in_date)
+                : "-";
+
+            description = `${oldFormatted} → ${newFormatted} • Check-in Date: ${checkInDate}`;
         } else if (newStatus === "cancelled") {
             title = "Booking Cancelled";
             description =
@@ -518,6 +548,30 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         0,
     );
 
+    // ✅ Aggregate fee totals
+    const totalEarlyCheckinFee = bookedRooms.reduce(
+        (sum: number, br: any) => sum + Number(br.early_checkin_fee ?? 0),
+        0,
+    );
+    const totalLateCheckoutFee = bookedRooms.reduce(
+        (sum: number, br: any) => sum + Number(br.late_checkout_fee ?? 0),
+        0,
+    );
+    // Extension fee is typically ₱100/hour — adjust if backend gives actual amount
+    const totalExtensionFee = bookedRooms
+        .filter((br: any) => br.is_extended)
+        .reduce((sum: number, br: any) => sum + 100, 0);
+
+    const extendedRoomsCount = bookedRooms.filter(
+        (br: any) => br.is_extended,
+    ).length;
+    const overdueRoomsCount = bookedRooms.filter(
+        (br: any) => br.checkout_status === "overdue",
+    ).length;
+
+    // ✅ Shift info from first paid payment
+    const shift = firstPayment?.shift;
+
     // Derive the badge status from room-level statuses
     const derivedStatus = deriveBookingStatus(
         bookedRooms,
@@ -529,7 +583,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     const guestAddress = getGuestAddress(booking);
     const guestId = getGuestId(booking);
 
-    // Build add-ons from booked rooms
+    // Build add-ons from booked rooms (flat list for top-level display)
     const addOns = bookedRooms.flatMap((br: any) =>
         (br.booking_add_ons || []).map((addon: any) => ({
             id: addon.id,
@@ -552,10 +606,10 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     );
 
     // Use expected checkout time.
-    // If it is already marked overdue, use overdue_started_at.
+    // Prefer overdue_started_at if already marked overdue.
     const overdueStart =
-        checkedInRoom?.expected_checkout_at ??
-        checkedInRoom?.overdue_started_at;
+        checkedInRoom?.overdue_started_at ??
+        checkedInRoom?.expected_checkout_at;
 
     if (overdueStart) {
         const checkoutDate = new Date(overdueStart);
@@ -570,7 +624,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             overdueDays = Math.floor(diff / (1000 * 60 * 60 * 24));
         }
     }
-    
+
     return {
         id: String(booking.id),
         reference: booking.booking_reference || `BR-${booking.id}`,
@@ -624,6 +678,16 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         add_on_total: addOnTotal,
         add_ons: addOns,
         total_refund_amount: totalRefundAmount,
+
+        // ✅ NEW AGGREGATES
+        total_early_checkin_fee: totalEarlyCheckinFee,
+        total_late_checkout_fee: totalLateCheckoutFee,
+        total_extension_fee: totalExtensionFee,
+        extended_rooms_count: extendedRoomsCount,
+        overdue_rooms_count: overdueRoomsCount,
+        shift_name: shift?.name || shift?.shift_name || undefined,
+        shift_start: shift?.start_time || undefined,
+        shift_end: shift?.end_time || undefined,
     };
 };
 
@@ -637,6 +701,13 @@ export default function BookingDetailsPageWrapper() {
     const fromTab = (location.state as any)?.fromTab || "active";
     const [userRole, setUserRole] = React.useState<string>("staff");
     const [currentTime, setCurrentTime] = React.useState(Date.now());
+
+    const [checkoutModalVisible, setCheckoutModalVisible] =
+        React.useState(false);
+    const [checkoutRoomId, setCheckoutRoomId] = React.useState<
+        number | undefined
+    >(undefined);
+    const [roomKeyReturned, setRoomKeyReturned] = React.useState(true);
 
     React.useEffect(() => {
         const interval = window.setInterval(() => {
@@ -697,6 +768,12 @@ export default function BookingDetailsPageWrapper() {
     ): number | undefined => {
         if (roomIdFromKey) return Number(roomIdFromKey);
         return booking?.booked_rooms?.[0]?.id;
+    };
+
+    const openCheckoutModal = (bookedRoomId?: number) => {
+        setCheckoutRoomId(bookedRoomId);
+        setRoomKeyReturned(true);
+        setCheckoutModalVisible(true);
     };
 
     // Reusable function for actions with admin override
@@ -801,16 +878,16 @@ export default function BookingDetailsPageWrapper() {
 
             case "checkout":
             case "checkout_room": {
-                if (booking?.booking_type === "walk_in") {
-                    await api.post(`/walk-in-guests/${id}/checkout`, {
-                        override_reason: reason,
-                    });
-                } else {
-                    await api.put(`/bookings/${id}`, {
-                        booking_status: "checked_out",
-                        override_reason: reason,
-                    });
+                if (!bookedRoomId) {
+                    throw new Error("Booked room ID is required for checkout.");
                 }
+
+                await api.put(`/booked-rooms/${bookedRoomId}`, {
+                    status: "checked_out",
+                    key_returned: roomKeyReturned,
+                    override_reason: reason,
+                });
+
                 message.success("Check Out successful");
                 break;
             }
@@ -875,11 +952,18 @@ export default function BookingDetailsPageWrapper() {
     const handleAction = async (action: string) => {
         if (!id || !booking) return;
 
-        // Supports compound keys like "checkin_room:123" from per-room menus
+        // Supports compound keys like "checkin_room:123" (room-level menu)
         const parts = action.split(":");
         const baseAction: string = parts[0] ?? action;
         const roomIdStr: string | undefined = parts[1];
         const bookedRoomId = resolveBookedRoomId(roomIdStr);
+
+        // Open checkout confirmation modal first.
+        // Actual checkout will happen only after confirmation.
+        if (baseAction === "checkout" || baseAction === "checkout_room") {
+            openCheckoutModal(bookedRoomId);
+            return;
+        }
 
         // Actions that always need explicit confirmation regardless of role
         const dangerousActions = [
@@ -1049,6 +1133,47 @@ export default function BookingDetailsPageWrapper() {
         }
     };
 
+    const confirmCheckout = async () => {
+        if (!id || !booking) {
+            message.error("Booking not found.");
+            return;
+        }
+
+        if (!checkoutRoomId) {
+            message.error("No room selected for checkout.");
+            return;
+        }
+
+        if (!roomKeyReturned) {
+            message.warning("Please confirm that the room key was returned.");
+            return;
+        }
+
+        try {
+            await performAction("checkout", checkoutRoomId, undefined);
+
+            setCheckoutModalVisible(false);
+            setCheckoutRoomId(undefined);
+            setRoomKeyReturned(true);
+
+            await queryClient.invalidateQueries({
+                queryKey: ["booking-details", id],
+            });
+
+            await queryClient.invalidateQueries({
+                queryKey: ["booked-rooms"],
+            });
+        } catch (error: any) {
+            console.error("Checkout failed:", error);
+            console.error("Server response:", error?.response?.data);
+
+            message.error(
+                error?.response?.data?.message ||
+                    "Check Out failed. Please try again.",
+            );
+        }
+    };
+
     if (isLoading) {
         return <PageLoader />;
     }
@@ -1101,13 +1226,125 @@ export default function BookingDetailsPageWrapper() {
             }
         `}
             </style>
-            <BookingDetails
-                booking={bookingData}
-                onAction={handleAction}
-                backHref={(location.state as any)?.from || "/bookings"}
-                fromTab={fromTab}
-                userRole={userRole}
-            />
+            <>
+                <BookingDetails
+                    booking={bookingData}
+                    onAction={handleAction}
+                    backHref={(location.state as any)?.from || "/bookings"}
+                    fromTab={fromTab}
+                    userRole={userRole}
+                />
+
+                <Modal
+                    title="Check Out Guest"
+                    open={checkoutModalVisible}
+                    onCancel={() => {
+                        setCheckoutModalVisible(false);
+                        setCheckoutRoomId(undefined);
+                    }}
+                    centered
+                    width={450}
+                    footer={[
+                        <Button
+                            key="cancel"
+                            onClick={() => {
+                                setCheckoutModalVisible(false);
+                                setCheckoutRoomId(undefined);
+                            }}
+                        >
+                            Cancel
+                        </Button>,
+
+                        <Button
+                            key="checkout"
+                            type="primary"
+                            style={{
+                                background: "#10b981",
+                                borderColor: "#10b981",
+                            }}
+                            disabled={!roomKeyReturned}
+                            onClick={confirmCheckout}
+                        >
+                            Confirm Check Out
+                        </Button>,
+                    ]}
+                >
+                    <div style={{ padding: "8px 0" }}>
+                        <div style={{ marginBottom: 14 }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Guest
+                            </Text>
+
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>
+                                {bookingData.guest_name}
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: 18 }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Room
+                            </Text>
+
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>
+                                {bookingData.rooms
+                                    .filter((room) =>
+                                        checkoutRoomId
+                                            ? room.id === checkoutRoomId
+                                            : true,
+                                    )
+                                    .map((room) => room.room_number)
+                                    .join(", ")}
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: 18 }}>
+                            <Text
+                                strong
+                                style={{ display: "block", marginBottom: 8 }}
+                            >
+                                Room Key Returned?
+                            </Text>
+
+                            <div style={{ display: "flex", gap: 20 }}>
+                                <label>
+                                    <input
+                                        type="radio"
+                                        checked={roomKeyReturned === true}
+                                        onChange={() =>
+                                            setRoomKeyReturned(true)
+                                        }
+                                    />{" "}
+                                    Yes
+                                </label>
+
+                                <label>
+                                    <input
+                                        type="radio"
+                                        checked={roomKeyReturned === false}
+                                        onChange={() =>
+                                            setRoomKeyReturned(false)
+                                        }
+                                    />{" "}
+                                    No
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                Check-out time
+                            </Text>
+
+                            <div style={{ fontWeight: 600, fontSize: 14 }}>
+                                {new Date().toLocaleTimeString("en-PH", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            </>
         </div>
     );
 }

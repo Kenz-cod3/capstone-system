@@ -28,6 +28,7 @@ class BookedRoom extends Model
         'is_late_checkout',
         'late_checkout_fee',
         'check_out_time',
+        'key_returned',
         'overdue_started_at',
         'archived_at',
     ];
@@ -45,6 +46,7 @@ class BookedRoom extends Model
         'is_late_checkout' => 'boolean',
         'late_checkout_fee' => 'decimal:2',
         'check_out_time' => 'datetime',
+        'key_returned' => 'boolean',
         'overdue_started_at' => 'datetime',
         'archived_at' => 'datetime',
     ];

@@ -60,6 +60,42 @@ class RoomController extends Controller
         );
     }
 
+    public function publicAvailable()
+    {
+        $rooms = Room::with([
+            'roomType:id,type_name,description,base_price,short_stay_price,max_occupancy',
+            'images',
+            'amenities:id,name'
+        ])
+            ->where('status', 'available')
+            ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
+            ->get();
+
+        return response()->json(
+            $rooms->map(function ($room) {
+
+                $normalImage = $room->images
+                    ->where('image_type', 'normal')
+                    ->sortByDesc('created_at')
+                    ->first();
+
+                return [
+                    'id' => $room->id,
+                    'name' => 'Room ' . $room->room_number,
+                    'type' => $room->roomType?->type_name,
+                    'pricePerNight' => $room->roomType?->base_price ?? 0,
+                    'capacity' => $room->roomType?->max_occupancy ?? 0,
+
+                    'imageUrl' => $normalImage
+                        ? asset('storage/' . $normalImage->image_path)
+                        : null,
+
+                    'amenities' => $room->amenities,
+                ];
+            })
+        );
+    }
+
     public function statusGrid()
     {
         $rooms = Room::with([
@@ -219,7 +255,7 @@ class RoomController extends Controller
     }
 
 
-    
+
     // CREATE ROOM
     public function store(Request $request)
     {

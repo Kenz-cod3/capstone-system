@@ -67,6 +67,7 @@ import GuestPayment from "./pages/guest/GuestPayment";
 
 // AUTH
 import Login from "./pages/auth/Login";
+import LandingPage from "./pages/public/LandingPage";
 
 export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
@@ -76,6 +77,9 @@ export default function App() {
 
     // check if login page
     const isLoginPage = location.pathname === "/login";
+
+    // check if landing page
+    const isLandingPage = location.pathname === "/";
 
     // track browser online/offline status
     const isOnline = useOnlineStatus();
@@ -109,7 +113,8 @@ export default function App() {
     // Show loading screen ONLY (Routes not mounted yet), so that once it's
     // gone, the page (Dashboard, etc.) mounts fresh and its entrance
     // animations actually play and are visible to the user.
-    const showLoadingScreen = loading && !isLoginPage && isOnline;
+    const showLoadingScreen =
+        loading && !isLoginPage && !isLandingPage && isOnline;
 
     return (
         <>
@@ -122,6 +127,7 @@ export default function App() {
                 <Routes>
                     {/*  PUBLIC ROUTE */}
                     <Route path="/login" element={<Login />} />
+                    <Route path="/" element={<LandingPage />} />
 
                     {/* NOT LOGGED IN */}
                     {!user && (

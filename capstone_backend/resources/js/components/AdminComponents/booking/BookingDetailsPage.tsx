@@ -69,6 +69,17 @@ export interface RoomDetail {
     original_price?: number;
     refund_amount?: number;
     is_refunded?: boolean;
+
+    is_extended?: boolean;
+    is_early_checkin?: boolean;
+    early_checkin_fee?: number;
+    is_late_checkout?: boolean;
+    late_checkout_fee?: number;
+    checkout_status?: "ontime" | "overdue";
+    key_returned?: boolean;
+    overdue_started_at?: string | null;
+    stay_type?: string;
+    add_ons?: AddOnItem[];
 }
 
 export interface AddOnItem {
@@ -145,6 +156,15 @@ export interface BookingData {
         role?: string;
     };
     total_refund_amount?: number;
+
+    total_early_checkin_fee?: number;
+    total_late_checkout_fee?: number;
+    total_extension_fee?: number;
+    extended_rooms_count?: number;
+    overdue_rooms_count?: number;
+    shift_name?: string;
+    shift_start?: string;
+    shift_end?: string;
 }
 
 export interface BookingDetailsProps {
@@ -246,6 +266,17 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
             .catch(() => message.error("Failed to copy"));
     };
 
+    const formatDateTime = (datetime: string): string => {
+        if (!datetime) return "-";
+        return new Date(datetime).toLocaleString("en-PH", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    };
+
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
             PENDING: "#faad14",
@@ -291,11 +322,10 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
     const mainStatus = getMainStatus();
 
-    // Dynamic action menu based on status (matching Bookings.tsx logic)
+    // Dynamic action menu based on status
     const getActionMenu = (): MenuProps => {
         const items: MenuProps["items"] = [];
 
-        // Actions based on status (matching Bookings.tsx getActionMenu)
         if (mainStatus === "PENDING") {
             items.push(
                 {
@@ -358,7 +388,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
             });
         }
 
-        // Move to Trash - only for admin
         if (userRole === "admin") {
             items.push({
                 key: "trash",
@@ -371,11 +400,10 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         return { items };
     };
 
-    // Room-specific action menu based on room status (matching Bookings.tsx logic)
+    // Room-specific action menu based on room status
     const getRoomActionMenu = (room: RoomDetail): MenuProps => {
         const items: MenuProps["items"] = [];
 
-        // View Details always available
         items.push({
             key: `view_details:${room.id}`,
             label: (
@@ -392,7 +420,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
         items.push({ type: "divider" });
 
-        // Actions based on room status (matching Bookings.tsx logic)
         const roomStatus = room.status;
 
         if (roomStatus === "PENDING") {
@@ -459,7 +486,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
             });
         }
 
-        // Remove Room - only for admin
         if (userRole === "admin") {
             items.push({
                 key: `remove_room:${room.id}`,
@@ -472,7 +498,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         return { items };
     };
 
-    // Split a "2 Adults, 0 Children" style string into two lines for display
     const splitGuests = (guests: string) => {
         const parts = guests
             .split(",")
@@ -484,7 +509,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         };
     };
 
-    // Whether payment method warrants showing an external reference (gcash/bank vs cash)
     const showsPaymentReference =
         booking.payment_method &&
         booking.payment_method.toUpperCase() !== "CASH" &&
@@ -521,6 +545,10 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
     const totalRefundAmount =
         booking.total_refund_amount ??
         booking.rooms.reduce((sum, r) => sum + (r.refund_amount || 0), 0);
+
+    const totalEarlyCheckinFee = booking.total_early_checkin_fee ?? 0;
+    const totalLateCheckoutFee = booking.total_late_checkout_fee ?? 0;
+    const totalExtensionFee = booking.total_extension_fee ?? 0;
 
     const netAmount = roomCharges + addOnTotal - totalRefundAmount;
 
@@ -963,23 +991,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                                 ₱
                                                 {selectedRoom.rate.toLocaleString()}
                                             </Text>
-                                            {selectedRoom.original_price !==
-                                                undefined &&
-                                                selectedRoom.original_price !==
-                                                    selectedRoom.rate && (
-                                                    <Text
-                                                        type="secondary"
-                                                        style={{
-                                                            fontSize: "9px",
-                                                            textDecoration:
-                                                                "line-through",
-                                                            marginLeft: 4,
-                                                        }}
-                                                    >
-                                                        ₱
-                                                        {selectedRoom.original_price.toLocaleString()}
-                                                    </Text>
-                                                )}
                                         </div>
                                     </div>
                                     <div>
@@ -1116,6 +1127,332 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                         </div>
                     </Col>
                 </Row>
+
+                {/* Stay Adjustments section */}
+                {(selectedRoom.is_extended ||
+                    selectedRoom.is_early_checkin ||
+                    selectedRoom.is_late_checkout ||
+                    selectedRoom.checkout_status === "overdue" ||
+                    selectedRoom.expected_checkout_at ||
+                    selectedRoom.status === "CHECKED OUT") && (
+                    <div
+                        style={{
+                            border: `1px solid ${BORDER}`,
+                            borderRadius: "8px",
+                            overflow: "hidden",
+                            marginTop: 12,
+                        }}
+                    >
+                        <div
+                            style={{
+                                background: "#fafbfc",
+                                padding: "4px 12px",
+                                borderBottom: `1px solid ${BORDER}`,
+                            }}
+                        >
+                            <Space size={4}>
+                                <ClockCircleOutlined
+                                    style={{
+                                        fontSize: "11px",
+                                        color: MINT_GREEN,
+                                    }}
+                                />
+                                <Text strong style={{ fontSize: "11px" }}>
+                                    Stay Adjustments
+                                </Text>
+                            </Space>
+                        </div>
+                        <div style={{ padding: "6px 12px" }}>
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr",
+                                    gap: "2px 12px",
+                                }}
+                            >
+                                {selectedRoom.is_extended && (
+                                    <div>
+                                        <Text
+                                            type="secondary"
+                                            style={{
+                                                fontSize: "8px",
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.3px",
+                                            }}
+                                        >
+                                            Extended
+                                        </Text>
+                                        <div>
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: "11px",
+                                                    color: "#faad14",
+                                                }}
+                                            >
+                                                Yes
+                                            </Text>
+                                        </div>
+                                    </div>
+                                )}
+                                {selectedRoom.is_early_checkin && (
+                                    <>
+                                        <div>
+                                            <Text
+                                                type="secondary"
+                                                style={{
+                                                    fontSize: "8px",
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.3px",
+                                                }}
+                                            >
+                                                Early Check-in
+                                            </Text>
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "11px",
+                                                        color: "#13c2c2",
+                                                    }}
+                                                >
+                                                    Yes
+                                                </Text>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Text
+                                                type="secondary"
+                                                style={{
+                                                    fontSize: "8px",
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.3px",
+                                                }}
+                                            >
+                                                Early Check-in Fee
+                                            </Text>
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "11px",
+                                                        color: "#13c2c2",
+                                                    }}
+                                                >
+                                                    ₱
+                                                    {Number(
+                                                        selectedRoom.early_checkin_fee ??
+                                                            0,
+                                                    ).toLocaleString()}
+                                                </Text>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                                {selectedRoom.is_late_checkout && (
+                                    <>
+                                        <div>
+                                            <Text
+                                                type="secondary"
+                                                style={{
+                                                    fontSize: "8px",
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.3px",
+                                                }}
+                                            >
+                                                Late Checkout
+                                            </Text>
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "11px",
+                                                        color: "#fa541c",
+                                                    }}
+                                                >
+                                                    Yes
+                                                </Text>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Text
+                                                type="secondary"
+                                                style={{
+                                                    fontSize: "8px",
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.3px",
+                                                }}
+                                            >
+                                                Late Checkout Fee
+                                            </Text>
+                                            <div>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        fontSize: "11px",
+                                                        color: "#fa541c",
+                                                    }}
+                                                >
+                                                    ₱
+                                                    {Number(
+                                                        selectedRoom.late_checkout_fee ??
+                                                            0,
+                                                    ).toLocaleString()}
+                                                </Text>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                                {selectedRoom.checkout_status && (
+                                    <div>
+                                        <Text
+                                            type="secondary"
+                                            style={{
+                                                fontSize: "8px",
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.3px",
+                                            }}
+                                        >
+                                            Checkout Status
+                                        </Text>
+                                        <div>
+                                            <Tag
+                                                color={
+                                                    selectedRoom.checkout_status ===
+                                                    "overdue"
+                                                        ? "red"
+                                                        : "green"
+                                                }
+                                                style={{
+                                                    fontSize: "8px",
+                                                    borderRadius: "4px",
+                                                    padding: "0 8px",
+                                                }}
+                                            >
+                                                {selectedRoom.checkout_status.toUpperCase()}
+                                            </Tag>
+                                        </div>
+                                    </div>
+                                )}
+                                {selectedRoom.expected_checkout_at && (
+                                    <div>
+                                        <Text
+                                            type="secondary"
+                                            style={{
+                                                fontSize: "8px",
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.3px",
+                                            }}
+                                        >
+                                            Expected Checkout
+                                        </Text>
+                                        <div>
+                                            <Text
+                                                strong
+                                                style={{ fontSize: "11px" }}
+                                            >
+                                                {formatDateTime(
+                                                    selectedRoom.expected_checkout_at,
+                                                )}
+                                            </Text>
+                                        </div>
+                                    </div>
+                                )}
+                                {selectedRoom.status === "CHECKED OUT" && (
+                                    <div>
+                                        <Text
+                                            type="secondary"
+                                            style={{
+                                                fontSize: "8px",
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.3px",
+                                            }}
+                                        >
+                                            Key Returned
+                                        </Text>
+                                        <div>
+                                            <Tag
+                                                color={
+                                                    selectedRoom.key_returned
+                                                        ? "green"
+                                                        : "red"
+                                                }
+                                                style={{
+                                                    fontSize: "8px",
+                                                    borderRadius: "4px",
+                                                    padding: "0 8px",
+                                                }}
+                                            >
+                                                {selectedRoom.key_returned
+                                                    ? "YES"
+                                                    : "NO"}
+                                            </Tag>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Per-room Add-ons section */}
+                {selectedRoom.add_ons &&
+                    selectedRoom.add_ons.length > 0 && (
+                        <div
+                            style={{
+                                border: `1px solid ${BORDER}`,
+                                borderRadius: "8px",
+                                overflow: "hidden",
+                                marginTop: 12,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    background: "#fafbfc",
+                                    padding: "4px 12px",
+                                    borderBottom: `1px solid ${BORDER}`,
+                                }}
+                            >
+                                <Space size={4}>
+                                    <GiftOutlined
+                                        style={{
+                                            fontSize: "11px",
+                                            color: MINT_GREEN,
+                                        }}
+                                    />
+                                    <Text strong style={{ fontSize: "11px" }}>
+                                        Room Add-ons
+                                    </Text>
+                                </Space>
+                            </div>
+                            <div style={{ padding: "6px 12px" }}>
+                                {selectedRoom.add_ons.map((addon) => (
+                                    <div
+                                        key={addon.id}
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            padding: "4px 0",
+                                            borderBottom: "1px solid #f1f5f9",
+                                        }}
+                                    >
+                                        <Text style={{ fontSize: "11px" }}>
+                                            {addon.name} × {addon.quantity}
+                                        </Text>
+                                        <Text
+                                            strong
+                                            style={{
+                                                fontSize: "11px",
+                                                color: MINT_GREEN,
+                                            }}
+                                        >
+                                            ₱{addon.subtotal.toLocaleString()}
+                                        </Text>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
             </Modal>
         );
     };
@@ -1262,11 +1599,25 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                         </div>
                     }
                     description={
-                        overdueDays > 0
-                            ? `Overdue by ${overdueDays} day${
-                                  overdueDays > 1 ? "s" : ""
-                              }`
-                            : "Guest has exceeded the expected checkout date."
+                        <>
+                            {overdueDays > 0
+                                ? `Overdue by ${overdueDays} day${
+                                      overdueDays > 1 ? "s" : ""
+                                  }`
+                                : "Guest has exceeded the expected checkout date."}
+                            {(booking.overdue_rooms_count ?? 0) > 1 && (
+                                <div
+                                    style={{
+                                        marginTop: 4,
+                                        fontSize: "11px",
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    {booking.overdue_rooms_count} rooms are
+                                    overdue
+                                </div>
+                            )}
+                        </>
                     }
                     style={{
                         marginBottom: 18,
@@ -1295,7 +1646,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     },
                 }}
             >
-                {/* Decorative watermark illustration, sits behind the content */}
                 <img
                     src={bookingWatermark}
                     alt=""
@@ -1510,7 +1860,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                 </div>
             </Card>
 
-            {/* Rooms (left) + Payment Summary (right), side by side */}
+            {/* Rooms (left) + Payment Summary (right) */}
             <Row gutter={[18, 18]} align="stretch">
                 <Col xs={24} lg={16}>
                     <div
@@ -1556,6 +1906,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                 flex: addOns.length > 0 ? "0 0 auto" : 1,
                             }}
                         >
+                            {/* Header — Type & Rate removed */}
                             <div
                                 className="room-row-grid"
                                 style={{
@@ -1567,13 +1918,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                 }}
                             >
                                 <Text className="room-col-header">Room</Text>
-                                <Text className="room-col-header">Type</Text>
-                                <Text className="room-col-header">
-                                    Rate Plan
-                                </Text>
-                                <Text className="room-col-header">Rate</Text>
                                 <Text className="room-col-header">Nights</Text>
                                 <Text className="room-col-header">Guests</Text>
+                                <Text className="room-col-header">
+                                    Expected Checkout
+                                </Text>
                                 <Text className="room-col-header">Amount</Text>
                                 <span />
                             </div>
@@ -1602,6 +1951,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                                 : "transparent",
                                         }}
                                     >
+                                        {/* Room cell */}
                                         <div
                                             style={{
                                                 display: "flex",
@@ -1689,6 +2039,34 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                                             REFUNDED
                                                         </Tag>
                                                     )}
+                                                    {room.is_extended && (
+                                                        <Tag
+                                                            color="gold"
+                                                            style={{
+                                                                fontSize: "8px",
+                                                                borderRadius:
+                                                                    "4px",
+                                                                padding:
+                                                                    "0 6px",
+                                                            }}
+                                                        >
+                                                            EXTENDED
+                                                        </Tag>
+                                                    )}
+                                                    {room.is_early_checkin && (
+                                                        <Tag
+                                                            color="cyan"
+                                                            style={{
+                                                                fontSize: "8px",
+                                                                borderRadius:
+                                                                    "4px",
+                                                                padding:
+                                                                    "0 6px",
+                                                            }}
+                                                        >
+                                                            EARLY
+                                                        </Tag>
+                                                    )}
                                                 </Space>
                                                 <div style={{ marginTop: 2 }}>
                                                     <Text
@@ -1703,57 +2081,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                             </div>
                                         </div>
 
-                                        <Text
-                                            style={{
-                                                fontSize: "12px",
-                                                color: INK,
-                                            }}
-                                        >
-                                            {room.room_type}
-                                        </Text>
-                                        <Text
-                                            style={{
-                                                fontSize: "12px",
-                                                color: INK,
-                                            }}
-                                        >
-                                            {room.rate_plan}
-                                        </Text>
-
-                                        <div>
-                                            <Text
-                                                strong
-                                                style={{
-                                                    fontSize: "12px",
-                                                    color: isRoomRefunded
-                                                        ? "#8c8c8c"
-                                                        : MINT_GREEN,
-                                                }}
-                                            >
-                                                ₱{room.rate.toLocaleString()}
-                                            </Text>
-                                            {room.original_price !==
-                                                undefined &&
-                                                room.original_price !==
-                                                    room.rate && (
-                                                    <>
-                                                        <br />
-                                                        <Text
-                                                            type="secondary"
-                                                            style={{
-                                                                fontSize:
-                                                                    "9.5px",
-                                                                textDecoration:
-                                                                    "line-through",
-                                                            }}
-                                                        >
-                                                            ₱
-                                                            {room.original_price.toLocaleString()}
-                                                        </Text>
-                                                    </>
-                                                )}
-                                        </div>
-
+                                        {/* Nights cell */}
                                         <Text
                                             style={{
                                                 fontSize: "12px",
@@ -1764,6 +2092,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                             {room.nights > 1 ? "s" : ""}
                                         </Text>
 
+                                        {/* Guests cell */}
                                         <Text
                                             style={{
                                                 fontSize: "12px",
@@ -1773,6 +2102,60 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                             {guests.primary}
                                         </Text>
 
+                                        {/* Expected Checkout cell */}
+                                        <div>
+                                            {room.expected_checkout_at ? (
+                                                <>
+                                                    <Text
+                                                        strong
+                                                        style={{
+                                                            fontSize: "11px",
+                                                            color:
+                                                                room.checkout_status ===
+                                                                "overdue"
+                                                                    ? "#ff4d4f"
+                                                                    : INK,
+                                                        }}
+                                                    >
+                                                        {new Date(
+                                                            room.expected_checkout_at,
+                                                        ).toLocaleDateString(
+                                                            "en-PH",
+                                                            {
+                                                                month: "short",
+                                                                day: "numeric",
+                                                            },
+                                                        )}
+                                                    </Text>
+                                                    <br />
+                                                    <Text
+                                                        type="secondary"
+                                                        style={{
+                                                            fontSize: "10px",
+                                                        }}
+                                                    >
+                                                        {new Date(
+                                                            room.expected_checkout_at,
+                                                        ).toLocaleTimeString(
+                                                            "en-PH",
+                                                            {
+                                                                hour: "2-digit",
+                                                                minute: "2-digit",
+                                                            },
+                                                        )}
+                                                    </Text>
+                                                </>
+                                            ) : (
+                                                <Text
+                                                    type="secondary"
+                                                    style={{ fontSize: "11px" }}
+                                                >
+                                                    —
+                                                </Text>
+                                            )}
+                                        </div>
+
+                                        {/* Amount cell */}
                                         <Text
                                             strong
                                             style={{
@@ -1788,6 +2171,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                             ).toLocaleString()}
                                         </Text>
 
+                                        {/* Actions cell */}
                                         <div
                                             onClick={(e) => e.stopPropagation()}
                                             style={{ textAlign: "right" }}
@@ -2054,6 +2438,37 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                 </Col>
                             ) : null}
 
+                            {/* Shift Info */}
+                            {booking.shift_name && (
+                                <Col span={24}>
+                                    <Label>Shift</Label>
+                                    <div style={{ marginTop: 6 }}>
+                                        <Text
+                                            strong
+                                            style={{
+                                                fontSize: "12.5px",
+                                                color: INK,
+                                            }}
+                                        >
+                                            {booking.shift_name}
+                                            {booking.shift_start &&
+                                                booking.shift_end && (
+                                                    <Text
+                                                        type="secondary"
+                                                        style={{
+                                                            fontSize: "10.5px",
+                                                            marginLeft: 4,
+                                                        }}
+                                                    >
+                                                        ({booking.shift_start}{" "}
+                                                        – {booking.shift_end})
+                                                    </Text>
+                                                )}
+                                        </Text>
+                                    </div>
+                                </Col>
+                            )}
+
                             {showsPaymentReference && (
                                 <Col span={24}>
                                     <Label>Reference No.</Label>
@@ -2164,6 +2579,108 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                         })}
                                     </Text>
                                 </div>
+
+                                {/* Early Check-in Fee */}
+                                {totalEarlyCheckinFee > 0 && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            marginBottom: 8,
+                                        }}
+                                    >
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "12.5px" }}
+                                        >
+                                            Early Check-in Fee
+                                        </Text>
+                                        <Text
+                                            style={{
+                                                fontSize: "12.5px",
+                                                color: "#13c2c2",
+                                            }}
+                                        >
+                                            ₱
+                                            {totalEarlyCheckinFee.toLocaleString(
+                                                undefined,
+                                                {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                },
+                                            )}
+                                        </Text>
+                                    </div>
+                                )}
+
+                                {/* Late Checkout Fee */}
+                                {totalLateCheckoutFee > 0 && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            marginBottom: 8,
+                                        }}
+                                    >
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "12.5px" }}
+                                        >
+                                            Late Checkout Fee
+                                        </Text>
+                                        <Text
+                                            style={{
+                                                fontSize: "12.5px",
+                                                color: "#fa541c",
+                                            }}
+                                        >
+                                            ₱
+                                            {totalLateCheckoutFee.toLocaleString(
+                                                undefined,
+                                                {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                },
+                                            )}
+                                        </Text>
+                                    </div>
+                                )}
+
+                                {/* Extension Fee */}
+                                {totalExtensionFee > 0 && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            marginBottom: 8,
+                                        }}
+                                    >
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "12.5px" }}
+                                        >
+                                            Extension Fee
+                                            {booking.extended_rooms_count
+                                                ? ` (${booking.extended_rooms_count} room${booking.extended_rooms_count > 1 ? "s" : ""})`
+                                                : ""}
+                                        </Text>
+                                        <Text
+                                            style={{
+                                                fontSize: "12.5px",
+                                                color: "#faad14",
+                                            }}
+                                        >
+                                            ₱
+                                            {totalExtensionFee.toLocaleString(
+                                                undefined,
+                                                {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                },
+                                            )}
+                                        </Text>
+                                    </div>
+                                )}
 
                                 {totalRefundAmount > 0 && (
                                     <div
@@ -2303,7 +2820,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                 </Col>
             </Row>
 
-            {/* Notes | Staff | Timeline — compact three-up row */}
+            {/* Notes | Staff | Timeline */}
             <Row gutter={[18, 18]} style={{ marginTop: 18 }}>
                 <Col xs={24} md={8}>
                     <SectionCard
@@ -2598,10 +3115,17 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
             <style>
                 {`
+                    /* ✅ 6 columns — Type & Rate removed, wider Amount */
                     .room-row-grid {
                         display: grid;
-                        grid-template-columns: minmax(190px, 2.2fr) 0.8fr 0.9fr 0.9fr 0.7fr 0.9fr 0.9fr 32px;
-                        gap: 10px;
+                        grid-template-columns:
+                            minmax(260px, 3fr)     /* Room (image + badges + type) */
+                            minmax(80px, 0.8fr)    /* Nights */
+                            minmax(100px, 1fr)     /* Guests */
+                            minmax(140px, 1.4fr)   /* Expected Checkout */
+                            minmax(130px, 1.4fr)   /* Amount */
+                            40px;                  /* Actions */
+                        gap: 12px;
                         align-items: center;
                     }
                     .room-col-header {
@@ -2626,7 +3150,12 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     }
                     @media (max-width: 900px) {
                         .room-row-grid {
-                            grid-template-columns: minmax(180px, 1fr) 1fr 1fr;
+                            grid-template-columns: minmax(180px, 1.6fr) 1fr 1fr 40px;
+                        }
+                        /* Hide Nights & Expected Checkout on mobile */
+                        .room-row-grid > *:nth-child(2),
+                        .room-row-grid > *:nth-child(4) {
+                            display: none;
                         }
                     }
                 `}

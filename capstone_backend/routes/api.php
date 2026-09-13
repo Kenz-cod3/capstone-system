@@ -3,13 +3,14 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PayMongoController;
 use App\Http\Controllers\ReservationMonitorController;
+use App\Http\Controllers\RoomController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // PUBLIC
 require __DIR__ . '/api/auth.php';
-
 Route::post('/paymongo/webhook', [PayMongoController::class, 'webhook']);
+Route::get('/rooms/available', [RoomController::class, 'publicAvailable']);
 
 // PROTECTED
 Route::middleware('auth:sanctum')->group(function () {

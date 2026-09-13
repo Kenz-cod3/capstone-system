@@ -51,6 +51,7 @@ return new class extends Migration
             $table->boolean('is_late_checkout')->default(false);
             $table->decimal('late_checkout_fee', 10, 2)->default(0);
             $table->timestamp('check_out_time')->nullable();
+            $table->boolean('key_returned')->default(false);
             $table->timestamp('overdue_started_at')->nullable();
             $table->timestamps();
             $table->timestamp('archived_at')->nullable();

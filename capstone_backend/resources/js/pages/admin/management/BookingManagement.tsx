@@ -339,6 +339,14 @@ export default function Bookings() {
     const [searchInput, setSearchInput] = useState("");
     const [searchText, setSearchText] = useState("");
     const [userRole, setUserRole] = useState<string>("staff");
+    const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+    const [checkoutBookingId, setCheckoutBookingId] = useState<
+        number | undefined
+    >(undefined);
+    const [checkoutRecord, setCheckoutRecord] = useState<BookingRow | null>(
+        null,
+    );
+    const [roomKeyReturned, setRoomKeyReturned] = useState(true);
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
     const [filterStatus, setFilterStatus] = useState<string>("all");
     const [filterPaymentStatus, setFilterPaymentStatus] =
@@ -771,74 +779,161 @@ export default function Bookings() {
         }
     };
 
-    const handleCheckoutAction = async (bookingId: number) => {
-        console.log("Checkout clicked:", bookingId);
-        const action = async (reason?: string) => {
-            const booking = bookings.find((b) => b.id === bookingId);
+    // Opens the checkout confirmation modal
+    const handleCheckoutAction = (record: BookingRow) => {
+        console.log("Checkout clicked:", {
+            bookingId: record.id,
+            bookedRoomId: record.booked_room_id,
+            roomNumber: record.room?.room_number,
+        });
 
-            if (!booking) return;
-
-            const bookingType =
-                booking.booking_type ||
-                (booking.booking?.booking_type as "online" | "walk_in") ||
-                "walk_in";
-
-            if (bookingType === "walk_in") {
-                await api.post(`/walk-in-guests/${bookingId}/checkout`, {
-                    override_reason: reason,
-                });
-            } else {
-                await api.put(`/bookings/${bookingId}`, {
-                    booking_status: "checked_out",
-                    override_reason: reason,
-                });
-            }
-
-            queryClient.setQueryData(
-                [
-                    "booked-rooms",
-                    activeTab,
-                    currentPage,
-                    pageSize,
-                    searchText,
-                    filterStatus,
-                    filterPaymentStatus,
-                ],
-                (old: BookedRoom[] | undefined) => {
-                    if (!old) return old;
-                    return old.filter((b) => b.id !== bookingId);
-                },
-            );
-
-            const checkedOutBooking = bookings.find((b) => b.id === bookingId);
-            if (checkedOutBooking) {
-                const updatedBookedRoom: BookedRoom = {
-                    ...checkedOutBooking,
-                    status: "checked_out" as BookedRoom["status"],
-                };
-                queryClient.setQueryData(
-                    [
-                        "booked-rooms",
-                        "history",
-                        currentPage,
-                        pageSize,
-                        searchText,
-                        filterStatus,
-                        filterPaymentStatus,
-                    ],
-                    (old: BookedRoom[] | undefined) => {
-                        return [updatedBookedRoom, ...(old || [])];
-                    },
-                );
-            }
-
-            message.success("Check Out successful");
-            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
-        };
-
-        await handleActionWithOverride(action, "Check Out", bookingId, true);
+        setCheckoutBookingId(record.id);
+        setCheckoutRecord(record);
+        setRoomKeyReturned(true);
+        setCheckoutModalVisible(true);
     };
 
+    // Actually performs the checkout after modal confirmation
+    // const confirmCheckout = async () => {
+    //     if (!checkoutBookingId) return;
+
+    //     if (!roomKeyReturned) {
+    //         message.warning("Please confirm that the room key was returned.");
+    //         return;
+    //     }
+
+    //     const action = async (reason?: string) => {
+    //         const booking = bookings.find((b) => b.id === checkoutBookingId);
+
+    //         if (!booking) return;
+
+    //         const bookingType =
+    //             booking.booking_type ||
+    //             (booking.booking?.booking_type as "online" | "walk_in") ||
+    //             "walk_in";
+
+    //         if (bookingType === "walk_in") {
+    //             await api.post(
+    //                 `/walk-in-guests/${checkoutBookingId}/checkout`,
+    //                 {
+    //                     override_reason: reason,
+    //                 },
+    //             );
+    //         } else {
+    //             await api.put(`/bookings/${checkoutBookingId}`, {
+    //                 booking_status: "checked_out",
+    //                 override_reason: reason,
+    //             });
+    //         }
+
+    //         queryClient.setQueryData(
+    //             [
+    //                 "booked-rooms",
+    //                 activeTab,
+    //                 currentPage,
+    //                 pageSize,
+    //                 searchText,
+    //                 filterStatus,
+    //                 filterPaymentStatus,
+    //             ],
+    //             (old: BookedRoom[] | undefined) => {
+    //                 if (!old) return old;
+    //                 return old.filter((b) => b.id !== checkoutBookingId);
+    //             },
+    //         );
+
+    //         const checkedOutBooking = bookings.find(
+    //             (b) => b.id === checkoutBookingId,
+    //         );
+    //         if (checkedOutBooking) {
+    //             const updatedBookedRoom: BookedRoom = {
+    //                 ...checkedOutBooking,
+    //                 status: "checked_out" as BookedRoom["status"],
+    //             };
+    //             queryClient.setQueryData(
+    //                 [
+    //                     "booked-rooms",
+    //                     "history",
+    //                     currentPage,
+    //                     pageSize,
+    //                     searchText,
+    //                     filterStatus,
+    //                     filterPaymentStatus,
+    //                 ],
+    //                 (old: BookedRoom[] | undefined) => {
+    //                     return [updatedBookedRoom, ...(old || [])];
+    //                 },
+    //             );
+    //         }
+
+    //         message.success("Check Out successful");
+    //         queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+
+    //         setCheckoutModalVisible(false);
+    //         setCheckoutBookingId(undefined);
+    //         setRoomKeyReturned(true);
+    //     };
+
+    //     await handleActionWithOverride(
+    //         action,
+    //         "Check Out",
+    //         checkoutBookingId,
+    //         true,
+    //     );
+    // };
+
+    const confirmCheckout = async () => {
+        if (!checkoutRecord) {
+            message.error("No booking selected.");
+            return;
+        }
+
+        if (!roomKeyReturned) {
+            message.warning("Please confirm that the room key was returned.");
+            return;
+        }
+
+        const action = async (reason?: string) => {
+            try {
+                const bookedRoomId = checkoutRecord.booked_room_id;
+
+                const response = await api.put(
+                    `/booked-rooms/${bookedRoomId}`,
+                    {
+                        status: "checked_out",
+                        key_returned: roomKeyReturned,
+                        override_reason: reason,
+                    },
+                );
+
+                message.success("Check Out successful");
+
+                await queryClient.invalidateQueries({
+                    queryKey: ["booked-rooms"],
+                });
+
+                setCheckoutModalVisible(false);
+                setCheckoutBookingId(undefined);
+                setCheckoutRecord(null);
+                setRoomKeyReturned(true);
+            } catch (error: any) {
+                console.error("Checkout failed:", error);
+                console.error("Server response:", error?.response?.data);
+
+                message.error(
+                    error?.response?.data?.message ||
+                        "Check Out failed. Please try again.",
+                );
+            }
+        };
+
+        await handleActionWithOverride(
+            action,
+            "Check Out",
+            checkoutRecord.id,
+            true,
+        );
+    };
     const handleExtendAction = async (booking: BookingRow) => {
         const action = async () => {
             const res = await api.post<ExtendResponse>(
@@ -1269,12 +1364,7 @@ export default function Bookings() {
                     {
                         key: "checkout",
                         label: "Check Out",
-                        onClick: () =>
-                            handleUpdateStatus(
-                                record.booked_room_id,
-                                "checked_out",
-                                "Check Out",
-                            ),
+                        onClick: () => handleCheckoutAction(record),
                     },
                     {
                         key: "extend",
@@ -2291,6 +2381,17 @@ export default function Bookings() {
         return filterStatus !== "all" ? "1" : null;
     };
 
+    // Resolve the guest name for the checkout modal
+    const getCheckoutGuestName = (): string => {
+        if (!checkoutRecord) return "-";
+
+        return getGuestName(checkoutRecord);
+    };
+
+    const getCheckoutRoomNumber = (): string => {
+        return checkoutRecord?.room?.room_number ?? "-";
+    };
+
     return (
         <div
             key={location.key}
@@ -2750,6 +2851,100 @@ export default function Bookings() {
                     </>
                 )}
             </div>
+
+            {/* Checkout Confirmation Modal - same as Booking Details page */}
+            <Modal
+                title="Check Out Guest"
+                open={checkoutModalVisible}
+                onCancel={() => {
+                    setCheckoutModalVisible(false);
+                    setCheckoutBookingId(undefined);
+                }}
+                centered
+                width={450}
+                footer={[
+                    <Button
+                        key="cancel"
+                        onClick={() => {
+                            setCheckoutModalVisible(false);
+                            setCheckoutBookingId(undefined);
+                        }}
+                    >
+                        Cancel
+                    </Button>,
+                    <Button
+                        key="checkout"
+                        type="primary"
+                        style={{
+                            background: MINT_GREEN,
+                            borderColor: MINT_GREEN,
+                        }}
+                        disabled={!roomKeyReturned}
+                        onClick={confirmCheckout}
+                    >
+                        Confirm Check Out
+                    </Button>,
+                ]}
+            >
+                <div style={{ padding: "8px 0" }}>
+                    <div style={{ marginBottom: 14 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Guest
+                        </Text>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                            {getCheckoutGuestName()}
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: 18 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Room
+                        </Text>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                            {getCheckoutRoomNumber()}
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: 18 }}>
+                        <Text
+                            strong
+                            style={{ display: "block", marginBottom: 8 }}
+                        >
+                            Room Key Returned?
+                        </Text>
+                        <div style={{ display: "flex", gap: 20 }}>
+                            <label>
+                                <input
+                                    type="radio"
+                                    checked={roomKeyReturned === true}
+                                    onChange={() => setRoomKeyReturned(true)}
+                                />{" "}
+                                Yes
+                            </label>
+                            <label>
+                                <input
+                                    type="radio"
+                                    checked={roomKeyReturned === false}
+                                    onChange={() => setRoomKeyReturned(false)}
+                                />{" "}
+                                No
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Check-out time
+                        </Text>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                            {new Date().toLocaleTimeString("en-PH", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 }

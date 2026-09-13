@@ -490,6 +490,7 @@ class BookedRoomController extends Controller
 
         $validated = $request->validate([
             'status' => 'sometimes|in:pending,confirmed,checked_in,checked_out,cancelled,refunded',
+            'key_returned' => 'required_if:status,checked_out|boolean',
             'price_at_time_of_booking' => 'sometimes|numeric|min:0',
             'subtotal' => 'sometimes|numeric|min:0',
             'stay_type' => 'sometimes|in:overnight,short_stay',
@@ -627,6 +628,7 @@ class BookedRoomController extends Controller
 
                 case 'checked_out':
                     $bookedRoom->check_out_time = now();
+                    $bookedRoom->key_returned = $validated['key_returned'];
 
                     $roomType = $bookedRoom->room->roomType;
 

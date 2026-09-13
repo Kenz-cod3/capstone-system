@@ -111,6 +111,10 @@ const TABLE_COLUMNS = [
     { key: "max_occupancy", label: "Occupancy", center: true },
     { key: "base_price", label: "Base Price" },
     { key: "short_stay_price", label: "Short Stay" },
+    { key: "standard_checkin_time", label: "Check-in", center: true },
+    { key: "overnight_checkout_time", label: "Checkout", center: true },
+    { key: "early_checkin_fee", label: "Early Check-in Fee" },
+    { key: "late_checkout_fee", label: "Late Checkout Fee" },
     { key: "actions", label: "Actions", noSort: true, center: true },
 ];
 
@@ -125,6 +129,8 @@ export default function RoomTypeManager({
     const [editingRoomType, setEditingRoomType] = useState<RoomType | null>(
         null,
     );
+
+    const [selectedRowId, setSelectedRowId] = useState<number | null>(null);
 
     const [sortKey, setSortKey] = useState("type_name");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -332,6 +338,10 @@ export default function RoomTypeManager({
 
     // ── Sort ───────────────────────────────────────────────────────────────────
 
+    useEffect(() => {
+        setSelectedRowId(null);
+    }, [currentPage, itemsPerPage, sortKey, sortDir]);
+
     const handleSort = (key: string) => {
         if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
         else {
@@ -349,6 +359,19 @@ export default function RoomTypeManager({
         ) : (
             <span className="ml-1 text-xs opacity-30">⇅</span>
         );
+
+    // ── Time formatting (24hr -> 12hr AM/PM) ────────────────────────────────────
+
+    const formatTime12h = (time?: string | null): string | null => {
+        if (!time) return null;
+        const [hourStr, minuteStr] = time.slice(0, 5).split(":");
+        const hour = Number(hourStr);
+        const minute = minuteStr ?? "00";
+        if (Number.isNaN(hour)) return null;
+        const period = hour >= 12 ? "PM" : "AM";
+        const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+        return `${hour12}:${minute} ${period}`;
+    };
 
     // ── Pagination ─────────────────────────────────────────────────────────────
 
@@ -374,22 +397,34 @@ export default function RoomTypeManager({
 
     const SkeletonRow = () => (
         <tr className="border-b border-slate-100">
-            <td className="px-4 py-3">
+            <td className="px-3 py-2">
                 <Skeleton className="h-4 w-28 bg-slate-200" />
             </td>
-            <td className="px-4 py-3">
+            <td className="px-3 py-2">
                 <Skeleton className="h-4 w-44 bg-slate-200" />
             </td>
-            <td className="px-4 py-3 text-center">
+            <td className="px-3 py-2 text-center">
                 <Skeleton className="mx-auto h-5 w-16 rounded-full bg-slate-200" />
             </td>
-            <td className="px-4 py-3">
+            <td className="px-3 py-2">
                 <Skeleton className="h-4 w-20 bg-slate-200" />
             </td>
-            <td className="px-4 py-3">
+            <td className="px-3 py-2">
                 <Skeleton className="h-4 w-20 bg-slate-200" />
             </td>
-            <td className="px-4 py-3">
+            <td className="px-3 py-2 text-center">
+                <Skeleton className="mx-auto h-4 w-16 bg-slate-200" />
+            </td>
+            <td className="px-3 py-2 text-center">
+                <Skeleton className="mx-auto h-4 w-16 bg-slate-200" />
+            </td>
+            <td className="px-3 py-2">
+                <Skeleton className="h-4 w-20 bg-slate-200" />
+            </td>
+            <td className="px-3 py-2">
+                <Skeleton className="h-4 w-20 bg-slate-200" />
+            </td>
+            <td className="px-3 py-2">
                 <div className="flex justify-center gap-2">
                     <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
                     <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
@@ -402,7 +437,7 @@ export default function RoomTypeManager({
 
     const EmptyState = () => (
         <tr>
-            <td colSpan={6} className="px-4 py-16 text-center">
+            <td colSpan={10} className="px-4 py-16 text-center">
                 <div className="text-3xl">🏨</div>
                 <p className="mt-2 font-semibold text-slate-600">
                     No room types yet
@@ -463,9 +498,9 @@ export default function RoomTypeManager({
                     isVisible ? "translate-y-0" : "translate-y-full"
                 }`}
             >
-                {/* Header */}
+                {/* Header — back button + title on the left, tabs centered */}
                 <header
-                    className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm"
+                    className="relative flex shrink-0 items-center border-b border-slate-200 bg-white px-6 shadow-sm"
                     style={{ height: 64 }}
                 >
                     <div className="flex items-center gap-4">
@@ -481,18 +516,13 @@ export default function RoomTypeManager({
                             Manage Room
                         </h1>
                     </div>
-                    {/* <span className="rounded-full border border-mint-200 bg-mint-50 px-3 py-1 text-xs font-semibold text-mint-600">
-                        {meta?.total ?? 0} types
-                    </span> */}
-                </header>
 
-                <div className="border-b bg-white px-6 py-3">
                     <Tabs
                         value={activeTab}
                         onValueChange={(v) =>
                             setActiveTab(v as typeof activeTab)
                         }
-                        className="flex justify-center"
+                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                     >
                         <TabsList className="relative h-auto bg-transparent p-0 gap-6">
                             <TabsTrigger
@@ -533,7 +563,7 @@ export default function RoomTypeManager({
                             />
                         </TabsList>
                     </Tabs>
-                </div>
+                </header>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
@@ -544,25 +574,22 @@ export default function RoomTypeManager({
                                     {/* Card header */}
                                     <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-sm font-bold text-slate-800">
+                                            <span className="text-xs font-bold text-slate-800">
                                                 Room Types
                                             </span>
-                                            {/* <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
-                    {meta?.total ?? 0}
-                  </span> */}
                                         </div>
                                         <button
                                             onClick={openCreate}
-                                            className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-sm font-semibold text-white hover:bg-mint-700 active:scale-95 transition-all"
+                                            className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-xs font-semibold text-white hover:bg-mint-700 active:scale-95 transition-all"
                                         >
-                                            <Plus className="size-4" />
+                                            <Plus className="size-3.5" />
                                             Add Room Type
                                         </button>
                                     </div>
 
                                     {/* Table */}
                                     <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
+                                        <table className="w-full text-xs">
                                             <thead>
                                                 <tr className="bg-slate-50 text-left">
                                                     {TABLE_COLUMNS.map(
@@ -580,7 +607,7 @@ export default function RoomTypeManager({
                                                                         key,
                                                                     )
                                                                 }
-                                                                className={`border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 ${
+                                                                className={`border-b border-slate-200 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 ${
                                                                     center
                                                                         ? "text-center"
                                                                         : ""
@@ -637,22 +664,46 @@ export default function RoomTypeManager({
                                                         return (
                                                             <tr
                                                                 key={rt.id}
-                                                                className="border-b border-slate-100 transition-colors hover:bg-slate-50"
+                                                                onClick={() =>
+                                                                    setSelectedRowId(
+                                                                        (
+                                                                            id,
+                                                                        ) =>
+                                                                            id ===
+                                                                            rt.id
+                                                                                ? null
+                                                                                : rt.id,
+                                                                    )
+                                                                }
+                                                                className={`cursor-pointer border-b transition-colors ${
+                                                                    selectedRowId ===
+                                                                    rt.id
+                                                                        ? "relative z-10 border-mint-600 bg-mint-50 ring-2 ring-inset ring-mint-600"
+                                                                        : "border-slate-100 hover:bg-slate-50"
+                                                                }`}
                                                             >
-                                                                <td className="px-4 py-3 font-semibold text-slate-900">
+                                                                <td className="px-3 py-2 font-semibold text-slate-900">
                                                                     {
                                                                         rt.type_name
                                                                     }
                                                                 </td>
-                                                                <td className="max-w-xs truncate px-4 py-3 text-slate-500">
-                                                                    {rt.description || (
-                                                                        <span className="text-slate-300">
-                                                                            —
-                                                                        </span>
-                                                                    )}
+                                                                <td className="px-3 py-2 text-slate-500">
+                                                                    <span
+                                                                        title={
+                                                                            rt.description ||
+                                                                            undefined
+                                                                        }
+                                                                        className="block max-w-[180px] truncate"
+                                                                    >
+                                                                        {rt.description || (
+                                                                            <span className="text-slate-300">
+                                                                                —
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                 </td>
-                                                                <td className="px-4 py-3 text-center">
-                                                                    <span className="rounded-full border border-mint-200 bg-mint-50 px-2.5 py-0.5 text-xs font-semibold text-mint-700">
+                                                                <td className="px-3 py-2 text-center">
+                                                                    <span className="rounded-full border border-mint-200 bg-mint-50 px-2 py-0.5 text-[10px] font-semibold text-mint-700">
                                                                         {
                                                                             rt.max_occupancy
                                                                         }{" "}
@@ -662,14 +713,14 @@ export default function RoomTypeManager({
                                                                             : "persons"}
                                                                     </span>
                                                                 </td>
-                                                                <td className="px-4 py-3 font-medium text-slate-800">
+                                                                <td className="px-3 py-2 font-medium text-slate-800">
                                                                     ₱
                                                                     {rt.base_price?.toLocaleString()}
                                                                     <span className="ml-1 text-xs text-slate-400">
                                                                         / night
                                                                     </span>
                                                                 </td>
-                                                                <td className="px-4 py-3 font-medium text-slate-800">
+                                                                <td className="px-3 py-2 font-medium text-slate-800">
                                                                     {rt.short_stay_price !=
                                                                     null ? (
                                                                         <>
@@ -686,15 +737,64 @@ export default function RoomTypeManager({
                                                                         </span>
                                                                     )}
                                                                 </td>
-                                                                <td className="px-4 py-3">
-                                                                    <div className="flex items-center justify-center gap-2">
+                                                                <td className="px-3 py-2 text-center text-slate-600">
+                                                                    {formatTime12h(
+                                                                        rt.standard_checkin_time,
+                                                                    ) || (
+                                                                        <span className="text-slate-300">
+                                                                            —
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-center text-slate-600">
+                                                                    {formatTime12h(
+                                                                        rt.overnight_checkout_time,
+                                                                    ) || (
+                                                                        <span className="text-slate-300">
+                                                                            —
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 font-medium text-slate-800">
+                                                                    {rt.early_checkin_fee ? (
+                                                                        <>
+                                                                            ₱
+                                                                            {rt.early_checkin_fee.toLocaleString()}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-slate-300">
+                                                                            —
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 font-medium text-slate-800">
+                                                                    {rt.late_checkout_fee ? (
+                                                                        <>
+                                                                            ₱
+                                                                            {rt.late_checkout_fee.toLocaleString()}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-slate-300">
+                                                                            —
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    <div
+                                                                        onClick={(
+                                                                            e,
+                                                                        ) =>
+                                                                            e.stopPropagation()
+                                                                        }
+                                                                        className="flex items-center justify-center gap-2"
+                                                                    >
                                                                         <button
                                                                             onClick={() =>
                                                                                 openEdit(
                                                                                     rt,
                                                                                 )
                                                                             }
-                                                                            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all"
+                                                                            className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all"
                                                                         >
                                                                             <Pencil className="size-3" />
                                                                             Edit
@@ -704,7 +804,7 @@ export default function RoomTypeManager({
                                                                             <AlertDialogTrigger
                                                                                 asChild
                                                                             >
-                                                                                <button className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 active:scale-95 transition-all">
+                                                                                <button className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100 active:scale-95 transition-all">
                                                                                     <Trash2 className="size-3" />
                                                                                     Delete
                                                                                 </button>
