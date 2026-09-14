@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import ShiftStatusModal from "@/components/StaffComponents/ShiftStatusModal";
+import CloseShiftModal from "@/components/StaffComponents/CloseShiftModal";
 import {
     Dialog,
     DialogContent,
@@ -62,6 +63,9 @@ const StaffLayout = ({
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+    const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
+    const [currentShift, setCurrentShift] = useState<any>(null);
+    const [closingShift, setClosingShift] = useState(false);
 
     const [messages, setMessages] = useState<any[]>([]);
     const [chatFilter, setChatFilter] = useState<"all" | "guest" | "staff">(
@@ -226,47 +230,122 @@ const StaffLayout = ({
     }, []);
 
     useEffect(() => {
-        console.log("Shift check — user:", user, "role:", user?.role);
         if (!user?.id) return;
         if (user.role?.toLowerCase() !== "staff") return;
-        if (sessionStorage.getItem("shiftPromptShown")) {
-            console.log("Shift prompt already shown this session, skipping.");
-            return;
-        }
 
-        console.log("Opening shift modal...");
-        setIsShiftModalOpen(true);
-        sessionStorage.setItem("shiftPromptShown", "1");
+        const shiftPromptShown = sessionStorage.getItem("shiftPromptShown");
+
+        if (!shiftPromptShown) {
+            console.log("Checking shift status...");
+
+            setIsShiftModalOpen(true);
+
+            sessionStorage.setItem("shiftPromptShown", "true");
+        }
     }, [user?.id]);
 
+    // const handleLogout = async () => {
+    //     NProgress.start();
+
+    //     try {
+    //         const currentShift = await api.get("/shift/current");
+
+    //         if (currentShift.data?.id) {
+    //             await api.post(`/shift/close/${currentShift.data.id}`, {
+    //                 closed_cash: currentShift.data.expected_cash,
+    //             });
+    //         }
+
+    //         await api.post("/auth/logout");
+    //     } catch (err) {
+    //         console.log(err);
+    //     } finally {
+    //         localStorage.removeItem("token");
+    //         localStorage.removeItem("user");
+
+    //         sessionStorage.removeItem("shiftPromptShown");
+
+    //         navigate("/login", {
+    //             replace: true,
+    //         });
+
+    //         setTimeout(() => {
+    //             NProgress.done();
+    //         }, 200);
+    //     }
+    // };
     const handleLogout = async () => {
-        NProgress.start();
-
         try {
-            const currentShift = await api.get("/shift/current");
+            const response = await api.get("/shift/current");
 
-            if (currentShift.data?.id) {
-                await api.post(`/shift/close/${currentShift.data.id}`, {
-                    closed_cash: currentShift.data.expected_cash,
-                });
+            if (response.data?.id) {
+                setCurrentShift(response.data);
+                setIsCloseShiftModalOpen(true);
+                return;
             }
 
             await api.post("/auth/logout");
-        } catch (err) {
+            finishLogout();
+        } catch (err: any) {
+            // No active shift
+            if (err.response?.status === 404) {
+                try {
+                    await api.post("/auth/logout");
+                } catch (logoutError) {
+                    console.log(logoutError);
+                }
+
+                finishLogout();
+                return;
+            }
+
             console.log(err);
-        } finally {
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
+            alert(err.response?.data?.message || "Unable to check your shift.");
+        }
+    };
 
-            sessionStorage.removeItem("shiftPromptShown");
+    const finishLogout = () => {
+        NProgress.start();
 
-            navigate("/login", {
-                replace: true,
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("role");
+
+        sessionStorage.removeItem("shiftPromptShown");
+
+        navigate("/login", {
+            replace: true,
+        });
+
+        setTimeout(() => {
+            NProgress.done();
+        }, 200);
+    };
+
+    const handleCloseShiftAndLogout = async () => {
+        if (!currentShift) return;
+
+        try {
+            setClosingShift(true);
+
+            // Close shift
+            await api.post(`/shift/close/${currentShift.id}`, {
+                closed_cash: Number(currentShift.expected_cash || 0),
             });
 
-            setTimeout(() => {
-                NProgress.done();
-            }, 200);
+            setIsCloseShiftModalOpen(false);
+            setCurrentShift(null);
+
+            // Logout
+            await api.post("/auth/logout");
+
+            finishLogout();
+        } catch (err: any) {
+            console.log(err);
+
+            alert(err.response?.data?.message || "Failed to close shift.");
+        } finally {
+            setClosingShift(false);
         }
     };
 
@@ -1401,6 +1480,13 @@ const StaffLayout = ({
                     onClose={() => setIsShiftModalOpen(false)}
                 />
             )}
+
+            <CloseShiftModal
+                open={isCloseShiftModalOpen}
+                shift={currentShift}
+                onClose={() => setIsCloseShiftModalOpen(false)}
+                onLogout={handleCloseShiftAndLogout}
+            />
 
             <Dialog
                 open={!!selectedNotification}

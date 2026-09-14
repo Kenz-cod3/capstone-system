@@ -21,7 +21,7 @@ const echo = new Echo({
 
     forceTLS: true,
 
-    authEndpoint: "http://192.168.254.188:8000/broadcasting/auth",
+    authEndpoint: "http://192.168.8.117:8000/broadcasting/auth",
 
     auth: {
         headers: {

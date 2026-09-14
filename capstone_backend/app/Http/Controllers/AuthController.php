@@ -356,32 +356,7 @@ class AuthController extends Controller
         $user->last_login = now();
         $user->save();
 
-        if (strtolower($user->role) === 'staff') {
-
-            $existingShift = Shift::where('opened_by', $user->id)
-                ->whereNull('closed_at')
-                ->first();
-
-            if (!$existingShift) {
-
-                $lastShift = Shift::where('opened_by', $user->id)
-                    ->whereNotNull('closed_at')
-                    ->latest('closed_at')
-                    ->first();
-
-                $startingCash = $lastShift
-                    ? $lastShift->closed_cash
-                    : 0;
-
-                Shift::create([
-                    'shift_number' => 'SHIFT-' . now()->format('Ymd-His'),
-                    'opened_by' => $user->id,
-                    'starting_cash' => $startingCash,
-                    'expected_cash' => $startingCash,
-                    'opened_at' => now(),
-                ]);
-            }
-        }
+        // Shift is opened manually from the shift modal.
 
         $token = $user->createToken('admin')->plainTextToken;
 
@@ -452,44 +427,52 @@ class AuthController extends Controller
         ]);
     }
 
-    //LOGOUT
+    // LOGOUT
     public function logout(Request $request)
     {
-        $user = $request->user();
-        $shift = Shift::where('opened_by', $user->id)
-            ->whereNull('closed_at')
-            ->latest('opened_at')
-            ->first();
-
-        if ($shift) {
-
-            $payIn = \App\Models\CashTransaction::where('shift_id', $shift->id)
-                ->where('type', 'pay_in')
-                ->sum('amount');
-
-            $payOut = \App\Models\CashTransaction::where('shift_id', $shift->id)
-                ->where('type', 'pay_out')
-                ->sum('amount');
-
-            $bookingPayments = \App\Models\BookingPayment::where('shift_id', $shift->id)
-                ->sum('amount');
-
-            $expected = $shift->starting_cash + $bookingPayments + $payIn - $payOut;
-
-            $shift->update([
-                'expected_cash' => $expected,
-                'closed_cash' => $expected,
-                'closed_at' => now(),
-            ]);
-        }
-
-        // $user->tokens()->delete();
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Logged out successfully'
         ]);
     }
+    // public function logout(Request $request)
+    // {
+    //     $user = $request->user();
+    //     $shift = Shift::where('opened_by', $user->id)
+    //         ->whereNull('closed_at')
+    //         ->latest('opened_at')
+    //         ->first();
+
+    //     if ($shift) {
+
+    //         $payIn = \App\Models\CashTransaction::where('shift_id', $shift->id)
+    //             ->where('type', 'pay_in')
+    //             ->sum('amount');
+
+    //         $payOut = \App\Models\CashTransaction::where('shift_id', $shift->id)
+    //             ->where('type', 'pay_out')
+    //             ->sum('amount');
+
+    //         $bookingPayments = \App\Models\BookingPayment::where('shift_id', $shift->id)
+    //             ->sum('amount');
+
+    //         $expected = $shift->starting_cash + $bookingPayments + $payIn - $payOut;
+
+    //         $shift->update([
+    //             'expected_cash' => $expected,
+    //             'closed_cash' => $expected,
+    //             'closed_at' => now(),
+    //         ]);
+    //     }
+
+    //     // $user->tokens()->delete();
+    //     $request->user()->currentAccessToken()->delete();
+
+    //     return response()->json([
+    //         'message' => 'Logged out successfully'
+    //     ]);
+    // }
 
     //GET AUTH USER (optional)
     public function me(Request $request)

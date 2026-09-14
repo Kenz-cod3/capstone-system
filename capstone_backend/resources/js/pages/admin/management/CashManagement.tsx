@@ -183,7 +183,7 @@ export default function CashManagement() {
             {/* ─── HEADER SECTION ─────────────────────────────────────────────── */}
             <div className="mb-5">
                 <h1 className="text-[26px] font-bold text-gray-900 mb-1">
-                    Cash Management
+                    Cash Collection
                 </h1>
                 <p className="text-[12px] text-stone-500">
                     Monitor cashier shifts and cash accountability
@@ -374,7 +374,7 @@ export default function CashManagement() {
                                 <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Starting Cash
                                 </th>
-                                <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="tPext-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
                                     Payments Handle
                                 </th>
                                 <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">

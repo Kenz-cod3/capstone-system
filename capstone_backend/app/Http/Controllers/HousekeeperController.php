@@ -18,12 +18,18 @@ class HousekeeperController extends Controller
     */
     public function tasks()
     {
-        $rooms = Room::with(['roomType', 'cleaner'])
+        $rooms = Room::with(['roomType', 'cleaner', 'images'])
             ->whereNull('deleted_at')
             ->whereIn('status', ['dirty', 'cleaning', 'maintenance'])
             ->latest()
             ->get()
             ->map(function ($room) {
+
+                $normalImage = $room->images
+                    ->where('image_type', 'normal')
+                    ->sortByDesc('created_at')
+                    ->first();
+
                 return [
                     'id'             => $room->id,
                     'room_number'    => $room->room_number,
@@ -32,6 +38,9 @@ class HousekeeperController extends Controller
                     'room_type'      => $room->roomType?->type_name,
                     'damage_summary' => $room->damage_summary,
                     'completed_at'   => $room->completed_at,
+                    'image_url'      => $normalImage
+                        ? asset('storage/' . $normalImage->image_path)
+                        : null,
                     'cleaned_by'     => $room->cleaner
                         ? $room->cleaner->first_name . ' ' . $room->cleaner->last_name
                         : null,
