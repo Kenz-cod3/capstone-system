@@ -7,7 +7,7 @@ import {
 } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/services/api";
-import { message, Modal, Input, Typography, Button } from "antd";
+import { message, Modal, Input, Typography, Button, Alert } from "antd";
 import { Spin } from "antd";
 import BookingDetails, {
     type BookingData,
@@ -16,6 +16,12 @@ import BookingDetails, {
     type TimelineItem,
 } from "@/components/AdminComponents/booking/BookingDetailsPage";
 import PageLoader from "@/components/PageLoader";
+import dayjs from "dayjs";
+import FeePaymentModal, {
+    FeePaymentRequest,
+    FeeType,
+    recordFeePayment,
+} from "@/components/AdminComponents/booking/FeePaymentModal";
 import nProgress from "nprogress";
 import "nprogress/nprogress.css";
 
@@ -708,6 +714,8 @@ export default function BookingDetailsPageWrapper() {
         number | undefined
     >(undefined);
     const [roomKeyReturned, setRoomKeyReturned] = React.useState(true);
+    const [feePayment, setFeePayment] =
+        React.useState<FeePaymentRequest | null>(null);
 
     React.useEffect(() => {
         const interval = window.setInterval(() => {
@@ -768,6 +776,92 @@ export default function BookingDetailsPageWrapper() {
     ): number | undefined => {
         if (roomIdFromKey) return Number(roomIdFromKey);
         return booking?.booked_rooms?.[0]?.id;
+    };
+
+    const findRoom = (bookedRoomId?: number) =>
+        booking?.booked_rooms?.find((br: any) => br.id === bookedRoomId);
+
+    // Same rules as CheckInModal and the backend (short stays never pay an early fee)
+    const getEarlyCheckinFee = (br: any): number => {
+        if (!br || br.stay_type === "short_stay") return 0;
+
+        const rt = br.room?.room_type;
+        const fee = Number(rt?.early_checkin_fee ?? 0);
+        if (fee <= 0) return 0;
+
+        const now = dayjs();
+        const scheduled = dayjs(br.check_in_date).startOf("day");
+
+        // Checking in on a date before the booked date
+        if (now.startOf("day").isBefore(scheduled, "day")) return fee;
+
+        // Same date, but before the standard check-in time
+        const [hh = 14, mm = 0] = String(rt?.standard_checkin_time ?? "14:00")
+            .split(":")
+            .map(Number);
+
+        return now.isBefore(scheduled.hour(hh).minute(mm)) ? fee : 0;
+    };
+
+    const getLateCheckoutFee = (br: any): number => {
+        if (!br?.expected_checkout_at) return 0;
+        if (dayjs().isBefore(dayjs(br.expected_checkout_at))) return 0;
+        return Number(br.room?.room_type?.late_checkout_fee ?? 0);
+    };
+
+    // The extend button adds 1 hour, so the fee is the per-hour rate
+    const getExtensionFee = (br: any): number =>
+        Number(br?.room?.room_type?.extension_fee ?? 100);
+
+    const closeFeePayment = () => {
+        setFeePayment(null);
+        setCheckoutRoomId(undefined);
+        setRoomKeyReturned(true);
+    };
+
+    // Records the fee payment first, then runs the action.
+    // If the action fails after the payment was saved, retrying will NOT
+    // record the payment a second time.
+    const openFeePayment = (opts: {
+        feeType: FeeType;
+        amount: number;
+        bookedRoomId?: number;
+        note?: string;
+        okText: string;
+        action: (reason?: string) => Promise<void>;
+    }) => {
+        let paid = false;
+        const { action, bookedRoomId, ...rest } = opts;
+
+        setFeePayment({
+            ...rest,
+            bookingId: Number(id),
+            guestName: getGuestName(booking),
+            roomNumber: findRoom(bookedRoomId)?.room?.room_number,
+            showReason: userRole === "admin",
+            onSubmit: async (p) => {
+                if (!paid) {
+                    try {
+                        await recordFeePayment(Number(id), opts.amount, p);
+                        paid = true;
+                    } catch (err: any) {
+                        message.error(
+                            err?.response?.data?.message || "Payment failed",
+                        );
+                        return; // modal stays open
+                    }
+                }
+
+                try {
+                    await action(p.reason);
+                    closeFeePayment();
+                } catch (err: any) {
+                    message.error(
+                        `${err?.response?.data?.message || "Action failed."} Payment was recorded. Confirm again to retry. You won't be charged twice.`,
+                    );
+                }
+            },
+        });
     };
 
     const openCheckoutModal = (bookedRoomId?: number) => {
@@ -857,6 +951,7 @@ export default function BookingDetailsPageWrapper() {
         baseAction: string,
         bookedRoomId: number | undefined,
         reason?: string,
+        extra?: { amount?: number },
     ) => {
         switch (baseAction) {
             case "confirm":
@@ -901,7 +996,13 @@ export default function BookingDetailsPageWrapper() {
                 break;
 
             case "extend":
-                await api.post(`/bookings/${id}/extend/${bookedRoomId}`);
+                await api.post(`/bookings/${id}/extend/${bookedRoomId}`, {
+                    hours: 1,
+                    override_reason: reason,
+                    ...(extra?.amount !== undefined
+                        ? { amount: extra.amount }
+                        : {}),
+                });
                 message.success("Stay extended successfully");
                 break;
 
@@ -949,6 +1050,86 @@ export default function BookingDetailsPageWrapper() {
         queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
     };
 
+    // Returns true (and shows a warning) if another guest is still checked in to this room
+    const blockIfRoomOccupied = async (
+        bookedRoomId: number | undefined,
+    ): Promise<boolean> => {
+        const target = booking?.booked_rooms?.find(
+            (br: any) => br.id === bookedRoomId,
+        );
+        if (!target) return false;
+
+        const hide = message.loading("Checking room availability...", 0);
+
+        try {
+            // All currently checked-in rooms (not limited to one page)
+            const { data } = await api.get(
+                "/booked-rooms?status=checked_in&per_page=100",
+            );
+
+            const occupant = (data?.data ?? []).find(
+                (br: any) =>
+                    br.room?.id === target.room?.id && br.id !== target.id,
+            );
+
+            hide();
+
+            if (!occupant) return false;
+
+            const occupantName = occupant.booking
+                ? getGuestName(occupant.booking)
+                : "Guest";
+
+            Modal.warning({
+                title: "Room is still occupied",
+                centered: true,
+                okText: "Got it",
+                content: (
+                    <div style={{ fontSize: 12 }}>
+                        <p style={{ marginBottom: 10 }}>
+                            Room{" "}
+                            <strong>{target.room?.room_number ?? "-"}</strong>{" "}
+                            still has a guest checked in. Please check out the
+                            current guest first before checking in{" "}
+                            <strong>{getGuestName(booking)}</strong>.
+                        </p>
+                        <div
+                            style={{
+                                background: "#fffbeb",
+                                border: "1px solid #fde68a",
+                                borderRadius: 8,
+                                padding: "10px 12px",
+                                color: "#92400e",
+                            }}
+                        >
+                            <div>
+                                <strong>Current guest:</strong> {occupantName}
+                            </div>
+                            <div>
+                                <strong>Booking:</strong>{" "}
+                                {occupant.booking?.booking_reference ?? "-"}
+                            </div>
+                            {occupant.expected_checkout_at && (
+                                <div>
+                                    <strong>Expected checkout:</strong>{" "}
+                                    {formatDate(occupant.expected_checkout_at)}{" "}
+                                    {formatTime(occupant.expected_checkout_at)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ),
+            });
+
+            return true;
+        } catch (error) {
+            // If the check fails, continue. The backend also blocks a double check-in.
+            hide();
+            console.error("Occupancy check failed:", error);
+            return false;
+        }
+    };
+
     const handleAction = async (action: string) => {
         if (!id || !booking) return;
 
@@ -963,6 +1144,26 @@ export default function BookingDetailsPageWrapper() {
         if (baseAction === "checkout" || baseAction === "checkout_room") {
             openCheckoutModal(bookedRoomId);
             return;
+        }
+
+        // Block check-in while another guest is still in the room
+        if (baseAction === "checkin" || baseAction === "checkin_room") {
+            const occupied = await blockIfRoomOccupied(bookedRoomId);
+            if (occupied) return;
+
+            const earlyFee = getEarlyCheckinFee(findRoom(bookedRoomId));
+
+            if (earlyFee > 0) {
+                openFeePayment({
+                    feeType: "early_checkin",
+                    amount: earlyFee,
+                    bookedRoomId,
+                    okText: "Confirm Payment & Check In",
+                    action: (reason) =>
+                        performAction(baseAction, bookedRoomId, reason),
+                });
+                return;
+            }
         }
 
         // Actions that always need explicit confirmation regardless of role
@@ -1090,26 +1291,34 @@ export default function BookingDetailsPageWrapper() {
             }
 
             if (baseAction === "extend") {
-                if (userRole === "staff") {
-                    Modal.confirm({
-                        title: "Extend Stay",
-                        content: "Add 1 hour (₱100)?",
-                        okText: "Extend",
-                        cancelText: "Cancel",
-                        centered: true,
-                        onOk: () => performAction("extend", bookedRoomId),
+                const extFee = getExtensionFee(findRoom(bookedRoomId));
+
+                if (extFee > 0) {
+                    openFeePayment({
+                        feeType: "extension",
+                        amount: extFee,
+                        bookedRoomId,
+                        note: "1 hour",
+                        okText: "Confirm Payment & Extend",
+                        action: (reason) =>
+                            performAction("extend", bookedRoomId, reason, {
+                                amount: extFee,
+                            }),
                     });
-                } else {
-                    const actionFn = async (reason?: string) => {
-                        await performAction("extend", bookedRoomId, reason);
-                    };
-                    handleActionWithOverride(
-                        actionFn,
-                        "Extend Stay",
-                        Number(id),
-                        false,
-                    );
+                    return;
                 }
+
+                // No extension fee configured → plain extend
+                handleActionWithOverride(
+                    async (reason) => {
+                        await performAction("extend", bookedRoomId, reason, {
+                            amount: 0,
+                        });
+                    },
+                    "Extend Stay",
+                    Number(id),
+                    false,
+                );
                 return;
             }
 
@@ -1146,6 +1355,22 @@ export default function BookingDetailsPageWrapper() {
 
         if (!roomKeyReturned) {
             message.warning("Please confirm that the room key was returned.");
+            return;
+        }
+
+        const lateFee = getLateCheckoutFee(findRoom(checkoutRoomId));
+
+        if (lateFee > 0) {
+            const roomId = checkoutRoomId;
+            setCheckoutModalVisible(false);
+
+            openFeePayment({
+                feeType: "late_checkout",
+                amount: lateFee,
+                bookedRoomId: roomId,
+                okText: "Confirm Payment & Check Out",
+                action: (reason) => performAction("checkout", roomId, reason),
+            });
             return;
         }
 
@@ -1235,6 +1460,11 @@ export default function BookingDetailsPageWrapper() {
                     userRole={userRole}
                 />
 
+                <FeePaymentModal
+                    request={feePayment}
+                    onClose={closeFeePayment}
+                />
+
                 <Modal
                     title="Check Out Guest"
                     open={checkoutModalVisible}
@@ -1265,7 +1495,9 @@ export default function BookingDetailsPageWrapper() {
                             disabled={!roomKeyReturned}
                             onClick={confirmCheckout}
                         >
-                            Confirm Check Out
+                            {getLateCheckoutFee(findRoom(checkoutRoomId)) > 0
+                                ? "Continue to Payment"
+                                : "Confirm Check Out"}
                         </Button>,
                     ]}
                 >
@@ -1296,6 +1528,30 @@ export default function BookingDetailsPageWrapper() {
                                     .join(", ")}
                             </div>
                         </div>
+
+                        {getLateCheckoutFee(findRoom(checkoutRoomId)) > 0 && (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                style={{ marginBottom: 18, borderRadius: 8 }}
+                                message="Overdue Checkout"
+                                description={
+                                    <>
+                                        A late checkout fee of{" "}
+                                        <strong>
+                                            ₱
+                                            {getLateCheckoutFee(
+                                                findRoom(checkoutRoomId),
+                                            ).toLocaleString(undefined, {
+                                                minimumFractionDigits: 2,
+                                            })}
+                                        </strong>{" "}
+                                        will be added to the total. You'll be
+                                        asked to collect payment next.
+                                    </>
+                                }
+                            />
+                        )}
 
                         <div style={{ marginBottom: 18 }}>
                             <Text

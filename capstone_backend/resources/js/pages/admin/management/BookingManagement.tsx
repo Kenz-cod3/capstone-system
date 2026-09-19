@@ -40,7 +40,21 @@ import {
 import type { MenuProps } from "antd";
 import api from "@/services/api";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
-
+import ExtendStayModal, {
+    ExtendStayTarget,
+} from "@/components/AdminComponents/booking/ExtendStayModal";
+import CheckInModal, {
+    CheckInTarget,
+} from "@/components/AdminComponents/booking/Checkinmodal";
+import FeePaymentModal, {
+    FeePaymentRequest,
+    FeeType,
+    recordFeePayment,
+} from "@/components/AdminComponents/booking/FeePaymentModal";
+import FeeReceiptModal, {
+    buildFeeReceipt,
+    type FeeReceiptData,
+} from "@/components/AdminComponents/booking/Feereceiptmodal";
 const { Title, Text } = Typography;
 
 const MINT_GREEN = "#10b981";
@@ -66,6 +80,10 @@ interface Room {
         type_name?: string;
         base_price?: number;
         short_stay_price?: number;
+        late_checkout_fee?: number;
+        early_checkin_fee?: number;
+        standard_checkin_time?: string;
+        extension_fee?: number;
     };
     pivot?: {
         subtotal: number;
@@ -98,6 +116,9 @@ interface BookingPayment {
 interface BookedRoom {
     id: number;
     room: Room;
+    expected_checkout_at?: string | null;
+    checkout_status?: "ontime" | "overdue" | null;
+    overdue_started_at?: string | null;
     status:
         | "pending"
         | "confirmed"
@@ -112,6 +133,8 @@ interface BookedRoom {
     check_out_time?: string | null;
     subtotal: number;
     price_at_time_of_booking: number;
+    is_early_checkin?: boolean;
+    early_checkin_fee?: number | string | null;
     is_extended: boolean;
     booking_add_ons?: {
         id: number;
@@ -292,10 +315,14 @@ interface Booking {
 interface BookingRow extends Booking {
     booked_room_id: number;
     room?: Room;
+    expected_checkout_at?: string | null;
+    checkout_status?: "ontime" | "overdue" | null;
     status: string;
     stay_type: "overnight" | "short_stay";
     subtotal: number;
     is_extended: boolean;
+    is_early_checkin?: boolean;
+    early_checkin_fee?: number;
     check_in_date: string;
     check_out_date: string;
     booking_add_ons?: {
@@ -347,6 +374,19 @@ export default function Bookings() {
         null,
     );
     const [roomKeyReturned, setRoomKeyReturned] = useState(true);
+    const [feePayment, setFeePayment] = useState<FeePaymentRequest | null>(
+        null,
+    );
+    const [receipt, setReceipt] = useState<FeeReceiptData | null>(null);
+    const [cashierName, setCashierName] = useState<string>("");
+    const [extendModalVisible, setExtendModalVisible] = useState(false);
+    const [extendTarget, setExtendTarget] = useState<ExtendStayTarget | null>(
+        null,
+    );
+    const [checkInModalVisible, setCheckInModalVisible] = useState(false);
+    const [checkInTarget, setCheckInTarget] = useState<CheckInTarget | null>(
+        null,
+    );
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
     const [filterStatus, setFilterStatus] = useState<string>("all");
     const [filterPaymentStatus, setFilterPaymentStatus] =
@@ -398,6 +438,9 @@ export default function Bookings() {
             try {
                 const response = await api.get("/user");
                 setUserRole(response.data.role);
+                setCashierName(
+                    `${response.data.first_name ?? ""} ${response.data.last_name ?? ""}`.trim(),
+                );
             } catch (error) {
                 console.error("Failed to get user role:", error);
             }
@@ -426,6 +469,7 @@ export default function Bookings() {
                 statusOptions: [
                     { value: "all", label: "All Booking Status" },
                     { value: "checked_out", label: "Checked Out" },
+                    { value: "cancelled", label: "Cancelled" },
                     { value: "refunded", label: "Refunded" },
                 ],
                 paymentOptions: [
@@ -531,6 +575,8 @@ export default function Bookings() {
                 check_out_date: bookedRoom.check_out_date,
                 check_in_time: bookedRoom.check_in_time ?? undefined,
                 check_out_time: bookedRoom.check_out_time ?? undefined,
+                expected_checkout_at: bookedRoom.expected_checkout_at,
+                checkout_status: bookedRoom.checkout_status,
                 booking_reference: `BR-${bookedRoom.id}`,
                 booking_type: "walk_in" as const,
                 booking_status: bookedRoom.status as Booking["booking_status"],
@@ -566,6 +612,10 @@ export default function Bookings() {
             subtotal: Number(bookedRoom.subtotal),
             is_extended: bookedRoom.is_extended,
             booking_add_ons: bookedRoom.booking_add_ons || [],
+            is_early_checkin: bookedRoom.is_early_checkin,
+            early_checkin_fee: Number(bookedRoom.early_checkin_fee ?? 0),
+            expected_checkout_at: bookedRoom.expected_checkout_at,
+            checkout_status: bookedRoom.checkout_status,
         } as BookingRow;
     });
 
@@ -586,9 +636,18 @@ export default function Bookings() {
         });
         const totalRevenue = bookings
             .filter(
-                (b) => b.status === "checked_in" || b.status === "checked_out",
+                (b) =>
+                    b.status === "confirmed" ||
+                    b.status === "checked_in" ||
+                    b.status === "checked_out",
             )
-            .reduce((sum, b) => sum + Number(b.subtotal || 0), 0);
+            .reduce((sum, b) => {
+                const addOnTotal = (b.booking_add_ons ?? []).reduce(
+                    (s, addon) => s + Number(addon.subtotal ?? 0),
+                    0,
+                );
+                return sum + Number(b.subtotal || 0) + addOnTotal;
+            }, 0);
 
         return {
             totalActive: activeBookings.length,
@@ -750,9 +809,11 @@ export default function Bookings() {
 
                 message.success(`${actionName} successful`);
                 queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
-            } catch (err) {
+            } catch (err: any) {
                 console.error(err);
-                message.error(`${actionName} failed`);
+                message.error(
+                    err?.response?.data?.message || `${actionName} failed`,
+                );
             }
         };
 
@@ -779,6 +840,82 @@ export default function Bookings() {
         }
     };
 
+    const closeFeePayment = () => {
+        setFeePayment(null);
+        setCheckInTarget(null);
+        setExtendTarget(null);
+        setCheckoutRecord(null);
+        setCheckoutBookingId(undefined);
+        setRoomKeyReturned(true);
+    };
+
+    // Records the fee payment first, then runs the status action.
+    // If the action fails after the payment was saved, retrying will NOT
+    // record the payment a second time.
+    const openFeePayment = (opts: {
+        feeType: FeeType;
+        amount: number;
+        bookingId: number;
+        guestName?: string;
+        roomNumber?: string;
+        roomType?: string;
+        stayType?: "overnight" | "short_stay";
+        bookingReference?: string;
+        checkInDate?: string;
+        checkOutDate?: string;
+        note?: string;
+        okText: string;
+        showReason?: boolean;
+        action: (reason?: string) => Promise<void>;
+    }) => {
+        let paid = false;
+        let paymentRes: any = null;
+        const { action, ...rest } = opts;
+
+        const request: FeePaymentRequest = {
+            ...rest,
+            onSubmit: async (p) => {
+                if (!paid) {
+                    try {
+                        paymentRes = await recordFeePayment(
+                            opts.bookingId,
+                            opts.amount,
+                            p,
+                        );
+                        paid = true;
+                    } catch (err: any) {
+                        message.error(
+                            err?.response?.data?.message || "Payment failed",
+                        );
+                        return; // modal stays open
+                    }
+                }
+
+                try {
+                    await action(p.reason);
+
+                    // Show the receipt only after payment AND action succeeded
+                    setReceipt(
+                        buildFeeReceipt(
+                            request,
+                            p,
+                            paymentRes?.data,
+                            cashierName,
+                        ),
+                    );
+                    closeFeePayment();
+                } catch {
+                    // the action already showed its own error message
+                    message.warning(
+                        "Payment was recorded. Confirm again to retry. You won't be charged twice.",
+                    );
+                }
+            },
+        };
+
+        setFeePayment(request);
+    };
+
     // Opens the checkout confirmation modal
     const handleCheckoutAction = (record: BookingRow) => {
         console.log("Checkout clicked:", {
@@ -793,94 +930,18 @@ export default function Bookings() {
         setCheckoutModalVisible(true);
     };
 
-    // Actually performs the checkout after modal confirmation
-    // const confirmCheckout = async () => {
-    //     if (!checkoutBookingId) return;
+    const isCheckoutOverdue = (record: BookingRow | null): boolean => {
+        if (!record) return false;
+        if (record.checkout_status === "overdue") return true;
+        if (record.expected_checkout_at) {
+            return new Date() > new Date(record.expected_checkout_at);
+        }
+        return false;
+    };
 
-    //     if (!roomKeyReturned) {
-    //         message.warning("Please confirm that the room key was returned.");
-    //         return;
-    //     }
-
-    //     const action = async (reason?: string) => {
-    //         const booking = bookings.find((b) => b.id === checkoutBookingId);
-
-    //         if (!booking) return;
-
-    //         const bookingType =
-    //             booking.booking_type ||
-    //             (booking.booking?.booking_type as "online" | "walk_in") ||
-    //             "walk_in";
-
-    //         if (bookingType === "walk_in") {
-    //             await api.post(
-    //                 `/walk-in-guests/${checkoutBookingId}/checkout`,
-    //                 {
-    //                     override_reason: reason,
-    //                 },
-    //             );
-    //         } else {
-    //             await api.put(`/bookings/${checkoutBookingId}`, {
-    //                 booking_status: "checked_out",
-    //                 override_reason: reason,
-    //             });
-    //         }
-
-    //         queryClient.setQueryData(
-    //             [
-    //                 "booked-rooms",
-    //                 activeTab,
-    //                 currentPage,
-    //                 pageSize,
-    //                 searchText,
-    //                 filterStatus,
-    //                 filterPaymentStatus,
-    //             ],
-    //             (old: BookedRoom[] | undefined) => {
-    //                 if (!old) return old;
-    //                 return old.filter((b) => b.id !== checkoutBookingId);
-    //             },
-    //         );
-
-    //         const checkedOutBooking = bookings.find(
-    //             (b) => b.id === checkoutBookingId,
-    //         );
-    //         if (checkedOutBooking) {
-    //             const updatedBookedRoom: BookedRoom = {
-    //                 ...checkedOutBooking,
-    //                 status: "checked_out" as BookedRoom["status"],
-    //             };
-    //             queryClient.setQueryData(
-    //                 [
-    //                     "booked-rooms",
-    //                     "history",
-    //                     currentPage,
-    //                     pageSize,
-    //                     searchText,
-    //                     filterStatus,
-    //                     filterPaymentStatus,
-    //                 ],
-    //                 (old: BookedRoom[] | undefined) => {
-    //                     return [updatedBookedRoom, ...(old || [])];
-    //                 },
-    //             );
-    //         }
-
-    //         message.success("Check Out successful");
-    //         queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
-
-    //         setCheckoutModalVisible(false);
-    //         setCheckoutBookingId(undefined);
-    //         setRoomKeyReturned(true);
-    //     };
-
-    //     await handleActionWithOverride(
-    //         action,
-    //         "Check Out",
-    //         checkoutBookingId,
-    //         true,
-    //     );
-    // };
+    const getLateCheckoutFee = (record: BookingRow | null): number => {
+        return Number(record?.room?.room_type?.late_checkout_fee ?? 0);
+    };
 
     const confirmCheckout = async () => {
         if (!checkoutRecord) {
@@ -890,6 +951,53 @@ export default function Bookings() {
 
         if (!roomKeyReturned) {
             message.warning("Please confirm that the room key was returned.");
+            return;
+        }
+
+        const lateFee = isCheckoutOverdue(checkoutRecord)
+            ? getLateCheckoutFee(checkoutRecord)
+            : 0;
+
+        if (lateFee > 0) {
+            const record = checkoutRecord;
+            setCheckoutModalVisible(false);
+
+            openFeePayment({
+                feeType: "late_checkout",
+                amount: lateFee,
+                bookingId: record.id,
+                guestName: getGuestName(record),
+                roomNumber: record.room?.room_number,
+                roomType: record.room?.room_type?.type_name,
+                stayType: record.stay_type,
+                bookingReference: record.booking_reference,
+                checkInDate: record.check_in_date,
+                checkOutDate: record.check_out_date,
+                okText: "Confirm Payment & Check Out",
+                showReason: userRole === "admin",
+                action: async (reason) => {
+                    try {
+                        await api.put(
+                            `/booked-rooms/${record.booked_room_id}`,
+                            {
+                                status: "checked_out",
+                                key_returned: roomKeyReturned,
+                                override_reason: reason,
+                            },
+                        );
+                        message.success("Check Out successful");
+                        await queryClient.invalidateQueries({
+                            queryKey: ["booked-rooms"],
+                        });
+                    } catch (error: any) {
+                        message.error(
+                            error?.response?.data?.message ||
+                                "Check Out failed. Please try again.",
+                        );
+                        throw error;
+                    }
+                },
+            });
             return;
         }
 
@@ -934,10 +1042,79 @@ export default function Bookings() {
             true,
         );
     };
-    const handleExtendAction = async (booking: BookingRow) => {
-        const action = async () => {
+
+    // Opens the Extend Stay modal for the given booking row
+    const handleExtend = (booking: BookingRow) => {
+        setExtendTarget({
+            bookingId: booking.id,
+            bookedRoomId: booking.booked_room_id,
+            roomNumber: booking.room?.room_number,
+            guestName: getGuestName(booking),
+            expectedCheckoutAt: (booking as any).expected_checkout_at ?? null,
+            extensionFee: Number(booking.room?.room_type?.extension_fee ?? 100),
+        });
+        setExtendModalVisible(true);
+    };
+
+    // Called by ExtendStayModal when the user confirms the extension
+    const confirmExtend = async (payload: {
+        hours: number;
+        reason?: string;
+        fee?: number;
+    }) => {
+        if (!extendTarget) return;
+
+        const target = extendTarget;
+        const fee = payload.fee ?? 0;
+
+        if (fee > 0) {
+            const row = tableData.find(
+                (r) => r.booked_room_id === target.bookedRoomId,
+            );
+            setExtendModalVisible(false);
+            openFeePayment({
+                feeType: "extension",
+                amount: fee,
+                bookingId: target.bookingId,
+                guestName: target.guestName,
+                roomNumber: target.roomNumber,
+                roomType: row?.room?.room_type?.type_name,
+                stayType: row?.stay_type,
+                bookingReference: row?.booking_reference,
+                checkInDate: row?.check_in_date,
+                checkOutDate: row?.check_out_date,
+                note: `${payload.hours} hour${payload.hours > 1 ? "s" : ""}`,
+                okText: "Confirm Payment & Extend",
+                showReason: userRole === "admin",
+                action: (reason) =>
+                    submitExtend(payload.hours, reason ?? payload.reason, fee),
+            });
+            return;
+        }
+
+        try {
+            await submitExtend(payload.hours, payload.reason, 0);
+        } catch {
+            // error message already shown in submitExtend
+        }
+    };
+
+    // Sends `amount` so the server charges exactly what was collected
+    const submitExtend = async (
+        hours: number,
+        reason: string | undefined,
+        amount: number,
+    ) => {
+        if (!extendTarget) return;
+
+        try {
             const res = await api.post<ExtendResponse>(
-                `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
+                `/bookings/${extendTarget.bookingId}/extend/${extendTarget.bookedRoomId}`,
+                {
+                    hours,
+                    override_reason: reason,
+                    amount,
+                },
             );
 
             queryClient.setQueryData(
@@ -953,7 +1130,7 @@ export default function Bookings() {
                 (old: BookedRoom[] | undefined) => {
                     if (!old) return old;
                     return old.map((b) =>
-                        b.id === booking.id
+                        b.id === extendTarget.bookingId
                             ? { ...b, total_price: res.data.total_price }
                             : b,
                     );
@@ -962,65 +1139,202 @@ export default function Bookings() {
 
             message.success("Stay extended successfully");
             queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
-        };
 
-        await handleActionWithOverride(
-            action,
-            "Extend Stay",
-            booking.id,
-            false,
-        );
+            setExtendModalVisible(false);
+            setExtendTarget(null);
+        } catch (err: any) {
+            console.error(err);
+            message.error(
+                err?.response?.data?.message || "Failed to extend stay",
+            );
+            throw err;
+        }
     };
 
-    const handleExtend = (booking: BookingRow) => {
-        if (userRole === "staff") {
-            Modal.confirm({
-                title: "Extend Stay",
-                content: "Add 1 hour (₱100)?",
-                okText: "Extend",
-                cancelText: "Cancel",
-                centered: true,
-                onOk: async () => {
-                    try {
-                        const res = await api.post<ExtendResponse>(
-                            `/bookings/${booking.id}/extend/${booking.booked_room_id}`,
-                        );
+    // Opens the Check In modal, but only if the room is free of another checked-in guest
+    const handleCheckInAction = async (record: BookingRow) => {
+        const hide = message.loading("Checking room availability...", 0);
 
-                        queryClient.setQueryData(
-                            [
-                                "booked-rooms",
-                                activeTab,
-                                currentPage,
-                                pageSize,
-                                searchText,
-                                filterStatus,
-                                filterPaymentStatus,
-                            ],
-                            (old: BookedRoom[] | undefined) => {
-                                if (!old) return old;
-                                return old.map((b) =>
-                                    b.id === booking.id
-                                        ? {
-                                              ...b,
-                                              total_price: res.data.total_price,
-                                          }
-                                        : b,
-                                );
-                            },
-                        );
+        try {
+            // All currently checked-in rooms (not limited to the visible page)
+            const { data } = await api.get<PaginatedResponse>(
+                "/booked-rooms?status=checked_in&per_page=100",
+            );
 
-                        message.success("Stay extended successfully");
-                        queryClient.invalidateQueries({
-                            queryKey: ["booked-rooms"],
-                        });
-                    } catch (err) {
-                        console.error(err);
-                        message.error("Failed to extend stay");
-                    }
-                },
+            const occupant = (data.data ?? []).find(
+                (br) =>
+                    br.room?.id === record.room?.id &&
+                    br.id !== record.booked_room_id,
+            );
+
+            if (occupant) {
+                const occupantBooking = occupant.booking;
+
+                const occupantName =
+                    occupantBooking?.booking_type === "walk_in"
+                        ? occupantBooking?.walk_in_guest?.full_name
+                        : `${occupantBooking?.user?.first_name ?? ""} ${
+                              occupantBooking?.user?.last_name ?? ""
+                          }`.trim();
+
+                hide();
+
+                Modal.warning({
+                    title: "Room is still occupied",
+                    centered: true,
+                    okText: "Got it",
+                    content: (
+                        <div style={{ fontSize: 12 }}>
+                            <p style={{ marginBottom: 10 }}>
+                                Room{" "}
+                                <strong>
+                                    {record.room?.room_number ?? "-"}
+                                </strong>{" "}
+                                still has a guest checked in. Please check out
+                                the current guest first before checking in{" "}
+                                <strong>{getGuestName(record)}</strong>.
+                            </p>
+                            <div
+                                style={{
+                                    background: "#fffbeb",
+                                    border: "1px solid #fde68a",
+                                    borderRadius: 8,
+                                    padding: "10px 12px",
+                                    color: "#92400e",
+                                }}
+                            >
+                                <div>
+                                    <strong>Current guest:</strong>{" "}
+                                    {occupantName || "Guest"}
+                                </div>
+                                <div>
+                                    <strong>Booking:</strong>{" "}
+                                    {occupantBooking?.booking_reference ?? "-"}
+                                </div>
+                                {occupant.expected_checkout_at && (
+                                    <div>
+                                        <strong>Expected checkout:</strong>{" "}
+                                        {formatDate(
+                                            occupant.expected_checkout_at,
+                                        )}{" "}
+                                        {formatTime(
+                                            occupant.expected_checkout_at,
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ),
+                });
+                return;
+            }
+        } catch (error) {
+            // If the check fails, still continue. The backend also blocks a double check-in.
+            console.error("Occupancy check failed:", error);
+        }
+
+        hide();
+
+        setCheckInTarget({
+            bookingId: record.id,
+            bookedRoomId: record.booked_room_id,
+            roomNumber: record.room?.room_number,
+            guestName: getGuestName(record),
+            scheduledCheckInDate: record.check_in_date,
+            stayType: record.stay_type,
+            earlyCheckInFee: Number(
+                record.room?.room_type?.early_checkin_fee ?? 0,
+            ),
+            standardCheckInTime:
+                record.room?.room_type?.standard_checkin_time ?? "14:00",
+        });
+        setCheckInModalVisible(true);
+    };
+
+    // Called by CheckInModal when the user confirms the check-in
+    const confirmCheckIn = async (payload: {
+        reason?: string;
+        fee?: number;
+    }) => {
+        if (!checkInTarget) return;
+
+        const target = checkInTarget;
+        const fee = payload.fee ?? 0;
+
+        if (fee > 0) {
+            setCheckInModalVisible(false);
+            const row = tableData.find(
+                (r) => r.booked_room_id === target.bookedRoomId,
+            );
+            openFeePayment({
+                feeType: "early_checkin",
+                amount: fee,
+                bookingId: target.bookingId,
+                guestName: target.guestName,
+                roomNumber: target.roomNumber,
+                roomType: row?.room?.room_type?.type_name,
+                stayType: target.stayType,
+                bookingReference: row?.booking_reference,
+                checkInDate: new Date().toISOString(), // actual check-in is today
+                okText: "Confirm Payment & Check In",
+                showReason: false, // reason was already entered in the check-in modal
+                action: () => submitCheckIn(payload.reason),
             });
-        } else {
-            handleExtendAction(booking);
+            return;
+        }
+
+        try {
+            await submitCheckIn(payload.reason);
+        } catch {
+            // error message already shown in submitCheckIn
+        }
+    };
+
+    const submitCheckIn = async (reason?: string) => {
+        if (!checkInTarget) return;
+
+        try {
+            const response = await api.put(
+                `/booked-rooms/${checkInTarget.bookedRoomId}`,
+                {
+                    status: "checked_in",
+                    override_reason: reason,
+                },
+            );
+
+            queryClient.setQueryData(
+                [
+                    "booked-rooms",
+                    activeTab,
+                    currentPage,
+                    pageSize,
+                    searchText,
+                    filterStatus,
+                    filterPaymentStatus,
+                ],
+                (old: BookedRoom[] | undefined) => {
+                    if (!old) return old;
+                    return old.map((bookedRoom) =>
+                        bookedRoom.id === checkInTarget.bookedRoomId
+                            ? {
+                                  ...bookedRoom,
+                                  status: "checked_in" as const,
+                                  ...response.data.data,
+                              }
+                            : bookedRoom,
+                    );
+                },
+            );
+
+            message.success("Check In successful");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+
+            setCheckInModalVisible(false);
+            setCheckInTarget(null);
+        } catch (err: any) {
+            console.error(err);
+            message.error(err?.response?.data?.message || "Check In failed");
+            throw err;
         }
     };
 
@@ -1338,12 +1652,7 @@ export default function Bookings() {
                     {
                         key: "checkin",
                         label: "Check In",
-                        onClick: () =>
-                            handleUpdateStatus(
-                                record.booked_room_id,
-                                "checked_in",
-                                "Check In",
-                            ),
+                        onClick: () => handleCheckInAction(record),
                     },
                     {
                         key: "cancel",
@@ -1866,21 +2175,40 @@ export default function Bookings() {
                         0,
                     ) ?? 0;
                 const total = Number(record.subtotal) + addOnTotal;
+                const earlyFee = Number(record.early_checkin_fee ?? 0);
                 return (
-                    <Text
-                        strong
-                        style={{
-                            color: MINT_GREEN,
-                            fontSize: "12px",
-                            fontWeight: 700,
-                        }}
-                    >
-                        ₱
-                        {total.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                        })}
-                    </Text>
+                    <div>
+                        <Text
+                            strong
+                            style={{
+                                color: MINT_GREEN,
+                                fontSize: "12px",
+                                fontWeight: 700,
+                            }}
+                        >
+                            ₱
+                            {total.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                            })}
+                        </Text>
+                        {earlyFee > 0 && (
+                            <div
+                                style={{
+                                    fontSize: "8.5px",
+                                    color: "#0e7490",
+                                    marginTop: 2,
+                                }}
+                            >
+                                incl. ₱
+                                {earlyFee.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}{" "}
+                                early fee
+                            </div>
+                        )}
+                    </div>
                 );
             },
         },
@@ -2882,7 +3210,10 @@ export default function Bookings() {
                         disabled={!roomKeyReturned}
                         onClick={confirmCheckout}
                     >
-                        Confirm Check Out
+                        {isCheckoutOverdue(checkoutRecord) &&
+                        getLateCheckoutFee(checkoutRecord) > 0
+                            ? "Continue to Payment"
+                            : "Confirm Check Out"}
                     </Button>,
                 ]}
             >
@@ -2904,6 +3235,35 @@ export default function Bookings() {
                             {getCheckoutRoomNumber()}
                         </div>
                     </div>
+
+                    {isCheckoutOverdue(checkoutRecord) && (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 18, borderRadius: 8 }}
+                            message="Overdue Checkout"
+                            description={
+                                <div>
+                                    <div style={{ marginBottom: 8 }}>
+                                        Guest is checking out past the expected
+                                        checkout time. A late checkout fee of{" "}
+                                        <strong>
+                                            ₱
+                                            {getLateCheckoutFee(
+                                                checkoutRecord,
+                                            ).toLocaleString(undefined, {
+                                                minimumFractionDigits: 2,
+                                            })}
+                                        </strong>{" "}
+                                        will be added to the total.
+                                    </div>
+                                    <div style={{ fontSize: 11 }}>
+                                        You'll be asked to collect payment next.
+                                    </div>
+                                </div>
+                            }
+                        />
+                    )}
 
                     <div style={{ marginBottom: 18 }}>
                         <Text
@@ -2945,6 +3305,35 @@ export default function Bookings() {
                     </div>
                 </div>
             </Modal>
+
+            <FeePaymentModal request={feePayment} onClose={closeFeePayment} />
+
+            <FeeReceiptModal
+                receipt={receipt}
+                onClose={() => setReceipt(null)}
+            />
+
+            <ExtendStayModal
+                open={extendModalVisible}
+                target={extendTarget}
+                isAdmin={userRole === "admin"}
+                onClose={() => {
+                    setExtendModalVisible(false);
+                    setExtendTarget(null);
+                }}
+                onConfirm={confirmExtend}
+            />
+
+            <CheckInModal
+                open={checkInModalVisible}
+                target={checkInTarget}
+                isAdmin={userRole === "admin"}
+                onClose={() => {
+                    setCheckInModalVisible(false);
+                    setCheckInTarget(null);
+                }}
+                onConfirm={confirmCheckIn}
+            />
         </div>
     );
 }

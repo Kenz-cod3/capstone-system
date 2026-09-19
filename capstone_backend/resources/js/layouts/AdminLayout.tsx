@@ -49,6 +49,7 @@ import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
 import Echo from "@/services/echo";
 import NProgress from "nprogress";
+import { toast } from "sonner";
 import "nprogress/nprogress.css";
 
 const AdminLayout = ({
@@ -532,6 +533,143 @@ const AdminLayout = ({
 
         return () => {
             Echo.leaveChannel(`chat.${user.id}`);
+        };
+    }, [user?.id]);
+
+    // ⏰ OVERDUE GUEST TOASTS (shadcn / Sonner)
+    // Checks checked-in rooms every minute and shows a toast for each one
+    // that is past its expected checkout time (only once per room).
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const CHECK_EVERY_MS = 60_000; // how often to check
+        const TOAST_MS = 12_000; // how long each toast stays
+        const MAX_SINGLE_TOASTS = 3; // more than this = one summary toast
+
+        // booked_room ids we already showed a toast for
+        const shown = new Set<number>();
+
+        const guestNameOf = (booking: any): string => {
+            if (!booking) return "Guest";
+            if (booking.booking_type === "walk_in") {
+                return booking.walk_in_guest?.full_name || "Guest";
+            }
+            return (
+                `${booking.user?.first_name ?? ""} ${booking.user?.last_name ?? ""}`.trim() ||
+                "Guest"
+            );
+        };
+
+        const dueAtOf = (br: any): Date | null => {
+            const raw = br.expected_checkout_at ?? br.overdue_started_at;
+            return raw ? new Date(raw) : null;
+        };
+
+        const overdueLabel = (due: Date): string => {
+            const mins = Math.max(
+                1,
+                Math.floor((Date.now() - due.getTime()) / 60000),
+            );
+            const d = Math.floor(mins / 1440);
+            const h = Math.floor((mins % 1440) / 60);
+            const m = mins % 60;
+            if (d > 0) return `${d}d ${h}h`;
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        };
+
+        const openDetails = (br: any) => {
+            const bookingId = br.booking?.id ?? br.booking_id;
+            if (!bookingId) return;
+            navigate(`/booking-details/${bookingId}`, {
+                state: { from: "/booking-management", fromTab: "active" },
+            });
+        };
+
+        const checkOverdue = async () => {
+            if (document.visibilityState !== "visible") return;
+
+            try {
+                const res = await api.get(
+                    "/booked-rooms?status=checked_in&per_page=100",
+                );
+                const rows: any[] = res.data?.data ?? [];
+                const now = Date.now();
+
+                const overdue = rows.filter((br) => {
+                    if (br.status !== "checked_in") return false;
+                    const due = dueAtOf(br);
+                    if (due) return due.getTime() < now;
+                    return br.checkout_status === "overdue";
+                });
+
+                const overdueIds = new Set<number>(overdue.map((br) => br.id));
+
+                // Room was checked out or extended: forget it and close its toast
+                shown.forEach((id) => {
+                    if (!overdueIds.has(id)) {
+                        shown.delete(id);
+                        toast.dismiss(`overdue-${id}`);
+                    }
+                });
+
+                const fresh = overdue.filter((br) => !shown.has(br.id));
+                if (fresh.length === 0) return;
+
+                fresh.forEach((br) => shown.add(br.id));
+
+                // Many at once: one summary toast instead of spamming
+                if (fresh.length > MAX_SINGLE_TOASTS) {
+                    const rooms = fresh
+                        .map((br) => br.room?.room_number ?? "-")
+                        .join(", ");
+
+                    toast.warning(`${fresh.length} rooms are overdue`, {
+                        id: "overdue-summary",
+                        description: `Rooms ${rooms} are past their checkout time.`,
+                        duration: TOAST_MS,
+                        action: {
+                            label: "Open list",
+                            onClick: () => navigate("/booking-management"),
+                        },
+                    });
+                    return;
+                }
+
+                fresh.forEach((br) => {
+                    const due = dueAtOf(br);
+
+                    toast.warning(
+                        `Room ${br.room?.room_number ?? "-"} is overdue`,
+                        {
+                            id: `overdue-${br.id}`,
+                            description: `${guestNameOf(br.booking)} (${
+                                br.booking?.booking_reference ?? "-"
+                            }) ${
+                                due
+                                    ? `is ${overdueLabel(due)} past checkout time.`
+                                    : "is past checkout time."
+                            }`,
+                            duration: TOAST_MS,
+                            action: {
+                                label: "View",
+                                onClick: () => openDetails(br),
+                            },
+                        },
+                    );
+                });
+            } catch (err) {
+                console.error("Overdue check failed:", err);
+            }
+        };
+
+        checkOverdue();
+        const interval = window.setInterval(checkOverdue, CHECK_EVERY_MS);
+
+        return () => {
+            window.clearInterval(interval);
+            shown.forEach((id) => toast.dismiss(`overdue-${id}`));
+            toast.dismiss("overdue-summary");
         };
     }, [user?.id]);
 

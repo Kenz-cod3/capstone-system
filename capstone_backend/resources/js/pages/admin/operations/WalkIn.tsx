@@ -1246,7 +1246,7 @@ function WalkInContent() {
         }
     };
 
-    const addRoom = (
+    const addRoom = async (
         roomId: number,
         stayType: "short_stay" | "overnight",
         checkIn: string,
@@ -1257,6 +1257,33 @@ function WalkInContent() {
         if (selectedRoomsDetails.some((r) => r.id === roomToAdd.id)) {
             message.warning("Room already selected");
             return;
+        }
+
+        // Double-check against real date conflicts (not just room.status),
+        // since a room can be "available" today but already booked for
+        // the requested check-in/check-out range.
+        try {
+            const availabilityRes = await api.get(
+                `/rooms/${roomId}/check-availability`,
+                {
+                    params: {
+                        check_in_date: checkIn,
+                        check_out_date: checkOut,
+                        stay_type: stayType,
+                    },
+                },
+            );
+
+            if (!availabilityRes.data?.data?.available) {
+                message.error(
+                    availabilityRes.data?.data?.reason ||
+                        "Room is already booked for the selected dates.",
+                );
+                return;
+            }
+        } catch (err) {
+            console.error("Failed to verify room availability", err);
+            // Fall through — final server-side check on submit still protects us.
         }
         const pricePerUnit =
             stayType === "short_stay"
@@ -1410,9 +1437,24 @@ function WalkInContent() {
             await fetchRooms();
         } catch (err: any) {
             console.error("Walk-in error:", err);
-            message.error(
-                err.response?.data?.message || "Failed to check in guest",
-            );
+
+            const status = err.response?.status;
+            const errMsg =
+                err.response?.data?.message || "Failed to check in guest";
+
+            if (status === 409) {
+                // Room got booked by someone else in the meantime.
+                // Refresh room list so the stale room drops out of the picker.
+                message.error({
+                    content: errMsg,
+                    duration: 5,
+                });
+                await fetchRooms();
+            } else if (status === 400) {
+                message.warning(errMsg);
+            } else {
+                message.error(errMsg);
+            }
         } finally {
             setLoading(false);
         }
@@ -1892,11 +1934,11 @@ function WalkInContent() {
                                                                     size={16}
                                                                 />
                                                             }
-                                                            onClick={() => {
+                                                            onClick={async () => {
                                                                 if (
                                                                     selectedRoomValue
                                                                 ) {
-                                                                    addRoom(
+                                                                    await addRoom(
                                                                         selectedRoomValue,
                                                                         newRoomStayType,
                                                                         newRoomCheckIn,

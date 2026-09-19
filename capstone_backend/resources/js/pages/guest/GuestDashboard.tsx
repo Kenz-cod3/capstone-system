@@ -210,7 +210,7 @@ export default function GuestDashboard() {
             const matchesType =
                 activeType === "All Rooms" || roomType === activeType;
             const matchesAvailability =
-                !showAvailableOnly || room.status === "available";
+                !showAvailableOnly || room.status !== "maintenance";
             return matchesSearch && matchesType && matchesAvailability;
         });
     }, [rooms, search, activeType, showAvailableOnly]);
@@ -478,16 +478,12 @@ export default function GuestDashboard() {
                             >
                                 <Calendar className="w-4 h-4 text-gray-400" />
                                 <div className="text-left">
-                                    <p className="text-xs text-gray-500">
+                                    <p className="m-0 text-xs leading-4 text-gray-500">
                                         Check-in
                                     </p>
-                                    <input
-                                        type="date"
-                                        value={checkIn}
-                                        readOnly
-                                        tabIndex={-1}
-                                        className="text-sm text-gray-700 outline-none bg-transparent -ml-px"
-                                    />
+                                    <p className="m-0 text-sm text-gray-500 h-5 leading-5">
+                                        {checkIn || "mm/dd/yyyy"}
+                                    </p>
                                 </div>
                             </label>
 
@@ -503,16 +499,12 @@ export default function GuestDashboard() {
                             >
                                 <Calendar className="w-4 h-4 text-gray-400" />
                                 <div className="text-left">
-                                    <p className="text-xs text-gray-500">
+                                    <p className="m-0 text-xs leading-4 text-gray-500">
                                         Check-out
                                     </p>
-                                    <input
-                                        type="date"
-                                        value={checkOut}
-                                        readOnly
-                                        tabIndex={-1}
-                                        className="text-sm text-gray-700 outline-none bg-transparent -ml-px"
-                                    />
+                                    <p className="m-0 text-sm text-gray-500 h-5 leading-5">
+                                        {checkOut || "mm/dd/yyyy"}
+                                    </p>
                                 </div>
                             </label>
 
@@ -528,7 +520,7 @@ export default function GuestDashboard() {
                             >
                                 <Users className="w-4 h-4 text-gray-400" />
                                 <div className="text-left">
-                                    <p className="text-xs text-gray-500">
+                                    <p className="m-0 text-xs leading-4 text-gray-500">
                                         Guests
                                     </p>
                                     <div className="flex items-center gap-1">
@@ -536,7 +528,7 @@ export default function GuestDashboard() {
                                             value={guests}
                                             tabIndex={-1}
                                             disabled
-                                            className="text-sm text-gray-700 outline-none bg-transparent appearance-none pr-1 disabled:opacity-100"
+                                            className="m-0 h-5 p-0 pr-1 text-sm leading-5 text-gray-700 outline-none bg-transparent appearance-none disabled:opacity-100"
                                         >
                                             {[1, 2, 3, 4, 5, 6].map((n) => (
                                                 <option key={n} value={n}>
@@ -767,13 +759,19 @@ export default function GuestDashboard() {
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
                         {filteredRooms.map((item) => {
-                            const s = STATUS_CONFIG[item.status] ?? {
-                                bg: "#6b7280",
-                                dot: "#fff",
-                                label: item.status,
-                            };
-                            const isAvailable = item.status === "available";
+                            const isAvailable = item.status !== "maintenance";
 
+                            const s = isAvailable
+                                ? {
+                                      bg: "#16a34a",
+                                      dot: "#fff",
+                                      label: "Available",
+                                  }
+                                : (STATUS_CONFIG[item.status] ?? {
+                                      bg: "#6b7280",
+                                      dot: "#fff",
+                                      label: item.status,
+                                  });
                             return (
                                 <div
                                     key={item.id}

@@ -29,16 +29,7 @@ import {
     Camera,
 } from "lucide-react";
 
-// Same axios instance used elsewhere in the app.
-// Adjust the relative path if your api.ts lives somewhere else.
 import api from "../../services/api";
-
-// ── Types ──────────────────────────────────────────────────────────
-// NOTE: shaped from BookingController@show (Booking::with([user, walkInGuest,
-// createdBy, histories.user, payments.receiver, payments.shift,
-// bookedRooms.bookingAddOns.addOn, bookedRooms.room.roomType/images])).
-// Field names for Payment / RoomType are best-effort guesses — adjust to
-// match your actual models if they differ.
 
 interface RoomImage {
     id: number;
@@ -47,14 +38,19 @@ interface RoomImage {
 }
 
 interface RoomType {
-    id: number;
-    name?: string;
+    id?: number;
+    type_name?: string;
     description?: string;
-    max_guests?: number;
-    size_sqm?: number;
-    // TODO: confirm this is how amenities are stored on your RoomType model —
-    // could be a JSON column, a comma-separated string, or a related table.
+    base_price?: number;
+    short_stay_price?: number;
+    max_occupancy?: number;
+    size?: number;
     amenities?: string[] | string | null;
+}
+
+interface RoomAmenity {
+    id: number;
+    name: string;
 }
 
 interface RoomData {
@@ -62,8 +58,8 @@ interface RoomData {
     room_number?: string;
     image_url?: string | null;
     images?: RoomImage[];
-    // NOTE: Eloquent converts relation keys to snake_case when serializing
-    // to JSON, so the `roomType()` relation comes back as `room_type`.
+    panorama_url?: string | null;
+    amenities?: RoomAmenity[];
     room_type?: RoomType;
 }
 
@@ -88,9 +84,9 @@ interface GuestUser {
 interface PaymentData {
     id: number;
     payment_method?: string;
-    // TODO: confirm the actual column name — could be reference_number,
-    // gcash_reference, bank_reference, etc.
     reference_number?: string;
+    gcash_reference?: string;
+    bank_reference?: string;
     payment_status?: string;
     payment_date?: string;
     amount?: number;
@@ -107,31 +103,59 @@ interface BookingData {
     payments?: PaymentData[];
 }
 
-// ── Status chip config (mirrors GuestBookings' STATUS_CONFIG) ──────
-const STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-    pending: { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500", label: "Pending" },
-    confirmed: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500", label: "Confirmed" },
-    checked_in: { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500", label: "Checked In" },
-    checked_out: { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500", label: "Checked Out" },
-    cancelled: { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500", label: "Cancelled" },
-    refunded: { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500", label: "Refunded" },
+const STATUS_CONFIG: Record<
+    string,
+    { bg: string; text: string; dot: string; label: string }
+> = {
+    pending: {
+        bg: "bg-amber-50",
+        text: "text-amber-700",
+        dot: "bg-amber-500",
+        label: "Pending",
+    },
+    confirmed: {
+        bg: "bg-blue-50",
+        text: "text-blue-700",
+        dot: "bg-blue-500",
+        label: "Confirmed",
+    },
+    checked_in: {
+        bg: "bg-blue-50",
+        text: "text-blue-700",
+        dot: "bg-blue-500",
+        label: "Checked In",
+    },
+    checked_out: {
+        bg: "bg-green-50",
+        text: "text-green-700",
+        dot: "bg-green-500",
+        label: "Checked Out",
+    },
+    cancelled: {
+        bg: "bg-red-50",
+        text: "text-red-700",
+        dot: "bg-red-500",
+        label: "Cancelled",
+    },
+    refunded: {
+        bg: "bg-purple-50",
+        text: "text-purple-700",
+        dot: "bg-purple-500",
+        label: "Refunded",
+    },
 };
 
-// ── Amenity → icon mapping. Falls back to a generic sparkle icon for
-// anything not recognized, so new amenity strings never break the UI. ──
 const getAmenityIcon = (label: string) => {
     const l = label.toLowerCase();
     if (l.includes("wifi")) return Wifi;
     if (l.includes("air") || l.includes("aircon")) return Snowflake;
     if (l.includes("bathroom")) return Bath;
     if (l.includes("tv") || l.includes("television")) return Tv;
-    if (l.includes("shower") || l.includes("hot") || l.includes("water")) return Droplet;
+    if (l.includes("shower") || l.includes("hot") || l.includes("water"))
+        return Droplet;
     return Sparkles;
 };
 
-// TODO: this assumes images are served from the same host as the API, under
-// /storage/<path> (matching Storage::disk('public') + asset('storage/...')
-// used elsewhere in your backend). Adjust if your setup differs.
 const API_ORIGIN = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
 const buildImageUrl = (path?: string | null) => {
     if (!path) return null;
@@ -198,7 +222,9 @@ export default function GuestBookingDetails() {
         return (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 flex flex-col items-center justify-center">
                 <Loader2 className="w-8 h-8 text-[#1a4a35] animate-spin mb-4" />
-                <p className="text-[#1a4a35]/60 text-sm">Loading booking details…</p>
+                <p className="text-[#1a4a35]/60 text-sm">
+                    Loading booking details…
+                </p>
             </div>
         );
     }
@@ -206,7 +232,9 @@ export default function GuestBookingDetails() {
     if (error || !booking) {
         return (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-                <p className="text-gray-500">{error || "Booking not found."}</p>
+                <p className="text-gray-500">
+                    {error || "Booking not found."}
+                </p>
                 <Link
                     to="/guest/bookings"
                     className="inline-block mt-4 px-6 py-2.5 bg-[#c9a96e] text-[#0d2e1f] rounded-full font-medium hover:bg-[#d9bb84] transition-colors"
@@ -223,7 +251,9 @@ export default function GuestBookingDetails() {
     const payment = booking.payments?.[0];
     const guest = booking.user || booking.walk_in_guest;
 
-    const status = (bookedRoom?.status || "pending").toLowerCase().replace("-", "_");
+    const status = (bookedRoom?.status || "pending")
+        .toLowerCase()
+        .replace("-", "_");
     const statusCfg = STATUS_CONFIG[status] ?? {
         bg: "bg-gray-100",
         text: "text-gray-700",
@@ -243,11 +273,12 @@ export default function GuestBookingDetails() {
               )
             : null;
 
-    // Build the gallery image list. Falls back to the single computed
-    // image_url if the raw `images` array isn't present on this response.
     const images: string[] = (() => {
         if (room?.images && room.images.length > 0) {
-            return room.images
+            const normalOnly = room.images.filter(
+                (img) => (img.image_type ?? "normal") !== "360",
+            );
+            return (normalOnly.length > 0 ? normalOnly : room.images)
                 .map((img) => buildImageUrl(img.image_path))
                 .filter((u): u is string => Boolean(u));
         }
@@ -259,7 +290,9 @@ export default function GuestBookingDetails() {
     const remainingCount = Math.max(0, images.length - 1 - thumbnails.length);
 
     const goPrev = () =>
-        setActiveImage((i) => (images.length ? (i - 1 + images.length) % images.length : 0));
+        setActiveImage((i) =>
+            images.length ? (i - 1 + images.length) % images.length : 0,
+        );
     const goNext = () =>
         setActiveImage((i) => (images.length ? (i + 1) % images.length : 0));
 
@@ -273,27 +306,48 @@ export default function GuestBookingDetails() {
         }
     };
 
-    // Normalize amenities into a flat string list regardless of whether the
-    // backend sends an array, a JSON string, or a comma-separated string.
     const amenities: string[] = (() => {
+        if (room?.amenities && Array.isArray(room.amenities)) {
+            const names = room.amenities
+                .map((a) => a?.name)
+                .filter((n): n is string => Boolean(n));
+            if (names.length > 0) return names;
+        }
+
         const raw = roomType?.amenities;
         if (!raw) return [];
         if (Array.isArray(raw)) return raw;
+
         try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) return parsed;
         } catch {
-            /* not JSON — fall through to comma split */
+            /* not JSON — fall through */
         }
-        return raw.split(",").map((s) => s.trim()).filter(Boolean);
+
+        return raw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
     })();
+
+    // Payment reference — try all common field names so a booking paid via
+    // GCash, bank, or any future method still shows something.
+    const paymentReference =
+        payment?.reference_number ||
+        payment?.gcash_reference ||
+        payment?.bank_reference ||
+        null;
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
                 <Home className="w-4 h-4" />
-                <Link to="/guest/bookings" className="hover:text-[#1a4a35] transition-colors">
+                <Link
+                    to="/guest/bookings"
+                    className="hover:text-[#1a4a35] transition-colors"
+                >
                     My Bookings
                 </Link>
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -330,12 +384,14 @@ export default function GuestBookingDetails() {
                         <div className="flex flex-col md:flex-row gap-6">
                             {/* Gallery */}
                             <div className="flex gap-3 md:w-[62%] shrink-0">
-                                {/* Main image */}
                                 <div className="relative flex-1 h-[380px] rounded-2xl overflow-hidden bg-gray-100">
                                     {images.length > 0 ? (
                                         <img
                                             src={images[activeImage]}
-                                            alt={roomType?.name || "Room photo"}
+                                            alt={
+                                                roomType?.type_name ||
+                                                "Room photo"
+                                            }
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -344,10 +400,10 @@ export default function GuestBookingDetails() {
                                         </div>
                                     )}
 
-                                    {roomType?.name && (
+                                    {roomType?.type_name && (
                                         <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-white/90 text-xs font-medium text-[#0d2e1f] flex items-center gap-1.5">
                                             <Calendar className="w-3 h-3" />
-                                            {roomType.name}
+                                            {roomType.type_name}
                                         </span>
                                     )}
 
@@ -369,22 +425,28 @@ export default function GuestBookingDetails() {
                                             </button>
                                             <span className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/60 text-white text-[11px] flex items-center gap-1">
                                                 <Camera className="w-3 h-3" />
-                                                {activeImage + 1} / {images.length}
+                                                {activeImage + 1} /{" "}
+                                                {images.length}
                                             </span>
                                         </>
                                     )}
                                 </div>
 
-                                {/* Thumbnails */}
                                 {thumbnails.length > 0 && (
                                     <div className="flex flex-col gap-3 w-24">
                                         {thumbnails.map((src, i) => {
-                                            const isLast = i === thumbnails.length - 1;
-                                            const realIndex = images.indexOf(src);
+                                            const isLast =
+                                                i === thumbnails.length - 1;
+                                            const realIndex =
+                                                images.indexOf(src);
                                             return (
                                                 <button
                                                     key={src + i}
-                                                    onClick={() => setActiveImage(realIndex)}
+                                                    onClick={() =>
+                                                        setActiveImage(
+                                                            realIndex,
+                                                        )
+                                                    }
                                                     className="relative flex-1 rounded-xl overflow-hidden bg-gray-100"
                                                 >
                                                     <img
@@ -392,11 +454,15 @@ export default function GuestBookingDetails() {
                                                         alt=""
                                                         className="w-full h-full object-cover"
                                                     />
-                                                    {isLast && remainingCount > 0 && (
-                                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-semibold text-sm">
-                                                            +{remainingCount}
-                                                        </div>
-                                                    )}
+                                                    {isLast &&
+                                                        remainingCount > 0 && (
+                                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-semibold text-sm">
+                                                                +
+                                                                {
+                                                                    remainingCount
+                                                                }
+                                                            </div>
+                                                        )}
                                                 </button>
                                             );
                                         })}
@@ -416,13 +482,15 @@ export default function GuestBookingDetails() {
                                     <span
                                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${statusCfg.bg} ${statusCfg.text}`}
                                     >
-                                        <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
+                                        <span
+                                            className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`}
+                                        />
                                         {statusCfg.label}
                                     </span>
                                 </div>
 
                                 <p className="text-gray-700 font-medium mb-2">
-                                    {roomType?.name || "Room"}
+                                    {roomType?.type_name || "Room"}
                                 </p>
 
                                 <p className="text-sm text-gray-500 leading-relaxed mb-4">
@@ -431,22 +499,25 @@ export default function GuestBookingDetails() {
                                 </p>
 
                                 <div className="border-t border-gray-100 pt-4 grid grid-cols-2 gap-y-3 gap-x-4 text-sm text-gray-600">
-                                    {roomType?.max_guests && (
+                                    {roomType?.max_occupancy && (
                                         <div className="flex items-center gap-2">
                                             <Users className="w-4 h-4 text-gray-400" />
-                                            {roomType.max_guests} guests
+                                            {roomType.max_occupancy} guests
                                         </div>
                                     )}
-                                    {roomType?.size_sqm && (
+                                    {roomType?.size && (
                                         <div className="flex items-center gap-2">
                                             <Maximize2 className="w-4 h-4 text-gray-400" />
-                                            {roomType.size_sqm} m²
+                                            {roomType.size} m²
                                         </div>
                                     )}
                                     {amenities.map((label) => {
                                         const Icon = getAmenityIcon(label);
                                         return (
-                                            <div key={label} className="flex items-center gap-2">
+                                            <div
+                                                key={label}
+                                                className="flex items-center gap-2"
+                                            >
                                                 <Icon className="w-4 h-4 text-gray-400" />
                                                 {label}
                                             </div>
@@ -462,7 +533,9 @@ export default function GuestBookingDetails() {
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <Calendar className="w-4 h-4 text-[#0d2e1f]" />
-                                <p className="text-[#0d2e1f] font-semibold">Stay Information</p>
+                                <p className="text-[#0d2e1f] font-semibold">
+                                    Stay Information
+                                </p>
                             </div>
                             <button
                                 onClick={NOOP}
@@ -477,7 +550,9 @@ export default function GuestBookingDetails() {
                             <div className="flex items-center gap-3">
                                 <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
                                 <div>
-                                    <p className="text-xs text-gray-500">Check-in Date</p>
+                                    <p className="text-xs text-gray-500">
+                                        Check-in Date
+                                    </p>
                                     <p className="text-sm font-medium text-gray-900">
                                         {formatDate(bookedRoom?.check_in_date)}
                                     </p>
@@ -486,7 +561,9 @@ export default function GuestBookingDetails() {
                             <div className="flex items-center gap-3">
                                 <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
                                 <div>
-                                    <p className="text-xs text-gray-500">Check-out Date</p>
+                                    <p className="text-xs text-gray-500">
+                                        Check-out Date
+                                    </p>
                                     <p className="text-sm font-medium text-gray-900">
                                         {formatDate(bookedRoom?.check_out_date)}
                                     </p>
@@ -495,9 +572,13 @@ export default function GuestBookingDetails() {
                             <div className="flex items-center gap-3">
                                 <Moon className="w-4 h-4 text-gray-400 shrink-0" />
                                 <div>
-                                    <p className="text-xs text-gray-500">Length of Stay</p>
+                                    <p className="text-xs text-gray-500">
+                                        Length of Stay
+                                    </p>
                                     <p className="text-sm font-medium text-gray-900">
-                                        {nights ? `${nights} night${nights > 1 ? "s" : ""}` : "—"}
+                                        {nights
+                                            ? `${nights} night${nights > 1 ? "s" : ""}`
+                                            : "—"}
                                     </p>
                                 </div>
                             </div>
@@ -506,8 +587,8 @@ export default function GuestBookingDetails() {
                         <div className="mt-4 flex items-start gap-3 rounded-2xl bg-blue-50 px-4 py-3">
                             <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                             <p className="text-sm text-blue-700">
-                                You can request changes to your booking by contacting our support
-                                team.
+                                You can request changes to your booking by
+                                contacting our support team.
                             </p>
                         </div>
                     </div>
@@ -516,35 +597,48 @@ export default function GuestBookingDetails() {
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
                         <div className="flex items-center gap-2 mb-4">
                             <CreditCard className="w-4 h-4 text-[#0d2e1f]" />
-                            <p className="text-[#0d2e1f] font-semibold">Payment Information</p>
+                            <p className="text-[#0d2e1f] font-semibold">
+                                Payment Information
+                            </p>
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-6 sm:items-center sm:justify-between">
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between gap-8">
-                                    <span className="text-gray-500">Payment Method</span>
+                                    <span className="text-gray-500">
+                                        Payment Method
+                                    </span>
                                     <span className="font-medium text-gray-900 uppercase">
                                         {payment?.payment_method || "—"}
                                     </span>
                                 </div>
                                 <div className="flex justify-between gap-8">
-                                    <span className="text-gray-500">Transaction ID</span>
+                                    <span className="text-gray-500">
+                                        Transaction ID
+                                    </span>
                                     <span className="font-medium text-gray-900">
-                                        {payment?.reference_number
-                                            ? `#${payment.reference_number}`
+                                        {paymentReference
+                                            ? `#${paymentReference}`
                                             : "—"}
                                     </span>
                                 </div>
                                 <div className="flex justify-between gap-8">
-                                    <span className="text-gray-500">Payment Date</span>
+                                    <span className="text-gray-500">
+                                        Payment Date
+                                    </span>
                                     <span className="font-medium text-gray-900">
                                         {formatDateTime(payment?.payment_date)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between gap-8">
-                                    <span className="text-gray-500">Amount Paid</span>
+                                    <span className="text-gray-500">
+                                        Amount Paid
+                                    </span>
                                     <span className="font-medium text-gray-900">
-                                        {formatPrice(payment?.amount ?? booking.total_price)}
+                                        {formatPrice(
+                                            payment?.amount ??
+                                                booking.total_price,
+                                        )}
                                     </span>
                                 </div>
                             </div>
@@ -552,7 +646,10 @@ export default function GuestBookingDetails() {
                             {payment?.payment_status === "paid" && (
                                 <div className="rounded-2xl bg-green-50 px-5 py-4 flex items-center gap-3 sm:w-64 shrink-0">
                                     <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shrink-0">
-                                        <Check className="w-4 h-4 text-white" strokeWidth={3} />
+                                        <Check
+                                            className="w-4 h-4 text-white"
+                                            strokeWidth={3}
+                                        />
                                     </div>
                                     <div>
                                         <p className="text-sm font-semibold text-green-700">
@@ -574,7 +671,9 @@ export default function GuestBookingDetails() {
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
                         <div className="rounded-2xl bg-[#eaf3ea] px-4 py-3 flex items-center justify-between mb-5">
                             <div>
-                                <p className="text-xs text-[#1a4a35]/70">Booking Reference</p>
+                                <p className="text-xs text-[#1a4a35]/70">
+                                    Booking Reference
+                                </p>
                                 <p className="text-sm font-bold text-[#0d2e1f]">
                                     #{booking.booking_reference}
                                 </p>
@@ -594,7 +693,9 @@ export default function GuestBookingDetails() {
 
                         <div className="space-y-3 text-sm">
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Booking Date</span>
+                                <span className="text-gray-500">
+                                    Booking Date
+                                </span>
                                 <span className="font-medium text-gray-900">
                                     {formatDate(booking.created_at)}
                                 </span>
@@ -614,17 +715,18 @@ export default function GuestBookingDetails() {
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Nights</span>
                                 <span className="font-medium text-gray-900">
-                                    {nights ? `${nights} night${nights > 1 ? "s" : ""}` : "—"}
+                                    {nights
+                                        ? `${nights} night${nights > 1 ? "s" : ""}`
+                                        : "—"}
                                 </span>
                             </div>
-                            {/* TODO: guest count isn't on BookedRoom in the controllers I
-                                reviewed — wire this to wherever your app stores it
-                                (e.g. a `guests` column, or roomType.max_guests as a stand-in). */}
-                            {roomType?.max_guests && (
+                            {roomType?.max_occupancy && (
                                 <div className="flex justify-between">
-                                    <span className="text-gray-500">Guests</span>
+                                    <span className="text-gray-500">
+                                        Guests
+                                    </span>
                                     <span className="font-medium text-gray-900">
-                                        {roomType.max_guests} guests
+                                        {roomType.max_occupancy} guests
                                     </span>
                                 </div>
                             )}
@@ -632,7 +734,9 @@ export default function GuestBookingDetails() {
 
                         <div className="border-t border-gray-100 mt-4 pt-4 flex items-center justify-between">
                             <div>
-                                <p className="text-xs text-gray-500">Total Amount</p>
+                                <p className="text-xs text-gray-500">
+                                    Total Amount
+                                </p>
                                 <p
                                     className="text-2xl font-bold text-[#c9a96e]"
                                     style={{ fontFamily: "Georgia" }}
@@ -643,10 +747,15 @@ export default function GuestBookingDetails() {
                         </div>
 
                         <div className="flex items-center justify-between mt-3">
-                            <span className="text-sm text-gray-500">Payment Status</span>
+                            <span className="text-sm text-gray-500">
+                                Payment Status
+                            </span>
                             {payment?.payment_status === "paid" ? (
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500 text-white text-xs font-medium">
-                                    <Check className="w-3 h-3" strokeWidth={3} />
+                                    <Check
+                                        className="w-3 h-3"
+                                        strokeWidth={3}
+                                    />
                                     Paid
                                 </span>
                             ) : (
@@ -662,7 +771,9 @@ export default function GuestBookingDetails() {
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <User className="w-4 h-4 text-[#0d2e1f]" />
-                                <p className="text-[#0d2e1f] font-semibold">Guest Information</p>
+                                <p className="text-[#0d2e1f] font-semibold">
+                                    Guest Information
+                                </p>
                             </div>
                             <button
                                 onClick={NOOP}
@@ -701,11 +812,13 @@ export default function GuestBookingDetails() {
                     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
                         <div className="flex items-center gap-2 mb-3">
                             <Headphones className="w-4 h-4 text-[#0d2e1f]" />
-                            <p className="text-[#0d2e1f] font-semibold">Need Help?</p>
+                            <p className="text-[#0d2e1f] font-semibold">
+                                Need Help?
+                            </p>
                         </div>
                         <p className="text-sm text-gray-500 mb-4">
-                            If you have any questions about your booking, feel free to contact our
-                            support team.
+                            If you have any questions about your booking, feel
+                            free to contact our support team.
                         </p>
                         <button
                             onClick={NOOP}

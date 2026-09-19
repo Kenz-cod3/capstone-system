@@ -13,6 +13,8 @@ window.Pusher = Pusher;
 // TOKEN
 const token = localStorage.getItem("token");
 
+const API_BASE = import.meta.env.VITE_API_URL as string;
+
 const echo = new Echo({
     broadcaster: "pusher",
 
@@ -21,7 +23,7 @@ const echo = new Echo({
 
     forceTLS: true,
 
-    authEndpoint: "http://192.168.8.117:8000/broadcasting/auth",
+    authEndpoint: `${API_BASE}/broadcasting/auth`,
 
     auth: {
         headers: {
@@ -37,48 +39,3 @@ window.Echo = echo;
 console.log("✅ ECHO INITIALIZED");
 
 export default echo;
-
-
-// import Echo from "laravel-echo";
-// import Pusher from "pusher-js";
-
-// declare global {
-//     interface Window {
-//         Pusher: typeof Pusher;
-//         Echo: any;
-//     }
-// }
-
-// window.Pusher = Pusher;
-
-// // TOKEN
-// const token = localStorage.getItem("token");
-
-// const echo = new Echo({
-//     broadcaster: "reverb",
-
-//     key: "app-key",
-
-//     wsHost: "192.168.254.188",
-//     wsPort: 8080,
-
-//     forceTLS: false,
-
-//     enabledTransports: ["ws"],
-
-//     authEndpoint: "http://192.168.254.188:8000/broadcasting/auth",
-
-//     auth: {
-//         headers: {
-//             Authorization: `Bearer ${token}`,
-//             Accept: "application/json",
-//         },
-//     },
-// });
-
-// // MAKE GLOBAL
-// window.Echo = echo;
-
-// console.log("✅ ECHO INITIALIZED");
-
-// export default echo;

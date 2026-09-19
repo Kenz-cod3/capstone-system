@@ -24,7 +24,10 @@ class PayMongoController extends Controller
         $validated = $request->validate([
             'booking_id' => 'required|exists:bookings,id',
             'amount'     => 'required|numeric|min:1',
+            'fee_type'   => 'nullable|in:early_checkin,late_checkout,extension',
         ]);
+
+        $isFeePayment = ! empty($validated['fee_type']);
 
         $booking = Booking::with('bookedRooms')
             ->findOrFail($validated['booking_id']);
@@ -39,7 +42,8 @@ class PayMongoController extends Controller
             ->where('status', 'pending')
             ->exists();
 
-        if (! $hasPendingRoom) {
+        // Fee payments (early check-in, late check-out, extension) don't need a pending room
+        if (! $isFeePayment && ! $hasPendingRoom) {
             return response()->json([
                 'message' => 'This booking is no longer awaiting payment'
             ], 400);
@@ -66,10 +70,11 @@ class PayMongoController extends Controller
                         'payment_method_allowed' => ['qrph'],
                         'description' =>
                         "Travelers Inn Booking #{$booking->booking_reference}",
-                        'metadata' => [
+                        'metadata' => array_filter([
                             'booking_id' => (string) $booking->id,
                             'payment_method' => 'qrph',
-                        ],
+                            'fee_type' => $validated['fee_type'] ?? null,
+                        ]),
                     ],
                 ],
             ]
@@ -230,9 +235,11 @@ class PayMongoController extends Controller
         }
 
         $status = $response->json('data.attributes.status');
+        $paymentId = $response->json('data.attributes.payments.0.id');
 
         return response()->json([
             'status' => $status,
+            'payment_id' => $paymentId,
         ], 200);
     }
 
@@ -269,6 +276,11 @@ class PayMongoController extends Controller
         }
 
         $session = data_get($payload, 'data.attributes.data');
+
+        // Fee payments are recorded by the staff UI after the QR is paid
+        if (data_get($session, 'attributes.metadata.fee_type')) {
+            return response()->json(['message' => 'Fee payment handled by client'], 200);
+        }
 
         $bookingId     = data_get($session, 'attributes.metadata.booking_id');
         $paymentMethod = data_get($session, 'attributes.metadata.payment_method', 'gcash');
@@ -376,70 +388,51 @@ class PayMongoController extends Controller
 
         Log::info("PayMongo payment recorded for booking {$booking->id}", ['payment_id' => $payment->id]);
 
-        // AUTO-CONFIRM booked rooms now that payment has been received
-        $pendingRooms = $booking->bookedRooms()
-            ->where('status', 'pending')
-            ->get();
+        // Payment is recorded as 'paid' above. Booking / booked room status
+        // intentionally stays 'pending' — a staff/admin must manually confirm
+        // it from the dashboard. No auto-confirm happens here.
 
-        foreach ($pendingRooms as $bookedRoom) {
-            $bookedRoom->update([
-                'status' => 'confirmed',
-            ]);
-        }
+        // Notify Admins and Staff that payment arrived and is awaiting confirmation
+        $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])->get();
 
-        if ($pendingRooms->isNotEmpty()) {
-
-            BookingHistory::create([
-                'booking_id'   => $booking->id,
-                'old_status'   => 'pending',
-                'new_status'   => 'confirmed',
-                'change_note'  => 'Booking automatically confirmed after successful QR Ph payment',
-                'changed_by'   => null,
-                'changed_at'   => now(),
+        foreach ($staffAndAdmins as $user) {
+            $notification = Notification::create([
+                'user_id' => $user->id,
+                'title'   => 'Payment Received',
+                'message' => 'Payment received for booking ' . $booking->booking_reference . ' via QR Ph. Awaiting staff confirmation.',
+                'is_read' => false,
             ]);
 
-            // Notify Admins and Staff
-            $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])->get();
-
-            foreach ($staffAndAdmins as $user) {
-                $notification = Notification::create([
-                    'user_id' => $user->id,
-                    'title'   => 'Booking Confirmed',
-                    'message' => 'Booking ' . $booking->booking_reference . ' was automatically confirmed after payment via QR Ph.',
-                    'is_read' => false,
-                ]);
-
-                broadcast(new NotificationCreated($notification));
-            }
-
-            // Notify Guest
-            $booking->loadMissing('user');
-
-            if ($booking->user_id) {
-
-                $notification = Notification::create([
-                    'user_id' => $booking->user_id,
-                    'title'   => 'Booking Confirmed',
-                    'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed. Payment received successfully.',
-                    'is_read' => false,
-                ]);
-
-                broadcast(new NotificationCreated($notification));
-
-                if ($booking->user && $booking->user->email) {
-
-                    MailService::sendNotificationEmail(
-                        $booking->user->email,
-                        $booking->user->first_name,
-                        $booking->booking_reference,
-                        $notification->title,
-                        $notification->message
-                    );
-                }
-            }
-
-            broadcast(new DashboardUpdated())->toOthers();
+            broadcast(new NotificationCreated($notification));
         }
+
+        // Notify Guest that payment was received (booking still pending confirmation)
+        $booking->loadMissing('user');
+
+        if ($booking->user_id) {
+
+            $notification = Notification::create([
+                'user_id' => $booking->user_id,
+                'title'   => 'Payment Received',
+                'message' => 'We received your payment for booking ' . $booking->booking_reference . '. It is now awaiting staff confirmation.',
+                'is_read' => false,
+            ]);
+
+            broadcast(new NotificationCreated($notification));
+
+            if ($booking->user && $booking->user->email) {
+
+                MailService::sendNotificationEmail(
+                    $booking->user->email,
+                    $booking->user->first_name,
+                    $booking->booking_reference,
+                    $notification->title,
+                    $notification->message
+                );
+            }
+        }
+
+        broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json(['message' => 'Payment recorded'], 200);
     }

@@ -8,35 +8,119 @@ use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $checkIn = $request->check_in_date;
+        $checkOut = $request->check_out_date;
+        $stayType = $request->stay_type;
+
+        $today = now()->startOfDay();
+
         $rooms = Room::with([
             'roomType:id,type_name,description,base_price,short_stay_price,max_occupancy',
             'images',
-            'amenities:id,name'
+            'amenities:id,name',
+            'bookedRooms' => function ($q) {
+                $q->whereNull('archived_at')
+                    ->whereNull('deleted_at')
+                    ->whereIn('status', [
+                        'pending',
+                        'confirmed',
+                        'checked_in',
+                    ]);
+            },
         ])
+            ->when($checkIn && $checkOut, function ($q) use ($checkIn, $checkOut, $stayType) {
+
+                $out = $stayType === 'short_stay'
+                    ? \Carbon\Carbon::parse($checkIn)->addDay()->toDateString()
+                    : $checkOut;
+
+                $q->whereDoesntHave('bookedRooms', function ($br) use ($checkIn, $out) {
+                    $br->whereNull('archived_at')
+                        ->whereNull('deleted_at')
+                        ->whereIn('status', [
+                            'pending',
+                            'confirmed',
+                            'checked_in',
+                        ])
+                        ->whereDate('check_in_date', '<', $out)
+                        ->whereRaw(
+                            "CASE
+                            WHEN stay_type = 'short_stay'
+                            THEN DATE_ADD(check_in_date, INTERVAL 1 DAY)
+                            ELSE check_out_date
+                         END > ?",
+                            [$checkIn]
+                        );
+                });
+            })
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
 
         return response()->json(
-            $rooms->map(function ($room) {
+            $rooms->map(function ($room) use ($today) {
 
-                // NORMAL IMAGE
                 $normalImage = $room->images
                     ->where('image_type', 'normal')
                     ->sortByDesc('created_at')
                     ->first();
 
-                // 360 IMAGE
                 $panoramaImage = $room->images
                     ->where('image_type', '360')
                     ->sortByDesc('created_at')
                     ->first();
 
+                /*
+             * Determine if the reservation is ACTIVE TODAY.
+             * A future reservation must not make the room RESERVED today.
+             */
+                $currentBooking = $room->bookedRooms
+                    ->filter(function ($booking) use ($today) {
+
+                        $in = \Carbon\Carbon::parse(
+                            $booking->check_in_date
+                        )->startOfDay();
+
+                        $out = $booking->stay_type === 'short_stay'
+                            ? $in->copy()->addDay()
+                            : \Carbon\Carbon::parse(
+                                $booking->check_out_date
+                            )->startOfDay();
+
+                        return $today->gte($in) && $today->lt($out);
+                    })
+                    ->sortBy('check_in_date')
+                    ->first();
+
+                /*
+             * If the database says RESERVED but the reservation
+             * is only in the future, show AVAILABLE on dashboard.
+             */
+                $displayStatus = $room->status;
+
+                if (
+                    $room->status === 'reserved' &&
+                    !$currentBooking
+                ) {
+                    $displayStatus = 'available';
+                }
+
+                /*
+             * If there is a booking covering today, keep RESERVED.
+             */
+                if (
+                    $currentBooking &&
+                    $currentBooking->status !== 'checked_in' &&
+                    $room->status === 'reserved'
+                ) {
+                    $displayStatus = 'reserved';
+                }
+
                 return [
                     'id'          => $room->id,
                     'room_number' => $room->room_number,
-                    'status'      => $room->status,
+                    'status'      => $displayStatus,
                     'is_deleted'  => $room->deleted_at !== null,
 
                     'images' => $room->images,
@@ -46,18 +130,111 @@ class RoomController extends Controller
 
                     'amenities' => $room->amenities,
 
-                    // CARD IMAGE
                     'image_url' => $normalImage
                         ? asset('storage/' . $normalImage->image_path)
                         : null,
 
-                    // POV IMAGE
                     'panorama_url' => $panoramaImage
                         ? asset('storage/' . $panoramaImage->image_path)
                         : null,
                 ];
             })
         );
+    }
+
+    public function checkAvailability(Request $request, $id)
+    {
+        $request->validate([
+            'check_in_date'  => 'required|date',
+            'check_out_date' => 'required|date',
+            'stay_type'      => 'nullable|in:overnight,short_stay',
+        ]);
+
+        $room = Room::findOrFail($id);
+
+        $stayType = $request->stay_type ?? 'overnight';
+
+        $checkIn = \Carbon\Carbon::parse($request->check_in_date)->startOfDay();
+
+        $checkOut = $stayType === 'short_stay'
+            ? $checkIn->copy()->addDay()
+            : \Carbon\Carbon::parse($request->check_out_date)->startOfDay();
+
+        // ROOM UNDER MAINTENANCE
+        if ($room->status === 'maintenance') {
+            return response()->json([
+                'data' => [
+                    'available' => false,
+                    'conflicts' => [],
+                    'reason'    => 'This room is currently under maintenance.',
+                ]
+            ]);
+        }
+
+        // OVERLAPPING ACTIVE BOOKINGS (same logic as BookingController@conflictQuery)
+        $conflicts = \App\Models\BookedRoom::where('room_id', $room->id)
+            ->whereNull('archived_at')
+            ->whereNull('deleted_at')
+            ->whereIn('status', [
+                'pending',
+                'confirmed',
+                'checked_in',
+            ])
+            ->whereDate('check_in_date', '<', $checkOut->toDateString())
+            ->whereRaw(
+                "CASE
+                WHEN stay_type = 'short_stay'
+                THEN DATE_ADD(check_in_date, INTERVAL 1 DAY)
+                ELSE check_out_date
+             END > ?",
+                [$checkIn->toDateString()]
+            )
+            ->get(['id', 'check_in_date', 'check_out_date', 'stay_type', 'status']);
+
+        return response()->json([
+            'data' => [
+                'available' => $conflicts->isEmpty(),
+                'conflicts' => $conflicts,
+                'reason'    => null,
+            ]
+        ]);
+    }
+
+    /**
+     * Returns every active (pending/confirmed/checked_in) booking range
+     * for this room, so the guest calendar can disable those days.
+     */
+    public function bookedDates($id)
+    {
+        $room = Room::findOrFail($id);
+
+        $bookings = \App\Models\BookedRoom::where('room_id', $room->id)
+            ->whereNull('archived_at')
+            ->whereNull('deleted_at')
+            ->whereIn('status', [
+                'pending',
+                'confirmed',
+                'checked_in',
+            ])
+            ->orderBy('check_in_date')
+            ->get(['check_in_date', 'check_out_date', 'stay_type']);
+
+        $ranges = $bookings->map(function ($b) {
+
+            $in = \Carbon\Carbon::parse($b->check_in_date)->toDateString();
+
+            // Short stays only block the single check-in day.
+            $out = $b->stay_type === 'short_stay'
+                ? \Carbon\Carbon::parse($b->check_in_date)->addDay()->toDateString()
+                : \Carbon\Carbon::parse($b->check_out_date)->toDateString();
+
+            return [
+                'check_in_date'  => $in,
+                'check_out_date' => $out, // exclusive — the checkout day itself is free
+            ];
+        })->values();
+
+        return response()->json(['data' => $ranges]);
     }
 
     public function publicAvailable()
@@ -98,6 +275,8 @@ class RoomController extends Controller
 
     public function statusGrid()
     {
+        $today = \Carbon\Carbon::now()->startOfDay();
+
         $rooms = Room::with([
             'bookedRooms.booking.user',
             'bookedRooms.booking.walkInGuest',
@@ -111,16 +290,36 @@ class RoomController extends Controller
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
 
-        $rooms->each(function ($room) {
+        $rooms->each(function ($room) use ($today) {
 
-            // Get the active booked room for this room
+            // FIX: checked_in bookings stay "active" until actually checked out
+            // (even if past their expected check_out_date — that's overdue, not gone).
+            // pending/confirmed bookings only count if today falls within their range,
+            // so future bookings don't wrongly show on today's grid.
             $bookedRoom = $room->bookedRooms
                 ->whereIn('status', [
                     'pending',
                     'confirmed',
                     'checked_in',
                 ])
-                ->sortByDesc('id')
+                ->filter(function ($br) use ($today) {
+
+                    $in = \Carbon\Carbon::parse($br->check_in_date)->startOfDay();
+
+                    if ($br->status === 'checked_in') {
+                        // Still occupying the room — hasn't checked out yet.
+                        return $today->gte($in);
+                    }
+
+                    $out = $br->stay_type === 'short_stay'
+                        ? $in->copy()->addDay()
+                        : \Carbon\Carbon::parse($br->check_out_date)->startOfDay();
+
+                    return $today->gte($in) && $today->lt($out);
+                })
+                ->sortBy(function ($br) {
+                    return $br->status === 'checked_in' ? 0 : 1;
+                })
                 ->first();
 
             $booking = $bookedRoom?->booking;
@@ -150,6 +349,18 @@ class RoomController extends Controller
                         ($user->middle_name ?? '') . ' ' .
                         ($user->last_name ?? '')
                 );
+            }
+
+            // FIX: correct stale "reserved" status when there's no active booking
+            // behind it (also self-heals the DB record).
+            $displayStatus = $room->status;
+
+            if ($displayStatus === 'reserved' && !$bookedRoom) {
+                $displayStatus = 'available';
+                $room->status = 'available';
+                $room->save();
+            } else {
+                $room->status = $displayStatus;
             }
 
             // ============================================
@@ -253,8 +464,6 @@ class RoomController extends Controller
 
         return response()->json($rooms);
     }
-
-
 
     // CREATE ROOM
     public function store(Request $request)

@@ -24,7 +24,7 @@ import {
   Clock,
   AlertTriangle,
   Wrench,
-  CheckCircle2,
+  CheckCircle2, 
   TrendingUp,
   ArrowRight,
   Bell,
@@ -610,9 +610,9 @@ export default function Dashboard() {
           y: 1,
         }}
         style={{
-          paddingTop: 55,
+          paddingTop: 20,
           paddingHorizontal: 20,
-          paddingBottom: 80,
+          paddingBottom: 28,
           borderBottomLeftRadius: 32,
           borderBottomRightRadius: 32,
         }}
@@ -662,7 +662,7 @@ export default function Dashboard() {
                 letterSpacing: -0.8,
               }}
             >
-              {firstName} 👋
+              {firstName}
             </Text>
 
             <View
@@ -746,7 +746,7 @@ export default function Dashboard() {
               flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: 10,
+              marginBottom: 1,
             }}
           >
             <View
@@ -836,8 +836,8 @@ export default function Dashboard() {
 
       <View
         style={{
-          paddingHorizontal: 20,
-          marginTop: -25,
+          paddingHorizontal: 10,
+          marginTop: 14,
         }}
       >
         <View

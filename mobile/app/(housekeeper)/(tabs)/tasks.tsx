@@ -752,8 +752,7 @@ export default function Tasks() {
 
       <View className="px-5 pt-2 pb-3">
         <View className="flex-row items-center mb-1">
-          <Text className="text-2xl mr-2">🧹</Text>
-
+       
           <Text className="text-2xl font-bold text-gray-900">
             Cleaning Tasks
           </Text>

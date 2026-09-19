@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
     Home,
@@ -24,15 +24,14 @@ import {
     Camera,
     View,
     Lock,
+    AlertCircle,
+    CheckCircle2,
 } from "lucide-react";
 
-// Same axios instance used elsewhere in the app.
-// Adjust the relative path if your api.ts / roomService.ts live elsewhere.
 import api from "../../services/api";
-// Adjust this path to wherever PanoramaModal.tsx actually lives in your project.
 import PanoramaModal from "../../components/AdminComponents/room/PanoramaModal";
+import CustomDatePicker from "./CustomDatePicker";
 
-// ── Types ──────────────────────────────────────────────────────────
 interface RoomImage {
     id: number;
     image_path: string;
@@ -58,7 +57,14 @@ interface RoomData {
     room_type: RoomType;
 }
 
-// ── Amenity → icon mapping (mirrors GuestBookingDetails' getAmenityIcon) ──
+interface ConflictRecord {
+    id: number;
+    check_in_date: string;
+    check_out_date: string;
+    stay_type: string;
+    status: string;
+}
+
 const getAmenityIcon = (label: string) => {
     const l = label.toLowerCase();
     if (l.includes("wifi")) return Wifi;
@@ -92,11 +98,26 @@ const formatPrice = (price: number) =>
         minimumFractionDigits: 0,
     }).format(price || 0);
 
-// Default to tomorrow / day-after so the date fields aren't blank on load.
+const toISODate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+};
+
 const todayPlus = (days: number) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    return d.toISOString().split("T")[0];
+    return toISODate(d);
+};
+
+const formatDateLong = (value: string) => {
+    if (!value) return "—";
+    return new Date(value).toLocaleDateString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
 };
 
 export default function GuestReserve() {
@@ -114,6 +135,52 @@ export default function GuestReserve() {
     const [continueError, setContinueError] = useState<string | null>(null);
     const [panoramaOpen, setPanoramaOpen] = useState(false);
 
+    const [checkingAvailability, setCheckingAvailability] = useState(false);
+    const [availability, setAvailability] = useState<{
+        available: boolean;
+        conflicts: ConflictRecord[];
+        reason?: string | null;
+    } | null>(null);
+
+    const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
+
+    const availabilityRequestRef = useRef(0);
+
+    useEffect(() => {
+        if (!id) return;
+
+        const fetchBookedDates = async () => {
+            try {
+                const res = await api.get(`/rooms/${id}/booked-dates`);
+                const ranges: { check_in_date: string; check_out_date: string }[] =
+                    res.data?.data ?? res.data ?? [];
+
+                const set = new Set<string>();
+
+                ranges.forEach((range) => {
+                    const cursor = new Date(`${range.check_in_date}T00:00:00`);
+                    const end = new Date(`${range.check_out_date}T00:00:00`);
+
+                    // check_out_date is exclusive — the checkout day itself
+                    // is free for the next guest to check in.
+                    while (cursor < end) {
+                        const y = cursor.getFullYear();
+                        const m = String(cursor.getMonth() + 1).padStart(2, "0");
+                        const d = String(cursor.getDate()).padStart(2, "0");
+                        set.add(`${y}-${m}-${d}`);
+                        cursor.setDate(cursor.getDate() + 1);
+                    }
+                });
+
+                setBookedDates(set);
+            } catch (err) {
+                console.log("BOOKED DATES ERROR:", err);
+            }
+        };
+
+        fetchBookedDates();
+    }, [id]);
+
     useEffect(() => {
         const fetchRoom = async () => {
             try {
@@ -129,6 +196,142 @@ export default function GuestReserve() {
         };
         if (id) fetchRoom();
     }, [id]);
+
+    useEffect(() => {
+        if (!id || !checkIn || !checkOut) {
+            setAvailability(null);
+            return;
+        }
+
+        const nights = Math.max(
+            0,
+            Math.round(
+                (new Date(checkOut).getTime() - new Date(checkIn).getTime()) /
+                    (1000 * 60 * 60 * 24),
+            ),
+        );
+
+        if (nights <= 0) {
+            setAvailability(null);
+            return;
+        }
+
+        const requestId = ++availabilityRequestRef.current;
+        const controller = new AbortController();
+
+        const checkAvail = async () => {
+            setCheckingAvailability(true);
+            try {
+                // ✅ FIXED: /availability → /check-availability
+                const res = await api.get(`/rooms/${id}/check-availability`, {
+                    params: {
+                        check_in_date: checkIn,
+                        check_out_date: checkOut,
+                        stay_type: "overnight",
+                    },
+                    signal: controller.signal,
+                });
+
+                if (requestId !== availabilityRequestRef.current) return;
+
+                const payload = res.data?.data ?? res.data;
+                setAvailability({
+                    available: payload?.available ?? false,
+                    conflicts: payload?.conflicts ?? [],
+                    reason: payload?.reason ?? null,
+                });
+            } catch (err: any) {
+                if (
+                    err?.name === "CanceledError" ||
+                    err?.code === "ERR_CANCELED"
+                )
+                    return;
+                if (requestId !== availabilityRequestRef.current) return;
+
+                console.log("CHECK AVAILABILITY ERROR:", err);
+                setAvailability(null);
+            } finally {
+                if (requestId === availabilityRequestRef.current) {
+                    setCheckingAvailability(false);
+                }
+            }
+        };
+
+        const t = setTimeout(checkAvail, 350);
+
+        return () => {
+            clearTimeout(t);
+            controller.abort();
+        };
+    }, [id, checkIn, checkOut]);
+
+    const minCheckOut = useMemo(() => {
+        if (!checkIn) return todayPlus(1);
+        const next = new Date(checkIn);
+        next.setDate(next.getDate() + 1);
+        return toISODate(next);
+    }, [checkIn]);
+
+    const conflictMessage = useMemo(() => {
+        if (!availability || availability.available) return null;
+
+        if (availability.reason) {
+            return availability.reason;
+        }
+
+        const [first] = availability.conflicts;
+
+        if (!first) {
+            return "This room is not available for the selected dates.";
+        }
+
+        return `This room is already booked from ${formatDateLong(
+            first.check_in_date,
+        )} to ${formatDateLong(
+            first.check_out_date,
+        )}. Please choose different dates.`;
+    }, [availability]);
+
+    // Handles a new check-in date chosen from the calendar, keeping
+    // check-out valid (bumping it to the next day when needed).
+    const handleCheckInChange = (newCheckIn: string) => {
+        setCheckIn(newCheckIn);
+        setContinueError(null);
+
+        if (!newCheckIn) return;
+
+        const newCheckInDate = new Date(`${newCheckIn}T00:00:00`);
+        const currentCheckOutDate = checkOut
+            ? new Date(`${checkOut}T00:00:00`)
+            : null;
+
+        if (!currentCheckOutDate || currentCheckOutDate <= newCheckInDate) {
+            const nextDay = new Date(newCheckInDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            setCheckOut(toISODate(nextDay));
+        }
+    };
+
+    // Handles a new check-out date chosen from the calendar, guarding
+    // against a check-out on or before the check-in date.
+    const handleCheckOutChange = (newCheckOut: string) => {
+        if (!newCheckOut) {
+            setCheckOut(minCheckOut);
+            setContinueError(null);
+            return;
+        }
+
+        const selectedCheckOut = new Date(`${newCheckOut}T00:00:00`);
+        const selectedCheckIn = new Date(`${checkIn}T00:00:00`);
+
+        if (selectedCheckOut <= selectedCheckIn) {
+            setCheckOut(minCheckOut);
+        } else {
+            setCheckOut(newCheckOut);
+        }
+
+        setContinueError(null);
+    };
 
     if (loading) {
         return (
@@ -157,7 +360,6 @@ export default function GuestReserve() {
 
     const roomType = room.room_type;
 
-    // Normalize amenities into a flat string list (array, JSON string, or CSV).
     const amenities: string[] = (() => {
         const raw = roomType?.amenities;
         if (!raw || (Array.isArray(raw) && raw.length === 0))
@@ -167,7 +369,7 @@ export default function GuestReserve() {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) return parsed;
         } catch {
-            /* not JSON — fall through to comma split */
+            /* not JSON — fall through */
         }
         return raw
             .split(",")
@@ -175,9 +377,6 @@ export default function GuestReserve() {
             .filter(Boolean);
     })();
 
-    // Build gallery list — normal photos only. The 360 photo (if any) is
-    // shown separately via the "360° View" badge, not mixed into the
-    // swipeable gallery, so the main display picture is never the panorama.
     const images: string[] = (() => {
         if (room.images && room.images.length > 0) {
             const normalOnly = room.images.filter(
@@ -215,13 +414,25 @@ export default function GuestReserve() {
     const subtotal = basePrice * (nights || 0);
     const total = subtotal;
 
-    // Step 1 (Room Details) is done here — dates/guests are validated, then
-    // handed off to GuestConfirmReservation (step 2: Guest Information) via
-    // route state instead of creating the booking directly on this page.
+    const isAvailable = availability?.available ?? true;
+
     const handleContinue = () => {
         if (!nights) {
             setContinueError(
                 "Please select a valid check-in and check-out date.",
+            );
+            return;
+        }
+        if (availability && !availability.available) {
+            setContinueError(
+                conflictMessage ||
+                    "This room is not available for the selected dates.",
+            );
+            return;
+        }
+        if (!availability) {
+            setContinueError(
+                "Still checking availability. Please wait a moment and try again.",
             );
             return;
         }
@@ -233,7 +444,6 @@ export default function GuestReserve() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
                 <Home className="w-4 h-4" />
                 <Link
@@ -246,7 +456,6 @@ export default function GuestReserve() {
                 <span className="text-gray-700">Room {room.room_number}</span>
             </div>
 
-            {/* Header */}
             <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
                 <div className="flex items-center gap-3 flex-wrap">
                     <h1
@@ -277,9 +486,7 @@ export default function GuestReserve() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* ── LEFT COLUMN ── */}
                 <div className="lg:col-span-2 flex flex-col gap-6 bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
-                    {/* Gallery */}
                     <div className="flex gap-3">
-                        {/* Main image */}
                         <div className="relative flex-1 h-[460px] rounded-2xl overflow-hidden bg-gray-100">
                             {images.length > 0 ? (
                                 <img
@@ -327,7 +534,6 @@ export default function GuestReserve() {
                             )}
                         </div>
 
-                        {/* Thumbnails */}
                         {thumbnails.length > 0 && (
                             <div className="flex flex-col gap-3 w-32 shrink-0">
                                 {thumbnails.map((src, i) => {
@@ -367,7 +573,6 @@ export default function GuestReserve() {
                         )}
                     </div>
 
-                    {/* Quick facts + amenities row */}
                     <div className="flex flex-wrap items-center gap-2.5 -mt-2">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">
                             <Users className="w-3.5 h-3.5" />
@@ -393,7 +598,6 @@ export default function GuestReserve() {
 
                     <div className="border-t border-gray-100" />
 
-                    {/* Info tiles: Comfort / Convenience / Great Value */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-start gap-3">
                             <div className="w-10 h-10 rounded-xl bg-[#eaf3ea] flex items-center justify-center shrink-0">
@@ -438,7 +642,6 @@ export default function GuestReserve() {
 
                     <div className="border-t border-gray-100" />
 
-                    {/* About This Room */}
                     <div>
                         <h2
                             className="text-xl font-bold text-[#0d2e1f] mb-2"
@@ -450,7 +653,7 @@ export default function GuestReserve() {
                             {roomType?.description ||
                                 `Room ${room.room_number} is a ${(
                                     roomType?.type_name || "standard"
-                                ).toLowerCase()} room designed for a relaxing and hassle-free stay. It features a comfortable bed, modern amenities, and a clean, cozy atmosphere. Perfect for couples, families, or business travelers looking for comfort and convenience.`}
+                                ).toLowerCase()} room designed for a relaxing and hassle-free stay.`}
                         </p>
                     </div>
                 </div>
@@ -469,41 +672,59 @@ export default function GuestReserve() {
                         </p>
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                                    Check-in Date
-                                </label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                    <input
-                                        type="date"
-                                        value={checkIn}
-                                        min={todayPlus(0)}
-                                        onChange={(e) =>
-                                            setCheckIn(e.target.value)
-                                        }
-                                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 outline-none focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 transition-all"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                                    Check-out Date
-                                </label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                    <input
-                                        type="date"
-                                        value={checkOut}
-                                        min={checkIn || todayPlus(1)}
-                                        onChange={(e) =>
-                                            setCheckOut(e.target.value)
-                                        }
-                                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 outline-none focus:border-[#c9a96e] focus:ring-2 focus:ring-[#c9a96e]/20 transition-all"
-                                    />
-                                </div>
-                            </div>
+                            <CustomDatePicker
+                                label="Check-in Date"
+                                value={checkIn}
+                                onChange={handleCheckInChange}
+                                minDate={todayPlus(0)}
+                                disabledDates={bookedDates}
+                            />
+                            <CustomDatePicker
+                                label="Check-out Date"
+                                value={checkOut}
+                                onChange={handleCheckOutChange}
+                                minDate={minCheckOut}
+                                disabledDates={bookedDates}
+                            />
                         </div>
+
+                        {nights > 0 && (
+                            <div className="mb-4">
+                                {checkingAvailability ? (
+                                    <div className="flex items-center gap-2.5 rounded-2xl bg-gray-50 px-4 py-3">
+                                        <Loader2 className="w-4 h-4 text-gray-400 animate-spin shrink-0" />
+                                        <p className="text-xs text-gray-500">
+                                            Checking availability…
+                                        </p>
+                                    </div>
+                                ) : availability?.available ? (
+                                    <div className="flex items-start gap-2.5 rounded-2xl bg-green-50 border border-green-200 px-4 py-3">
+                                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-xs font-semibold text-green-700">
+                                                Room is available
+                                            </p>
+                                            <p className="text-xs text-green-600/80 mt-0.5">
+                                                Your selected dates are open for
+                                                booking.
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : availability && !availability.available ? (
+                                    <div className="flex items-start gap-2.5 rounded-2xl bg-red-50 border border-red-200 px-4 py-3">
+                                        <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-xs font-semibold text-red-700">
+                                                Not available for these dates
+                                            </p>
+                                            <p className="text-xs text-red-600/80 mt-0.5">
+                                                {conflictMessage}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        )}
 
                         <div className="mb-5">
                             <label className="block text-xs font-medium text-gray-500 mb-1.5">
@@ -534,7 +755,6 @@ export default function GuestReserve() {
                             </div>
                         </div>
 
-                        {/* Room price */}
                         <div className="rounded-2xl bg-[#eaf3ea] px-4 py-3.5 mb-5">
                             <p className="text-xs text-[#1a4a35]/70 mb-1">
                                 Room Price
@@ -552,7 +772,6 @@ export default function GuestReserve() {
                             </p>
                         </div>
 
-                        {/* Price breakdown */}
                         <div className="mb-4">
                             <p className="text-sm font-semibold text-[#0d2e1f] mb-3">
                                 Price Breakdown
@@ -599,10 +818,23 @@ export default function GuestReserve() {
 
                         <button
                             onClick={handleContinue}
-                            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#0d2e1f] text-white font-medium hover:bg-[#1a4a35] transition-colors"
+                            disabled={
+                                checkingAvailability ||
+                                (availability !== null && !isAvailable)
+                            }
+                            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#0d2e1f] text-white font-medium hover:bg-[#1a4a35] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            Continue to Guest Details
-                            <ArrowRight className="w-4 h-4" />
+                            {checkingAvailability ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Checking availability…
+                                </>
+                            ) : (
+                                <>
+                                    Continue to Guest Details
+                                    <ArrowRight className="w-4 h-4" />
+                                </>
+                            )}
                         </button>
 
                         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-gray-400 mt-3">

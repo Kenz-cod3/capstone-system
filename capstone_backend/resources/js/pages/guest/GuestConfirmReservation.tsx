@@ -21,11 +21,9 @@ import {
     Check,
 } from "lucide-react";
 
-// Same axios instance / room shape used across the guest pages.
 import api from "../../services/api";
 import { createBooking } from "../../services/bookingService";
 
-// ── Types ──────────────────────────────────────────────────────────
 interface RoomType {
     id?: number;
     type_name: string;
@@ -55,9 +53,8 @@ interface ReservationDraft {
     guests: number;
 }
 
-// Shape passed forward to GuestPayment via navigate(...).
 interface PaymentNavState {
-    bookingId: number; // NEW — required so GuestPayment can create the QR payment
+    bookingId: number;
     checkIn: string;
     checkOut: string;
     guests: number;
@@ -198,7 +195,35 @@ export default function GuestConfirmReservation() {
         }
         setConfirming(true);
         setConfirmError(null);
+
         try {
+            // Pre-check availability so we can show a friendly error before
+            // the create-booking call fails with a 409.
+            try {
+                const availRes = await api.get(
+                    `/rooms/${room.id}/check-availability`,
+                    {
+                        params: {
+                            check_in_date: checkIn,
+                            check_out_date: checkOut,
+                            stay_type: "overnight",
+                        },
+                    },
+                );
+
+                const avail = availRes.data?.available ?? availRes.data;
+                if (avail === false) {
+                    setConfirmError(
+                        "This room is no longer available for the selected dates. Please choose another room or different dates.",
+                    );
+                    return;
+                }
+            } catch (checkErr) {
+                // If the availability endpoint itself fails, don't block the
+                // booking — let the create call be the source of truth.
+                console.log("AVAILABILITY CHECK ERROR:", checkErr);
+            }
+
             const bookingRes = await createBooking({
                 rooms: [
                     {
@@ -212,20 +237,16 @@ export default function GuestConfirmReservation() {
                     paymentMethod === "online" ? "gcash" : "pay_at_hotel",
             });
 
-            // TEMP: keep this log until we confirm the real shape, then remove it.
-            console.log("CREATE BOOKING RESPONSE:", bookingRes);
-
-            // Tries the most common Laravel response shapes in order:
-            // { data: { id } }, { data: { data: { id } } }, { id }, { booking: { id } }
+            // Unwrap axios/laravel response shapes in one pass. Handles:
+            //   - axios { data: { data: { id } } }  (with .data wrapper)
+            //   - axios { data: { id } }            (flat)
+            //   - raw   { id }                      (service already unwrapped)
+            const payload: any =
+                bookingRes?.data?.data ?? bookingRes?.data ?? bookingRes;
             const newBookingId: number | undefined =
-                bookingRes?.data?.data?.id ??
-                bookingRes?.data?.booking?.id ??
-                bookingRes?.data?.id;
+                payload?.id ?? payload?.booking?.id;
 
             if (!newBookingId) {
-                console.log(
-                    "Could not find booking id in response — check the CREATE BOOKING RESPONSE log above and adjust newBookingId accordingly.",
-                );
                 setConfirmError(
                     "Booking was created, but we couldn't read its reference. Please check My Bookings.",
                 );
@@ -249,10 +270,23 @@ export default function GuestConfirmReservation() {
             }
         } catch (err: any) {
             console.log("CONFIRM RESERVATION ERROR:", err);
-            setConfirmError(
-                err?.response?.data?.message ||
-                    "Failed to confirm reservation. Please try again.",
-            );
+
+            const status = err?.response?.status;
+            if (status === 409) {
+                setConfirmError(
+                    "This room is already booked for the selected dates. Please choose another room or different dates.",
+                );
+            } else if (status === 422) {
+                setConfirmError(
+                    err?.response?.data?.message ||
+                        "Please check your booking details and try again.",
+                );
+            } else {
+                setConfirmError(
+                    err?.response?.data?.message ||
+                        "Failed to confirm reservation. Please try again.",
+                );
+            }
         } finally {
             setConfirming(false);
         }
@@ -293,7 +327,6 @@ export default function GuestConfirmReservation() {
                     </p>
                 </div>
 
-                {/* Step indicator */}
                 <div className="flex items-center pt-2">
                     {STEPS.map((step, i) => {
                         const status =
@@ -605,7 +638,9 @@ export default function GuestConfirmReservation() {
                             ) : (
                                 <Calendar className="w-4 h-4" />
                             )}
-                            {confirming ? "Confirming..." : "Confirm Reservation"}
+                            {confirming
+                                ? "Confirming..."
+                                : "Confirm Reservation"}
                             {!confirming && <ArrowRight className="w-4 h-4" />}
                         </button>
                     </div>

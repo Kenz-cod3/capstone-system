@@ -1396,63 +1396,62 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                 )}
 
                 {/* Per-room Add-ons section */}
-                {selectedRoom.add_ons &&
-                    selectedRoom.add_ons.length > 0 && (
+                {selectedRoom.add_ons && selectedRoom.add_ons.length > 0 && (
+                    <div
+                        style={{
+                            border: `1px solid ${BORDER}`,
+                            borderRadius: "8px",
+                            overflow: "hidden",
+                            marginTop: 12,
+                        }}
+                    >
                         <div
                             style={{
-                                border: `1px solid ${BORDER}`,
-                                borderRadius: "8px",
-                                overflow: "hidden",
-                                marginTop: 12,
+                                background: "#fafbfc",
+                                padding: "4px 12px",
+                                borderBottom: `1px solid ${BORDER}`,
                             }}
                         >
-                            <div
-                                style={{
-                                    background: "#fafbfc",
-                                    padding: "4px 12px",
-                                    borderBottom: `1px solid ${BORDER}`,
-                                }}
-                            >
-                                <Space size={4}>
-                                    <GiftOutlined
+                            <Space size={4}>
+                                <GiftOutlined
+                                    style={{
+                                        fontSize: "11px",
+                                        color: MINT_GREEN,
+                                    }}
+                                />
+                                <Text strong style={{ fontSize: "11px" }}>
+                                    Room Add-ons
+                                </Text>
+                            </Space>
+                        </div>
+                        <div style={{ padding: "6px 12px" }}>
+                            {selectedRoom.add_ons.map((addon) => (
+                                <div
+                                    key={addon.id}
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        padding: "4px 0",
+                                        borderBottom: "1px solid #f1f5f9",
+                                    }}
+                                >
+                                    <Text style={{ fontSize: "11px" }}>
+                                        {addon.name} × {addon.quantity}
+                                    </Text>
+                                    <Text
+                                        strong
                                         style={{
                                             fontSize: "11px",
                                             color: MINT_GREEN,
                                         }}
-                                    />
-                                    <Text strong style={{ fontSize: "11px" }}>
-                                        Room Add-ons
-                                    </Text>
-                                </Space>
-                            </div>
-                            <div style={{ padding: "6px 12px" }}>
-                                {selectedRoom.add_ons.map((addon) => (
-                                    <div
-                                        key={addon.id}
-                                        style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            padding: "4px 0",
-                                            borderBottom: "1px solid #f1f5f9",
-                                        }}
                                     >
-                                        <Text style={{ fontSize: "11px" }}>
-                                            {addon.name} × {addon.quantity}
-                                        </Text>
-                                        <Text
-                                            strong
-                                            style={{
-                                                fontSize: "11px",
-                                                color: MINT_GREEN,
-                                            }}
-                                        >
-                                            ₱{addon.subtotal.toLocaleString()}
-                                        </Text>
-                                    </div>
-                                ))}
-                            </div>
+                                        ₱{addon.subtotal.toLocaleString()}
+                                    </Text>
+                                </div>
+                            ))}
                         </div>
-                    )}
+                    </div>
+                )}
             </Modal>
         );
     };
@@ -1465,17 +1464,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                 padding: "20px 24px 40px",
             }}
         >
-            {/* Breadcrumb */}
-            <div style={{ marginBottom: 6, fontSize: "13px", color: SLATE }}>
-                <span>Dashboard</span>
-                <span style={{ margin: "0 6px" }}>›</span>
-                <span>Bookings</span>
-                <span style={{ margin: "0 6px" }}>›</span>
-                <span style={{ color: INK, fontWeight: 600 }}>
-                    Booking Details
-                </span>
-            </div>
-
             {/* Page Header */}
             <div
                 style={{
@@ -2460,8 +2448,8 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                                             marginLeft: 4,
                                                         }}
                                                     >
-                                                        ({booking.shift_start}{" "}
-                                                        – {booking.shift_end})
+                                                        ({booking.shift_start} –{" "}
+                                                        {booking.shift_end})
                                                     </Text>
                                                 )}
                                         </Text>
@@ -2552,7 +2540,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                     </Text>
                                     <Text style={{ fontSize: "12.5px" }}>
                                         ₱
-                                        {roomCharges.toLocaleString(undefined, {
+                                        {(
+                                            roomCharges -
+                                            totalEarlyCheckinFee -
+                                            totalLateCheckoutFee
+                                        ).toLocaleString(undefined, {
                                             minimumFractionDigits: 2,
                                             maximumFractionDigits: 2,
                                         })}

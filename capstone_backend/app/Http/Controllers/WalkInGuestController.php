@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\WalkInGuest;
 use App\Models\Booking;
 use App\Models\Room;
+use App\Models\BookedRoom;
 use App\Models\BookingAddOn;
 use App\Models\AddOn;
 use App\Models\BookingPayment;
@@ -24,6 +25,12 @@ use App\Models\StaffActivityLog;
 
 class WalkInGuestController extends Controller
 {
+    private const BLOCKING_STATUSES = [
+        'pending',
+        'confirmed',
+        'checked_in',
+    ];
+
     /**
      * GET ALL WALK-IN GUESTS WITH THEIR BOOKINGS AND TOTAL SPENT
      */
@@ -209,6 +216,9 @@ class WalkInGuestController extends Controller
     /**
      * WALK-IN CHECK-IN WITH ADD-ONS SUPPORT
      * Creates 1 booking, multiple booked rooms, and 1 payment
+     *
+     * Now uses the same date-overlap conflict check (with row locking)
+     * as BookingController@store, instead of only checking room->status.
      */
     public function checkin(Request $request)
     {
@@ -238,30 +248,100 @@ class WalkInGuestController extends Controller
             $roomNumbers = [];
             $totalPrice = 0;
 
-            // Check room availability
-            $roomIds = collect($validated['bookings'])->pluck('room_id')->toArray();
+            // Load all rooms referenced in the payload
+            $roomIds = collect($validated['bookings'])
+                ->pluck('room_id')
+                ->unique()
+                ->values();
 
             $roomsToBook = Room::whereIn('id', $roomIds)
-                ->where('status', 'available')
+                ->with('roomType')
                 ->get();
 
-            if ($roomsToBook->count() != count($roomIds)) {
+            if ($roomsToBook->count() !== $roomIds->count()) {
                 DB::rollBack();
 
                 return response()->json([
-                    'message' => 'Some rooms are no longer available'
-                ], 409);
+                    'message' => 'Some selected rooms do not exist.'
+                ], 400);
+            }
+
+            // MAINTENANCE CHECK
+            $maintenance = $roomsToBook->firstWhere('status', 'maintenance');
+
+            if ($maintenance) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => "Room {$maintenance->room_number} is under maintenance."
+                ], 400);
+            }
+
+            // GUARD: same room selected twice with overlapping ranges in this payload
+            $ranges = [];
+
+            foreach ($validated['bookings'] as $bookingData) {
+
+                [$in, $out] = $this->resolveRange(
+                    $bookingData['check_in_date'],
+                    $bookingData['check_out_date'],
+                    $bookingData['stay_type']
+                );
+
+                $roomId = $bookingData['room_id'];
+
+                foreach ($ranges[$roomId] ?? [] as $existing) {
+
+                    if ($in->lt($existing[1]) && $out->gt($existing[0])) {
+
+                        DB::rollBack();
+
+                        $room = $roomsToBook->firstWhere('id', $roomId);
+
+                        return response()->json([
+                            'message' => 'Room ' . ($room->room_number ?? $roomId) .
+                                ' is selected twice with overlapping dates.'
+                        ], 422);
+                    }
+                }
+
+                $ranges[$roomId][] = [$in, $out];
+            }
+
+            // REAL CONFLICT CHECK against existing active bookings, row-locked
+            foreach ($validated['bookings'] as $bookingData) {
+
+                [$in, $out] = $this->resolveRange(
+                    $bookingData['check_in_date'],
+                    $bookingData['check_out_date'],
+                    $bookingData['stay_type']
+                );
+
+                $conflict = $this->conflictQuery(
+                    $bookingData['room_id'],
+                    $in,
+                    $out
+                )
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($conflict) {
+
+                    DB::rollBack();
+
+                    $room = $roomsToBook->firstWhere('id', $bookingData['room_id']);
+
+                    return response()->json([
+                        'message' => 'Room ' . ($room->room_number ?? $bookingData['room_id']) .
+                            ' is already booked for the selected dates.'
+                    ], 409);
+                }
             }
 
             // Booking reference
             do {
                 $reference = 'BOOK-' . strtoupper(Str::random(8));
             } while (Booking::where('booking_reference', $reference)->exists());
-
-            $firstBooking = $validated['bookings'][0];
-
-            $checkInDate = $firstBooking['check_in_date'];
-            $checkOutDate = $firstBooking['check_out_date'];
 
             // Compute total
             foreach ($validated['bookings'] as $bookingData) {
@@ -295,7 +375,7 @@ class WalkInGuestController extends Controller
             // Create booked rooms
             foreach ($validated['bookings'] as $bookingData) {
 
-                $room = Room::with('roomType')->findOrFail($bookingData['room_id']);
+                $room = $roomsToBook->firstWhere('id', $bookingData['room_id']);
 
                 $roomNumbers[] = $room->room_number;
 
@@ -593,6 +673,7 @@ class WalkInGuestController extends Controller
             ], 500);
         }
     }
+
     /**
      * GET BOOKING DETAILS WITH ADD-ONS
      */
@@ -632,5 +713,52 @@ class WalkInGuestController extends Controller
         return response()->json([
             'message' => 'Walk-in guest deleted successfully'
         ]);
+    }
+
+    /**
+     * Resolve a [check_in, check_out] Carbon range for a stay.
+     * Short stays always block exactly one day (the check-in day).
+     * Mirrors BookingController::resolveRange().
+     */
+    private function resolveRange($checkIn, $checkOut, ?string $stayType): array
+    {
+        $in = Carbon::parse($checkIn)->startOfDay();
+
+        $out = $stayType === 'short_stay'
+            ? $in->copy()->addDay()
+            : Carbon::parse($checkOut ?? $in)->startOfDay();
+
+        if ($out->lessThanOrEqualTo($in)) {
+            $out = $in->copy()->addDay();
+        }
+
+        return [$in, $out];
+    }
+
+    /**
+     * Query for active bookings on a room that overlap the given range.
+     * Mirrors BookingController::conflictQuery().
+     */
+    private function conflictQuery($roomId, Carbon $in, Carbon $out, $excludeBookedRoomId = null)
+    {
+        $query = BookedRoom::where('room_id', $roomId)
+            ->whereNull('archived_at')
+            ->whereNull('deleted_at')
+            ->whereIn('status', self::BLOCKING_STATUSES)
+            ->whereDate('check_in_date', '<', $out->toDateString())
+            ->whereRaw(
+                "CASE
+                    WHEN stay_type = 'short_stay'
+                    THEN DATE_ADD(check_in_date, INTERVAL 1 DAY)
+                    ELSE check_out_date
+                 END > ?",
+                [$in->toDateString()]
+            );
+
+        if ($excludeBookedRoomId) {
+            $query->where('id', '!=', $excludeBookedRoomId);
+        }
+
+        return $query;
     }
 }

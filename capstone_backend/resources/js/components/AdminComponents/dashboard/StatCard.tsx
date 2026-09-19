@@ -66,12 +66,9 @@ export default function StatCard({
                 </div>
             </div>
 
-            {/* VALUE — removed `relative top-6` / `relative top-3` offset hacks.
-                Plain flex column with a small gap keeps the value and label
-                stacked correctly regardless of font/line-height differences
-                between dev and production. */}
-            <div className="mt-1 flex flex-col gap-1">
-                <p className="text-2xl font-semibold text-gray-800 leading-tight">
+            {/* VALUE */}
+            <div className="mt-1">
+                <p className="text-2xl relative top-6 font-semibold text-gray-800">
                     {isMoney ? (
                         shouldAnimate ? (
                             <CountUp
@@ -89,7 +86,7 @@ export default function StatCard({
                     )}
                 </p>
 
-                <p className="text-xs text-gray-500 leading-tight">
+                <p className="text-xs text-gray-500 relative top-3">
                     {label}
                 </p>
             </div>

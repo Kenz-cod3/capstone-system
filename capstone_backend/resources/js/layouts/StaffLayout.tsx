@@ -25,6 +25,7 @@ import {
     ChevronUp,
     BanknoteArrowDown,
     BookUser,
+    Clock,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -243,6 +244,25 @@ const StaffLayout = ({
             sessionStorage.setItem("shiftPromptShown", "true");
         }
     }, [user?.id]);
+
+    // Current shift number shown in the header (staff only)
+    const [shiftNumber, setShiftNumber] = useState<string | null>(null);
+
+    const fetchShiftNumber = useCallback(async () => {
+        if (!user?.id || user.role?.toLowerCase() !== "staff") return;
+
+        try {
+            const res = await api.get("/shift/current");
+            setShiftNumber(res.data?.shift_number ?? null);
+        } catch {
+            // 404 = no active shift
+            setShiftNumber(null);
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        fetchShiftNumber();
+    }, [fetchShiftNumber]);
 
     // const handleLogout = async () => {
     //     NProgress.start();
@@ -1338,6 +1358,20 @@ const StaffLayout = ({
                             </div>
 
                             <div className="flex items-center gap-1">
+                                {shiftNumber && (
+                                    <div
+                                        className="hidden sm:flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 select-none"
+                                        title="Current shift"
+                                    >
+                                        <span className="relative flex h-2 w-2">
+                                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                        </span>
+                                        <span className="text-[10px] font-medium text-emerald-700 tracking-wide">
+                                            {shiftNumber}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="relative">
                                     <button
                                         ref={chatButtonRef}
@@ -1477,7 +1511,10 @@ const StaffLayout = ({
             {isShiftModalOpen && (
                 <ShiftStatusModal
                     open={isShiftModalOpen}
-                    onClose={() => setIsShiftModalOpen(false)}
+                    onClose={() => {
+                        setIsShiftModalOpen(false);
+                        fetchShiftNumber();
+                    }}
                 />
             )}
 
