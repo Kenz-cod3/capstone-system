@@ -8,6 +8,8 @@ import {
   TextInput,
   Image,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
   StatusBar,
   Alert,
   ScrollView,
@@ -21,28 +23,53 @@ import * as ImagePicker from "expo-image-picker";
 
 type FilterKey = "all" | "dirty" | "cleaning" | "maintenance";
 
+/*
+|--------------------------------------------------------------------------
+| STATUS META
+|--------------------------------------------------------------------------
+| You can adjust the height of EACH status here.
+|
+| Dirty       = 165
+| Cleaning    = 165
+| Maintenance = 165
+|
+| If you want Dirty smaller:
+|
+| dirty: {
+|   ...
+|   height: 150,
+| }
+|--------------------------------------------------------------------------
+*/
+
 const STATUS_META: Record<
   string,
   {
     label: string;
     color: string;
     bg: string;
+    height: number;
   }
 > = {
   dirty: {
     label: "Dirty",
     color: "#ef4444",
     bg: "#fee2e2",
+    height: 165,
   },
+
   cleaning: {
     label: "Cleaning",
     color: "#f59e0b",
     bg: "#fef3c7",
+    height: 165,
   },
+
   maintenance: {
     label: "Maintenance",
     color: "#8b5cf6",
     bg: "#ede9fe",
+    height: 165,
   },
 };
 
@@ -50,10 +77,13 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [processingId, setProcessingId] = useState<number | null>(null);
+
   const [preview, setPreview] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
+
   const [selectedFilter, setSelectedFilter] = useState<FilterKey>("all");
 
   // =========================================================
@@ -80,6 +110,7 @@ export default function Tasks() {
       setTasks(activeTasks);
     } catch (error) {
       console.log(error);
+
       Alert.alert("Error", "Failed to fetch tasks");
     } finally {
       setLoading(false);
@@ -175,7 +206,7 @@ export default function Tasks() {
   }, [tasks, selectedFilter, searchQuery]);
 
   // =========================================================
-  // CAMERA
+  // CAMERA FILE
   // =========================================================
 
   const uriToFile = async (uri: string, name: string): Promise<any> => {
@@ -305,10 +336,29 @@ export default function Tasks() {
 
     const meta = STATUS_META[item.status] ?? STATUS_META.dirty;
 
+    /*
+    |--------------------------------------------------------------------------
+    | THIS IS THE IMPORTANT PART
+    |--------------------------------------------------------------------------
+    | The card height now comes from STATUS_META.
+    |
+    | Dirty       -> meta.height
+    | Cleaning    -> meta.height
+    | Maintenance -> meta.height
+    |--------------------------------------------------------------------------
+    */
+
+    const cardHeight = meta.height;
+
     const photoCount = item.images?.length ?? item.photos?.length ?? 0;
 
-    // Report states
+    // =======================================================
+    // REPORT STATES
+    // =======================================================
+
     const [hasDamage, setHasDamage] = useState(false);
+
+    const [reportModalVisible, setReportModalVisible] = useState(false);
 
     const [reportType, setReportType] = useState<"damaged" | "lost" | "found">(
       "damaged",
@@ -320,9 +370,9 @@ export default function Tasks() {
 
     const isFound = hasDamage && reportType === "found";
 
-    // -------------------------------------------------------
+    // =======================================================
     // ADD PHOTO
-    // -------------------------------------------------------
+    // =======================================================
 
     const addPhoto = async () => {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -342,17 +392,17 @@ export default function Tasks() {
       }
     };
 
-    // -------------------------------------------------------
+    // =======================================================
     // REMOVE PHOTO
-    // -------------------------------------------------------
+    // =======================================================
 
     const removePhoto = (index: number) => {
       setPhotos((prev) => prev.filter((_, i) => i !== index));
     };
 
-    // -------------------------------------------------------
+    // =======================================================
     // STATUS TEXT
-    // -------------------------------------------------------
+    // =======================================================
 
     const statusText =
       item.status === "dirty"
@@ -361,25 +411,52 @@ export default function Tasks() {
           ? "In progress"
           : "Awaiting repair";
 
+    // =======================================================
+    // CARD
+    // =======================================================
+
     return (
       <View
         className="bg-white mb-4 rounded-2xl overflow-hidden"
         style={{
+          width: "100%",
+
+          /*
+          |--------------------------------------------------------------------------
+          | CARD HEIGHT
+          |--------------------------------------------------------------------------
+          */
+
+          height: cardHeight,
+          minHeight: cardHeight,
+          maxHeight: cardHeight,
+
           shadowColor: "#000",
           shadowOpacity: 0.06,
           shadowRadius: 10,
+
           shadowOffset: {
             width: 0,
             height: 3,
           },
+
           elevation: 2,
         }}
       >
         {/* ================================================= */}
-        {/* HORIZONTAL CARD */}
+        {/* CARD ROW */}
         {/* ================================================= */}
 
-        <View className="flex-row">
+        <View
+          className="flex-row"
+          style={{
+            width: "100%",
+
+            height: cardHeight,
+            minHeight: cardHeight,
+            maxHeight: cardHeight,
+          }}
+        >
           {/* ================================================= */}
           {/* LEFT IMAGE */}
           {/* ================================================= */}
@@ -388,19 +465,42 @@ export default function Tasks() {
             activeOpacity={0.9}
             disabled={!item.image_url}
             onPress={() => item.image_url && setPreview(item.image_url)}
-            className="w-[42%]"
+            style={{
+              width: "42%",
+
+              height: cardHeight,
+              minHeight: cardHeight,
+              maxHeight: cardHeight,
+            }}
           >
-            <View className="h-full min-h-[135px]">
+            <View
+              style={{
+                width: "100%",
+
+                height: cardHeight,
+                minHeight: cardHeight,
+                maxHeight: cardHeight,
+              }}
+            >
               {item.image_url ? (
                 <Image
                   source={{
                     uri: item.image_url,
                   }}
-                  className="w-full h-full"
+                  style={{
+                    width: "100%",
+                    height: cardHeight,
+                  }}
                   resizeMode="cover"
                 />
               ) : (
-                <View className="w-full h-full bg-gray-100 items-center justify-center">
+                <View
+                  className="bg-gray-100 items-center justify-center"
+                  style={{
+                    width: "100%",
+                    height: cardHeight,
+                  }}
+                >
                   <Feather name="image" size={25} color="#9ca3af" />
 
                   <Text className="text-gray-400 text-[10px] mt-1">
@@ -452,16 +552,36 @@ export default function Tasks() {
           {/* RIGHT CONTENT */}
           {/* ================================================= */}
 
-          <View className="flex-1 p-5">
+          <View
+            className="flex-1 p-5 justify-center"
+            style={{
+              height: cardHeight,
+              minHeight: cardHeight,
+              maxHeight: cardHeight,
+
+              /*
+              |--------------------------------------------------------------------------
+              | IMPORTANT
+              |--------------------------------------------------------------------------
+              | Prevent content from stretching the card.
+              |--------------------------------------------------------------------------
+              */
+
+              overflow: "hidden",
+            }}
+          >
             {/* ROOM NUMBER */}
 
-            <Text className="font-bold text-lg text-gray-900">
+            <Text className="font-bold text-lg text-gray-900" numberOfLines={1}>
               Room {item.room_number}
             </Text>
 
             {/* ROOM TYPE */}
 
-            <Text className="text-[11px] text-gray-400 mb-2.5">
+            <Text
+              className="text-[11px] text-gray-400 mb-2.5"
+              numberOfLines={1}
+            >
               {item.room_type || "Standard Room"}
             </Text>
 
@@ -514,7 +634,7 @@ export default function Tasks() {
             </View>
 
             {/* ================================================= */}
-            {/* DIRTY = START CLEANING */}
+            {/* DIRTY */}
             {/* ================================================= */}
 
             {item.status === "dirty" && (
@@ -541,158 +661,42 @@ export default function Tasks() {
 
                 <TouchableOpacity
                   disabled={isProcessing}
-                  onPress={() => setHasDamage(!hasDamage)}
+                  onPress={() => setReportModalVisible(true)}
                   className={`self-start px-3 py-2 rounded-xl mb-2 ${
                     hasDamage
                       ? isFound
-                        ? "bg-blue-500"
-                        : "bg-red-500"
+                        ? "bg-blue-100"
+                        : "bg-red-100"
                       : "bg-gray-100"
                   }`}
                 >
                   <Text
                     className={`text-[10px] font-semibold ${
-                      hasDamage ? "text-white" : "text-gray-600"
+                      hasDamage
+                        ? isFound
+                          ? "text-blue-700"
+                          : "text-red-600"
+                        : "text-gray-600"
                     }`}
                   >
                     {hasDamage
                       ? isFound
                         ? "📦 Found Item"
-                        : "⚠️ Damage Reported"
+                        : reportType === "lost"
+                          ? "⚠️ Lost Item"
+                          : "⚠️ Damage Reported"
                       : "🚩 Report Issue"}
                   </Text>
                 </TouchableOpacity>
 
-                {/* ================================================= */}
-                {/* REPORT FORM */}
-                {/* ================================================= */}
-
-                {hasDamage && (
-                  <View
-                    className={`p-3 rounded-xl mb-2 border ${
-                      isFound
-                        ? "bg-blue-50 border-blue-100"
-                        : "bg-red-50 border-red-100"
-                    }`}
-                  >
-                    {/* REPORT TYPE */}
-
-                    <Text className="text-[9px] font-bold text-gray-500 mb-2 uppercase">
-                      Report Type
-                    </Text>
-
-                    <View className="flex-row gap-1.5 mb-2">
-                      {(["damaged", "lost", "found"] as const).map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          onPress={() => setReportType(type)}
-                          className={`flex-1 px-1 py-1.5 rounded-lg border ${
-                            reportType === type
-                              ? type === "found"
-                                ? "bg-blue-500 border-blue-500"
-                                : "bg-red-500 border-red-500"
-                              : "bg-white border-gray-200"
-                          }`}
-                        >
-                          <Text
-                            className={`text-center text-[9px] font-medium capitalize ${
-                              reportType === type
-                                ? "text-white"
-                                : "text-gray-600"
-                            }`}
-                          >
-                            {type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* FOUND INFO */}
-
-                    {isFound && (
-                      <View className="bg-blue-100 p-2 rounded-lg mb-2">
-                        <Text className="text-blue-700 text-[9px] font-medium">
-                          Found item should be surrendered to the admin/front
-                          desk.
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* DESCRIPTION */}
-
-                    <Text className="text-[9px] font-bold text-gray-500 mb-1 uppercase">
-                      Description *
-                    </Text>
-
-                    <TextInput
-                      placeholder={
-                        isFound
-                          ? "Describe the found item..."
-                          : "Describe the damage/lost item..."
-                      }
-                      value={note}
-                      onChangeText={setNote}
-                      multiline
-                      numberOfLines={3}
-                      className="border border-gray-200 bg-white p-2.5 mb-2 rounded-lg text-xs"
-                      placeholderTextColor="#9ca3af"
-                    />
-
-                    {/* PHOTOS */}
-
-                    <Text className="text-[9px] font-bold text-gray-500 mb-2 uppercase">
-                      Photos (optional)
-                    </Text>
-
-                    <View className="flex-row flex-wrap gap-2">
-                      {photos.map((uri, index) => (
-                        <View key={index} className="relative">
-                          <TouchableOpacity onPress={() => setPreview(uri)}>
-                            <Image
-                              source={{
-                                uri,
-                              }}
-                              className="w-14 h-14 rounded-lg"
-                            />
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            onPress={() => removePhoto(index)}
-                            className="absolute -top-1 -right-1 bg-red-500 rounded-full w-4 h-4 items-center justify-center"
-                          >
-                            <Text className="text-white text-[8px] font-bold">
-                              ✕
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-
-                      {photos.length < 5 && (
-                        <TouchableOpacity
-                          onPress={addPhoto}
-                          className="w-14 h-14 rounded-lg border border-dashed border-gray-300 items-center justify-center bg-white"
-                        >
-                          <Text className="text-gray-400 text-xl">+</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* ================================================= */}
                 {/* CLEANING ACTIONS */}
-                {/* ================================================= */}
 
                 <View className="flex-row items-center gap-2">
-                  {/* IN PROGRESS */}
-
                   <View className="flex-1 bg-yellow-50 px-2 py-2 rounded-xl items-center justify-center">
                     <Text className="text-yellow-700 font-semibold text-[10px]">
                       🧹 In Progress
                     </Text>
                   </View>
-
-                  {/* DONE */}
 
                   <TouchableOpacity
                     disabled={isProcessing || (hasDamage && !note.trim())}
@@ -734,6 +738,195 @@ export default function Tasks() {
             )}
           </View>
         </View>
+
+        {/* ===================================================== */}
+        {/* REPORT ISSUE MODAL */}
+        {/* ===================================================== */}
+
+        <Modal
+          visible={reportModalVisible}
+          transparent
+          animationType="slide"
+          statusBarTranslucent
+          onRequestClose={() => setReportModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            className="flex-1"
+            behavior="position"
+            keyboardVerticalOffset={0}
+            contentContainerStyle={{
+              flex: 1,
+              justifyContent: "flex-end",
+            }}
+          >
+            <View className="flex-1 bg-black/40 justify-end">
+              <View
+                className="bg-white rounded-t-3xl px-5 pt-5 pb-7"
+                style={{
+                  maxHeight: "90%",
+                }}
+              >
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{
+                    paddingBottom: 4,
+                  }}
+                >
+                  {/* HEADER */}
+
+                  <View className="flex-row items-center justify-between mb-5">
+                    <View>
+                      <Text className="text-xl font-bold text-gray-900">
+                        Report Issue
+                      </Text>
+
+                      <Text className="text-xs text-gray-400 mt-1">
+                        Room {item.room_number}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => setReportModalVisible(false)}
+                      className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center"
+                    >
+                      <Feather name="x" size={18} color="#6b7280" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* REPORT TYPE */}
+
+                  <Text className="text-[10px] font-bold text-gray-500 mb-2 uppercase">
+                    Report Type
+                  </Text>
+
+                  <View className="flex-row gap-2 mb-4">
+                    {(["damaged", "lost", "found"] as const).map((type) => (
+                      <TouchableOpacity
+                        key={type}
+                        onPress={() => setReportType(type)}
+                        className={`flex-1 py-2.5 rounded-xl border ${
+                          reportType === type
+                            ? type === "found"
+                              ? "bg-blue-500 border-blue-500"
+                              : "bg-red-500 border-red-500"
+                            : "bg-white border-gray-200"
+                        }`}
+                      >
+                        <Text
+                          className={`text-center text-xs font-medium capitalize ${
+                            reportType === type ? "text-white" : "text-gray-600"
+                          }`}
+                        >
+                          {type}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* FOUND INFO */}
+
+                  {reportType === "found" && (
+                    <View className="bg-blue-50 p-3 rounded-xl mb-4 border border-blue-100">
+                      <Text className="text-blue-700 text-[10px]">
+                        Found item should be surrendered to the admin/front
+                        desk.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* DESCRIPTION */}
+
+                  <Text className="text-[10px] font-bold text-gray-500 mb-1 uppercase">
+                    Description *
+                  </Text>
+
+                  <TextInput
+                    placeholder={
+                      reportType === "found"
+                        ? "Describe the found item..."
+                        : reportType === "lost"
+                          ? "Describe the lost item..."
+                          : "Describe the damage..."
+                    }
+                    value={note}
+                    onChangeText={setNote}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    className="border border-gray-200 bg-gray-50 p-3 rounded-xl text-sm mb-4"
+                    placeholderTextColor="#9ca3af"
+                  />
+
+                  {/* PHOTOS */}
+
+                  <Text className="text-[10px] font-bold text-gray-500 mb-2 uppercase">
+                    Photos (optional)
+                  </Text>
+
+                  <View className="flex-row flex-wrap gap-2 mb-5">
+                    {photos.map((uri, index) => (
+                      <View key={index} className="relative">
+                        <TouchableOpacity onPress={() => setPreview(uri)}>
+                          <Image
+                            source={{ uri }}
+                            className="w-16 h-16 rounded-xl"
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => removePhoto(index)}
+                          className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 items-center justify-center"
+                        >
+                          <Text className="text-white text-[9px] font-bold">
+                            ✕
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+
+                    {photos.length < 5 && (
+                      <TouchableOpacity
+                        onPress={addPhoto}
+                        className="w-16 h-16 rounded-xl border border-dashed border-gray-300 items-center justify-center bg-gray-50"
+                      >
+                        <Feather name="camera" size={20} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* BUTTONS */}
+
+                  <View className="flex-row gap-3">
+                    <TouchableOpacity
+                      onPress={() => setReportModalVisible(false)}
+                      className="flex-1 bg-gray-100 py-3.5 rounded-xl items-center"
+                    >
+                      <Text className="text-gray-600 font-semibold text-sm">
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      disabled={!note.trim()}
+                      onPress={() => {
+                        setHasDamage(true);
+                        setReportModalVisible(false);
+                      }}
+                      className={`flex-1 py-3.5 rounded-xl items-center ${
+                        !note.trim() ? "bg-gray-300" : "bg-red-500"
+                      }`}
+                    >
+                      <Text className="text-white font-semibold text-sm">
+                        Save Report
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     );
   };
@@ -752,7 +945,6 @@ export default function Tasks() {
 
       <View className="px-5 pt-2 pb-3">
         <View className="flex-row items-center mb-1">
-       
           <Text className="text-2xl font-bold text-gray-900">
             Cleaning Tasks
           </Text>
@@ -818,19 +1010,28 @@ export default function Tasks() {
                   height: 38,
                   paddingHorizontal: 14,
                   borderRadius: 20,
+
                   flexDirection: "row",
+
                   alignItems: "center",
+
                   justifyContent: "center",
+
                   backgroundColor: active ? "#d1fae5" : "#ffffff",
+
                   borderWidth: 1,
+
                   borderColor: active ? "#d1fae5" : "#eef2f7",
                 }}
               >
                 <Text
                   style={{
                     fontSize: 11,
+
                     fontWeight: active ? "600" : "500",
+
                     color: active ? "#047857" : "#64748b",
+
                     marginRight: 6,
                   }}
                 >
@@ -842,8 +1043,11 @@ export default function Tasks() {
                     width: 17,
                     height: 17,
                     borderRadius: 9,
+
                     alignItems: "center",
+
                     justifyContent: "center",
+
                     backgroundColor: active ? "#10b981" : "#f1f5f9",
                   }}
                 >
@@ -851,6 +1055,7 @@ export default function Tasks() {
                     style={{
                       fontSize: 8,
                       fontWeight: "700",
+
                       color: active ? "#ffffff" : "#64748b",
                     }}
                   >

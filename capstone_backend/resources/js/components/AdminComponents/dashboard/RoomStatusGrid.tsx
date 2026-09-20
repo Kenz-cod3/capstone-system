@@ -1,5 +1,33 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import CountUp from "react-countup";
+
+// ---- Animation variants ----
+// Container staggers each room cell so they animate in one by one
+const gridContainerVariants = {
+    hidden: {},
+    show: {
+        transition: {
+            staggerChildren: 0.03, // 16 cells, so smaller stagger than stat cards
+            delayChildren: 0.05,
+        },
+    },
+};
+
+// Each cell fades + slides up + scales in slightly (same "pop" as StatCardsGrid)
+const cellVariants = {
+    hidden: { opacity: 0, y: 16, scale: 0.96 },
+    show: {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        transition: {
+            duration: 0.4,
+            ease: [0.22, 1, 0.36, 1] as const,
+        },
+    },
+};
 
 // ---- Countdown helpers ----
 function useCountdown(targetIso?: string | null, intervalMs = 30_000) {
@@ -126,6 +154,8 @@ function CheckoutBadge({
 export default function RoomStatusGrid({ rooms = [] }: any) {
     const navigate = useNavigate();
     const [page, setPage] = useState(0);
+    // false on first load (inherits the parent's stagger), true after Prev/Next (runs its own)
+    const [hasPaged, setHasPaged] = useState(false);
     const [hovered, setHovered] = useState<{ room: any; rect: DOMRect } | null>(
         null,
     );
@@ -338,7 +368,13 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                         </span>
                         <span className="text-amber-700 font-medium">
-                            {roomsWithCountdown} checkout
+                            {/* preserveValue = counts from the previous number, same idea as StatCard */}
+                            <CountUp
+                                end={roomsWithCountdown}
+                                duration={1}
+                                preserveValue
+                            />{" "}
+                            checkout
                             {roomsWithCountdown > 1 ? "s" : ""} counting down
                         </span>
                     </div>
@@ -373,21 +409,30 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
             </div>
 
             {/* GRID */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 auto-rows-fr">
+            <motion.div
+                key={page} // remounts on page change so the stagger replays
+                variants={gridContainerVariants}
+                // First load: inherits the stagger from Dashboard.
+                // After Prev/Next: runs its own animation.
+                {...(hasPaged ? { initial: "hidden", animate: "show" } : {})}
+                className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 auto-rows-fr"
+            >
                 {slots.map((_, index) => {
                     const room = paginatedRooms[index];
 
                     return (
-                        <div
+                        <motion.div
                             key={index}
+                            variants={cellVariants}
+                            whileHover={room ? { scale: 1.03 } : undefined}
                             onMouseEnter={(e) => handleEnter(room, e)}
                             onMouseLeave={handleLeave}
                             onDoubleClick={() => handleDoubleClick(room)}
                             className={`relative rounded-lg p-4 w-full aspect-square select-none
                                 flex flex-col items-center justify-center
                                 ${room ? getColor(room.status) : "bg-gray-100 text-gray-400"}
-                                shadow-sm transition-all duration-200
-                                ${room ? "hover:scale-[1.03] hover:shadow-md cursor-pointer" : ""}
+                                shadow-sm transition-shadow duration-200
+                                ${room ? "hover:shadow-md cursor-pointer" : ""}
                             `}
                         >
                             {room ? (
@@ -420,10 +465,10 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                             ) : (
                                 <p className="text-xs opacity-50">Empty</p>
                             )}
-                        </div>
+                        </motion.div>
                     );
                 })}
-            </div>
+            </motion.div>
 
             {/* TOOLTIP */}
             {hovered && theme && (
@@ -544,7 +589,10 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
             {/* PAGINATION */}
             <div className="flex justify-between items-center mt-auto pt-3 text-xs">
                 <button
-                    onClick={() => setPage((prev) => Math.max(prev - 1, 0))}
+                    onClick={() => {
+                        setHasPaged(true);
+                        setPage((prev) => Math.max(prev - 1, 0));
+                    }}
                     disabled={page === 0}
                     className="px-2 py-1 bg-gray-100 text-gray-600 rounded disabled:opacity-40 hover:bg-gray-200"
                 >
@@ -554,9 +602,10 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                     {page + 1} / {totalPages}
                 </span>
                 <button
-                    onClick={() =>
-                        setPage((prev) => Math.min(prev + 1, totalPages - 1))
-                    }
+                    onClick={() => {
+                        setHasPaged(true);
+                        setPage((prev) => Math.min(prev + 1, totalPages - 1));
+                    }}
                     disabled={page === totalPages - 1}
                     className="px-2 py-1 bg-gray-100 text-gray-600 rounded disabled:opacity-40 hover:bg-gray-200"
                 >

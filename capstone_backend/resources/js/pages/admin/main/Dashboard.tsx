@@ -396,8 +396,7 @@ const RecentBookingsTable = ({
                                     {/* GUEST */}
                                     <td className="py-3 px-3">
                                         <p className="font-medium text-gray-800">
-                                            {booking.walk_in_guest
-                                                ?.full_name ||
+                                            {booking.walk_in_guest?.full_name ||
                                                 `${booking.user?.first_name || ""} ${booking.user?.last_name || ""}`.trim() ||
                                                 "Unnamed Guest"}
                                         </p>
@@ -406,9 +405,7 @@ const RecentBookingsTable = ({
                                     {/* ROOM */}
                                     <td className="py-3 px-3 text-gray-600">
                                         {booking.booked_rooms
-                                            ?.map(
-                                                (br) => br.room?.room_number,
-                                            )
+                                            ?.map((br) => br.room?.room_number)
                                             .filter(Boolean)
                                             .join(", ") || "-"}
                                     </td>
@@ -583,8 +580,15 @@ const DashboardError = ({ onRetry }: { onRetry: () => void }) => (
 // Fade/slide variants shared by skeleton, error, and content states
 const fadeVariants = {
     initial: { opacity: 0, y: 8 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" as const } },
-    exit: { opacity: 0, transition: { duration: 0.2, ease: "easeIn" as const } },
+    animate: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.35, ease: "easeOut" as const },
+    },
+    exit: {
+        opacity: 0,
+        transition: { duration: 0.2, ease: "easeIn" as const },
+    },
 };
 
 // Stagger container for the whole page — each direct section (stat cards,
@@ -648,7 +652,11 @@ export default function Dashboard() {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     });
 
-    const { data: statsData, refetch: refetchStats } = useQuery({
+    const {
+        data: statsData,
+        refetch: refetchStats,
+        isError: statsError,
+    } = useQuery({
         queryKey: ["dashboard-stats"],
         queryFn: async () => {
             const res = await api.get("/dashboard/stats");
@@ -664,7 +672,11 @@ export default function Dashboard() {
         notifyOnChangeProps: ["data"],
     });
 
-    const { data: roomsData, refetch: refetchRooms } = useQuery({
+    const {
+        data: roomsData,
+        refetch: refetchRooms,
+        isError: roomsError,
+    } = useQuery({
         queryKey: ["rooms-status-grid"],
         queryFn: async () => {
             const res = await api.get("/rooms/status-grid");
@@ -705,7 +717,14 @@ export default function Dashboard() {
     };
 
     // Determine which "phase" to render — drives the AnimatePresence key
-    const phase = isError ? "error" : isLoading ? "loading" : "content";
+    const isDataReady = !!dashboardData && !!statsData && !!roomsData;
+
+    const phase =
+        isError || statsError || roomsError
+            ? "error"
+            : isLoading || !isDataReady
+              ? "loading"
+              : "content";
 
     return (
         <AnimatePresence mode="wait">
@@ -755,10 +774,16 @@ export default function Dashboard() {
                         variants={rowContainerVariants}
                         className="grid grid-cols-1 lg:grid-cols-3 gap-2 mt-6 items-stretch"
                     >
-                        <motion.div variants={itemVariants} className="lg:col-span-2">
+                        <motion.div
+                            variants={itemVariants}
+                            className="lg:col-span-2"
+                        >
                             <RoomStatusGrid rooms={roomsData || []} />
                         </motion.div>
-                        <motion.div variants={itemVariants} className="lg:col-span-1">
+                        <motion.div
+                            variants={itemVariants}
+                            className="lg:col-span-1"
+                        >
                             <RoomStatusChart data={roomStatus} />
                         </motion.div>
                     </motion.div>

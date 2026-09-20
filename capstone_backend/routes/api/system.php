@@ -16,34 +16,34 @@ Route::apiResource('reviews', ReviewController::class);
 // ALL REPORTS - Lahat nasa ReportController
 // =============================================
 Route::prefix('reports')->controller(ReportController::class)->group(function () {
-    // Booking reports
-    Route::get('/', 'index');
-    
-    // Guest reports
-    Route::get('/guests', 'guests');
-    
-    // Transaction reports
+
+    // ── Booking reports ──
+    Route::get('/', 'index');                  // GET /api/reports
+    Route::get('/bookings', 'index');          // GET /api/reports/bookings (alias)
+
+    // ── Guest reports ──
+    Route::get('/guests', 'guests');           // GET /api/reports/guests
+
+    // ── Transaction reports ──
     Route::get('/transactions', 'transactions');
     Route::get('/transactions/summary', 'transactionSummary');
-    
-    // Incident reports
+
+    // ── Incident reports ──
     Route::get('/incidents', 'incidents');
-    
-    // Financial trend
+
+    // ── Financial ──
     Route::get('/financial-trend', 'financialTrend');
-    
-    // Revenue by date
     Route::get('/revenue', 'revenueByDate');
-    
-    // Guest reviews
+
+    // ── Guest reviews ──
     Route::get('/reviews', 'reviews');
-    
-    // Occupancy reports
+
+    // ── Occupancy ──
     Route::get('/occupancy', 'occupancy');
-    
-    // Housekeeping reports
+
+    // ── Housekeeping ──
     Route::get('/housekeeping', 'housekeeping');
-    
-    // Maintenance reports
+
+    // ── Maintenance ──
     Route::get('/maintenance', 'maintenance');
 });

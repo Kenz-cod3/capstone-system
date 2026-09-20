@@ -17,27 +17,90 @@ use Carbon\Carbon;
 
 class ReportController extends Controller
 {
-    /**
-     * Get booking reports with date filtering
-     */
+    /* ===================================================================== */
+    /*  BOOKING REPORTS                                                      */
+    /*  GET /api/reports                                                     */
+    /* ===================================================================== */
+
     public function index(Request $request)
     {
-        $start = $request->start_date;
-        $end = $request->end_date;
-        $perPage = $request->per_page ?? 10;
+        $startDate   = $request->start_date;
+        $endDate     = $request->end_date;
+        $perPage     = (int) ($request->per_page ?? 10);   // ✅ default 10
+        $search      = $request->search;
+        $status      = $request->status;
+        $bookingType = $request->booking_type;
 
         $bookingQuery = Booking::with([
             'user',
             'walkInGuest',
-            'bookedRooms' => function ($query) {
-                $query->with('room');
+            'createdBy',
+            'bookedRooms' => function ($q) {
+                $q->whereNull('archived_at')
+                  ->with([
+                      'room' => fn($r) => $r->withTrashed(),
+                      'bookingAddOns.addOn',
+                  ]);
             },
-        ]);
+            'payments.receiver',
+            'payments.shift',
+        ])->whereNull('deleted_at');
 
-        if ($start && $end) {
-            $bookingQuery->whereBetween('created_at', [$start, $end]);
+        // ── Date range filter ──
+        if ($startDate) {
+            $bookingQuery->whereHas('bookedRooms', fn($q) =>
+                $q->whereDate('check_in_date', '>=', $startDate)
+            );
+        }
+        if ($endDate) {
+            $bookingQuery->whereHas('bookedRooms', fn($q) =>
+                $q->whereDate('check_in_date', '<=', $endDate)
+            );
         }
 
+        // ── Status filter ──
+        if (!empty($status) && $status !== 'all') {
+            $bookingQuery->whereHas('bookedRooms', fn($q) =>
+                $q->where('status', $status)->whereNull('archived_at')
+            );
+        }
+
+        // ── Booking type filter ──
+        if (!empty($bookingType) && $bookingType !== 'all') {
+            $bookingQuery->where('booking_type', $bookingType);
+        }
+
+        // ── Search (reference, guest name, room number, id) ──
+        if (!empty($search)) {
+            $bookingQuery->where(function ($q) use ($search) {
+                $q->where('booking_reference', 'LIKE', "%{$search}%")
+                  ->orWhereHas('user', function ($u) use ($search) {
+                      $u->where('first_name', 'LIKE', "%{$search}%")
+                        ->orWhere('last_name', 'LIKE', "%{$search}%")
+                        ->orWhereRaw(
+                            "CONCAT(first_name, ' ', last_name) LIKE ?",
+                            ["%{$search}%"]
+                        );
+                  })
+                  ->orWhereHas('walkInGuest', function ($w) use ($search) {
+                      $w->where('first_name', 'LIKE', "%{$search}%")
+                        ->orWhere('last_name', 'LIKE', "%{$search}%")
+                        ->orWhereRaw(
+                            "CONCAT(first_name, ' ', last_name) LIKE ?",
+                            ["%{$search}%"]
+                        );
+                  })
+                  ->orWhereHas('bookedRooms.room', fn($r) =>
+                      $r->where('room_number', 'LIKE', "%{$search}%")
+                  );
+
+                if (is_numeric($search)) {
+                    $q->orWhere('id', (int) $search);
+                }
+            });
+        }
+
+        // ── Summary (computed before pagination) ──
         $allBookings = (clone $bookingQuery)->get();
 
         $totalRevenue = BookingPayment::where('payment_status', 'paid')
@@ -45,55 +108,109 @@ class ReportController extends Controller
             ->sum('amount');
 
         $checkedInCount = BookedRoom::where('status', 'checked_in')
+            ->whereNull('archived_at')
             ->whereIn('booking_id', $allBookings->pluck('id'))
             ->count();
 
+        // ── Paginated bookings ──
         $paginatedBookings = (clone $bookingQuery)
-            ->latest()
+            ->orderByDesc('updated_at')
             ->paginate($perPage);
 
         $paginatedBookings->getCollection()->transform(function ($booking) {
-            $firstBookedRoom = $booking->bookedRooms->first();
-            $booking->booking_status = $firstBookedRoom?->status ?? 'pending';
-            if ($firstBookedRoom && $firstBookedRoom->room) {
-                $booking->room_number = $firstBookedRoom->room->room_number;
-            }
-            $booking->booking_type = $booking->walk_in_guest_id ? 'walk_in' : 'online';
-            return $booking;
+            return $this->transformBookingRow($booking);
         });
 
+        // ── Recent bookings (for dashboard/activity feed) ──
         $recentBookings = (clone $bookingQuery)
-            ->latest()
+            ->orderByDesc('updated_at')
             ->take(10)
             ->get()
-            ->transform(function ($booking) {
-                $firstBookedRoom = $booking->bookedRooms->first();
-                $booking->booking_status = $firstBookedRoom?->status ?? 'pending';
-                if ($firstBookedRoom && $firstBookedRoom->room) {
-                    $booking->room_number = $firstBookedRoom->room->room_number;
-                }
-                $booking->booking_type = $booking->walk_in_guest_id ? 'walk_in' : 'online';
-                return $booking;
-            });
+            ->map(fn($b) => $this->transformBookingRow($b));
 
         return response()->json([
-            'total_revenue' => $totalRevenue,
-            'total_bookings' => $allBookings->count(),
-            'checked_in' => $checkedInCount,
-            'bookings' => $paginatedBookings,
-            'recent_bookings' => $recentBookings,
+            'total_revenue'    => (float) $totalRevenue,
+            'total_bookings'   => $allBookings->count(),
+            'checked_in'       => $checkedInCount,
+            'bookings'         => $paginatedBookings,   // paginated
+            'recent_bookings'  => $recentBookings,
         ]);
     }
 
     /**
-     * Get guest reports
+     * Shared transformer for a Booking row.
+     * Adds: guest_name, room_numbers, rooms[], check-in/check-out times,
+     * aggregate_status, booking_status, booking_type.
      */
+    private function transformBookingRow(Booking $booking): Booking
+    {
+        // Per-room breakdown
+        $booking->rooms = $booking->bookedRooms->map(fn($br) => [
+            'id'                   => $br->id,
+            'room_number'          => $br->room?->room_number ?? 'N/A',
+            'status'               => $br->status,
+            'stay_type'            => $br->stay_type,
+            'check_in_date'        => $br->check_in_date,
+            'check_out_date'       => $br->check_out_date,
+            'check_in_time'        => $br->check_in_time,
+            'check_out_time'       => $br->check_out_time,
+            'subtotal'             => $br->subtotal,
+            'is_extended'          => $br->is_extended,
+            'expected_checkout_at' => $br->expected_checkout_at,
+            'overdue_started_at'   => $br->overdue_started_at,
+            'checkout_status'      => $br->checkout_status,
+        ]);
+
+        // Aggregate check-in / check-out times
+        $booking->earliest_check_in = $booking->bookedRooms
+            ->whereNotNull('check_in_time')
+            ->min('check_in_time');
+
+        $booking->latest_check_out = $booking->bookedRooms
+            ->whereNotNull('check_out_time')
+            ->max('check_out_time');
+
+        // Guest name
+        $guestName = $booking->booking_type === 'walk_in'
+            ? trim(($booking->walkInGuest->first_name ?? '') . ' ' .
+                   ($booking->walkInGuest->last_name ?? ''))
+            : trim(($booking->user->first_name ?? '') . ' ' .
+                   ($booking->user->last_name ?? ''));
+
+        $booking->guest_name = $guestName !== '' ? $guestName : 'N/A';
+
+        // Room numbers as string
+        $booking->room_numbers = $booking->bookedRooms
+            ->pluck('room.room_number')
+            ->filter()
+            ->implode(', ');
+
+        // Aggregate status (for the row badge)
+        $statuses = $booking->bookedRooms->pluck('status')->unique()->values();
+        $booking->aggregate_status = $statuses->count() === 1
+            ? $statuses->first()
+            : 'mixed';
+
+        // Legacy fields used by some UIs
+        $firstBookedRoom = $booking->bookedRooms->first();
+        $booking->booking_status = $firstBookedRoom?->status ?? 'pending';
+        $booking->room_number    = $firstBookedRoom?->room?->room_number;
+        $booking->booking_type   = $booking->walk_in_guest_id ? 'walk_in' : 'online';
+
+        return $booking;
+    }
+
+    /* ===================================================================== */
+    /*  GUEST REPORTS                                                        */
+    /*  GET /api/reports/guests                                              */
+    /* ===================================================================== */
+
     public function guests(Request $request)
     {
         try {
-            $search = $request->search;
-            $start = $request->start_date;
-            $end = $request->end_date;
+            $search  = $request->search;
+            $start   = $request->start_date;
+            $end     = $request->end_date;
             $perPage = $request->per_page ?? 50;
 
             $guests = DB::table('users')
@@ -128,28 +245,22 @@ class ReportController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage(),
-                'line' => $e->getLine()
+                'line'  => $e->getLine(),
             ], 500);
         }
     }
 
-    /**
-     * Get transaction reports
-     *
-     * Rewritten to avoid a fragile 6-table join + manual GROUP BY/GROUP_CONCAT
-     * query, which is a very common source of 500 errors under MySQL's
-     * ONLY_FULL_GROUP_BY mode (and breaks silently when columns are added
-     * later without also updating the groupBy list). This version loads
-     * Bookings with their relationships and builds the same response shape
-     * in PHP, which is slightly more memory-hungry per page but far more
-     * robust and easier to maintain.
-     */
+    /* ===================================================================== */
+    /*  TRANSACTION REPORTS                                                  */
+    /*  GET /api/reports/transactions                                        */
+    /* ===================================================================== */
+
     public function transactions(Request $request)
     {
         try {
             $perPage = $request->per_page ?? 50;
-            $start = $request->start_date;
-            $end = $request->end_date;
+            $start   = $request->start_date;
+            $end     = $request->end_date;
 
             $query = Booking::with([
                 'user:id,first_name,last_name',
@@ -177,26 +288,26 @@ class ReportController extends Controller
                     ?? '';
 
                 return [
-                    'id' => $booking->id,
+                    'id'                => $booking->id,
                     'booking_reference' => $booking->booking_reference,
-                    'booking_type' => $booking->walk_in_guest_id ? 'walk_in' : 'online',
-                    'guest_first_name' => $guestFirstName,
-                    'guest_last_name' => $guestLastName,
-                    'guest' => trim($guestFirstName . ' ' . $guestLastName),
-                    'rooms' => $booking->bookedRooms
+                    'booking_type'      => $booking->walk_in_guest_id ? 'walk_in' : 'online',
+                    'guest_first_name'  => $guestFirstName,
+                    'guest_last_name'   => $guestLastName,
+                    'guest'             => trim($guestFirstName . ' ' . $guestLastName),
+                    'rooms'             => $booking->bookedRooms
                         ->pluck('room.room_number')
                         ->filter()
                         ->implode(', '),
-                    'total_rooms' => $booking->bookedRooms->count(),
-                    'total_price' => $booking->total_price,
-                    'amount' => $latestPayment->amount ?? null,
-                    'payment_method' => $latestPayment->payment_method ?? null,
-                    'payment_date' => $latestPayment->payment_date ?? null,
+                    'total_rooms'       => $booking->bookedRooms->count(),
+                    'total_price'       => $booking->total_price,
+                    'amount'            => $latestPayment->amount ?? null,
+                    'payment_method'    => $latestPayment->payment_method ?? null,
+                    'payment_date'      => $latestPayment->payment_date ?? null,
                     'payment_reference' => $latestPayment->payment_reference ?? null,
-                    'payment_status' => $latestPayment->payment_status ?? null,
-                    'date' => $booking->created_at,
-                    'refunded_amount' => 0,
-                    'cancelled_amount' => 0,
+                    'payment_status'    => $latestPayment->payment_status ?? null,
+                    'date'              => $booking->created_at,
+                    'refunded_amount'   => 0,
+                    'cancelled_amount'  => 0,
                 ];
             });
 
@@ -205,8 +316,8 @@ class ReportController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage(),
-                'line' => $e->getLine(),
-                'file' => $e->getFile(),
+                'line'  => $e->getLine(),
+                'file'  => $e->getFile(),
             ], 500);
         }
     }
@@ -216,29 +327,29 @@ class ReportController extends Controller
      */
     public function transactionSummary()
     {
-        $summary = [
+        return response()->json([
             'total_records' => BookingPayment::count(),
             'total_revenue' => BookingPayment::where('payment_status', 'paid')->sum('amount'),
-        ];
-
-        return response()->json($summary);
+        ]);
     }
 
-    /**
-     * Get incident reports
-     */
+    /* ===================================================================== */
+    /*  INCIDENT REPORTS                                                     */
+    /*  GET /api/reports/incidents                                           */
+    /* ===================================================================== */
+
     public function incidents(Request $request)
     {
         $perPage = $request->per_page ?? 50;
-        $start = $request->start_date;
-        $end = $request->end_date;
+        $start   = $request->start_date;
+        $end     = $request->end_date;
 
         $incidents = RoomIncident::with([
             'room',
             'cleaner',
             'resolvedBy',
             'booking.user',
-            'booking.walkInGuest'
+            'booking.walkInGuest',
         ]);
 
         if ($start && $end) {
@@ -248,16 +359,18 @@ class ReportController extends Controller
         return response()->json($incidents->paginate($perPage));
     }
 
-    /**
-     * Get financial trend data
-     */
+    /* ===================================================================== */
+    /*  FINANCIAL TREND                                                      */
+    /*  GET /api/reports/financial-trend                                     */
+    /* ===================================================================== */
+
     public function financialTrend(Request $request)
     {
         $from = $request->from;
-        $to = $request->to;
+        $to   = $request->to;
 
         if (!$from || !$to) {
-            $to = Carbon::now()->endOfDay();
+            $to   = Carbon::now()->endOfDay();
             $from = Carbon::now()->subDays(30)->startOfDay();
         }
 
@@ -279,7 +392,7 @@ class ReportController extends Controller
             ->groupBy('date')
             ->pluck('total', 'date');
 
-        $trend = [];
+        $trend   = [];
         $current = Carbon::parse($from);
 
         while ($current <= Carbon::parse($to)) {
@@ -288,11 +401,11 @@ class ReportController extends Controller
             $exp = $dailyExpensesRaw[$dateStr] ?? 0;
 
             $trend[] = [
-                'name' => $current->format('M d'),
-                'date' => $dateStr,
-                'revenue' => $rev,
-                'expenses' => $exp,
-                'profit' => $rev - $exp,
+                'name'     => $current->format('M d'),
+                'date'     => $dateStr,
+                'revenue'  => (float) $rev,
+                'expenses' => (float) $exp,
+                'profit'   => (float) ($rev - $exp),
             ];
 
             $current->addDay();
@@ -301,13 +414,15 @@ class ReportController extends Controller
         return response()->json(['financialRangeTrend' => $trend]);
     }
 
-    /**
-     * Get revenue by date range
-     */
+    /* ===================================================================== */
+    /*  REVENUE BY DATE                                                      */
+    /*  GET /api/reports/revenue                                             */
+    /* ===================================================================== */
+
     public function revenueByDate(Request $request)
     {
         $from = $request->from;
-        $to = $request->to;
+        $to   = $request->to;
 
         $query = BookingPayment::where('payment_status', 'paid');
 
@@ -324,8 +439,8 @@ class ReportController extends Controller
         $revenueData = [];
         foreach ($grouped as $date => $items) {
             $revenueData[] = [
-                'date' => $date,
-                'total' => $items->sum('amount'),
+                'date'  => $date,
+                'total' => (float) $items->sum('amount'),
                 'count' => $items->count(),
             ];
         }
@@ -333,15 +448,17 @@ class ReportController extends Controller
         return response()->json($revenueData);
     }
 
-    /**
-     * Get guest reviews
-     */
+    /* ===================================================================== */
+    /*  GUEST REVIEWS                                                        */
+    /*  GET /api/reports/reviews                                             */
+    /* ===================================================================== */
+
     public function reviews(Request $request)
     {
         $perPage = $request->per_page ?? 50;
-        $search = $request->search;
-        $start = $request->start_date;
-        $end = $request->end_date;
+        $search  = $request->search;
+        $start   = $request->start_date;
+        $end     = $request->end_date;
 
         $reviews = Review::with(['booking.user', 'booking.walkInGuest', 'room']);
 
@@ -359,13 +476,15 @@ class ReportController extends Controller
         return response()->json($reviews->paginate($perPage));
     }
 
-    /**
-     * Get occupancy reports
-     */
+    /* ===================================================================== */
+    /*  OCCUPANCY                                                            */
+    /*  GET /api/reports/occupancy                                           */
+    /* ===================================================================== */
+
     public function occupancy(Request $request)
     {
         $start = $request->start_date;
-        $end = $request->end_date;
+        $end   = $request->end_date;
 
         $roomCounts = Room::whereNull('deleted_at')
             ->selectRaw('status, COUNT(*) as count')
@@ -385,27 +504,27 @@ class ReportController extends Controller
             : 0;
 
         $occupancyData = [
-            'total_rooms' => $totalActiveRooms,
-            'occupied_rooms' => $occupied,
-            'available_rooms' => $available,
-            'reserved_rooms' => $reserved,
-            'dirty_rooms' => $dirty,
-            'cleaning_rooms' => $cleaning,
+            'total_rooms'       => $totalActiveRooms,
+            'occupied_rooms'    => $occupied,
+            'available_rooms'   => $available,
+            'reserved_rooms'    => $reserved,
+            'dirty_rooms'       => $dirty,
+            'cleaning_rooms'    => $cleaning,
             'maintenance_rooms' => $maintenance,
-            'occupancy_rate' => $currentOccupancyRate,
-            'room_status' => [
-                ['name' => 'Available', 'value' => $available, 'color' => '#2e7d64'],
-                ['name' => 'Reserved', 'value' => $reserved, 'color' => '#fbbf24'],
-                ['name' => 'Occupied', 'value' => $occupied, 'color' => '#3b82f6'],
+            'occupancy_rate'    => $currentOccupancyRate,
+            'room_status'       => [
+                ['name' => 'Available',   'value' => $available,   'color' => '#2e7d64'],
+                ['name' => 'Reserved',    'value' => $reserved,    'color' => '#fbbf24'],
+                ['name' => 'Occupied',    'value' => $occupied,    'color' => '#3b82f6'],
                 ['name' => 'Maintenance', 'value' => $maintenance, 'color' => '#ef4444'],
-                ['name' => 'Dirty', 'value' => $dirty, 'color' => '#8b5cf6'],
-                ['name' => 'Cleaning', 'value' => $cleaning, 'color' => '#f59e0b'],
+                ['name' => 'Dirty',       'value' => $dirty,       'color' => '#8b5cf6'],
+                ['name' => 'Cleaning',    'value' => $cleaning,    'color' => '#f59e0b'],
             ],
         ];
 
         if ($start && $end) {
             $occupancyData['period_bookings'] = Booking::whereBetween('created_at', [$start, $end])->count();
-            $occupancyData['period_revenue'] = BookingPayment::where('payment_status', 'paid')
+            $occupancyData['period_revenue']  = BookingPayment::where('payment_status', 'paid')
                 ->whereBetween('payment_date', [$start, $end])
                 ->sum('amount');
         }
@@ -413,17 +532,19 @@ class ReportController extends Controller
         return response()->json($occupancyData);
     }
 
-    /**
-     * Get housekeeping reports
-     */
+    /* ===================================================================== */
+    /*  HOUSEKEEPING                                                         */
+    /*  GET /api/reports/housekeeping                                        */
+    /* ===================================================================== */
+
     public function housekeeping(Request $request)
     {
         $start = $request->start_date;
-        $end = $request->end_date;
+        $end   = $request->end_date;
 
         $housekeepingData = [
-            'total_dirty_rooms' => Room::where('status', 'dirty')->count(),
-            'total_cleaning_rooms' => Room::where('status', 'cleaning')->count(),
+            'total_dirty_rooms'     => Room::where('status', 'dirty')->count(),
+            'total_cleaning_rooms'  => Room::where('status', 'cleaning')->count(),
             'total_available_rooms' => Room::where('status', 'available')->count(),
         ];
 
@@ -434,13 +555,15 @@ class ReportController extends Controller
         return response()->json($housekeepingData);
     }
 
-    /**
-     * Get maintenance reports
-     */
+    /* ===================================================================== */
+    /*  MAINTENANCE                                                          */
+    /*  GET /api/reports/maintenance                                         */
+    /* ===================================================================== */
+
     public function maintenance(Request $request)
     {
         $start = $request->start_date;
-        $end = $request->end_date;
+        $end   = $request->end_date;
 
         $maintenanceData = [
             'total_maintenance_rooms' => Room::where('status', 'maintenance')->count(),
