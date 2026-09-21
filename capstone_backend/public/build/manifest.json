@@ -1,0 +1,58 @@
+{
+  "node_modules/@fontsource-variable/geist/files/geist-cyrillic-wght-normal.woff2": {
+    "file": "assets/geist-cyrillic-wght-normal-CHSlOQsW.woff2",
+    "src": "node_modules/@fontsource-variable/geist/files/geist-cyrillic-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2": {
+    "file": "assets/geist-latin-ext-wght-normal-DMtmJ5ZE.woff2",
+    "src": "node_modules/@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2": {
+    "file": "assets/geist-latin-wght-normal-Dm3htQBi.woff2",
+    "src": "node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"
+  },
+  "resources/images/iconD.png": {
+    "file": "assets/iconD-C7qLbsnV.png",
+    "src": "resources/images/iconD.png"
+  },
+  "resources/images/login.png": {
+    "file": "assets/login-CZ4Zkjko.png",
+    "src": "resources/images/login.png"
+  },
+  "resources/images/login1.png": {
+    "file": "assets/login1-B2A1p2XG.png",
+    "src": "resources/images/login1.png"
+  },
+  "resources/images/loginLogo.png": {
+    "file": "assets/loginLogo-BLbGTmxJ.png",
+    "src": "resources/images/loginLogo.png"
+  },
+  "resources/images/logo.png": {
+    "file": "assets/logo-7g_sbbQ6.png",
+    "src": "resources/images/logo.png"
+  },
+  "resources/images/logo1.png": {
+    "file": "assets/logo1-C4GO5GKg.png",
+    "src": "resources/images/logo1.png"
+  },
+  "resources/js/main.tsx": {
+    "file": "assets/main-BmdzLFbh.js",
+    "name": "main",
+    "src": "resources/js/main.tsx",
+    "isEntry": true,
+    "css": [
+      "assets/main-DmXgqQMT.css"
+    ],
+    "assets": [
+      "assets/logo-7g_sbbQ6.png",
+      "assets/logo1-C4GO5GKg.png",
+      "assets/iconD-C7qLbsnV.png",
+      "assets/loginLogo-BLbGTmxJ.png",
+      "assets/login-CZ4Zkjko.png",
+      "assets/login1-B2A1p2XG.png",
+      "assets/geist-cyrillic-wght-normal-CHSlOQsW.woff2",
+      "assets/geist-latin-ext-wght-normal-DMtmJ5ZE.woff2",
+      "assets/geist-latin-wght-normal-Dm3htQBi.woff2"
+    ]
+  }
+}
