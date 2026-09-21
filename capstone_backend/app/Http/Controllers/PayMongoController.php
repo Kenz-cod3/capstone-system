@@ -139,7 +139,7 @@ class PayMongoController extends Controller
         */
 
         $attachResponse = Http::withBasicAuth(
-            env('PAYMONGO_PUBLIC_KEY'),
+           config('services.paymongo.public_key'),
             ''
         )->post(
             "https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}/attach",
@@ -212,7 +212,7 @@ class PayMongoController extends Controller
         }
 
         $response = Http::withBasicAuth(
-            env('PAYMONGO_PUBLIC_KEY'),
+            config('services.paymongo.public_key'),
             ''
         )->get(
             "https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}",
