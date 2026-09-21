@@ -58,7 +58,7 @@ class PayMongoController extends Controller
         $amountCentavos = (int) round($validated['amount'] * 100);
 
         $intentResponse = Http::withBasicAuth(
-            env('PAYMONGO_SECRET_KEY'),
+            config('services.paymongo.secret_key'),
             ''
         )->post(
             'https://api.paymongo.com/v1/payment_intents',
@@ -104,7 +104,7 @@ class PayMongoController extends Controller
         */
 
         $paymentMethodResponse = Http::withBasicAuth(
-            env('PAYMONGO_PUBLIC_KEY'),
+            config('services.paymongo.public_key'),
             ''
         )->post(
             'https://api.paymongo.com/v1/payment_methods',
@@ -482,7 +482,7 @@ class PayMongoController extends Controller
         $expectedSignature = hash_hmac(
             'sha256',
             $signedPayload,
-            env('PAYMONGO_WEBHOOK_SECRET')
+            config('services.paymongo.webhook_secret')
         );
 
         Log::info('Computed Signature', [
