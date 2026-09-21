@@ -45,6 +45,13 @@ import {
     DialogTitle,
     DialogDescription,
 } from "@/components/ui/dialog";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import api, { API_BASE } from "@/services/api";
 import logo from "../../images/logo1.png";
 import Echo from "@/services/echo";
@@ -226,7 +233,7 @@ const AdminLayout = ({
 
                 setTimeout(() => {
                     setIsTransitioning(false);
-                }, 300);
+                }, 200);
             }
         };
 
@@ -269,7 +276,7 @@ const AdminLayout = ({
         e.stopPropagation();
         setIsTransitioning(true);
         setSidebarOpen(!isSidebarOpen);
-        setTimeout(() => setIsTransitioning(false), 300);
+        setTimeout(() => setIsTransitioning(false), 200);
     };
 
     const toggleMobileMenu = () => {
@@ -673,10 +680,6 @@ const AdminLayout = ({
         };
     }, [user?.id]);
 
-    if (!user) {
-        return null;
-    }
-
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as Node;
@@ -722,6 +725,38 @@ const AdminLayout = ({
         return () =>
             window.removeEventListener("mousedown", handleClickOutside);
     }, [isMobileMenuOpen]);
+
+    useEffect(() => {
+        if (!selectedNotification) {
+            setGuestName(null);
+            return;
+        }
+
+        const { bookingReference } = parseNotificationDetails(
+            selectedNotification.message,
+        );
+
+        if (!bookingReference) {
+            setGuestName(null);
+            return;
+        }
+
+        setGuestNameLoading(true);
+        api.get(`/bookings/reference/${bookingReference}`)
+            .then((res) => {
+                setGuestName(res.data?.guest_name ?? null);
+            })
+            .catch(() => {
+                setGuestName(null);
+            })
+            .finally(() => {
+                setGuestNameLoading(false);
+            });
+    }, [selectedNotification]);
+
+    if (!user) {
+        return null;
+    }
 
     const navigationGroups = [
         {
@@ -881,34 +916,6 @@ const AdminLayout = ({
         };
     };
 
-    useEffect(() => {
-        if (!selectedNotification) {
-            setGuestName(null);
-            return;
-        }
-
-        const { bookingReference } = parseNotificationDetails(
-            selectedNotification.message,
-        );
-
-        if (!bookingReference) {
-            setGuestName(null);
-            return;
-        }
-
-        setGuestNameLoading(true);
-        api.get(`/bookings/reference/${bookingReference}`)
-            .then((res) => {
-                setGuestName(res.data?.guest_name ?? null);
-            })
-            .catch(() => {
-                setGuestName(null);
-            })
-            .finally(() => {
-                setGuestNameLoading(false);
-            });
-    }, [selectedNotification]);
-
     const timeAgo = (dateString: string) => {
         const now = new Date();
         const date = new Date(dateString);
@@ -950,130 +957,225 @@ const AdminLayout = ({
             openDropdowns[
                 `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`
             ];
+        const expanded = isSidebarOpen || isMobile;
 
-        if (item.hasDropdown && (isSidebarOpen || isMobile)) {
+        if (item.hasDropdown && expanded) {
             return (
                 <div key={item.name} className="space-y-1 select-none">
-                    <div
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const dropdownKey = `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`;
-                            setOpenDropdowns((prev) => ({
-                                ...prev,
-                                [dropdownKey]: !prev[dropdownKey],
-                            }));
-                        }}
-                        className={`
-                            flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer
-                            ${
-                                isActive
-                                    ? "bg-emerald-500 text-white shadow-md"
-                                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                            }
-                        `}
-                    >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <item.icon className="h-4 w-4 shrink-0" />
-                            <div className="flex flex-col flex-1 min-w-0">
-                                <span className="text-xs font-medium truncate">
-                                    {item.name}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const dropdownKey = `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`;
+                                    if (!isMobile && !isSidebarOpen) {
+                                        setSidebarOpen(true);
+                                        setOpenDropdowns((prev) => ({
+                                            ...prev,
+                                            [dropdownKey]: true,
+                                        }));
+                                    } else {
+                                        setOpenDropdowns((prev) => ({
+                                            ...prev,
+                                            [dropdownKey]: !prev[dropdownKey],
+                                        }));
+                                    }
+                                }}
+                                className={cn(
+                                    "flex items-center gap-3 h-10 px-3 rounded-lg overflow-hidden cursor-pointer select-none",
+                                    "transition-colors duration-150",
+                                    isActive
+                                        ? "bg-emerald-500 text-white shadow-md"
+                                        : "text-gray-700 hover:bg-gray-100 hover:text-gray-900",
+                                )}
+                            >
+                                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                                    <item.icon className="h-4 w-4" />
                                 </span>
-                                <span
-                                    className={`text-[8px] truncate ${isActive ? "text-emerald-100" : "text-gray-400"}`}
+                                <div
+                                    className={cn(
+                                        "flex flex-col flex-1 min-w-0 whitespace-nowrap overflow-hidden",
+                                        "transition-opacity duration-200 ease-linear",
+                                        !expanded &&
+                                            "opacity-0 pointer-events-none",
+                                    )}
+                                    aria-hidden={!expanded}
                                 >
-                                    {item.description}
-                                </span>
+                                    <span className="text-xs font-medium truncate leading-tight">
+                                        {item.name}
+                                    </span>
+                                    <span
+                                        className={cn(
+                                            "text-[8px] truncate leading-none",
+                                            isActive
+                                                ? "text-emerald-100"
+                                                : "text-gray-400",
+                                        )}
+                                    >
+                                        {item.description}
+                                    </span>
+                                </div>
+                                <ChevronRight
+                                    className={cn(
+                                        "h-4 w-4 shrink-0 transition-transform duration-200",
+                                        isOpen ? "rotate-90" : "",
+                                        isActive
+                                            ? "text-white"
+                                            : "text-gray-400",
+                                        "transition-opacity duration-200 ease-linear",
+                                        !expanded && "opacity-0",
+                                    )}
+                                />
                             </div>
-                        </div>
-                        <ChevronRight
-                            className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""} ${isActive ? "text-white" : "text-gray-400"}`}
-                        />
-                    </div>
+                        </TooltipTrigger>
+                        <TooltipContent
+                            side="right"
+                            sideOffset={8}
+                            hidden={expanded}
+                        >
+                            {item.name}
+                        </TooltipContent>
+                    </Tooltip>
 
-                    {isOpen && (
-                        <div className="relative ml-2 pl-4 select-none">
-                            <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div>{" "}
-                            {/*line for dropdown*/}
-                            <div className="space-y-1">
-                                {item.dropdownItems.map((subItem: any) => {
-                                    const isSubActive =
-                                        location.pathname === subItem.href;
-                                    return (
-                                        <div
-                                            key={subItem.name}
-                                            data-dropdown-item="true"
-                                            onClick={() => {
-                                                handleNavigation(subItem.href);
-                                            }}
-                                            className={`
-                                                relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer
-                                                ${
-                                                    isSubActive
-                                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                        : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
-                                                }
-                                            `}
-                                        >
-                                            <subItem.icon className="h-4 w-4 shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <span className="text-xs font-medium truncate block">
-                                                    {subItem.name}
-                                                </span>
-                                                {subItem.description && (
-                                                    <p
-                                                        className={`text-[8px] truncate ${
-                                                            isSubActive
-                                                                ? "text-emerald-600"
-                                                                : "text-gray-400"
-                                                        }`}
-                                                    >
-                                                        {subItem.description}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                    <div
+                        className={cn(
+                            "grid transition-[grid-template-rows] duration-200 ease-linear",
+                            isOpen && expanded
+                                ? "grid-rows-[1fr]"
+                                : "grid-rows-[0fr]",
+                        )}
+                    >
+                        <div
+                            className="overflow-hidden"
+                            aria-hidden={!(isOpen && expanded)}
+                        >
+                            <div className="relative ml-2 pl-4 select-none">
+                                <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div>{" "}
+                                {/*line for dropdown*/}
+                                <div className="space-y-1">
+                                    {item.dropdownItems.map(
+                                        (subItem: any) => {
+                                            const isSubActive =
+                                                location.pathname ===
+                                                subItem.href;
+                                            return (
+                                                <div
+                                                    key={subItem.name}
+                                                    data-dropdown-item="true"
+                                                    onClick={() => {
+                                                        handleNavigation(
+                                                            subItem.href,
+                                                        );
+                                                    }}
+                                                    className={cn(
+                                                        "relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer",
+                                                        isSubActive
+                                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                            : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700",
+                                                    )}
+                                                >
+                                                    <subItem.icon className="h-4 w-4 shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-xs font-medium truncate block">
+                                                            {subItem.name}
+                                                        </span>
+                                                        {subItem.description && (
+                                                            <p
+                                                                className={cn(
+                                                                    "text-[8px] truncate",
+                                                                    isSubActive
+                                                                        ? "text-emerald-600"
+                                                                        : "text-gray-400",
+                                                                )}
+                                                            >
+                                                                {
+                                                                    subItem.description
+                                                                }
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        },
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    )}
+                    </div>
                 </div>
             );
         }
 
         // For closed sidebar or items without dropdown
         return (
-            <div
-                key={item.name}
-                data-nav-item="true"
-                onClick={() => handleNavigation(item.href)}
-                className={`
-                    flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group cursor-pointer select-none
-                    ${
-                        isActive
-                            ? "bg-emerald-500 text-white shadow-md"
-                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                    }
-                    ${!isSidebarOpen && !isMobile && "justify-center"}
-                `}
-                title={!isSidebarOpen && !isMobile ? item.name : undefined}
-            >
-                <item.icon
-                    className={`h-4 w-4 shrink-0 transition-all duration-200 ${!isSidebarOpen && !isMobile ? "mx-auto" : ""}`}
-                />
-                <div
-                    className={`flex flex-col flex-1 min-w-0 transition-all duration-200 ${!isSidebarOpen && !isMobile ? "opacity-0 w-0 hidden" : "opacity-100"}`}
-                >
-                    <span className="text-xs font-medium truncate">
-                        {item.name}
-                    </span>
-                    <span
-                        className={`text-[8px] truncate ${isActive ? "text-emerald-100" : "text-gray-400"}`}
+            <Tooltip key={item.name}>
+                <TooltipTrigger asChild>
+                    <div
+                        data-nav-item="true"
+                        onClick={() => {
+                            if (item.hasDropdown && !expanded) {
+                                setSidebarOpen(true);
+                                setOpenDropdowns((prev) => ({
+                                    ...prev,
+                                    [`${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`]:
+                                        true,
+                                }));
+                            } else {
+                                handleNavigation(item.href);
+                            }
+                        }}
+                        className={cn(
+                            "flex items-center gap-3 h-10 px-3 rounded-lg overflow-hidden cursor-pointer select-none",
+                            "transition-colors duration-150",
+                            isActive
+                                ? "bg-emerald-500 text-white shadow-md"
+                                : "text-gray-700 hover:bg-gray-100 hover:text-gray-900",
+                        )}
                     >
-                        {item.description}
-                    </span>
-                </div>
-            </div>
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                            <item.icon className="h-4 w-4" />
+                        </span>
+                        <div
+                            className={cn(
+                                "flex flex-col flex-1 min-w-0 whitespace-nowrap overflow-hidden",
+                                "transition-opacity duration-200 ease-linear",
+                                !expanded && "opacity-0 pointer-events-none",
+                            )}
+                            aria-hidden={!expanded}
+                        >
+                            <span className="text-xs font-medium truncate leading-tight">
+                                {item.name}
+                            </span>
+                            <span
+                                className={cn(
+                                    "text-[8px] truncate leading-none",
+                                    isActive
+                                        ? "text-emerald-100"
+                                        : "text-gray-400",
+                                )}
+                            >
+                                {item.description}
+                            </span>
+                        </div>
+                        {item.hasDropdown && (
+                            <ChevronRight
+                                className={cn(
+                                    "h-4 w-4 shrink-0 transition-transform duration-200",
+                                    isOpen ? "rotate-90" : "",
+                                    isActive
+                                        ? "text-white"
+                                        : "text-gray-400",
+                                    "transition-opacity duration-200 ease-linear",
+                                    !expanded && "opacity-0",
+                                )}
+                            />
+                        )}
+                    </div>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8} hidden={expanded}>
+                    {item.name}
+                </TooltipContent>
+            </Tooltip>
         );
     };
 
@@ -1324,7 +1426,7 @@ const AdminLayout = ({
     const fallback = `https://ui-avatars.com/api/?name=${user?.first_name}+${user?.last_name}&background=10b981&color=fff`;
 
     return (
-        <>
+        <TooltipProvider delayDuration={0}>
             <style>{`
                 /* Apply DM Sans font to the entire admin layout */
                 .min-h-screen, 
@@ -1355,7 +1457,7 @@ const AdminLayout = ({
                     width: 4px;
                 }
                 .sidebar-scrollbar::-webkit-scrollbar-track {
-                    background: #f1f1f1;
+                    background: transparent;
                     border-radius: 10px;
                 }
                 .sidebar-scrollbar::-webkit-scrollbar-thumb {
@@ -1367,7 +1469,7 @@ const AdminLayout = ({
                 }
                 .sidebar-scrollbar {
                     scrollbar-width: thin;
-                    scrollbar-color: #d1d5db #f1f1f1;
+                    scrollbar-color: #d1d5db transparent;
                 }
                 .scrollbar-hide {
                     -ms-overflow-style: none;
@@ -1382,12 +1484,6 @@ const AdminLayout = ({
                     -moz-user-select: none;
                     -ms-user-select: none;
                 }
-                .sidebar-transition {
-                    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                }
-                .content-transition {
-                    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                }
             `}</style>
 
             <div className="min-h-screen bg-gray-50 font-sans">
@@ -1401,27 +1497,20 @@ const AdminLayout = ({
 
                 {/* Desktop Sidebar - White background with smooth transition */}
                 <aside
-                    className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 text-gray-700 z-50 flex flex-col sidebar-transition
-                        ${isSidebarOpen ? "w-64" : "w-20"} 
-                        hidden lg:flex shadow-sm`}
+                    className={cn(
+                        "fixed top-0 left-0 h-full bg-white border-r border-gray-200 text-gray-700 z-50 flex flex-col",
+                        "overflow-hidden transition-[width] duration-200 ease-linear motion-reduce:transition-none",
+                        isSidebarOpen ? "w-64" : "w-[65px]",
+                        "hidden lg:flex shadow-sm",
+                    )}
                 >
                     {/* Logo Section - Centered when closed */}
-                    <div
-                        className={`h-20 flex items-center ${isSidebarOpen ? "px-6" : "justify-center"} shrink-0 border-b border-gray-200 transition-all duration-300`}
-                    >
+                    <div className="h-20 flex items-center px-3 shrink-0 border-b border-gray-200">
                         <div
                             onClick={() => handleNavigation("/dashboard")}
-                            className={`
-                                         flex items-center cursor-pointer hover:opacity-80 transition-all duration-300 select-none
-                                        ${isSidebarOpen ? "gap-3" : "justify-center w-full"}
-                                    `}
+                            className="flex items-center gap-3 cursor-pointer overflow-hidden whitespace-nowrap"
                         >
-                            <div
-                                className={`
-                                            rounded-full overflow-hidden flex items-center justify-center flex-shrink-0
-                                            ${isSidebarOpen ? "h-10 w-10" : "h-12 w-12 mx-auto"}
-                                        `}
-                            >
+                            <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden flex items-center justify-center">
                                 <img
                                     src={logo}
                                     alt="Traveler's Inn Logo"
@@ -1443,7 +1532,11 @@ const AdminLayout = ({
                                 />
                             </div>
                             <div
-                                className={`flex flex-col transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 max-w-xs" : "opacity-0 max-w-0 w-0"}`}
+                                className={cn(
+                                    "flex flex-col transition-opacity duration-200 ease-linear",
+                                    !isSidebarOpen &&
+                                        "opacity-0 pointer-events-none",
+                                )}
                             >
                                 <span className="font-bold text-sm tracking-tight leading-tight text-gray-800 whitespace-nowrap">
                                     Lyn Enia's
@@ -1457,19 +1550,37 @@ const AdminLayout = ({
 
                     {/* Navigation with Scrollbar - No blinking on icons */}
                     <nav
-                        className={`flex-1 py-6 px-3 overflow-y-auto sidebar-scrollbar transition-all duration-300`}
+                        className={cn(
+                            "flex-1 py-6 px-3 overflow-y-auto overflow-x-hidden",
+                            isSidebarOpen
+                                ? "sidebar-scrollbar"
+                                : "scrollbar-hide",
+                        )}
                     >
-                        <div className="space-y-6">
-                            {navigationGroups.map((group) => (
-                                <div key={group.label}>
+                        <div className="flex flex-col">
+                            {navigationGroups.map((group, index) => (
+                                <div
+                                    key={group.label}
+                                    className={cn(
+                                        "transition-[margin] duration-200 ease-linear motion-reduce:transition-none",
+                                        index > 0 &&
+                                            (isSidebarOpen ? "mt-6" : "mt-1"),
+                                    )}
+                                >
                                     <div
-                                        className={`transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 h-auto mb-2" : "opacity-0 h-0 mb-0"}`}
-                                    >
-                                        {isSidebarOpen && (
-                                            <p className="text-[9px] font-semibold tracking-wider text-gray-400 uppercase px-3 select-none">
-                                                {group.label}
-                                            </p>
+                                        className={cn(
+                                            "overflow-hidden transition-[height,margin,opacity] duration-200 ease-linear",
+                                            isSidebarOpen
+                                                ? "h-4 mb-2 opacity-100"
+                                                : "h-0 mb-0 opacity-0",
+                                            !isSidebarOpen &&
+                                                "pointer-events-none",
                                         )}
+                                        aria-hidden={!isSidebarOpen}
+                                    >
+                                        <p className="text-[9px] font-semibold tracking-wider text-gray-400 uppercase px-3 select-none whitespace-nowrap">
+                                            {group.label}
+                                        </p>
                                     </div>
                                     <div className="space-y-1">
                                         {group.items.map((item) =>
@@ -1487,24 +1598,15 @@ const AdminLayout = ({
                     </nav>
 
                     {/* User Menu - Avatar centered when closed */}
-                    <div
-                        className={`
-                                      border-t border-gray-200 py-3 shrink-0 mt-auto transition-all duration-300
-                                     ${isSidebarOpen ? "px-3" : "px-2"}
-                                `}
-                    >
+                    <div className="border-t border-gray-200 py-3 px-3 shrink-0 mt-auto">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button
-                                    className={`
-                                                w-full flex items-center -px-2 -py-2 rounded-lg hover:bg-gray-50 transition-all duration-200 group
-                                                focus:outline-none focus:ring-0 cursor-pointer select-none
-                                                ${isSidebarOpen ? "gap-3" : "justify-center"}
-                                            `}
+                                    className={cn(
+                                        "w-full flex items-center gap-3 rounded-lg overflow-hidden hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus:ring-0 cursor-pointer select-none",
+                                    )}
                                 >
-                                    <div
-                                        className={`rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center flex-shrink-0 transition-all duration-200 ${isSidebarOpen ? "h-10 w-10" : "h-9 w-9"}`}
-                                    >
+                                    <div className="h-10 w-10 shrink-0 rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center">
                                         {user?.profile_image ? (
                                             <img
                                                 src={
@@ -1530,17 +1632,25 @@ const AdminLayout = ({
                                         )}
                                     </div>
                                     <div
-                                        className={`flex-1 text-left transition-all duration-300 overflow-hidden ${isSidebarOpen ? "opacity-100 max-w-xs" : "opacity-0 max-w-0 w-0"}`}
+                                        className={cn(
+                                            "flex-1 text-left transition-opacity duration-200 ease-linear overflow-hidden whitespace-nowrap",
+                                            !isSidebarOpen &&
+                                                "opacity-0 pointer-events-none",
+                                        )}
                                     >
-                                        <p className="text-xs relative top-2 font-semibold text-gray-800 truncate leading-none select-none whitespace-nowrap">
+                                        <p className="text-xs relative top-2 font-semibold text-gray-800 truncate leading-none select-none">
                                             {getDisplayName()}
                                         </p>
-                                        <p className="text-[10px] text-gray-400 truncate select-none whitespace-nowrap">
+                                        <p className="text-[10px] text-gray-400 truncate select-none">
                                             {user.email}
                                         </p>
                                     </div>
                                     <div
-                                        className={`flex flex-col items-center justify-center leading-none text-gray-400 group-hover:text-gray-600 transition-all duration-300 ${isSidebarOpen ? "opacity-100" : "opacity-0 w-0"}`}
+                                        className={cn(
+                                            "flex flex-col items-center justify-center leading-none text-gray-400 group-hover:text-gray-600 transition-opacity duration-200 ease-linear",
+                                            !isSidebarOpen &&
+                                                "opacity-0 pointer-events-none",
+                                        )}
                                     >
                                         <ChevronUp className="h-4 w-3 -mb-1" />
                                         <ChevronDown className="h-4 w-3 -mt-1" />
@@ -1701,7 +1811,11 @@ const AdminLayout = ({
 
                 {/* Main Content with smooth margin transition */}
                 <main
-                    className={`content-transition ${isSidebarOpen ? "lg:ml-64" : "lg:ml-20"} flex flex-col h-screen overflow-hidden`}
+                    className={cn(
+                        "transition-[margin-left] duration-200 ease-linear motion-reduce:transition-none",
+                        isSidebarOpen ? "lg:ml-64" : "lg:ml-[65px]",
+                        "flex flex-col h-screen overflow-hidden",
+                    )}
                 >
                     {/* Header */}
                     <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
@@ -1958,7 +2072,7 @@ const AdminLayout = ({
                     </p>
                 </DialogContent>
             </Dialog>
-        </>
+        </TooltipProvider>
     );
 };
 

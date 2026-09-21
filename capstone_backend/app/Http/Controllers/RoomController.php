@@ -322,6 +322,15 @@ class RoomController extends Controller
                 })
                 ->first();
 
+            // Cleaning rooms are being prepared, so don't attach a pending/confirmed
+            // booking's guest info to them. A real checked-in stay stays visible.
+            if (
+                $room->status === 'cleaning' &&
+                $bookedRoom?->status !== 'checked_in'
+            ) {
+                $bookedRoom = null;
+            }
+
             $booking = $bookedRoom?->booking;
 
             $guestName = null;

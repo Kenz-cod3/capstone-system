@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+    useEffect,
+    useMemo,
+    useState,
+    useCallback,
+    useRef,
+    useLayoutEffect,
+} from "react";
 import {
     Card,
     CardContent,
@@ -26,6 +33,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
     Printer,
     CalendarRange,
@@ -57,6 +70,7 @@ import {
 
 import api from "@/services/api";
 import logo from "../../../../images/logo.png";
+import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -312,14 +326,11 @@ function paginateRows<T>(rows: T[], orientation: Orientation): T[][] {
     let pageIndex = 0;
     while (i < rows.length) {
         const remaining = rows.length - i;
-        // Determine if, by taking a full page here, the remainder would
-        // still need extra space. We size the last chunk conservatively.
         const capacity = getRowsPerPage(orientation, pageIndex, false);
         const wouldBeLast = remaining <= capacity;
         const cap = wouldBeLast
             ? getRowsPerPage(orientation, pageIndex, true)
             : capacity;
-        // If remaining exceeds the last-page cap, take a full page.
         const take = wouldBeLast ? Math.min(remaining, cap) : capacity;
         chunks.push(rows.slice(i, i + take));
         i += take;
@@ -768,11 +779,9 @@ interface DocColumn<T> {
     key: string;
     label: string;
     align?: "left" | "right" | "center";
-    /** Relative column weight (all visible weights are normalised to 100%). */
     weight: number;
     nowrap?: boolean;
     confidential?: boolean;
-    /** Allows the cell to wrap to up to 2 lines instead of being clipped. */
     wrap?: boolean;
     render: (row: T, index: number) => React.ReactNode;
 }
@@ -4173,6 +4182,28 @@ export default function Reports() {
     const [isPrintPreview, setIsPrintPreview] = useState(false);
     const [includeGuestNames, setIncludeGuestNames] = useState(false);
 
+    // Measure the real scrollbar gutter so the collapsed sidebar width
+    // matches what the browser actually reserves, regardless of any
+    // global scrollbar CSS that overrides ::-webkit-scrollbar sizing.
+    const sidebarRef = useRef<HTMLDivElement>(null);
+    const [sbw, setSbw] = useState(4); // real scrollbar gutter width in px
+
+    useLayoutEffect(() => {
+        const el = sidebarRef.current;
+        if (!el) return;
+        const measure = () => {
+            const cs = getComputedStyle(el);
+            const border =
+                (parseFloat(cs.borderLeftWidth) || 0) +
+                (parseFloat(cs.borderRightWidth) || 0);
+            const w = Math.max(0, el.offsetWidth - el.clientWidth - border);
+            setSbw((prev) => (prev === w ? prev : w));
+        };
+        measure();
+        window.addEventListener("resize", measure);
+        return () => window.removeEventListener("resize", measure);
+    }, [isPrintPreview]);
+
     // Orientation with localStorage persistence.
     const [orientation, setOrientationState] = useState<Orientation>(() => {
         if (typeof window === "undefined") return "portrait";
@@ -4345,45 +4376,92 @@ export default function Reports() {
         }
     };
 
+    /* ── Desktop sidebar items (icon-collapsible, shadcn-style) ── */
+    /*  Group headings collapse by HEIGHT (not -mt-8) so they never overlap
+     *  the toggle button or the last item of the previous group.
+     *  Each item is always wrapped in <Tooltip> (never conditionally) so
+     *  buttons never remount mid-animation.
+     *  Exact font sizes: 10.5px menu items, 8.5px headings, 9.5px tooltips. */
     const renderSidebarItems = () =>
         Object.entries(groupedItems).map(([group, items]) => (
             <div key={group} className="space-y-1">
-                {!sidebarCollapsed && (
-                    <h3 className="group-label text-[12px] uppercase tracking-wider px-3 py-1 select-none text-gray-500 font-semibold">
-                        {group}
-                    </h3>
-                )}
-                {items.map((item) => (
-                    <button
-                        key={item.id}
-                        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-[13px] transition-all duration-200 menu-item select-none ${
-                            activeTab === item.id
-                                ? "active-tab bg-emerald-500 text-white shadow-md"
-                                : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
-                        } ${sidebarCollapsed ? "justify-center" : ""}`}
-                        onClick={() => {
-                            setActiveTab(item.id);
-                            setPreviewPage(1);
-                            setPreviewTotalPages(1);
-                        }}
-                        title={sidebarCollapsed ? item.label : ""}
-                    >
-                        <span
-                            className={
-                                activeTab === item.id
-                                    ? "text-white"
-                                    : "text-gray-500"
-                            }
+                {/* Group heading: collapses by height, inert when hidden,
+                    exact 8.5px font size. */}
+                <h3
+                    className={cn(
+                        "overflow-hidden whitespace-nowrap flex items-center px-3",
+                        "transition-[height,opacity] duration-200 ease-linear",
+                        "text-[8.5px] uppercase tracking-wider select-none text-gray-500 font-semibold",
+                        "pointer-events-none",
+                        sidebarCollapsed ? "h-0 opacity-0" : "h-8 opacity-100",
+                    )}
+                    aria-hidden={sidebarCollapsed}
+                >
+                    {group}
+                </h3>
+
+                {items.map((item) => {
+                    const isActive = activeTab === item.id;
+
+                    const button = (
+                        <button
+                            className={cn(
+                                "flex w-full items-center gap-2 h-9 px-2 rounded-md overflow-hidden",
+                                "text-[10.5px] leading-none",
+                                "menu-item select-none transition-colors duration-150",
+                                isActive
+                                    ? "bg-emerald-500 text-white shadow-md"
+                                    : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700",
+                            )}
+                            onClick={() => {
+                                setActiveTab(item.id);
+                                setPreviewPage(1);
+                                setPreviewTotalPages(1);
+                            }}
                         >
-                            {item.icon}
-                        </span>
-                        {!sidebarCollapsed && (
-                            <span className="flex-1 text-left">
+                            {/* Fixed-size icon wrapper: keeps icon perfectly steady */}
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                                <span
+                                    className={cn(
+                                        isActive
+                                            ? "text-white"
+                                            : "text-gray-500",
+                                    )}
+                                >
+                                    {item.icon}
+                                </span>
+                            </span>
+                            {/* Label inherits 10.5px from button; stays mounted */}
+                            <span
+                                className={cn(
+                                    "flex-1 text-left whitespace-nowrap overflow-hidden",
+                                    "transition-opacity duration-200 ease-linear",
+                                    sidebarCollapsed &&
+                                        "opacity-0 pointer-events-none",
+                                )}
+                                aria-hidden={sidebarCollapsed}
+                            >
                                 {item.label}
                             </span>
-                        )}
-                    </button>
-                ))}
+                        </button>
+                    );
+
+                    // ALWAYS wrap in Tooltip so the button never remounts.
+                    // TooltipContent hidden when expanded; 9.5px font.
+                    return (
+                        <Tooltip key={item.id}>
+                            <TooltipTrigger asChild>{button}</TooltipTrigger>
+                            <TooltipContent
+                                side="right"
+                                sideOffset={8}
+                                hidden={!sidebarCollapsed}
+                                className="text-[9.5px]"
+                            >
+                                <p>{item.label}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    );
+                })}
             </div>
         ));
 
@@ -4692,8 +4770,6 @@ export default function Reports() {
                     color: #555;
                 }
 
-                /* ── @page is injected dynamically via the <style> tag below ── */
-
                 /* Page-break rules live on the wrapper, not the sheet */
                 .preview-only-pages {
                     break-after: page;
@@ -4716,8 +4792,6 @@ export default function Reports() {
                     }
                     .print-hide, .no-print { display: none !important; }
 
-                    /* Unlock every ancestor of the report: no fixed height,
-                       overflow, flex or transform. */
                     .print-chain {
                         display: block !important;
                         position: static !important;
@@ -4735,7 +4809,6 @@ export default function Reports() {
                         background: #fff !important;
                     }
 
-                    /* Preview-only wrappers become plain blocks. */
                     .print-preview-stage,
                     .print-preview-sheet-wrap {
                         display: block !important;
@@ -4747,8 +4820,6 @@ export default function Reports() {
                     }
                     .print-preview-nav-btn { display: none !important; }
 
-                    /* Show ALL pages, one sheet per physical page,
-                       no trailing blank page. */
                     .preview-only-pages {
                         display: block !important;
                         break-after: page;
@@ -4798,10 +4869,56 @@ export default function Reports() {
                 .white-badge:hover { background: #4b5563; }
                 .scrollbar-mint::-webkit-scrollbar { width: 6px; height: 6px; }
                 .scrollbar-mint::-webkit-scrollbar-thumb { background: #10b981; border-radius: 10px; }
-                .sidebar-scrollbar::-webkit-scrollbar { width: 4px; }
-                .sidebar-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+
+                /* ── Slim, always-visible scrollbar for the desktop sidebar ──
+                 *  The collapsed width is driven by JS (measured gutter),
+                 *  so the layout no longer depends on a fixed 4px value.
+                 *  Chrome/Edge honor ::-webkit-scrollbar sizing only when
+                 *  scrollbar-width/color are NOT set, so we force them
+                 *  back to auto under @supports selector(::-webkit-scrollbar)
+                 *  to override any global rule that would otherwise win. */
+                .sidebar-scrollbar { scrollbar-gutter: stable; }
+                @supports selector(::-webkit-scrollbar) {
+                    .sidebar-scrollbar {
+                        scrollbar-width: auto !important;
+                        scrollbar-color: auto !important;
+                    }
+                }
+                .sidebar-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                    height: 4px;
+                    background: transparent;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                    margin: 8px 0;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-button {
+                    display: none;
+                    width: 0;
+                    height: 0;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb {
+                    background: #d1d5db;
+                    border-radius: 9999px;
+                }
+                .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: #9ca3af;
+                }
+                /* Firefox only (it does not support ::-webkit-scrollbar) */
+                @supports not selector(::-webkit-scrollbar) {
+                    .sidebar-scrollbar {
+                        scrollbar-width: thin;
+                        scrollbar-color: #d1d5db transparent;
+                    }
+                }
+
                 *:focus { outline: none !important; }
                 *:focus-visible { outline: 2px solid #6b7280 !important; outline-offset: 2px !important; }
+                .sidebar-white button:focus-visible {
+                    outline: none !important;
+                    box-shadow: inset 0 0 0 1.5px #10b981;
+                }
             `}</style>
 
             {/* Dynamic @page size — must be a live style tag tied to state. */}
@@ -4937,27 +5054,69 @@ export default function Reports() {
             <div className="flex flex-1 overflow-hidden">
                 {!isPrintPreview && (
                     <div
-                        className={`sidebar-white no-print transition-all duration-300 ${sidebarCollapsed ? "w-16" : "w-56"} shrink-0 relative hidden lg:block overflow-y-auto`}
+                        ref={sidebarRef}
+                        className={cn(
+                            "sidebar-white sidebar-scrollbar no-print shrink-0 relative hidden lg:block",
+                            "overflow-x-hidden overflow-y-auto",
+                            "transition-[width] duration-200 ease-linear motion-reduce:transition-none",
+                        )}
+                        style={{
+                            width: sidebarCollapsed ? 61 + sbw : 224,
+                        }}
                     >
-                        <div className="sticky top-0 p-3 space-y-3">
-                            <Button
-                                variant="ghost"
-                                size="sm"
+                        <div
+                            className="sticky top-0 py-3 space-y-3"
+                            style={{
+                                paddingLeft: 12 + sbw / 2,
+                                paddingRight: 12 - sbw / 2,
+                            }}
+                        >
+                            {/* Collapse toggle: same layout as menu items,
+                                relative z-10 so nothing can cover it.
+                                9.5px label. */}
+                            <button
+                                type="button"
                                 onClick={toggleSidebar}
-                                className="w-full justify-center hover:bg-emerald-50 hover:text-emerald-600 focus:ring-0 focus:outline-none text-gray-500 text-[12px] h-8"
+                                aria-label={
+                                    sidebarCollapsed
+                                        ? "Expand sidebar"
+                                        : "Collapse sidebar"
+                                }
+                                aria-expanded={!sidebarCollapsed}
+                                className={cn(
+                                    "relative z-10 flex w-full items-center justify-start gap-2 h-9 px-2",
+                                    "rounded-md overflow-hidden select-none cursor-pointer",
+                                    "text-gray-500 hover:bg-emerald-50 hover:text-emerald-600",
+                                    "transition-colors duration-150",
+                                    "focus:ring-0 focus:outline-none",
+                                )}
                             >
-                                {sidebarCollapsed ? (
-                                    <ChevronRightIcon className="h-3.5 w-3.5" />
-                                ) : (
-                                    <ChevronLeft className="h-3.5 w-3.5" />
-                                )}
-                                {!sidebarCollapsed && (
-                                    <span className="ml-2 text-[12px]">
-                                        Collapse
-                                    </span>
-                                )}
-                            </Button>
-                            {renderSidebarItems()}
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                                    <ChevronLeft
+                                        className={cn(
+                                            "h-4 w-4 transition-transform duration-200",
+                                            sidebarCollapsed && "rotate-180",
+                                        )}
+                                    />
+                                </span>
+                                <span
+                                    className={cn(
+                                        "flex-1 text-left whitespace-nowrap overflow-hidden",
+                                        "text-[9.5px]",
+                                        "transition-opacity duration-200 ease-linear",
+                                        sidebarCollapsed &&
+                                            "opacity-0 pointer-events-none",
+                                    )}
+                                    aria-hidden={sidebarCollapsed}
+                                >
+                                    Collapse
+                                </span>
+                            </button>
+
+                            {/* Single TooltipProvider wraps the entire list */}
+                            <TooltipProvider delayDuration={0}>
+                                {renderSidebarItems()}
+                            </TooltipProvider>
                         </div>
                     </div>
                 )}
