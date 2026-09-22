@@ -32,7 +32,6 @@ class RoomStatusHistoryController extends Controller
 
         $history = RoomStatusHistory::create($validated);
 
-        // 🔥 REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([

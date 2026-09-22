@@ -28,21 +28,18 @@ class OrderPaymentController extends Controller
 
         $order = Order::findOrFail($validated['order_id']);
 
-        // ❌ Prevent zero payment
         if ($validated['amount'] <= 0) {
             return response()->json([
                 'message' => 'Invalid cash amount'
             ], 400);
         }
 
-        // COMPUTE CHANGE
         $change = 0;
 
         if ($validated['amount'] > $order->total_amount) {
             $change = $validated['amount'] - $order->total_amount;
         }
 
-        // SAVE PAYMENT (FIXED )
         $payment = OrderPayment::create([
             'order_id' => $order->id,
             'amount' => $validated['amount'],
@@ -52,7 +49,6 @@ class OrderPaymentController extends Controller
             'payment_date' => now()
         ]);
 
-        // UPDATE ORDER STATUS (FIXED)
         $order->update([
             'order_status' => 'paid'
         ]);

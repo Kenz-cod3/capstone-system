@@ -549,7 +549,7 @@ export default function ReservationMonitor() {
                                 />
 
                                 <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-500">
-                                    <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 shrink-0 rounded-full bg-emerald-500" />
+                                    <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 shrink-0 rounded-full bg-emerald-400 ring-2 ring-emerald-100" />
                                     <span className="truncate">
                                         {fullName(guestOf(selected))}&apos;s
                                         Reservation
@@ -635,7 +635,7 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                             <span
                                 className={`flex h-5 w-5 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full text-[10px] sm:text-sm font-semibold ${
                                     isCheckIn || isCheckOut
-                                        ? "bg-emerald-600 text-white"
+                                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-400"
                                         : inMonth
                                           ? "text-slate-700"
                                           : "text-slate-300"
@@ -644,12 +644,12 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                                 {d.getDate()}
                             </span>
                             {isCheckIn && (
-                                <span className="text-[8px] sm:text-[11px] font-medium leading-tight text-emerald-700">
+                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] sm:text-[10px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200">
                                     Check-in
                                 </span>
                             )}
                             {isCheckOut && (
-                                <span className="text-[8px] sm:text-[11px] font-medium leading-tight text-emerald-700">
+                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] sm:text-[10px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200">
                                     Check-out
                                 </span>
                             )}

@@ -21,7 +21,7 @@
 //         port: 5173,
 //         strictPort: true,
 //         hmr: {
-//             host: '192.168.137.1',
+//             host: '192.168.8.117',
 //         },
 //         watch: {
 //             ignored: ['**/storage/framework/views/**'],
