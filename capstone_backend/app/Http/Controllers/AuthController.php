@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmailVerification;
+use App\Models\PasswordResetToken;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use App\Models\Shift;
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -92,6 +94,9 @@ class AuthController extends Controller
             return true;
         } catch (\Exception $e) {
             Log::error("Mail Error: " . $mail->ErrorInfo);
+
+            // expire the code so the user can request a new one right away
+            EmailVerification::where('user_id', $user->id)->update(['expires_at' => now()]);
 
             return false;
         }
@@ -259,6 +264,162 @@ class AuthController extends Controller
         ], $sent ? 200 : 502);
     }
 
+    // Generic mailer (same SMTP setup as sendOtpEmail)
+    private function sendMail(User $user, string $subject, string $html): bool
+    {
+        $mail = new PHPMailer(true);
+
+        try {
+            $mail->isSMTP();
+            $mail->Host = config('mail.mailers.smtp.host', env('MAIL_HOST'));
+            $mail->SMTPAuth = true;
+            $mail->Username = env('MAIL_USERNAME');
+            $mail->Password = env('MAIL_PASSWORD');
+            $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
+            $mail->Port = env('MAIL_PORT', 587);
+
+            $mail->setFrom(env('MAIL_FROM_ADDRESS'), env('MAIL_FROM_NAME'));
+            $mail->addAddress($user->email);
+
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body = $html;
+            $mail->send();
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Mail Error: ' . $mail->ErrorInfo);
+            return false;
+        }
+    }
+
+    // STEP 1: user enters email → we email a reset link
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        // Same response whether or not the email exists (no account enumeration)
+        $response = response()->json([
+            'message' => 'If that email is registered, we sent a password reset link.',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user || !$user->is_active) {
+            return $response;
+        }
+
+        // 60-second cooldown per account
+        $recentlyRequested = PasswordResetToken::where('user_id', $user->id)
+            ->where('created_at', '>', now()->subSeconds(60))
+            ->exists();
+
+        if ($recentlyRequested) {
+            return $response;
+        }
+
+        // Plain token goes in the email; only the hash is stored
+        $plainToken = Str::random(64);
+
+        // one active reset link per user
+        PasswordResetToken::where('user_id', $user->id)->delete();
+
+        PasswordResetToken::create([
+            'user_id'    => $user->id,
+            'token'      => hash('sha256', $plainToken),
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        // Uses APP_URL / current host, so set APP_URL correctly in production
+        $link = url('/reset-password') . '?' . http_build_query([
+            'token' => $plainToken,
+            'email' => $user->email,
+        ]);
+
+        $html = "
+        <div style='font-family: Arial, sans-serif; max-width:600px; margin:auto; padding:20px; border:1px solid #e5e7eb; border-radius:10px;'>
+            <h2 style='color:#16a34a; text-align:center;'>Lynn Ennia's Travelers Inn</h2>
+
+            <p>Hello {$user->first_name},</p>
+
+            <p>We received a request to reset your password. Click the button below to choose a new one:</p>
+
+            <p style='text-align:center; margin:30px 0;'>
+                <a href='{$link}'
+                   style='background:#0d9488; color:#ffffff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:bold;'>
+                    Reset Password
+                </a>
+            </p>
+
+            <p>This link will expire in <strong>30 minutes</strong>.</p>
+
+            <p>If you did not request this, you can safely ignore this email. Your password will not change.</p>
+
+            <hr>
+            <small style='color:#6b7280;'>
+                If the button doesn't work, copy and paste this link into your browser:<br>
+                {$link}
+            </small>
+        </div>";
+
+        $sent = $this->sendMail($user, 'Reset your password', $html);
+
+        if (!$sent) {
+            // remove the token so the user can retry right away
+            PasswordResetToken::where('user_id', $user->id)->delete();
+        }
+
+        return $response;
+    }
+
+    // STEP 2: user opens the link and submits a new password
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email'    => 'required|email',
+            'token'    => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
+        ], [
+            'password.confirmed' => 'Passwords do not match.',
+            'password.min'       => 'Password must be at least 8 characters.',
+        ]);
+
+        $invalid = response()->json([
+            'message' => 'This reset link is invalid or has expired. Please request a new one.',
+        ], 400);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return $invalid;
+        }
+
+        $record = PasswordResetToken::where('user_id', $user->id)
+            ->where('token', hash('sha256', $request->token))
+            ->whereNull('used_at')
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if (!$record) {
+            return $invalid;
+        }
+
+        $user->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        $record->update(['used_at' => now()]);
+
+        // log out of every device/session (web + mobile)
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Your password has been reset. You can now sign in.',
+        ]);
+    }
+
     // public function adminLogin(Request $request)
     // {
     //     $request->validate([
@@ -338,6 +499,21 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'Invalid email or password'
             ], 401);
+        }
+
+        // GUESTS MUST VERIFY THEIR EMAIL BEFORE LOGGING IN
+        if ($user->role === 'guest' && !$user->is_verified) {
+            $verification = EmailVerification::where('user_id', $user->id)->first();
+            $otpActive = $verification && now()->lessThan($verification->expires_at);
+            $sent = $otpActive ? true : $this->sendOtpEmail($user);
+
+            return response()->json([
+                'message' => $sent
+                    ? 'Account not verified. Please enter the OTP sent to your email.'
+                    : 'Account not verified, and the OTP email failed to send. Please try again shortly.',
+                'needs_verification' => true,
+                'email' => $user->email,
+            ], 403);
         }
 
         // ALLOW ADMIN, STAFF, CASHIER, AND GUEST
@@ -436,43 +612,7 @@ class AuthController extends Controller
             'message' => 'Logged out successfully'
         ]);
     }
-    // public function logout(Request $request)
-    // {
-    //     $user = $request->user();
-    //     $shift = Shift::where('opened_by', $user->id)
-    //         ->whereNull('closed_at')
-    //         ->latest('opened_at')
-    //         ->first();
 
-    //     if ($shift) {
-
-    //         $payIn = \App\Models\CashTransaction::where('shift_id', $shift->id)
-    //             ->where('type', 'pay_in')
-    //             ->sum('amount');
-
-    //         $payOut = \App\Models\CashTransaction::where('shift_id', $shift->id)
-    //             ->where('type', 'pay_out')
-    //             ->sum('amount');
-
-    //         $bookingPayments = \App\Models\BookingPayment::where('shift_id', $shift->id)
-    //             ->sum('amount');
-
-    //         $expected = $shift->starting_cash + $bookingPayments + $payIn - $payOut;
-
-    //         $shift->update([
-    //             'expected_cash' => $expected,
-    //             'closed_cash' => $expected,
-    //             'closed_at' => now(),
-    //         ]);
-    //     }
-
-    //     // $user->tokens()->delete();
-    //     $request->user()->currentAccessToken()->delete();
-
-    //     return response()->json([
-    //         'message' => 'Logged out successfully'
-    //     ]);
-    // }
 
     //GET AUTH USER (optional)
     public function me(Request $request)

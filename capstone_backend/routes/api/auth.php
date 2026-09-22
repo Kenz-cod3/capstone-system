@@ -12,8 +12,10 @@ Route::prefix('auth')->group(function () {
     Route::post('/mobile/login', [AuthController::class, 'mobileLogin']);
     Route::post('/login', [AuthController::class, 'adminLogin']);
 
-    Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
-    Route::post('/resend-otp', [AuthController::class, 'resendOtp']);
+    Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:5,1');
+    Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->middleware('throttle:3,1');
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('/reset-password',  [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
     // PROTECTED ROUTES (need token)
     Route::middleware('auth:sanctum')->group(function () {

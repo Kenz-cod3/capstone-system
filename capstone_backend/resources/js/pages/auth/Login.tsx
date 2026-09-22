@@ -106,6 +106,13 @@ export default function Login() {
                 localStorage.clear();
             }
         } catch (err: any) {
+            // unverified account → continue at the OTP step
+            if (err.response?.data?.needs_verification) {
+                window.location.replace(
+                    `/register?verify=${encodeURIComponent(err.response.data.email)}`,
+                );
+                return;
+            }
             // error message from backend
             setError(err.response?.data?.message || "Login failed");
         } finally {
@@ -175,9 +182,7 @@ export default function Login() {
                             ))}
                         </div>
 
-                        {/* Logo — no more negative margins / absolute-positioned stacking.
-                            Plain flex column with gap so text never overlaps the icon
-                            regardless of which font actually loads. */}
+                        {/* Logo */}
                         <div className="relative z-10 flex flex-col items-start gap-1.5">
                             <img
                                 src={loginLogo}
@@ -207,14 +212,12 @@ export default function Login() {
                                 />
                             </div>
                             <p className="text-sm text-teal-50/90 leading-relaxed max-w-xs">
-                                Sign in to access your dashboard as an Admin,
-                                Staff, or Cashier and manage your system
-                                efficiently.
+                                Sign in to access your account and manage your
+                                stay with Travelers Inn.
                             </p>
                         </div>
 
-                        {/* Security badge — same fix: flex + gap instead of
-                            leading-none/translate-y hacks that assumed one font's metrics */}
+                        {/* Security badge */}
                         <div className="relative z-10 flex items-center gap-4 w-fit bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl px-6 py-3">
                             <div className="h-9 w-9 rounded-lg bg-teal-500/20 flex items-center justify-center shrink-0">
                                 <ShieldCheck className="h-5 w-5 text-teal-300" />
@@ -382,13 +385,23 @@ export default function Login() {
                                 </Button>
                             </div>
 
+                            <p className="text-center text-sm text-gray-600">
+                                Don't have an account?{" "}
+                                <a
+                                    href="/register"
+                                    className="font-semibold text-teal-600 hover:text-teal-700"
+                                >
+                                    Sign up
+                                </a>
+                            </p>
+
                             <p className="text-center text-xs text-gray-500">
                                 Trouble logging in?{" "}
                                 <a
                                     href="/contact"
                                     className="font-medium text-teal-600 hover:text-teal-700"
                                 >
-                                    Contact your system administrator.
+                                    Contact support.
                                 </a>
                             </p>
                         </form>

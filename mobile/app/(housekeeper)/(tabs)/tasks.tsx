@@ -764,6 +764,7 @@ export default function Tasks() {
                 className="bg-white rounded-t-3xl px-5 pt-5 pb-7"
                 style={{
                   maxHeight: "90%",
+                  marginBottom: -25,
                 }}
               >
                 <ScrollView

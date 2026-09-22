@@ -67,7 +67,18 @@ import GuestPayment from "./pages/guest/GuestPayment";
 
 // AUTH
 import Login from "./pages/auth/Login";
+import Register from "./pages/auth/Register";
+import ForgotPassword from "./pages/auth/Forgotpassword"; // NEW
+import ResetPassword from "./pages/auth/Resetpassword"; // NEW
 import LandingPage from "./pages/public/LandingPage";
+
+// public auth pages (no splash screen / no "no internet" takeover)
+const AUTH_PATHS = [
+    "/login",
+    "/register",
+    "/forgot-password", // NEW
+    "/reset-password", // NEW
+];
 
 export default function App() {
     const user = JSON.parse(localStorage.getItem("user") || "null");
@@ -75,8 +86,8 @@ export default function App() {
 
     const location = useLocation();
 
-    // check if login page
-    const isLoginPage = location.pathname === "/login";
+    // login, register, forgot-password and reset-password are public auth pages
+    const isLoginPage = AUTH_PATHS.includes(location.pathname);
 
     // check if landing page
     const isLandingPage = location.pathname === "/";
@@ -127,6 +138,15 @@ export default function App() {
                 <Routes>
                     {/*  PUBLIC ROUTE */}
                     <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route
+                        path="/forgot-password"
+                        element={<ForgotPassword />}
+                    />
+                    <Route
+                        path="/reset-password"
+                        element={<ResetPassword />}
+                    />
                     <Route path="/" element={<LandingPage />} />
 
                     {/* NOT LOGGED IN */}

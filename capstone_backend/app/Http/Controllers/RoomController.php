@@ -160,7 +160,6 @@ class RoomController extends Controller
             ? $checkIn->copy()->addDay()
             : \Carbon\Carbon::parse($request->check_out_date)->startOfDay();
 
-        // ROOM UNDER MAINTENANCE
         if ($room->status === 'maintenance') {
             return response()->json([
                 'data' => [
@@ -171,7 +170,6 @@ class RoomController extends Controller
             ]);
         }
 
-        // OVERLAPPING ACTIVE BOOKINGS (same logic as BookingController@conflictQuery)
         $conflicts = \App\Models\BookedRoom::where('room_id', $room->id)
             ->whereNull('archived_at')
             ->whereNull('deleted_at')
@@ -200,10 +198,6 @@ class RoomController extends Controller
         ]);
     }
 
-    /**
-     * Returns every active (pending/confirmed/checked_in) booking range
-     * for this room, so the guest calendar can disable those days.
-     */
     public function bookedDates($id)
     {
         $room = Room::findOrFail($id);
@@ -223,7 +217,6 @@ class RoomController extends Controller
 
             $in = \Carbon\Carbon::parse($b->check_in_date)->toDateString();
 
-            // Short stays only block the single check-in day.
             $out = $b->stay_type === 'short_stay'
                 ? \Carbon\Carbon::parse($b->check_in_date)->addDay()->toDateString()
                 : \Carbon\Carbon::parse($b->check_out_date)->toDateString();
