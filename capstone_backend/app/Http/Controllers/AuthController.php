@@ -34,18 +34,18 @@ class AuthController extends Controller
 
         try {
             $mail->isSMTP();
-            $mail->Host = config('mail.mailers.smtp.host', env('MAIL_HOST'));
+            $mail->Host = config('mail.mailers.smtp.host');
             $mail->SMTPAuth = true;
 
-            $mail->Username = env('MAIL_USERNAME');
-            $mail->Password = env('MAIL_PASSWORD');
+            $mail->Username = config('mail.mailers.smtp.username');
+            $mail->Password = config('mail.mailers.smtp.password');
 
-            $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
-            $mail->Port = env('MAIL_PORT', 587);
+            $mail->SMTPSecure = config('mail.mailers.smtp.encryption', 'tls');
+            $mail->Port = config('mail.mailers.smtp.port', 587);
 
             $mail->setFrom(
-                env('MAIL_FROM_ADDRESS'),
-                env('MAIL_FROM_NAME')
+                config('mail.from.address'),
+                config('mail.from.name')
             );
             $mail->addAddress($user->email);
 
@@ -271,14 +271,14 @@ class AuthController extends Controller
 
         try {
             $mail->isSMTP();
-            $mail->Host = config('mail.mailers.smtp.host', env('MAIL_HOST'));
+            $mail->Host = config('mail.mailers.smtp.host');
             $mail->SMTPAuth = true;
-            $mail->Username = env('MAIL_USERNAME');
-            $mail->Password = env('MAIL_PASSWORD');
-            $mail->SMTPSecure = env('MAIL_ENCRYPTION', 'tls');
-            $mail->Port = env('MAIL_PORT', 587);
+            $mail->Username = config('mail.mailers.smtp.username');
+            $mail->Password = config('mail.mailers.smtp.password');
+            $mail->SMTPSecure = config('mail.mailers.smtp.encryption', 'tls');
+            $mail->Port = config('mail.mailers.smtp.port', 587);
 
-            $mail->setFrom(env('MAIL_FROM_ADDRESS'), env('MAIL_FROM_NAME'));
+            $mail->setFrom(config('mail.from.address'), config('mail.from.name'));
             $mail->addAddress($user->email);
 
             $mail->isHTML(true);
