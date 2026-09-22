@@ -260,8 +260,26 @@ export default function GuestLayout() {
             },
         );
 
+        // Instant forced logout the moment an admin deactivates this account.
+        // Public channel — every guest listens on the same 'users' channel,
+        // so filter by userId client-side before acting on it.
+        Echo.channel("users").listen(
+            ".UserStatusChanged",
+            (e: { userId: number; isActive: boolean }) => {
+                if (e.userId === user.id && !e.isActive) {
+                    localStorage.removeItem("user");
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("role");
+                    navigate("/account-deactivated", {
+                        state: { email: user.email },
+                    });
+                }
+            },
+        );
+
         return () => {
             Echo.leave(`notifications.${user.id}`);
+            Echo.leave("users");
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);

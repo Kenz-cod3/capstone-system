@@ -10,6 +10,7 @@ import {
     ShieldCheck,
     Loader2,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import login from "../../../images/login.png";
 import login1 from "../../../images/login1.png";
 
@@ -24,6 +25,7 @@ interface LoginResponse {
 }
 
 export default function Login() {
+    const navigate = useNavigate();
     const [email, setEmail] = useState<string>("");
     const [password, setPassword] = useState<string>("");
     const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -104,6 +106,10 @@ export default function Login() {
                         err.response.data.email,
                     )}`,
                 );
+                return;
+            }
+            if (err.response?.data?.message === "Account inactive") {
+                navigate("/account-deactivated", { state: { email } });
                 return;
             }
             setError(err.response?.data?.message || "Login failed");

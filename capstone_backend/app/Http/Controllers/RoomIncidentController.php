@@ -113,12 +113,6 @@ class RoomIncidentController extends Controller
             'reported_at' => now(),
         ]);
 
-        /*
-        |----------------------------------------------------------------------
-        | ONLY "damaged" puts the room into maintenance.
-        | "lost" and "found" are informational reports — room stays as-is.
-        |----------------------------------------------------------------------
-        */
         if ($validated['report_type'] === 'damaged') {
             Room::where('id', $validated['room_id'])
                 ->update([

@@ -67,17 +67,19 @@ import GuestPayment from "./pages/guest/GuestPayment";
 
 // AUTH
 import Login from "./pages/auth/Login";
+import AccountDeactivated from "./pages/auth/Accountdeactivated";
 import Register from "./pages/auth/Register";
-import ForgotPassword from "./pages/auth/Forgotpassword"; // NEW
-import ResetPassword from "./pages/auth/Resetpassword"; // NEW
+import ForgotPassword from "./pages/auth/Forgotpassword";
+import ResetPassword from "./pages/auth/Resetpassword";
 import LandingPage from "./pages/public/LandingPage";
 
 // public auth pages (no splash screen / no "no internet" takeover)
 const AUTH_PATHS = [
     "/login",
     "/register",
-    "/forgot-password", // NEW
-    "/reset-password", // NEW
+    "/forgot-password",
+    "/reset-password",
+    "/account-deactivated",
 ];
 
 export default function App() {
@@ -138,15 +140,16 @@ export default function App() {
                 <Routes>
                     {/*  PUBLIC ROUTE */}
                     <Route path="/login" element={<Login />} />
+                    <Route
+                        path="/account-deactivated"
+                        element={<AccountDeactivated />}
+                    />
                     <Route path="/register" element={<Register />} />
                     <Route
                         path="/forgot-password"
                         element={<ForgotPassword />}
                     />
-                    <Route
-                        path="/reset-password"
-                        element={<ResetPassword />}
-                    />
+                    <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/" element={<LandingPage />} />
 
                     {/* NOT LOGGED IN */}
