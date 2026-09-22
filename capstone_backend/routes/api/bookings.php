@@ -65,25 +65,22 @@ Route::get('/bookings/{bookingId}/receipt', [ReceiptController::class, 'bookingR
 
 // WALK-IN GUESTS
 Route::prefix('walk-in-guests')->group(function () {
-    // Existing routes
     Route::get('/', [WalkInGuestController::class, 'index']);
-    Route::post('/', [WalkInGuestController::class, 'store']); // Keep original for backward compatibility if needed
+    Route::post('/', [WalkInGuestController::class, 'store']);
 
-    // New routes for guest search and management
-    Route::get('/search', [WalkInGuestController::class, 'search']);           // Search existing guests
-    Route::post('/guest', [WalkInGuestController::class, 'storeGuest']);      // Create guest only (no booking)
-    Route::post('/checkin', [WalkInGuestController::class, 'checkin']);       // Check-in with existing or new guest
+    Route::get('/search', [WalkInGuestController::class, 'search']);
+    Route::post('/guest', [WalkInGuestController::class, 'storeGuest']);
+    Route::post('/checkin', [WalkInGuestController::class, 'checkin']);
 
-    // Checkout route
+    // NEW: QR Ph confirm (called after polling succeeds)
+    Route::post('/{bookingId}/confirm-qr', [WalkInGuestController::class, 'confirmQr']);
+
+    // NEW: Admin reconciliation list of pending walk-in payments
+    Route::get('/pending-payments', [WalkInGuestController::class, 'pendingPayments']);
+
     Route::post('/{bookingId}/checkout', [WalkInGuestController::class, 'checkOut']);
-
-    // GET GUEST DETAILS WITH BOOKINGS AND TOTAL SPENT
-    Route::get('/{id}/details', [WalkInGuestController::class, 'getGuestDetails']); // NEW: Get guest with booking history and total spent
-
-    // Get booking details with add-ons (for viewing inside modal)
+    Route::get('/{id}/details', [WalkInGuestController::class, 'getGuestDetails']);
     Route::get('/bookings/{bookingId}', [WalkInGuestController::class, 'getBookingDetails']);
-
-    // Delete guest
     Route::delete('/{id}', [WalkInGuestController::class, 'destroy']);
 });
 

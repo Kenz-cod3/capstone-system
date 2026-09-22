@@ -38,7 +38,6 @@ class WalkInGuestController extends Controller
     {
         $query = WalkInGuest::query();
 
-        // SEARCH
         if ($request->search) {
             $search = $request->search;
 
@@ -55,23 +54,15 @@ class WalkInGuestController extends Controller
                 ->orWhere('address', 'LIKE', "%{$search}%");
         }
 
-        // PAGINATION
         $guests = $query
             ->latest()
             ->paginate($request->per_page ?? 10);
 
-        // MANUAL COUNTS + TOTALS
         $guests->getCollection()->transform(function ($guest) {
-            // ALL BOOKINGS OF THIS GUEST
             $bookings = Booking::where('walk_in_guest_id', $guest->id)->get();
 
-            // TOTAL VISITS
             $guest->bookings_count = $bookings->count();
-
-            // TOTAL SPENT
             $guest->total_spent = $bookings->sum('total_price');
-
-            // FULL NAME
             $guest->full_name = trim(
                 $guest->first_name . ' ' .
                     ($guest->middle_name ? $guest->middle_name . ' ' : '') .
@@ -81,10 +72,8 @@ class WalkInGuestController extends Controller
             return $guest;
         });
 
-        // TOTAL REVENUE
         $totalRevenue = Booking::whereNotNull('walk_in_guest_id')->sum('total_price');
 
-        // RESPONSE
         return response()->json([
             'data' => $guests->items(),
             'current_page' => $guests->currentPage(),
@@ -102,7 +91,6 @@ class WalkInGuestController extends Controller
     {
         $guest = WalkInGuest::findOrFail($id);
 
-        // Get all bookings for this guest with relationships
         $bookings = Booking::with([
             'walkInGuest',
             'bookedRooms' => function ($query) {
@@ -117,19 +105,13 @@ class WalkInGuestController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Calculate total spent from all bookings
         $totalSpent = $bookings->sum('total_price');
-
-        // Get first and last visit dates
         $firstVisit = $bookings->min('check_in_date');
         $lastVisit = $bookings->max('check_in_date');
-
-        // Calculate average spent per booking
         $averageSpent = $bookings->count() > 0
             ? $totalSpent / $bookings->count()
             : 0;
 
-        // Prepare guest data with full name
         $guestData = [
             'id' => $guest->id,
             'first_name' => $guest->first_name,
@@ -205,7 +187,7 @@ class WalkInGuestController extends Controller
     }
 
     /**
-     * GET ALL ADD-ONS (for frontend to display)
+     * GET ALL ADD-ONS
      */
     public function getAddOns()
     {
@@ -215,10 +197,10 @@ class WalkInGuestController extends Controller
 
     /**
      * WALK-IN CHECK-IN WITH ADD-ONS SUPPORT
-     * Creates 1 booking, multiple booked rooms, and 1 payment
      *
-     * Now uses the same date-overlap conflict check (with row locking)
-     * as BookingController@store, instead of only checking room->status.
+     * Cash  -> BookedRoom checked_in, payment paid (unchanged behaviour).
+     * QRPh  -> BookedRoom confirmed (reserved), payment pending.
+     *          Room stays available until QR confirms.
      */
     public function checkin(Request $request)
     {
@@ -234,9 +216,7 @@ class WalkInGuestController extends Controller
             'bookings.*.addons.*.id' => 'exists:add_ons,id',
             'bookings.*.addons.*.quantity' => 'integer|min:1',
             'total_amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|string',
-            'gcash_reference' => 'nullable|string',
-            'bank_reference' => 'nullable|string',
+            'payment_method' => 'required|in:cash,qrph',
         ]);
 
         DB::beginTransaction();
@@ -245,10 +225,13 @@ class WalkInGuestController extends Controller
 
             $guest = WalkInGuest::findOrFail($validated['guest_id']);
 
+            $isCash = $validated['payment_method'] === 'cash';
+            $roomStatus = $isCash ? 'checked_in' : 'confirmed';
+            $paymentStatus = $isCash ? 'paid' : 'pending';
+
             $roomNumbers = [];
             $totalPrice = 0;
 
-            // Load all rooms referenced in the payload
             $roomIds = collect($validated['bookings'])
                 ->pluck('room_id')
                 ->unique()
@@ -266,7 +249,6 @@ class WalkInGuestController extends Controller
                 ], 400);
             }
 
-            // MAINTENANCE CHECK
             $maintenance = $roomsToBook->firstWhere('status', 'maintenance');
 
             if ($maintenance) {
@@ -277,7 +259,7 @@ class WalkInGuestController extends Controller
                 ], 400);
             }
 
-            // GUARD: same room selected twice with overlapping ranges in this payload
+            // Overlapping ranges guard within payload
             $ranges = [];
 
             foreach ($validated['bookings'] as $bookingData) {
@@ -308,7 +290,7 @@ class WalkInGuestController extends Controller
                 $ranges[$roomId][] = [$in, $out];
             }
 
-            // REAL CONFLICT CHECK against existing active bookings, row-locked
+            // Real conflict check against existing active bookings, row-locked
             foreach ($validated['bookings'] as $bookingData) {
 
                 [$in, $out] = $this->resolveRange(
@@ -338,24 +320,18 @@ class WalkInGuestController extends Controller
                 }
             }
 
-            // Booking reference
             do {
                 $reference = 'BOOK-' . strtoupper(Str::random(8));
             } while (Booking::where('booking_reference', $reference)->exists());
 
-            // Compute total
             foreach ($validated['bookings'] as $bookingData) {
 
                 $roomSubtotal = $bookingData['room_subtotal'];
-
                 $addOnsTotal = 0;
 
                 if (!empty($bookingData['addons'])) {
-
                     foreach ($bookingData['addons'] as $addonData) {
-
                         $addOn = AddOn::findOrFail($addonData['id']);
-
                         $addOnsTotal += $addOn->price * $addonData['quantity'];
                     }
                 }
@@ -363,7 +339,6 @@ class WalkInGuestController extends Controller
                 $totalPrice += $roomSubtotal + $addOnsTotal;
             }
 
-            // Create booking
             $booking = Booking::create([
                 'walk_in_guest_id' => $guest->id,
                 'created_by' => Auth::id(),
@@ -372,7 +347,6 @@ class WalkInGuestController extends Controller
                 'total_price' => $totalPrice,
             ]);
 
-            // Create booked rooms
             foreach ($validated['bookings'] as $bookingData) {
 
                 $room = $roomsToBook->firstWhere('id', $bookingData['room_id']);
@@ -383,7 +357,6 @@ class WalkInGuestController extends Controller
 
                 if ($bookingData['stay_type'] === 'short_stay') {
                     $shortStayHours = (int) ($room->roomType->short_stay_hours ?? 3);
-
                     $expectedCheckoutAt = now()->addHours($shortStayHours);
                 } else {
                     $expectedCheckoutAt = Carbon::parse(
@@ -400,18 +373,14 @@ class WalkInGuestController extends Controller
                     'check_out_date' => $bookingData['check_out_date'],
                     'price_at_time_of_booking' => $room->roomType->base_price ?? 0,
                     'subtotal' => $bookingData['room_subtotal'],
-                    'status' => 'checked_in',
-                    'check_in_time' => now(),
-
+                    'status' => $roomStatus,
+                    'check_in_time' => $isCash ? now() : null,
                     'expected_checkout_at' => $expectedCheckoutAt,
                     'checkout_status' => 'ontime',
                 ]);
 
-                // SAVE ADD-ONS
                 if (!empty($bookingData['addons'])) {
-
                     foreach ($bookingData['addons'] as $addonData) {
-
                         $addOn = AddOn::findOrFail($addonData['id']);
 
                         BookingAddOn::create([
@@ -423,17 +392,20 @@ class WalkInGuestController extends Controller
                     }
                 }
 
-                $room->update([
-                    'status' => Room::STATUS_OCCUPIED,
-                ]);
+                // Only flip the physical room to occupied for cash.
+                // QRPh holds the room via BookedRoom.status = 'confirmed';
+                // Room.status flips on confirmQr.
+                if ($isCash) {
+                    $room->update([
+                        'status' => Room::STATUS_OCCUPIED,
+                    ]);
+                }
             }
 
-            // Active shift
             $shift = Shift::whereNull('closed_at')
                 ->latest()
                 ->first();
 
-            // Receipt number
             $lastPayment = BookingPayment::whereNotNull('receipt_number')
                 ->lockForUpdate()
                 ->latest('id')
@@ -450,20 +422,17 @@ class WalkInGuestController extends Controller
                 '-' .
                 str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
 
-            // Payment
             $payment = BookingPayment::create([
                 'booking_id' => $booking->id,
                 'shift_id' => $shift?->id,
                 'receipt_number' => $receiptNumber,
                 'amount' => $totalPrice,
                 'payment_method' => $validated['payment_method'],
-                'payment_status' => $validated['payment_method'] === 'cash'
-                    ? 'paid'
-                    : 'pending',
-                'gcash_reference' => $validated['gcash_reference'] ?? null,
-                'bank_reference' => $validated['bank_reference'] ?? null,
+                'payment_status' => $paymentStatus,
+                'gcash_reference' => null,
+                'bank_reference' => null,
                 'received_by' => Auth::id(),
-                'payment_date' => now(),
+                'payment_date' => $isCash ? now() : null,
             ]);
 
             DB::commit();
@@ -472,17 +441,12 @@ class WalkInGuestController extends Controller
 
             event(new DashboardUpdated());
 
-            // Notification message
             $allAddOns = [];
 
             foreach ($validated['bookings'] as $bookingData) {
-
                 if (!empty($bookingData['addons'])) {
-
                     foreach ($bookingData['addons'] as $addon) {
-
                         $addonName = AddOn::find($addon['id'])->add_on_name ?? 'Unknown';
-
                         $allAddOns[] = $addonName . ' x' . $addon['quantity'];
                     }
                 }
@@ -494,9 +458,11 @@ class WalkInGuestController extends Controller
                 $addOnsMessage = ' | Add-ons: ' . implode(', ', array_unique($allAddOns));
             }
 
+            $activityVerb = $isCash ? 'Walk-in Check-In' : 'Walk-in Check-In (QR Ph pending)';
+
             StaffActivityLog::create([
                 'user_id' => Auth::id(),
-                'action' => 'Walk-in Check-In',
+                'action' => $activityVerb,
                 'details' =>
                 'Guest: ' . $guest->first_name . ' ' . $guest->last_name .
                     ' | Rooms: ' . implode(', ', $roomNumbers) .
@@ -506,17 +472,18 @@ class WalkInGuestController extends Controller
                 'timestamp' => now(),
             ]);
 
-            NotificationService::notifyAdmins(
-                'Walk-in Check-In',
-                'Walk-in: ' .
-                    $guest->first_name . ' ' .
-                    $guest->last_name .
-                    ' checked in (Rooms: ' .
-                    implode(', ', $roomNumbers) . ')' .
-                    $addOnsMessage
-            );
+            if ($isCash) {
+                NotificationService::notifyAdmins(
+                    'Walk-in Check-In',
+                    'Walk-in: ' .
+                        $guest->first_name . ' ' .
+                        $guest->last_name .
+                        ' checked in (Rooms: ' .
+                        implode(', ', $roomNumbers) . ')' .
+                        $addOnsMessage
+                );
+            }
 
-            // Load relationships
             $booking->load([
                 'walkInGuest',
                 'bookedRooms.room.roomType',
@@ -525,11 +492,15 @@ class WalkInGuestController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Walk-in guest checked in successfully',
+                'message' => $isCash
+                    ? 'Walk-in guest checked in successfully'
+                    : 'Walk-in booking created. Awaiting QR Ph payment.',
                 'booking' => $booking,
+                'booking_id' => $booking->id,
                 'booking_reference' => $reference,
                 'payment_id' => $payment->id,
                 'total_amount' => $totalPrice,
+                'payment_status' => $paymentStatus,
             ], 201);
         } catch (\Exception $e) {
 
@@ -540,6 +511,106 @@ class WalkInGuestController extends Controller
 
             return response()->json([
                 'message' => 'Failed to check in guest: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * CONFIRM A WALK-IN QR PH PAYMENT (called by frontend after polling succeeds)
+     *
+     * Idempotent: repeated calls on an already-confirmed booking are no-ops.
+     */
+    public function confirmQr(Request $request, $bookingId)
+    {
+        $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
+
+        // Idempotency: already confirmed?
+        $allCheckedIn = $booking->bookedRooms->every(
+            fn ($br) => in_array($br->status, ['checked_in', 'checked_out'])
+        );
+
+        $payment = $booking->payments()
+            ->where('payment_method', 'qrph')
+            ->latest('id')
+            ->first();
+
+        if ($allCheckedIn && $payment && $payment->payment_status === 'paid') {
+            return response()->json([
+                'message' => 'Payment already confirmed',
+                'payment_id' => $payment->id,
+                'booking_id' => $booking->id,
+                'already_confirmed' => true,
+            ], 200);
+        }
+
+        DB::beginTransaction();
+
+        try {
+
+            foreach ($booking->bookedRooms as $bookedRoom) {
+                if ($bookedRoom->status === 'confirmed' || $bookedRoom->status === 'pending') {
+                    $bookedRoom->update([
+                        'status' => 'checked_in',
+                        'check_in_time' => now(),
+                    ]);
+
+                    Room::where('id', $bookedRoom->room_id)->update([
+                        'status' => Room::STATUS_OCCUPIED,
+                    ]);
+                }
+            }
+
+            if ($payment && $payment->payment_status !== 'paid') {
+                $payment->update([
+                    'payment_status' => 'paid',
+                    'payment_date' => now(),
+                    'bank_reference' => $request->input('payment_reference', $payment->bank_reference),
+                    'received_by' => Auth::id() ?? $payment->received_by,
+                ]);
+            }
+
+            DB::commit();
+
+            Cache::flush();
+            event(new DashboardUpdated());
+
+            $guestName = $booking->walkInGuest
+                ? $booking->walkInGuest->first_name . ' ' . $booking->walkInGuest->last_name
+                : 'Walk-in Guest';
+
+            $roomNumbers = $booking->bookedRooms->pluck('room.room_number')->filter()->implode(', ');
+
+            StaffActivityLog::create([
+                'user_id' => Auth::id(),
+                'action' => 'Walk-in QR Ph Confirmed',
+                'details' =>
+                'Guest: ' . $guestName .
+                    ' | Rooms: ' . $roomNumbers .
+                    ' | Reference: ' . $booking->booking_reference,
+                'ip_address' => request()->ip(),
+                'total_amount' => $booking->total_price,
+                'timestamp' => now(),
+            ]);
+
+            NotificationService::notifyAdmins(
+                'Walk-in QR Ph Paid',
+                $guestName . ' paid via QR Ph and checked in (Rooms: ' . $roomNumbers . ')'
+            );
+
+            return response()->json([
+                'message' => 'QR Ph payment confirmed. Guest checked in.',
+                'payment_id' => $payment?->id,
+                'booking_id' => $booking->id,
+                'booking_reference' => $booking->booking_reference,
+            ], 200);
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            Log::error('confirmQr error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to confirm QR payment: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -559,7 +630,6 @@ class WalkInGuestController extends Controller
                 'bookedRooms.bookingAddOns.addOn',
             ])->findOrFail($bookingId);
 
-            // Prevent double check-out
             $status = $booking->bookedRooms->first()->status ?? null;
 
             if ($status === 'checked_out') {
@@ -568,7 +638,6 @@ class WalkInGuestController extends Controller
                 ], 400);
             }
 
-            // Update all booked rooms
             foreach ($booking->bookedRooms as $bookedRoom) {
 
                 $now = now();
@@ -617,13 +686,10 @@ class WalkInGuestController extends Controller
                 ? $booking->walkInGuest->first_name . ' ' . $booking->walkInGuest->last_name
                 : 'Walk-in Guest';
 
-            // Collect add-ons from all booked rooms
             $allAddOns = collect();
 
             foreach ($booking->bookedRooms as $bookedRoom) {
-
                 foreach ($bookedRoom->bookingAddOns as $bookingAddOn) {
-
                     $allAddOns->push(
                         $bookingAddOn->addOn->add_on_name .
                             ' x' .
@@ -675,7 +741,7 @@ class WalkInGuestController extends Controller
     }
 
     /**
-     * GET BOOKING DETAILS WITH ADD-ONS
+     * GET BOOKING DETAILS
      */
     public function getBookingDetails($bookingId)
     {
@@ -685,7 +751,6 @@ class WalkInGuestController extends Controller
             'bookedRooms.bookingAddOns.addOn',
         ])->findOrFail($bookingId);
 
-        // Calculate additional info
         $roomSubtotal = $booking->bookedRooms->sum('subtotal');
 
         $addOnsTotal = $booking->bookedRooms->sum(function ($bookedRoom) {
@@ -703,6 +768,26 @@ class WalkInGuestController extends Controller
     }
 
     /**
+     * PENDING WALK-IN PAYMENTS (for admin reconciliation)
+     */
+    public function pendingPayments()
+    {
+        $bookings = Booking::with([
+            'walkInGuest',
+            'payments',
+            'bookedRooms.room',
+        ])
+            ->where('booking_type', 'walk_in')
+            ->whereHas('payments', function ($q) {
+                $q->where('payment_status', 'pending');
+            })
+            ->latest()
+            ->get();
+
+        return response()->json(['data' => $bookings]);
+    }
+
+    /**
      * DELETE WALK-IN GUEST
      */
     public function destroy($id)
@@ -715,11 +800,6 @@ class WalkInGuestController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a [check_in, check_out] Carbon range for a stay.
-     * Short stays always block exactly one day (the check-in day).
-     * Mirrors BookingController::resolveRange().
-     */
     private function resolveRange($checkIn, $checkOut, ?string $stayType): array
     {
         $in = Carbon::parse($checkIn)->startOfDay();
@@ -735,10 +815,6 @@ class WalkInGuestController extends Controller
         return [$in, $out];
     }
 
-    /**
-     * Query for active bookings on a room that overlap the given range.
-     * Mirrors BookingController::conflictQuery().
-     */
     private function conflictQuery($roomId, Carbon $in, Carbon $out, $excludeBookedRoomId = null)
     {
         $query = BookedRoom::where('room_id', $roomId)

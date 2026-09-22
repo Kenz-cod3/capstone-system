@@ -19,12 +19,10 @@ import {
     Instagram,
     Twitter,
     Loader2,
+    ArrowUpRight,
 } from "lucide-react";
-import loginLogo from "../../../images/loginLogo.png";
+import loginLogo from "../../../images/logo.png";
 import heroImage from "../../../images/login.png";
-// Gallery photos not shot yet — using CSS placeholders below.
-// Once you have real photos, add them to /images and swap the placeholder
-// <div>s in the "GALLERY / ABOUT MOSAIC" section for <img> tags.
 
 interface Room {
     id: string | number;
@@ -40,16 +38,20 @@ interface Room {
 const AMENITIES = [
     { icon: Wifi, title: "Free WiFi", subtitle: "Stay connected everywhere" },
     { icon: Waves, title: "Swimming Pool", subtitle: "Relax and unwind" },
-    { icon: Coffee, title: "Breakfast Included", subtitle: "Start your day right" },
+    {
+        icon: Coffee,
+        title: "Breakfast Included",
+        subtitle: "Start your day right",
+    },
     { icon: Car, title: "Free Parking", subtitle: "Safe and convenient" },
 ];
 
 const NAV_LINKS = [
-    { label: "Home", href: "/" },
-    { label: "Rooms", href: "#rooms" },
-    { label: "Amenities", href: "#amenities" },
-    { label: "About", href: "#about" },
-    { label: "Contact", href: "#contact" },
+    { label: "Home", href: "#home", id: "home" },
+    { label: "Rooms", href: "#rooms", id: "rooms" },
+    { label: "Amenities", href: "#amenities", id: "amenities" },
+    { label: "About", href: "#about", id: "about" },
+    { label: "Contact", href: "#contact", id: "contact" },
 ];
 
 const peso = (n: number) => `\u20B1${n.toLocaleString()}`;
@@ -59,8 +61,11 @@ export default function LandingPage() {
     const [rooms, setRooms] = useState<Room[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string>("");
+    const [scrolled, setScrolled] = useState<boolean>(false);
+    const [activeSection, setActiveSection] = useState<string>("home");
+    const scrollRef = React.useRef<HTMLDivElement>(null);
 
-    // Bounce logged-in users straight to their dashboard, same pattern as Login.tsx
+    // Bounce logged-in users to their dashboard
     useEffect(() => {
         const storedUser = localStorage.getItem("user");
         if (!storedUser) return;
@@ -75,7 +80,7 @@ export default function LandingPage() {
         }
     }, [navigate]);
 
-    // Fetch available rooms — public endpoint, no auth header needed
+    // Fetch available rooms
     useEffect(() => {
         const fetchRooms = async () => {
             setLoading(true);
@@ -84,7 +89,10 @@ export default function LandingPage() {
                 const res = await api.get<Room[]>("/rooms/available");
                 setRooms(res.data);
             } catch (err: any) {
-                setError(err.response?.data?.message || "Unable to load rooms right now.");
+                setError(
+                    err.response?.data?.message ||
+                        "Unable to load rooms right now.",
+                );
             } finally {
                 setLoading(false);
             }
@@ -92,337 +100,716 @@ export default function LandingPage() {
         fetchRooms();
     }, []);
 
+    // Navbar background toggle on scroll
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const onScroll = () => setScrolled(el.scrollTop > 24);
+        onScroll();
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return () => el.removeEventListener("scroll", onScroll);
+    }, []);
+
+    // Track active section for navbar underline
+    useEffect(() => {
+        const sections = NAV_LINKS.map((l) =>
+            document.getElementById(l.id),
+        ).filter(Boolean) as HTMLElement[];
+
+        if (!sections.length) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                const visible = entries
+                    .filter((e) => e.isIntersecting)
+                    .sort(
+                        (a, b) =>
+                            a.boundingClientRect.top - b.boundingClientRect.top,
+                    );
+                if (visible[0]?.target?.id) {
+                    setActiveSection(visible[0].target.id);
+                }
+            },
+            {
+                rootMargin: "-80px 0px -60% 0px",
+                threshold: 0,
+            },
+        );
+
+        sections.forEach((s) => observer.observe(s));
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <div className="min-h-dvh bg-white text-gray-900">
+        <div
+            ref={scrollRef}
+            className="min-h-dvh bg-[#F7F4EF] text-[#1B2B27] overflow-y-scroll h-dvh scroll-smooth antialiased"
+            style={{
+                fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+            }}
+        >
             <style>{`
-                .script { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
+                .font-display { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+                .font-script { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
+                .no-scrollbar::-webkit-scrollbar { display: none; }
+                .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+                @keyframes fadeUp {
+                    from { opacity: 0; transform: translateY(12px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-up { animation: fadeUp 0.7s ease-out both; }
+                .line-clamp-2 {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
             `}</style>
 
             {/* NAVBAR */}
-            <header className="sticky top-0 z-30 bg-white border-b border-gray-100">
-                <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-teal-50 flex items-center justify-center">
-                            <img src={loginLogo} alt="" className="h-6 w-6 object-contain" />
+            <header
+                className={`fixed top-0 left-0 right-0 z-40 transition-all duration-500 ${
+                    scrolled
+                        ? "bg-[#F7F4EF]/90 backdrop-blur-md border-b border-[#1B2B27]/8"
+                        : "bg-transparent"
+                }`}
+            >
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10 h-20 flex items-center justify-between">
+                    <a href="#home" className="flex items-center gap-3 group">
+                        <div className="h-14 w-14 rounded-full overflow-hidden shrink-0 flex items-center justify-center">
+                            <img
+                                src={loginLogo}
+                                alt="Travelers Inn"
+                                className="h-[72px] w-[72px] max-w-none object-cover"
+                            />
                         </div>
-                        <div className="leading-tight">
-                            <p className="font-serif font-bold tracking-wide text-teal-950 text-sm">
-                                TRAVELERS INN
+                        <div className="leading-none">
+                            <p className="font-display text-[15px] font-bold tracking-wide text-[#1B2B27]">
+                                Travelers Inn
                             </p>
-                            <p className="text-[11px] text-gray-400">Comfort. Stay. Enjoy.</p>
+                            <p className="text-[10px] tracking-[0.18em] text-[#1B2B27]/50 mt-0.5 uppercase">
+                                Comfort · Stay · Enjoy
+                            </p>
                         </div>
-                    </div>
+                    </a>
 
-                    <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600">
-                        {NAV_LINKS.map((link) => (
-                            <a
-                                key={link.label}
-                                href={link.href}
-                                className="hover:text-teal-700 transition-colors first:text-teal-700"
-                            >
-                                {link.label}
-                            </a>
-                        ))}
+                    <nav className="hidden lg:flex items-center gap-10 text-[13px] font-medium tracking-wide text-[#1B2B27]/70">
+                        {NAV_LINKS.map((link) => {
+                            const isActive = activeSection === link.id;
+                            return (
+                                <a
+                                    key={link.label}
+                                    href={link.href}
+                                    className={`relative py-1 transition-colors hover:text-[#1B2B27] ${
+                                        isActive ? "text-[#1B2B27]" : ""
+                                    }`}
+                                >
+                                    {link.label}
+                                    <span
+                                        className={`absolute -bottom-0.5 left-0 right-0 h-px bg-[#C89B5A] transition-transform duration-300 origin-left ${
+                                            isActive
+                                                ? "scale-x-100"
+                                                : "scale-x-0"
+                                        }`}
+                                    />
+                                </a>
+                            );
+                        })}
                     </nav>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={() => navigate("/login")}
-                            className="h-10 px-5 rounded-lg border border-teal-600 text-teal-700 text-sm font-medium hover:bg-teal-50 transition-colors"
+                            className="hidden sm:inline-flex h-10 px-5 items-center text-[13px] font-medium text-[#1B2B27]/80 hover:text-[#1B2B27] transition-colors"
                         >
-                            Login
+                            Sign in
                         </button>
                         <button
                             onClick={() => navigate("/register")}
-                            className="h-10 px-5 rounded-lg bg-teal-700 text-white text-sm font-medium hover:bg-teal-800 transition-colors"
+                            className="h-10 px-5 rounded-full bg-[#1B2B27] text-[#F7F4EF] text-[13px] font-medium hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center gap-1.5"
                         >
-                            Register
+                            Book now
+                            <ArrowUpRight className="h-3.5 w-3.5" />
                         </button>
                     </div>
                 </div>
             </header>
 
-            {/* HERO */}
-            <section className="relative">
-                <div className="relative h-[520px] overflow-hidden">
-                    <img src={heroImage} alt="Travelers Inn" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-teal-950/85 via-teal-950/45 to-transparent" />
-
-                    <div className="absolute top-8 right-10 script text-2xl text-white leading-tight text-right hidden md:block">
-                        Good Stays
-                        <br />
-                        Brighter Journeys
-                    </div>
-
-                    <div className="relative z-10 max-w-7xl mx-auto px-6 h-full flex flex-col justify-center">
-                        <p className="text-xs tracking-[0.2em] text-teal-200 mb-3">
-                            WELCOME TO TRAVELERS INN
-                        </p>
-                        <h1 className="text-5xl font-bold text-white leading-tight max-w-xl">
-                            Comfort. Stay. Enjoy.
-                        </h1>
-                        <p className="text-teal-50/90 max-w-md mt-4 leading-relaxed">
-                            Discover your perfect room and book a stay that feels like
-                            home, wherever your journey takes you.
-                        </p>
-                        <p className="script text-xl text-white/90 mt-8">
-                            'More than just a place to stay,
-                            <br />
-                            it's a home for every traveler.'
-                        </p>
-                        <div className="w-10 h-px bg-white/40 mt-3" />
-                    </div>
-                </div>
-
-                {/* SEARCH BAR — overlaps hero bottom edge */}
-                <div className="max-w-6xl mx-auto px-6 relative -mt-10 z-20">
-                    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-2">
-                        <div className="flex items-center gap-2 flex-1 px-3 border-b md:border-b-0 md:border-r border-gray-100 py-2 md:py-0">
-                            <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
-                            <input
-                                placeholder="Where are you going?"
-                                className="w-full outline-none text-sm placeholder:text-gray-400"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2 flex-1 px-3 border-b md:border-b-0 md:border-r border-gray-100 py-2 md:py-0">
-                            <Calendar className="h-4 w-4 text-gray-400 shrink-0" />
-                            <span className="text-sm text-gray-400">Check In</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-1 px-3 border-b md:border-b-0 md:border-r border-gray-100 py-2 md:py-0">
-                            <Calendar className="h-4 w-4 text-gray-400 shrink-0" />
-                            <span className="text-sm text-gray-400">Check Out</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-1 px-3 py-2 md:py-0">
-                            <Users className="h-4 w-4 text-gray-400 shrink-0" />
-                            <span className="text-sm text-gray-600">2 Guests</span>
-                            <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
-                        </div>
-                        <button className="h-11 px-6 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors">
-                            <Search className="h-4 w-4" />
-                            Search
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            {/* AMENITIES */}
-            <section id="amenities" className="bg-teal-50/60 mt-14">
-                <div className="max-w-6xl mx-auto px-6 py-14">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                        {AMENITIES.map(({ icon: Icon, title, subtitle }) => (
-                            <div key={title} className="flex flex-col items-center text-center gap-2">
-                                <Icon className="h-7 w-7 text-teal-700" strokeWidth={1.75} />
-                                <p className="font-semibold text-gray-900 text-sm mt-1">{title}</p>
-                                <p className="text-xs text-gray-500">{subtitle}</p>
+            {/* HERO — Split layout */}
+            <section id="home" className="relative pt-20">
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
+                    <div className="grid lg:grid-cols-12 gap-8 lg:gap-12 items-center min-h-[calc(100dvh-5rem)] py-16">
+                        {/* Left: copy */}
+                        <div className="lg:col-span-6 animate-fade-up">
+                            <div className="flex items-center gap-3 mb-6">
+                                <span className="h-px w-10 bg-[#C89B5A]" />
+                                <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                    Est. 2024 · Alubijid
+                                </span>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
 
-            {/* AVAILABLE ROOMS */}
-            <section id="rooms" className="max-w-6xl mx-auto px-6 py-16">
-                <div className="flex items-end justify-between mb-2">
-                    <h2 className="text-3xl font-bold text-gray-900">Available Rooms</h2>
-                    <a
-                        href="#rooms"
-                        className="hidden sm:flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800"
-                    >
-                        View All Rooms
-                        <ArrowRight className="h-3.5 w-3.5" />
-                    </a>
-                </div>
-                <p className="text-gray-500 mb-10">
-                    Explore our comfortable and affordable rooms. Sign in or create an
-                    account to book your stay.
-                </p>
+                            <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight text-[#1B2B27]">
+                                A quiet place
+                                <br />
+                                to{" "}
+                                <em className="italic font-normal text-[#C89B5A]">
+                                    rest
+                                </em>
+                                ,
+                                <br />
+                                a warm place
+                                <br />
+                                to{" "}
+                                <em className="italic font-normal text-[#C89B5A]">
+                                    return
+                                </em>
+                                .
+                            </h1>
 
-                {loading && (
-                    <div className="flex justify-center py-16">
-                        <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
-                    </div>
-                )}
+                            <p className="mt-8 text-[15px] leading-relaxed text-[#1B2B27]/60 max-w-md">
+                                Discover your perfect room and book a stay that
+                                feels like home — wherever your journey takes
+                                you.
+                            </p>
 
-                {!loading && error && (
-                    <div className="max-w-md bg-red-50 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm">
-                        {error}
-                    </div>
-                )}
+                            <div className="mt-10 flex flex-wrap items-center gap-4">
+                                <button
+                                    onClick={() => navigate("/register")}
+                                    className="h-12 px-7 rounded-full bg-[#1B2B27] text-[#F7F4EF] text-sm font-medium hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center gap-2"
+                                >
+                                    Reserve your stay
+                                    <ArrowRight className="h-4 w-4" />
+                                </button>
+                                <a
+                                    href="#rooms"
+                                    className="h-12 px-2 flex items-center gap-2 text-sm font-medium text-[#1B2B27]/70 hover:text-[#1B2B27] transition-colors"
+                                >
+                                    <span className="h-px w-8 bg-[#1B2B27]/30" />
+                                    View rooms
+                                </a>
+                            </div>
 
-                {!loading && !error && (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {rooms.map((room) => (
-                            <div
-                                key={room.id}
-                                className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow bg-white"
-                            >
-                                <div className="relative h-40">
+                            {/* Mini stats */}
+                            <div className="mt-14 flex items-center gap-8 text-[13px]">
+                                <div>
+                                    <p className="font-display text-2xl text-[#1B2B27]">
+                                        24
+                                    </p>
+                                    <p className="text-[#1B2B27]/50 mt-0.5">
+                                        Rooms
+                                    </p>
+                                </div>
+                                <span className="h-8 w-px bg-[#1B2B27]/10" />
+                                <div>
+                                    <p className="font-display text-2xl text-[#1B2B27]">
+                                        4.9
+                                    </p>
+                                    <p className="text-[#1B2B27]/50 mt-0.5">
+                                        Guest rating
+                                    </p>
+                                </div>
+                                <span className="h-8 w-px bg-[#1B2B27]/10" />
+                                <div>
+                                    <p className="font-display text-2xl text-[#1B2B27]">
+                                        7/24
+                                    </p>
+                                    <p className="text-[#1B2B27]/50 mt-0.5">
+                                        Front desk
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right: image with offset frame */}
+                        <div
+                            className="lg:col-span-6 relative animate-fade-up"
+                            style={{ animationDelay: "0.15s" }}
+                        >
+                            <div className="relative">
+                                <div className="absolute -inset-3 lg:-inset-4 border border-[#C89B5A]/30 rounded-[2rem]" />
+                                <div className="relative rounded-[1.75rem] overflow-hidden aspect-[4/5] lg:aspect-[5/6] shadow-2xl shadow-[#1B2B27]/10">
                                     <img
-                                        src={room.imageUrl}
-                                        alt={room.name}
+                                        src={heroImage}
+                                        alt="Travelers Inn"
                                         className="w-full h-full object-cover"
                                     />
-                                    <span className="absolute top-3 left-3 bg-teal-50 text-teal-700 text-[11px] font-semibold px-3 py-1 rounded-full">
-                                        Available
-                                    </span>
-                                </div>
-                                <div className="p-4 space-y-2">
-                                    <h3 className="font-bold text-gray-900">{room.name}</h3>
-                                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                                        <span className="flex items-center gap-1">
-                                            <Users className="h-3.5 w-3.5" />
-                                            {room.capacity} Guests
-                                        </span>
-                                        <span className="flex items-center gap-1">
-                                            <BedDouble className="h-3.5 w-3.5" />
-                                            {room.beds} Bed{room.beds > 1 ? "s" : ""}
-                                        </span>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-[#1B2B27]/40 via-transparent to-transparent" />
+
+                                    {/* Floating quote card */}
+                                    <div className="absolute bottom-5 left-5 right-5 bg-[#F7F4EF]/95 backdrop-blur-md rounded-2xl p-5">
+                                        <p className="font-script text-lg text-[#1B2B27] leading-snug">
+                                            "More than just a place to stay —
+                                            it's a home for every traveler."
+                                        </p>
+                                        <div className="mt-3 flex items-center gap-2">
+                                            <span className="h-px w-6 bg-[#C89B5A]" />
+                                            <span className="text-[10px] tracking-[0.2em] uppercase text-[#1B2B27]/50">
+                                                Travelers Inn
+                                            </span>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
-                                        {room.description}
-                                    </p>
-                                    <p className="text-sm pt-1">
-                                        <span className="font-bold text-gray-900">
-                                            {peso(room.pricePerNight)}
-                                        </span>
-                                        <span className="text-gray-400"> / night</span>
-                                    </p>
-                                    <button
-                                        onClick={() => navigate("/register")}
-                                        className="w-full mt-2 h-10 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
-                                    >
-                                        Check Availability
-                                        <ArrowRight className="h-3.5 w-3.5" />
-                                    </button>
+                                </div>
+
+                                {/* Vertical est. strip */}
+                                <div className="hidden lg:flex absolute -right-12 top-1/2 -translate-y-1/2 [writing-mode:vertical-rl] rotate-180 items-center gap-3">
+                                    <span className="h-16 w-px bg-[#1B2B27]/20" />
+                                    <span className="text-[10px] tracking-[0.3em] uppercase text-[#1B2B27]/40">
+                                        Comfort · Stay · Enjoy
+                                    </span>
+                                    <span className="h-16 w-px bg-[#1B2B27]/20" />
                                 </div>
                             </div>
-                        ))}
+                        </div>
                     </div>
-                )}
+
+                    {/* SEARCH BAR — floating card overlapping into next section */}
+                    <div className="relative -mb-10 z-20">
+                        <div className="bg-white rounded-2xl shadow-xl shadow-[#1B2B27]/8 border border-[#1B2B27]/6 p-2 flex flex-col md:flex-row items-stretch gap-1">
+                            <div className="flex items-center gap-3 flex-1 px-4 py-3 rounded-xl hover:bg-[#F7F4EF]/60 transition-colors">
+                                <MapPin className="h-4 w-4 text-[#C89B5A] shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-[10px] tracking-[0.15em] uppercase text-[#1B2B27]/40">
+                                        Destination
+                                    </p>
+                                    <input
+                                        placeholder="Where are you going?"
+                                        className="w-full bg-transparent outline-none text-sm text-[#1B2B27] placeholder:text-[#1B2B27]/40 mt-0.5"
+                                    />
+                                </div>
+                            </div>
+                            <span className="hidden md:block w-px bg-[#1B2B27]/8 my-2" />
+                            <div className="flex items-center gap-3 flex-1 px-4 py-3 rounded-xl hover:bg-[#F7F4EF]/60 transition-colors cursor-pointer">
+                                <Calendar className="h-4 w-4 text-[#C89B5A] shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-[10px] tracking-[0.15em] uppercase text-[#1B2B27]/40">
+                                        Check in
+                                    </p>
+                                    <p className="text-sm text-[#1B2B27]/50 mt-0.5">
+                                        Add date
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="hidden md:block w-px bg-[#1B2B27]/8 my-2" />
+                            <div className="flex items-center gap-3 flex-1 px-4 py-3 rounded-xl hover:bg-[#F7F4EF]/60 transition-colors cursor-pointer">
+                                <Calendar className="h-4 w-4 text-[#C89B5A] shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-[10px] tracking-[0.15em] uppercase text-[#1B2B27]/40">
+                                        Check out
+                                    </p>
+                                    <p className="text-sm text-[#1B2B27]/50 mt-0.5">
+                                        Add date
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="hidden md:block w-px bg-[#1B2B27]/8 my-2" />
+                            <div className="flex items-center gap-3 flex-1 px-4 py-3 rounded-xl hover:bg-[#F7F4EF]/60 transition-colors cursor-pointer">
+                                <Users className="h-4 w-4 text-[#C89B5A] shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-[10px] tracking-[0.15em] uppercase text-[#1B2B27]/40">
+                                        Guests
+                                    </p>
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                        <p className="text-sm text-[#1B2B27]">
+                                            2 Guests
+                                        </p>
+                                        <ChevronDown className="h-3 w-3 text-[#1B2B27]/40" />
+                                    </div>
+                                </div>
+                            </div>
+                            <button className="h-14 md:h-auto md:w-16 rounded-xl bg-[#C89B5A] hover:bg-[#1B2B27] text-[#1B2B27] hover:text-[#F7F4EF] transition-all duration-300 flex items-center justify-center gap-2 md:gap-0">
+                                <Search className="h-4 w-4" />
+                                <span className="md:hidden text-sm font-medium">
+                                    Search
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
-            {/* GALLERY / ABOUT MOSAIC */}
-            <section id="about" className="max-w-6xl mx-auto px-6 pb-20">
-                <div className="grid md:grid-cols-[1.1fr_1fr_0.7fr] gap-4 h-[380px]">
-                    {/* Placeholder — swap for a real pool photo when available */}
-                    <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-teal-700 to-teal-900 flex items-end">
-                        <p className="script absolute bottom-6 left-6 text-white text-2xl leading-tight drop-shadow">
-                            Relax
-                            <br />
-                            Unwind
-                            <br />
-                            Belong
-                        </p>
-                    </div>
-
-                    <div className="bg-teal-50/60 rounded-2xl p-8 flex flex-col justify-center gap-4">
-                        <h3 className="text-2xl font-bold text-gray-900 leading-snug">
-                            A Better Place
-                            <br />
-                            to Create Memories
-                        </h3>
-                        <p className="text-sm text-gray-500 leading-relaxed">
-                            Whether you're here for business, leisure, or a quick
-                            getaway, Travelers Inn offers a comfortable and relaxing
-                            stay with modern amenities and warm hospitality.
-                        </p>
-                        <button className="w-fit h-10 px-5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium flex items-center gap-1.5 transition-colors">
-                            Learn More
-                            <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
-                    </div>
-
-                    <div className="grid grid-rows-2 gap-4">
-                        {/* Placeholder — swap for a real breakfast/coffee photo when available */}
-                        <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-amber-700 to-amber-900 flex items-start justify-end p-4">
-                            <p className="script text-white text-lg leading-tight drop-shadow text-right">
-                                Good Food
+            {/* AMENITIES — editorial numbered strip */}
+            <section id="amenities" className="pt-32 pb-24 bg-[#F7F4EF]">
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
+                    <div className="grid lg:grid-cols-12 gap-12">
+                        <div className="lg:col-span-4">
+                            <div className="flex items-center gap-3 mb-4">
+                                <span className="h-px w-8 bg-[#C89B5A]" />
+                                <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                    What we offer
+                                </span>
+                            </div>
+                            <h2 className="font-display text-4xl lg:text-5xl leading-tight text-[#1B2B27]">
+                                Everything you need,
                                 <br />
-                                Good Mood
+                                nothing you don't.
+                            </h2>
+                            <p className="mt-5 text-[15px] text-[#1B2B27]/60 leading-relaxed max-w-sm">
+                                Thoughtful amenities designed to make your stay
+                                effortless — so you can focus on what brought
+                                you here.
                             </p>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* Placeholder — swap for a real reception photo when available */}
-                            <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-stone-500 to-stone-700" />
-                            <div className="rounded-2xl bg-teal-800 text-white flex items-center justify-center p-4 text-center">
-                                <p className="text-sm font-medium leading-snug">
-                                    Same Comfort.
-                                    <br />
-                                    New Adventures.
-                                </p>
+
+                        <div className="lg:col-span-8">
+                            <div className="grid sm:grid-cols-2 gap-px bg-[#1B2B27]/8 rounded-2xl overflow-hidden border border-[#1B2B27]/8">
+                                {AMENITIES.map(
+                                    ({ icon: Icon, title, subtitle }, i) => (
+                                        <div
+                                            key={title}
+                                            className="bg-[#F7F4EF] p-8 hover:bg-white transition-colors duration-300 group"
+                                        >
+                                            <div className="flex items-start justify-between mb-6">
+                                                <div className="h-11 w-11 rounded-full bg-[#1B2B27]/5 group-hover:bg-[#C89B5A]/15 flex items-center justify-center transition-colors">
+                                                    <Icon
+                                                        className="h-5 w-5 text-[#1B2B27] group-hover:text-[#C89B5A] transition-colors"
+                                                        strokeWidth={1.5}
+                                                    />
+                                                </div>
+                                                <span className="font-display text-sm text-[#1B2B27]/30">
+                                                    0{i + 1}
+                                                </span>
+                                            </div>
+                                            <p className="font-display text-xl text-[#1B2B27]">
+                                                {title}
+                                            </p>
+                                            <p className="text-[13px] text-[#1B2B27]/50 mt-1.5">
+                                                {subtitle}
+                                            </p>
+                                        </div>
+                                    ),
+                                )}
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* FOOTER */}
-            <footer id="contact" className="bg-teal-50/60 border-t border-teal-100/60">
-                <div className="max-w-6xl mx-auto px-6 py-14 grid sm:grid-cols-2 md:grid-cols-4 gap-10">
-                    <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <img src={loginLogo} alt="" className="h-8 w-8 object-contain" />
-                            <div className="leading-tight">
-                                <p className="font-serif font-bold text-teal-950 text-sm">
-                                    TRAVELERS INN
+            {/* ROOMS — card grid */}
+            <section id="rooms" className="py-24 bg-white">
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-14">
+                        <div>
+                            <div className="flex items-center gap-3 mb-4">
+                                <span className="h-px w-8 bg-[#C89B5A]" />
+                                <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                    Available now
+                                </span>
+                            </div>
+                            <h2 className="font-display text-4xl lg:text-5xl leading-tight text-[#1B2B27]">
+                                Rooms & suites
+                            </h2>
+                        </div>
+                        <p className="text-[15px] text-[#1B2B27]/60 max-w-md">
+                            Explore our comfortable and affordable rooms. Sign
+                            in or create an account to book your stay.
+                        </p>
+                    </div>
+
+                    {loading && (
+                        <div className="flex justify-center py-24">
+                            <Loader2 className="h-6 w-6 animate-spin text-[#C89B5A]" />
+                        </div>
+                    )}
+
+                    {!loading && error && (
+                        <div className="max-w-md bg-red-50 border-l-2 border-red-400 text-red-700 p-4 rounded-md text-sm">
+                            {error}
+                        </div>
+                    )}
+
+                    {!loading && !error && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {rooms.map((room) => (
+                                <div
+                                    key={room.id}
+                                    className="group bg-[#F7F4EF] rounded-xl overflow-hidden flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-[#1B2B27]/8"
+                                >
+                                    {/* Image */}
+                                    <div className="relative aspect-[4/3] overflow-hidden">
+                                        <img
+                                            src={room.imageUrl}
+                                            alt={room.name}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <span className="absolute top-3 left-3 bg-[#F7F4EF]/95 backdrop-blur-sm text-[#1B2B27] text-[10px] tracking-[0.15em] uppercase font-medium px-2.5 py-1 rounded-full">
+                                            Available
+                                        </span>
+                                    </div>
+
+                                    {/* Details */}
+                                    <div className="p-5 flex flex-col flex-1">
+                                        <p className="text-[10px] tracking-[0.2em] uppercase text-[#C89B5A] font-medium mb-1.5">
+                                            {room.type}
+                                        </p>
+                                        <h3 className="font-display text-xl text-[#1B2B27]">
+                                            {room.name}
+                                        </h3>
+                                        <p className="text-[13px] text-[#1B2B27]/55 leading-relaxed mt-2 line-clamp-2">
+                                            {room.description}
+                                        </p>
+
+                                        <div className="flex items-center gap-5 mt-4 text-[12px] text-[#1B2B27]/60">
+                                            <span className="flex items-center gap-1.5">
+                                                <Users className="h-3.5 w-3.5 text-[#C89B5A]" />
+                                                {room.capacity} Guests
+                                            </span>
+                                            <span className="flex items-center gap-1.5">
+                                                <BedDouble className="h-3.5 w-3.5 text-[#C89B5A]" />
+                                                {room.beds} Bed
+                                                {room.beds > 1 ? "s" : ""}
+                                            </span>
+                                        </div>
+
+                                        {/* Price + CTA pinned to bottom */}
+                                        <div className="mt-5 pt-4 border-t border-[#1B2B27]/8 flex items-end justify-between gap-3">
+                                            <div>
+                                                <p className="text-[10px] tracking-[0.15em] uppercase text-[#1B2B27]/40">
+                                                    From
+                                                </p>
+                                                <p className="font-display text-lg text-[#1B2B27] mt-0.5">
+                                                    {peso(room.pricePerNight)}
+                                                    <span className="text-[11px] font-sans text-[#1B2B27]/40 font-normal ml-1">
+                                                        / night
+                                                    </span>
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() =>
+                                                    navigate("/register")
+                                                }
+                                                className="h-9 px-4 rounded-full bg-[#1B2B27] text-[#F7F4EF] text-[12px] font-medium hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center gap-1.5 shrink-0"
+                                            >
+                                                Book
+                                                <ArrowRight className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* ABOUT — asymmetric mosaic */}
+            <section id="about" className="py-24 bg-[#F7F4EF]">
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10">
+                    <div className="grid lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+                        {/* Mosaic */}
+                        <div className="lg:col-span-7 order-2 lg:order-1">
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Tall left tile */}
+                                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#1B2B27] to-[#2d4a42] row-span-2 min-h-[420px] flex items-end p-7">
+                                    <div>
+                                        <p className="font-display text-3xl text-[#F7F4EF] leading-tight">
+                                            Relax.
+                                            <br />
+                                            Unwind.
+                                            <br />
+                                            <em className="italic text-[#C89B5A] font-normal">
+                                                Belong.
+                                            </em>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Right column */}
+                                <div className="space-y-4">
+                                    <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#C89B5A] to-[#a87d3f] min-h-[200px] flex items-start justify-end p-6">
+                                        <p className="font-script text-[#F7F4EF] text-xl leading-tight text-right">
+                                            Good food
+                                            <br />
+                                            Good mood
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="rounded-3xl bg-gradient-to-br from-stone-400 to-stone-600 min-h-[200px]" />
+                                        <div className="rounded-3xl bg-[#1B2B27] text-[#F7F4EF] flex items-center justify-center p-5 text-center min-h-[200px]">
+                                            <p className="text-[13px] font-medium leading-snug">
+                                                Same comfort.
+                                                <br />
+                                                New adventures.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Copy */}
+                        <div className="lg:col-span-5 order-1 lg:order-2">
+                            <div className="flex items-center gap-3 mb-4">
+                                <span className="h-px w-8 bg-[#C89B5A]" />
+                                <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                    About us
+                                </span>
+                            </div>
+                            <h2 className="font-display text-4xl lg:text-5xl leading-tight text-[#1B2B27]">
+                                A better place to
+                                <br />
+                                create memories.
+                            </h2>
+                            <p className="mt-6 text-[15px] text-[#1B2B27]/60 leading-relaxed">
+                                Whether you're here for business, leisure, or a
+                                quick getaway, Travelers Inn offers a
+                                comfortable and relaxing stay with modern
+                                amenities and warm hospitality.
+                            </p>
+                            <p className="mt-4 text-[15px] text-[#1B2B27]/60 leading-relaxed">
+                                Every detail — from the linens to the lighting —
+                                is chosen with one goal: to make you feel at
+                                home, far from home.
+                            </p>
+                            <button className="mt-9 h-12 px-6 rounded-full border border-[#1B2B27]/20 text-[#1B2B27] text-sm font-medium hover:bg-[#1B2B27] hover:text-[#F7F4EF] transition-all duration-300 flex items-center gap-2">
+                                Learn more
+                                <ArrowUpRight className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* FOOTER — dark ink */}
+            <footer id="contact" className="bg-[#1B2B27] text-[#F7F4EF]">
+                <div className="max-w-[1400px] mx-auto px-6 lg:px-10 pt-20 pb-12">
+                    {/* Top: big CTA */}
+                    <div className="grid lg:grid-cols-12 gap-10 pb-16 border-b border-[#F7F4EF]/10">
+                        <div className="lg:col-span-7">
+                            <h2 className="font-display text-4xl lg:text-6xl leading-[1.05] text-[#F7F4EF]">
+                                Ready to
+                                <br />
+                                <em className="italic text-[#C89B5A] font-normal">
+                                    check in?
+                                </em>
+                            </h2>
+                            <p className="mt-6 text-[15px] text-[#F7F4EF]/50 max-w-md leading-relaxed">
+                                Book your stay at Travelers Inn and experience
+                                comfort that feels like home.
+                            </p>
+                            <div className="mt-8 flex flex-wrap gap-3">
+                                <button
+                                    onClick={() => navigate("/register")}
+                                    className="h-12 px-7 rounded-full bg-[#C89B5A] text-[#1B2B27] text-sm font-medium hover:bg-[#F7F4EF] transition-colors duration-300 flex items-center gap-2"
+                                >
+                                    Book now
+                                    <ArrowRight className="h-4 w-4" />
+                                </button>
+                                <button
+                                    onClick={() => navigate("/login")}
+                                    className="h-12 px-7 rounded-full border border-[#F7F4EF]/20 text-[#F7F4EF] text-sm font-medium hover:bg-[#F7F4EF]/5 transition-colors duration-300"
+                                >
+                                    Sign in
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="lg:col-span-5 lg:pl-10">
+                            <p className="font-script text-2xl text-[#C89B5A] leading-snug">
+                                "Thank you for being part
+                                <br />
+                                of our journey."
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Middle: columns */}
+                    <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-10 py-14">
+                        <div>
+                            <div className="flex items-center gap-2.5 mb-5">
+                                <div className="h-10 w-10 rounded-full bg-[#F7F4EF] overflow-hidden shrink-0 flex items-center justify-center">
+                                    <img
+                                        src={loginLogo}
+                                        alt="Travelers Inn"
+                                        className="h-[54px] w-[54px] max-w-none object-cover"
+                                    />
+                                </div>
+                                <p className="font-display text-sm font-bold tracking-wide">
+                                    Travelers Inn
                                 </p>
-                                <p className="text-[11px] text-gray-400">Comfort. Stay. Enjoy.</p>
+                            </div>
+                            <p className="text-[13px] text-[#F7F4EF]/40 leading-relaxed">
+                                A quiet place to rest,
+                                <br />a warm place to return.
+                            </p>
+                        </div>
+
+                        <div>
+                            <p className="text-[11px] tracking-[0.2em] uppercase text-[#F7F4EF]/40 mb-4">
+                                Explore
+                            </p>
+                            <ul className="space-y-3 text-[13px]">
+                                {NAV_LINKS.map((link) => (
+                                    <li key={link.label}>
+                                        <a
+                                            href={link.href}
+                                            className="text-[#F7F4EF]/70 hover:text-[#C89B5A] transition-colors"
+                                        >
+                                            {link.label}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p className="text-[11px] tracking-[0.2em] uppercase text-[#F7F4EF]/40 mb-4">
+                                Contact
+                            </p>
+                            <ul className="space-y-3 text-[13px] text-[#F7F4EF]/70">
+                                <li className="flex items-start gap-2.5">
+                                    <Phone className="h-3.5 w-3.5 mt-0.5 text-[#C89B5A] shrink-0" />
+                                    +63 912 345 6789
+                                </li>
+                                <li className="flex items-start gap-2.5">
+                                    <Mail className="h-3.5 w-3.5 mt-0.5 text-[#C89B5A] shrink-0" />
+                                    info@travelersinn.com
+                                </li>
+                                <li className="flex items-start gap-2.5">
+                                    <MapPin className="h-3.5 w-3.5 mt-0.5 text-[#C89B5A] shrink-0" />
+                                    Zone 3 Lanao, Alubijid, Mis. Or.
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p className="text-[11px] tracking-[0.2em] uppercase text-[#F7F4EF]/40 mb-4">
+                                Follow
+                            </p>
+                            <div className="flex items-center gap-3">
+                                {[Facebook, Instagram, Twitter].map(
+                                    (Icon, i) => (
+                                        <a
+                                            key={i}
+                                            href="#"
+                                            className="h-9 w-9 rounded-full border border-[#F7F4EF]/15 flex items-center justify-center hover:bg-[#C89B5A] hover:border-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300"
+                                        >
+                                            <Icon className="h-3.5 w-3.5" />
+                                        </a>
+                                    ),
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    <div>
-                        <p className="font-semibold text-gray-900 text-sm mb-3">Quick Links</p>
-                        <ul className="space-y-2 text-sm text-gray-500">
-                            {NAV_LINKS.map((link) => (
-                                <li key={link.label}>
-                                    <a href={link.href} className="hover:text-teal-700">
-                                        {link.label}
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    <div>
-                        <p className="font-semibold text-gray-900 text-sm mb-3">Contact Us</p>
-                        <ul className="space-y-2 text-sm text-gray-500">
-                            <li className="flex items-center gap-2">
-                                <Phone className="h-3.5 w-3.5" />
-                                +63 912 345 6789
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <Mail className="h-3.5 w-3.5" />
-                                info@travelersinn.com
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <MapPin className="h-3.5 w-3.5" />
-                                Opol, Misamis Oriental, Philippines
-                            </li>
-                        </ul>
-                    </div>
-
-                    <div>
-                        <p className="font-semibold text-gray-900 text-sm mb-3">Follow Us</p>
-                        <div className="flex items-center gap-3 mb-4">
-                            <Facebook className="h-4 w-4 text-teal-700" />
-                            <Instagram className="h-4 w-4 text-teal-700" />
-                            <Twitter className="h-4 w-4 text-teal-700" />
-                        </div>
-                        <p className="script text-teal-800 text-lg leading-tight">
-                            Thank you for being part
-                            <br />
-                            of our journey.
+                    {/* Bottom bar */}
+                    <div className="pt-8 border-t border-[#F7F4EF]/10 flex flex-col sm:flex-row justify-between gap-3 text-[12px] text-[#F7F4EF]/35">
+                        <p>
+                            © {new Date().getFullYear()} Travelers Inn. All
+                            rights reserved.
                         </p>
-                    </div>
-                </div>
-
-                <div className="border-t border-teal-100/60">
-                    <div className="max-w-6xl mx-auto px-6 py-5 flex flex-col sm:flex-row justify-between gap-2 text-xs text-gray-400">
-                        <p>© {new Date().getFullYear()} Travelers Inn. All rights reserved.</p>
-                        <div className="flex gap-4">
-                            <a href="#" className="hover:text-teal-700">Privacy Policy</a>
-                            <a href="#" className="hover:text-teal-700">Terms of Service</a>
+                        <div className="flex gap-6">
+                            <a
+                                href="#"
+                                className="hover:text-[#C89B5A] transition-colors"
+                            >
+                                Privacy Policy
+                            </a>
+                            <a
+                                href="#"
+                                className="hover:text-[#C89B5A] transition-colors"
+                            >
+                                Terms of Service
+                            </a>
                         </div>
                     </div>
                 </div>

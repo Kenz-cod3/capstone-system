@@ -49,6 +49,23 @@ export default function ReceiptModal({
 
     if (!isOpen) return null;
 
+    // Friendly label for the payment method
+    const paymentMethodLabel = (method: string | undefined): string => {
+        switch (method) {
+            case "cash":
+                return "Cash";
+            case "qrph":
+                return "QR Ph";
+            case "gcash":
+                return "GCash";
+            case "bank":
+            case "bank_transfer":
+                return "Bank Transfer";
+            default:
+                return method ?? "-";
+        }
+    };
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto bg-white ring-0 focus:ring-0 focus-visible:ring-0 outline-none border border-gray-200 shadow-lg">
@@ -110,11 +127,12 @@ export default function ReceiptModal({
                                 <span className="text-gray-600">
                                     Payment Method
                                 </span>
-                                <span className="capitalize">
-                                    {receipt.payment_method}
+                                <span>
+                                    {paymentMethodLabel(receipt.payment_method)}
                                 </span>
                             </div>
 
+                            {/* GCash reference */}
                             {receipt.payment_method === "gcash" &&
                                 receipt.gcash_reference && (
                                     <div className="flex justify-between">
@@ -125,13 +143,28 @@ export default function ReceiptModal({
                                     </div>
                                 )}
 
-                            {receipt.payment_method === "bank_transfer" &&
+                            {/* Bank transfer reference */}
+                            {(receipt.payment_method === "bank" ||
+                                receipt.payment_method === "bank_transfer") &&
                                 receipt.bank_reference && (
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">
                                             Bank Ref.
                                         </span>
                                         <span>{receipt.bank_reference}</span>
+                                    </div>
+                                )}
+
+                            {/* QR Ph reference (PayMongo payment id stored in bank_reference) */}
+                            {receipt.payment_method === "qrph" &&
+                                receipt.bank_reference && (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">
+                                            QR Ph Ref.
+                                        </span>
+                                        <span className="text-xs break-all">
+                                            {receipt.bank_reference}
+                                        </span>
                                     </div>
                                 )}
 

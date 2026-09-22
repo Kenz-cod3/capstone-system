@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import api from "@/services/api";
-import { Button } from "@/components/ui/button";
 import {
     Mail,
     Lock,
@@ -11,22 +10,17 @@ import {
     MapPin,
     ShieldCheck,
     Loader2,
-    UserPlus,
     MailCheck,
     ArrowLeft,
+    ArrowRight,
 } from "lucide-react";
 import login from "../../../images/login.png";
 import login1 from "../../../images/login1.png";
-import loginLogo from "../../../images/loginLogo.png";
 
 // ---- Config ---------------------------------------------------------------
 const OTP_LENGTH = 6;
-// Must match ->addSeconds(100) in AuthController::sendOtpEmail
 const OTP_SECONDS = 100;
-// Where a guest lands after verifying. Login.tsx uses "/guest-dashboard" after
-// login but "/guest" in its session check — change this to whichever is right.
 const GUEST_HOME = "/guest-dashboard";
-// Change if your login route is different.
 const LOGIN_PATH = "/login";
 
 // ---- Types ----------------------------------------------------------------
@@ -64,7 +58,6 @@ const emptyForm: RegisterForm = {
 
 const emptyOtp = (): string[] => Array(OTP_LENGTH).fill("");
 
-// seconds left until the server's expires_at (clamped to 0..OTP_SECONDS)
 const secondsUntil = (iso?: string): number => {
     if (!iso) return OTP_SECONDS;
     const diff = Math.ceil((new Date(iso).getTime() - Date.now()) / 1000);
@@ -75,7 +68,6 @@ const secondsUntil = (iso?: string): number => {
 const formatTime = (s: number): string =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-// Laravel 422 → { field: ["msg", ...] }  →  { field: "msg" }
 const mapServerErrors = (errors: Record<string, string[]>): FieldErrors => {
     const out: FieldErrors = {};
     (Object.keys(errors) as Array<keyof RegisterForm>).forEach((k) => {
@@ -84,7 +76,7 @@ const mapServerErrors = (errors: Record<string, string[]>): FieldErrors => {
     return out;
 };
 
-// ---- Floating-label input (same look as Login.tsx) --------------------------
+// ---- Floating-label input (editorial style) ------------------------------
 interface FloatingInputProps {
     id: string;
     label: string;
@@ -115,7 +107,6 @@ function FloatingInput({
     return (
         <div className={className}>
             <div className="relative">
-                {/* input comes first so peer-* classes on siblings work */}
                 <input
                     id={id}
                     type={type}
@@ -127,20 +118,31 @@ function FloatingInput({
                     }
                     className={`peer w-full h-12 pl-9 ${
                         trailing ? "pr-9" : "pr-3"
-                    } rounded-lg border bg-white text-gray-900 outline-none transition-colors focus:ring-0 ${
+                    } rounded-lg border bg-white text-[#1B2B27] outline-none transition-colors focus:ring-0 ${
                         error
                             ? "border-red-400 focus:border-red-500"
-                            : "border-gray-300 focus:border-teal-400"
+                            : "border-[#1B2B27]/12 focus:border-[#C89B5A]"
                     }`}
                 />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 peer-focus:text-teal-500 z-10 pointer-events-none">
+                <span
+                    className={`absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
+                        error
+                            ? "text-red-400"
+                            : "text-[#1B2B27]/40 peer-focus:text-[#C89B5A]"
+                    }`}
+                >
                     {icon}
                 </span>
                 <label
                     htmlFor={id}
-                    className="absolute left-9 top-1/2 -translate-y-1/2 bg-white px-1 text-gray-400 text-sm transition-all duration-150 pointer-events-none
-                        peer-focus:top-0 peer-focus:left-3 peer-focus:text-xs peer-focus:text-teal-500
-                        peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-3 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-gray-400"
+                    className={`absolute left-9 top-1/2 -translate-y-1/2 bg-white px-1 text-sm transition-all duration-150 pointer-events-none
+                        peer-focus:top-0 peer-focus:left-3 peer-focus:text-xs
+                        peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-3 peer-[:not(:placeholder-shown)]:text-xs
+                        ${
+                            error
+                                ? "text-red-400 peer-focus:text-red-500 peer-[:not(:placeholder-shown)]:text-red-400"
+                                : "text-[#1B2B27]/45 peer-focus:text-[#C89B5A] peer-[:not(:placeholder-shown)]:text-[#1B2B27]/45"
+                        }`}
                 >
                     {label}
                     {required && " *"}
@@ -151,14 +153,15 @@ function FloatingInput({
                     </div>
                 )}
             </div>
-            {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+            {error && (
+                <p className="mt-1.5 text-[11px] text-red-600">{error}</p>
+            )}
         </div>
     );
 }
 
 // ---- Page -------------------------------------------------------------------
 export default function Register() {
-    // Login.tsx sends unverified guests here as /register?verify=<email>
     const [verifyEmail] = useState<string | null>(() =>
         new URLSearchParams(window.location.search).get("verify"),
     );
@@ -176,12 +179,11 @@ export default function Register() {
     const [error, setError] = useState<string>("");
     const [info, setInfo] = useState<string>("");
 
-    // OTP state
     const [otp, setOtp] = useState<string[]>(emptyOtp());
     const [secondsLeft, setSecondsLeft] = useState<number>(0);
     const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-    // --- Slideshow state (same as Login.tsx) ---
+    // Slideshow
     const slides: string[] = [login, login1];
     const SLIDE_DURATION = 20000;
     const [slideIndex, setSlideIndex] = useState<number>(0);
@@ -193,15 +195,12 @@ export default function Register() {
         return () => clearInterval(interval);
     }, [slides.length]);
 
-    // OTP countdown (also the resend lock — the backend refuses a resend
-    // until the current code has expired)
     useEffect(() => {
         if (step !== "otp" || secondsLeft <= 0) return;
         const t = setTimeout(() => setSecondsLeft((s: number) => s - 1), 1000);
         return () => clearTimeout(t);
     }, [step, secondsLeft]);
 
-    // focus the first OTP box when the step opens
     useEffect(() => {
         if (step === "otp") otpRefs.current[0]?.focus();
     }, [step]);
@@ -234,7 +233,6 @@ export default function Register() {
         setInfo(!isError && message ? message : "");
     };
 
-    // --- Step 1: register ---------------------------------------------------
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
@@ -265,13 +263,11 @@ export default function Register() {
                 setFieldErrors(mapServerErrors(data.errors));
                 setError("Please fix the highlighted fields.");
             } else if (status === 429 && data?.email) {
-                // unverified account with a code that's still valid
                 goToOtp(
                     secondsUntil(data.expires_at),
                     "A code was already sent to this email. Enter it below.",
                 );
             } else if (status === 502 && data?.email) {
-                // account saved, email failed → let them resend right away
                 goToOtp(0, data.message, true);
             } else {
                 setError(data?.message || "Registration failed");
@@ -281,7 +277,6 @@ export default function Register() {
         }
     };
 
-    // --- Step 2: verify OTP -------------------------------------------------
     const handleOtpChange = (i: number, raw: string) => {
         const d = raw.replace(/\D/g, "").slice(-1);
         setOtp((prev: string[]) => {
@@ -339,7 +334,6 @@ export default function Register() {
                 otp: code,
             });
 
-            // same storage shape as Login.tsx
             localStorage.removeItem("token");
             localStorage.removeItem("user");
             localStorage.setItem("user", JSON.stringify(res.data.user));
@@ -372,7 +366,6 @@ export default function Register() {
             const data = err.response?.data;
 
             if (status === 429 && data?.expires_at) {
-                // current code still active
                 setSecondsLeft(secondsUntil(data.expires_at));
                 setInfo("Your current code is still valid.");
             } else if (status === 502) {
@@ -389,10 +382,17 @@ export default function Register() {
         }
     };
 
-    // ---- UI ----------------------------------------------------------------
+    // ---- UI -----------------------------------------------------------------
     return (
-        <div className="min-h-dvh flex flex-col bg-gradient-to-br from-teal-50 via-white to-teal-100 px-4 sm:px-6 lg:px-8">
+        <div
+            className="min-h-dvh flex flex-col bg-[#F7F4EF] text-[#1B2B27] antialiased"
+            style={{
+                fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+            }}
+        >
             <style>{`
+                .font-display { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+                .font-script { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
                 @keyframes panLTR {
                     from { object-position: left center; }
                     to   { object-position: right center; }
@@ -401,16 +401,18 @@ export default function Register() {
                     from { object-position: right center; }
                     to   { object-position: left center; }
                 }
-                .pan-ltr {
-                    animation: panLTR ${SLIDE_DURATION}ms linear forwards;
+                .pan-ltr { animation: panLTR ${SLIDE_DURATION}ms linear forwards; }
+                .pan-rtl { animation: panRTL ${SLIDE_DURATION}ms linear forwards; }
+                @keyframes fadeUp {
+                    from { opacity: 0; transform: translateY(12px); }
+                    to { opacity: 1; transform: translateY(0); }
                 }
-                .pan-rtl {
-                    animation: panRTL ${SLIDE_DURATION}ms linear forwards;
-                }
+                .animate-fade-up { animation: fadeUp 0.7s ease-out both; }
             `}</style>
 
-            <div className="flex-1 flex items-center justify-center py-10">
-                <div className="w-full max-w-7xl min-h-[520px] bg-white rounded-2xl shadow-2xl overflow-hidden grid md:grid-cols-2">
+            {/* MAIN */}
+            <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-10 py-6">
+                <div className="w-full max-w-6xl bg-white rounded-2xl overflow-hidden grid md:grid-cols-2 shadow-xl shadow-[#1B2B27]/5 border border-[#1B2B27]/6">
                     {/* LEFT: HERO PANEL */}
                     <div className="relative hidden md:flex flex-col justify-between p-10 text-white overflow-hidden">
                         {slides.map((src: string, i: number) => (
@@ -425,12 +427,14 @@ export default function Register() {
                                 } ${i % 2 === 0 ? "pan-ltr" : "pan-rtl"}`}
                                 style={{
                                     animationPlayState:
-                                        i === slideIndex ? "running" : "paused",
+                                        i === slideIndex
+                                            ? "running"
+                                            : "paused",
                                 }}
                             />
                         ))}
 
-                        <div className="absolute inset-0 bg-gradient-to-r from-teal-950/90 via-teal-950/40 to-teal-950/10" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-[#1B2B27]/90 via-[#1B2B27]/55 to-[#1B2B27]/15" />
 
                         <div className="absolute bottom-6 right-6 z-10 flex gap-2">
                             {slides.map((_: string, i: number) => (
@@ -441,54 +445,52 @@ export default function Register() {
                                     aria-label={`Go to slide ${i + 1}`}
                                     className={`h-1.5 rounded-full transition-all duration-300 ${
                                         i === slideIndex
-                                            ? "w-6 bg-teal-300"
-                                            : "w-1.5 bg-white/40 hover:bg-white/60"
+                                            ? "w-6 bg-[#C89B5A]"
+                                            : "w-1.5 bg-white/40 hover:bg-white/70"
                                     }`}
                                 />
                             ))}
                         </div>
 
-                        <div className="relative z-10 flex flex-col items-start gap-1.5">
-                            <img
-                                src={loginLogo}
-                                alt="Travelers Inn logo"
-                                className="h-16 w-16 object-contain drop-shadow-md"
-                            />
-                            <p className="font-serif tracking-widest text-sm leading-tight">
-                                TRAVELERS INN
-                            </p>
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-teal-100/80 leading-tight">
-                                Comfort. Stay. Enjoy.
-                            </p>
+                        <div className="relative z-10 flex items-center gap-3">
+                            <span className="h-px w-10 bg-[#C89B5A]" />
+                            <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                Est. 2019 · Alubijid
+                            </span>
                         </div>
 
-                        <div className="relative z-10 space-y-4">
-                            <h1 className="text-4xl font-bold leading-tight drop-shadow-sm">
-                                Welcome,
+                        <div className="relative z-10 space-y-5">
+                            <h1 className="font-display text-4xl lg:text-5xl leading-[1.05] text-white">
+                                Join us for
                                 <br />
-                                Guest!
+                                your next{" "}
+                                <em className="italic font-normal text-[#C89B5A]">
+                                    stay
+                                </em>
+                                .
                             </h1>
-                            <div className="w-28 h-1 rounded-full bg-white/25 overflow-hidden">
-                                <div
-                                    className="h-full rounded-full bg-[#7FFFD4]"
-                                    style={{ width: "80%" }}
-                                />
-                            </div>
-                            <p className="text-sm text-teal-50/90 leading-relaxed max-w-xs">
-                                Create a guest account to manage your stays with
-                                Travelers Inn. It only takes a minute.
+                            <p className="font-script text-lg text-[#F7F4EF]/85 leading-snug max-w-xs">
+                                "More than just a place to stay —
+                                <br />
+                                it's a home for every traveler."
                             </p>
+                            <div className="flex items-center gap-2 pt-1">
+                                <span className="h-px w-6 bg-[#C89B5A]" />
+                                <span className="text-[10px] tracking-[0.2em] uppercase text-white/60">
+                                    Travelers Inn
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="relative z-10 flex items-center gap-4 w-fit bg-black/30 backdrop-blur-sm border border-white/10 rounded-xl px-6 py-3">
-                            <div className="h-9 w-9 rounded-lg bg-teal-500/20 flex items-center justify-center shrink-0">
-                                <ShieldCheck className="h-5 w-5 text-teal-300" />
+                        <div className="relative z-10 flex items-center gap-4 w-fit bg-white/8 backdrop-blur-md border border-white/15 rounded-xl px-5 py-3">
+                            <div className="h-9 w-9 rounded-lg bg-[#C89B5A]/20 flex items-center justify-center shrink-0">
+                                <ShieldCheck className="h-5 w-5 text-[#C89B5A]" />
                             </div>
                             <div className="flex flex-col gap-0.5">
                                 <p className="text-xs font-semibold leading-snug">
-                                    Verified Accounts
+                                    Verified accounts
                                 </p>
-                                <p className="text-[10px] text-teal-50/70 leading-snug">
+                                <p className="text-[10px] text-white/60 leading-snug">
                                     We confirm your email with
                                     <br />a one-time code.
                                 </p>
@@ -497,35 +499,38 @@ export default function Register() {
                     </div>
 
                     {/* RIGHT: FORM PANEL */}
-                    <div className="flex items-center justify-center p-8 sm:p-12">
+                    <div className="flex items-center justify-center p-8 sm:p-12 lg:p-14">
                         {step === "form" ? (
-                            /* ---------- STEP 1: REGISTER FORM ---------- */
                             <form
                                 onSubmit={handleRegister}
                                 noValidate
-                                className="w-full max-w-md space-y-6"
+                                className="w-full max-w-md space-y-6 animate-fade-up"
                             >
-                                <div className="flex flex-col items-center text-center space-y-3">
-                                    <div className="h-16 w-16 rounded-full bg-teal-100 flex items-center justify-center">
-                                        <UserPlus className="h-7 w-7 text-teal-600" />
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-px w-8 bg-[#C89B5A]" />
+                                        <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                            Create account
+                                        </span>
                                     </div>
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-gray-900">
-                                            Create your account
-                                        </h2>
-                                        <p className="text-sm text-gray-500 mt-1">
-                                            Register as a guest to get started
-                                        </p>
-                                    </div>
+                                    <h2 className="font-display text-3xl lg:text-4xl leading-tight text-[#1B2B27]">
+                                        Start your
+                                        <br />
+                                        journey with us.
+                                    </h2>
+                                    <p className="text-[14px] text-[#1B2B27]/55 leading-relaxed">
+                                        Register as a guest to manage your
+                                        stays with Travelers Inn.
+                                    </p>
                                 </div>
 
                                 {error && (
-                                    <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm">
+                                    <div className="bg-red-50 border-l-2 border-red-400 text-red-700 p-3 rounded-md text-sm">
                                         {error}
                                     </div>
                                 )}
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5">
                                     <FloatingInput
                                         id="first_name"
                                         label="First Name"
@@ -591,7 +596,9 @@ export default function Register() {
                                         id="password"
                                         label="Password"
                                         required
-                                        type={showPassword ? "text" : "password"}
+                                        type={
+                                            showPassword ? "text" : "password"
+                                        }
                                         autoComplete="new-password"
                                         icon={<Lock className="h-4 w-4" />}
                                         value={form.password}
@@ -605,7 +612,7 @@ export default function Register() {
                                                         (s: boolean) => !s,
                                                     )
                                                 }
-                                                className="text-gray-400 hover:text-gray-600"
+                                                className="text-[#1B2B27]/40 hover:text-[#1B2B27] transition-colors"
                                                 aria-label={
                                                     showPassword
                                                         ? "Hide password"
@@ -624,14 +631,18 @@ export default function Register() {
                                         id="password_confirmation"
                                         label="Confirm Password"
                                         required
-                                        type={showConfirm ? "text" : "password"}
+                                        type={
+                                            showConfirm ? "text" : "password"
+                                        }
                                         autoComplete="new-password"
                                         icon={<Lock className="h-4 w-4" />}
                                         value={form.password_confirmation}
                                         onChange={setField(
                                             "password_confirmation",
                                         )}
-                                        error={fieldErrors.password_confirmation}
+                                        error={
+                                            fieldErrors.password_confirmation
+                                        }
                                         trailing={
                                             <button
                                                 type="button"
@@ -640,7 +651,7 @@ export default function Register() {
                                                         (s: boolean) => !s,
                                                     )
                                                 }
-                                                className="text-gray-400 hover:text-gray-600"
+                                                className="text-[#1B2B27]/40 hover:text-[#1B2B27] transition-colors"
                                                 aria-label={
                                                     showConfirm
                                                         ? "Hide password"
@@ -657,88 +668,98 @@ export default function Register() {
                                     />
                                 </div>
 
-                                <Button
+                                <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
+                                    className="w-full h-12 rounded-full bg-[#1B2B27] text-[#F7F4EF] font-medium text-sm hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
                                     {loading ? (
-                                        <span className="flex items-center justify-center gap-2">
+                                        <>
                                             <Loader2 className="h-4 w-4 animate-spin" />
                                             Creating account...
-                                        </span>
+                                        </>
                                     ) : (
-                                        <span className="flex items-center justify-center gap-2">
-                                            <UserPlus className="h-4 w-4" />
-                                            Create Account
-                                        </span>
+                                        <>
+                                            Create account
+                                            <ArrowRight className="h-4 w-4" />
+                                        </>
                                     )}
-                                </Button>
+                                </button>
 
-                                <p className="text-center text-sm text-gray-600">
+                                <p className="text-center text-[13px] text-[#1B2B27]/60">
                                     Already have an account?{" "}
                                     <a
                                         href={LOGIN_PATH}
-                                        className="font-semibold text-teal-600 hover:text-teal-700"
+                                        className="font-medium text-[#1B2B27] underline decoration-[#C89B5A] decoration-2 underline-offset-4 hover:text-[#C89B5A] transition-colors"
                                     >
                                         Sign in
                                     </a>
                                 </p>
                             </form>
                         ) : (
-                            /* ---------- STEP 2: VERIFY OTP ---------- */
                             <form
                                 onSubmit={handleVerify}
-                                className="w-full max-w-sm space-y-7"
+                                className="w-full max-w-sm space-y-6 animate-fade-up"
                             >
-                                <div className="flex flex-col items-center text-center space-y-3">
-                                    <div className="h-16 w-16 rounded-full bg-teal-100 flex items-center justify-center">
-                                        <MailCheck className="h-7 w-7 text-teal-600" />
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-px w-8 bg-[#C89B5A]" />
+                                        <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                            Verify email
+                                        </span>
                                     </div>
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-gray-900">
-                                            Verify your email
-                                        </h2>
-                                        <p className="text-sm text-gray-500 mt-1">
-                                            Enter the {OTP_LENGTH}-digit code
-                                            sent to
-                                            <br />
-                                            <span className="font-medium text-gray-700 break-all">
-                                                {form.email}
-                                            </span>
-                                        </p>
-                                    </div>
+                                    <h2 className="font-display text-3xl lg:text-4xl leading-tight text-[#1B2B27]">
+                                        Check your
+                                        <br />
+                                        inbox.
+                                    </h2>
+                                    <p className="text-[14px] text-[#1B2B27]/55 leading-relaxed">
+                                        Enter the {OTP_LENGTH}-digit code sent
+                                        to{" "}
+                                        <span className="font-medium text-[#1B2B27] break-all">
+                                            {form.email}
+                                        </span>
+                                    </p>
                                 </div>
 
                                 {error && (
-                                    <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm">
+                                    <div className="bg-red-50 border-l-2 border-red-400 text-red-700 p-3 rounded-md text-sm">
                                         {error}
                                     </div>
                                 )}
                                 {info && (
-                                    <div className="bg-teal-50 border-l-4 border-teal-500 text-teal-800 p-3 rounded-md text-sm">
+                                    <div className="bg-[#C89B5A]/10 border-l-2 border-[#C89B5A] text-[#1B2B27] p-3 rounded-md text-sm">
                                         {info}
                                     </div>
                                 )}
 
-                                <div className="flex justify-center gap-2 sm:gap-3">
+                                <div className="flex justify-center gap-2 sm:gap-2.5">
                                     {otp.map((digit: string, i: number) => (
                                         <input
                                             key={i}
-                                            ref={(el: HTMLInputElement | null) => {
+                                            ref={(
+                                                el: HTMLInputElement | null,
+                                            ) => {
                                                 otpRefs.current[i] = el;
                                             }}
                                             type="text"
                                             inputMode="numeric"
                                             autoComplete={
-                                                i === 0 ? "one-time-code" : "off"
+                                                i === 0
+                                                    ? "one-time-code"
+                                                    : "off"
                                             }
                                             maxLength={1}
                                             value={digit}
                                             aria-label={`Digit ${i + 1}`}
                                             onChange={(
                                                 e: React.ChangeEvent<HTMLInputElement>,
-                                            ) => handleOtpChange(i, e.target.value)}
+                                            ) =>
+                                                handleOtpChange(
+                                                    i,
+                                                    e.target.value,
+                                                )
+                                            }
                                             onKeyDown={(
                                                 e: React.KeyboardEvent<HTMLInputElement>,
                                             ) => handleOtpKeyDown(i, e)}
@@ -746,34 +767,36 @@ export default function Register() {
                                             onFocus={(
                                                 e: React.FocusEvent<HTMLInputElement>,
                                             ) => e.target.select()}
-                                            className="h-12 w-10 sm:h-14 sm:w-12 text-center text-xl font-semibold rounded-lg border border-gray-300 bg-white text-gray-900 outline-none transition-colors focus:border-teal-400 focus:ring-0"
+                                            className="h-12 w-10 sm:h-14 sm:w-11 text-center text-xl font-semibold rounded-lg border border-[#1B2B27]/12 bg-white text-[#1B2B27] outline-none transition-colors focus:border-[#C89B5A] focus:ring-0"
                                         />
                                     ))}
                                 </div>
 
-                                <Button
+                                <button
                                     type="submit"
-                                    disabled={loading || code.length < OTP_LENGTH}
-                                    className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
+                                    disabled={
+                                        loading || code.length < OTP_LENGTH
+                                    }
+                                    className="w-full h-12 rounded-full bg-[#1B2B27] text-[#F7F4EF] font-medium text-sm hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
                                     {loading ? (
-                                        <span className="flex items-center justify-center gap-2">
+                                        <>
                                             <Loader2 className="h-4 w-4 animate-spin" />
                                             Verifying...
-                                        </span>
+                                        </>
                                     ) : (
-                                        <span className="flex items-center justify-center gap-2">
-                                            <ShieldCheck className="h-4 w-4" />
-                                            Verify Email
-                                        </span>
+                                        <>
+                                            Verify email
+                                            <ArrowRight className="h-4 w-4" />
+                                        </>
                                     )}
-                                </Button>
+                                </button>
 
-                                <div className="text-center text-sm text-gray-600 space-y-3">
+                                <div className="text-center text-[13px] text-[#1B2B27]/60 space-y-3">
                                     {secondsLeft > 0 ? (
                                         <p>
                                             Code expires in{" "}
-                                            <span className="font-semibold text-gray-800 tabular-nums">
+                                            <span className="font-semibold text-[#1B2B27] tabular-nums">
                                                 {formatTime(secondsLeft)}
                                             </span>
                                         </p>
@@ -784,7 +807,7 @@ export default function Register() {
                                                 type="button"
                                                 onClick={handleResend}
                                                 disabled={resending}
-                                                className="font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
+                                                className="font-medium text-[#1B2B27] underline decoration-[#C89B5A] decoration-2 underline-offset-4 hover:text-[#C89B5A] disabled:opacity-60 transition-colors"
                                             >
                                                 {resending
                                                     ? "Sending..."
@@ -800,7 +823,7 @@ export default function Register() {
                                             setInfo("");
                                             setStep("form");
                                         }}
-                                        className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700"
+                                        className="inline-flex items-center gap-1 text-[#1B2B27]/60 hover:text-[#1B2B27] transition-colors"
                                     >
                                         <ArrowLeft className="h-3.5 w-3.5" />
                                         Back to registration
@@ -812,17 +835,17 @@ export default function Register() {
                 </div>
             </div>
 
-            <footer
-                className="pb-6 text-center"
+            {/* <footer
+                className="py-6 text-center"
                 style={{
                     paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
                 }}
             >
-                <p className="text-xs text-gray-400">
+                <p className="text-[12px] text-[#1B2B27]/40">
                     © {new Date().getFullYear()} Travelers Inn. All rights
                     reserved.
                 </p>
-            </footer>
+            </footer> */}
         </div>
     );
 }

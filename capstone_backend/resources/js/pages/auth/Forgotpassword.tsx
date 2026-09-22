@@ -1,61 +1,68 @@
-// Save in: resources/js/pages/auth/ForgotPassword.tsx  (same folder as Login.tsx)
+// Save in: resources/js/pages/auth/ForgotPassword.tsx
 import React, { useState, useEffect } from "react";
 import api from "@/services/api";
-import { Button } from "@/components/ui/button";
-import AuthLayout from "./Authlayout";
-import FloatingInput from "./Floatinginput";
 import {
     Mail,
-    KeyRound,
     Loader2,
-    MailCheck,
+    ShieldCheck,
+    ArrowRight,
     ArrowLeft,
-    Send,
 } from "lucide-react";
+import login from "../../../images/login.png";
+import login1 from "../../../images/login1.png";
 
 const LOGIN_PATH = "/login";
-// Must match the 60-second cooldown in AuthController::forgotPassword
-const RESEND_SECONDS = 60;
 
 export default function ForgotPassword() {
     const [email, setEmail] = useState<string>("");
-    const [emailError, setEmailError] = useState<string>("");
-    const [error, setError] = useState<string>("");
     const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string>("");
+    const [info, setInfo] = useState<string>("");
     const [sent, setSent] = useState<boolean>(false);
-    const [secondsLeft, setSecondsLeft] = useState<number>(0);
 
-    // resend cooldown
+    // --- Slideshow state (same as Login / Register / ResetPassword) ---
+    const slides: string[] = [login, login1];
+    const SLIDE_DURATION = 20000;
+    const [slideIndex, setSlideIndex] = useState<number>(0);
+
     useEffect(() => {
-        if (secondsLeft <= 0) return;
-        const t = setTimeout(() => setSecondsLeft((s: number) => s - 1), 1000);
-        return () => clearTimeout(t);
-    }, [secondsLeft]);
+        const interval = setInterval(() => {
+            setSlideIndex((prev: number) => (prev + 1) % slides.length);
+        }, SLIDE_DURATION);
+        return () => clearInterval(interval);
+    }, [slides.length]);
 
-    const requestLink = async () => {
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
         setError("");
-        setEmailError("");
+        setInfo("");
 
         if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-            setEmailError("Enter a valid email address.");
+            setError("Enter a valid email address.");
             return;
         }
 
         setLoading(true);
         try {
-            await api.post("/auth/forgot-password", { email: email.trim() });
+            await api.post("/auth/forgot-password", {
+                email: email.trim(),
+            });
             setSent(true);
-            setSecondsLeft(RESEND_SECONDS);
+            setInfo(
+                "If an account exists for that email, we've sent a reset link.",
+            );
         } catch (err: any) {
             const status: number | undefined = err.response?.status;
-            if (status === 422 && err.response?.data?.errors?.email) {
-                setEmailError(err.response.data.errors.email[0]);
-            } else if (status === 429) {
-                setError("Too many attempts. Please wait a minute and try again.");
+            const data = err.response?.data;
+
+            if (status === 429) {
+                setError(
+                    "Too many attempts. Please wait a minute and try again.",
+                );
             } else {
                 setError(
-                    err.response?.data?.message ||
-                        "Something went wrong. Please try again.",
+                    data?.message ||
+                        "Could not send the reset link. Please try again.",
                 );
             }
         } finally {
@@ -63,131 +70,282 @@ export default function ForgotPassword() {
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        requestLink();
-    };
-
     return (
-        <AuthLayout
-            heading={
-                <>
-                    Forgot
-                    <br />
-                    Password?
-                </>
-            }
-            description="No worries. Enter your email and we'll send you a link to set a new password."
+        <div
+            className="min-h-dvh flex flex-col bg-[#F7F4EF] text-[#1B2B27] antialiased"
+            style={{
+                fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+            }}
         >
-            <div className="w-full max-w-sm space-y-7">
-                <div className="flex flex-col items-center text-center space-y-3">
-                    <div className="h-16 w-16 rounded-full bg-teal-100 flex items-center justify-center">
-                        {sent ? (
-                            <MailCheck className="h-7 w-7 text-teal-600" />
-                        ) : (
-                            <KeyRound className="h-7 w-7 text-teal-600" />
-                        )}
+            <style>{`
+                .font-display { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+                .font-script { font-family: Georgia, 'Times New Roman', serif; font-style: italic; }
+                @keyframes panLTR {
+                    from { object-position: left center; }
+                    to   { object-position: right center; }
+                }
+                @keyframes panRTL {
+                    from { object-position: right center; }
+                    to   { object-position: left center; }
+                }
+                .pan-ltr { animation: panLTR ${SLIDE_DURATION}ms linear forwards; }
+                .pan-rtl { animation: panRTL ${SLIDE_DURATION}ms linear forwards; }
+                @keyframes fadeUp {
+                    from { opacity: 0; transform: translateY(12px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-up { animation: fadeUp 0.7s ease-out both; }
+            `}</style>
+
+            {/* MAIN */}
+            <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-10 py-6">
+                <div className="w-full max-w-6xl bg-white rounded-2xl overflow-hidden grid md:grid-cols-2 shadow-xl shadow-[#1B2B27]/5 border border-[#1B2B27]/6">
+                    {/* LEFT: HERO PANEL */}
+                    <div className="relative hidden md:flex flex-col justify-between p-10 text-white overflow-hidden">
+                        {slides.map((src: string, i: number) => (
+                            <img
+                                key={`${i}-${slideIndex === i}`}
+                                src={src}
+                                alt=""
+                                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+                                    i === slideIndex
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                } ${i % 2 === 0 ? "pan-ltr" : "pan-rtl"}`}
+                                style={{
+                                    animationPlayState:
+                                        i === slideIndex
+                                            ? "running"
+                                            : "paused",
+                                }}
+                            />
+                        ))}
+
+                        <div className="absolute inset-0 bg-gradient-to-r from-[#1B2B27]/90 via-[#1B2B27]/55 to-[#1B2B27]/15" />
+
+                        {/* Slide indicator dots */}
+                        <div className="absolute bottom-6 right-6 z-10 flex gap-2">
+                            {slides.map((_: string, i: number) => (
+                                <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => setSlideIndex(i)}
+                                    aria-label={`Go to slide ${i + 1}`}
+                                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                                        i === slideIndex
+                                            ? "w-6 bg-[#C89B5A]"
+                                            : "w-1.5 bg-white/40 hover:bg-white/70"
+                                    }`}
+                                />
+                            ))}
+                        </div>
+
+                        <div className="relative z-10 flex items-center gap-3">
+                            <span className="h-px w-10 bg-[#C89B5A]" />
+                            <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                Est. 2024 · Alubijid
+                            </span>
+                        </div>
+
+                        <div className="relative z-10 space-y-5">
+                            <h1 className="font-display text-4xl lg:text-5xl leading-[1.05] text-white">
+                                Trouble
+                                <br />
+                                signing{" "}
+                                <em className="italic font-normal text-[#C89B5A]">
+                                    in?
+                                </em>
+                            </h1>
+                            <p className="font-script text-lg text-[#F7F4EF]/85 leading-snug max-w-xs">
+                                "No worries — we'll help you
+                                <br />
+                                find your way back home."
+                            </p>
+                            <div className="flex items-center gap-2 pt-1">
+                                <span className="h-px w-6 bg-[#C89B5A]" />
+                                <span className="text-[10px] tracking-[0.2em] uppercase text-white/60">
+                                    Travelers Inn
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="relative z-10 flex items-center gap-4 w-fit bg-white/8 backdrop-blur-md border border-white/15 rounded-xl px-5 py-3">
+                            <div className="h-9 w-9 rounded-lg bg-[#C89B5A]/20 flex items-center justify-center shrink-0">
+                                <ShieldCheck className="h-5 w-5 text-[#C89B5A]" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                                <p className="text-xs font-semibold leading-snug">
+                                    Secure access
+                                </p>
+                                <p className="text-[10px] text-white/60 leading-snug">
+                                    Reset links work once and
+                                    <br />
+                                    expire after 30 minutes.
+                                </p>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            {sent ? "Check your email" : "Reset your password"}
-                        </h2>
-                        <p className="text-sm text-gray-500 mt-1">
+
+                    {/* RIGHT: FORM PANEL */}
+                    <div className="flex items-center justify-center p-8 sm:p-12 lg:p-14">
+                        <div className="w-full max-w-sm space-y-6 animate-fade-up">
+                            {/* Heading — swaps on success */}
+                            {sent ? (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-px w-8 bg-[#C89B5A]" />
+                                        <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                            Check your inbox
+                                        </span>
+                                    </div>
+                                    <h2 className="font-display text-3xl lg:text-4xl leading-tight text-[#1B2B27]">
+                                        Reset link
+                                        <br />
+                                        sent.
+                                    </h2>
+                                    <p className="text-[14px] text-[#1B2B27]/55 leading-relaxed">
+                                        If an account exists for{" "}
+                                        <span className="font-medium text-[#1B2B27] break-all">
+                                            {email}
+                                        </span>
+                                        , you'll receive an email shortly.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-px w-8 bg-[#C89B5A]" />
+                                        <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
+                                            Forgot password
+                                        </span>
+                                    </div>
+                                    <h2 className="font-display text-3xl lg:text-4xl leading-tight text-[#1B2B27]">
+                                        Reset your
+                                        <br />
+                                        password.
+                                    </h2>
+                                    <p className="text-[14px] text-[#1B2B27]/55 leading-relaxed">
+                                        Enter the email you used to register
+                                        and we'll send you a reset link.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Body */}
                             {sent ? (
                                 <>
-                                    If an account exists for
-                                    <br />
-                                    <span className="font-medium text-gray-700 break-all">
-                                        {email.trim()}
-                                    </span>
-                                    <br />
-                                    we sent a reset link. It expires in 30
-                                    minutes.
+                                    {info && (
+                                        <div className="bg-[#C89B5A]/10 border-l-2 border-[#C89B5A] text-[#1B2B27] p-3 rounded-md text-sm">
+                                            {info}
+                                        </div>
+                                    )}
+                                    <a href={LOGIN_PATH} className="block pt-2">
+                                        <button
+                                            type="button"
+                                            className="w-full h-12 rounded-full bg-[#1B2B27] text-[#F7F4EF] font-medium text-sm hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center justify-center gap-2"
+                                        >
+                                            Back to sign in
+                                            <ArrowRight className="h-4 w-4" />
+                                        </button>
+                                    </a>
+                                    <p className="text-center text-[13px] text-[#1B2B27]/60">
+                                        Didn't get an email?{" "}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSent(false);
+                                                setInfo("");
+                                            }}
+                                            className="font-medium text-[#1B2B27] underline decoration-[#C89B5A] decoration-2 underline-offset-4 hover:text-[#C89B5A] transition-colors"
+                                        >
+                                            Try a different email
+                                        </button>
+                                    </p>
                                 </>
                             ) : (
-                                "Enter the email you used to register."
+                                <form
+                                    onSubmit={handleSubmit}
+                                    noValidate
+                                    className="space-y-5"
+                                >
+                                    {error && (
+                                        <div className="bg-red-50 border-l-2 border-red-400 text-red-700 p-3 rounded-md text-sm">
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    {/* Email — floating label */}
+                                    <div className="relative">
+                                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#1B2B27]/40 peer-focus:text-[#C89B5A] z-10 transition-colors" />
+                                        <input
+                                            id="email"
+                                            type="email"
+                                            placeholder=" "
+                                            value={email}
+                                            autoComplete="email"
+                                            onChange={(
+                                                e: React.ChangeEvent<HTMLInputElement>,
+                                            ) => setEmail(e.target.value)}
+                                            className="peer w-full h-12 pl-9 pr-3 rounded-lg border border-[#1B2B27]/12 bg-white text-[#1B2B27] outline-none transition-colors focus:border-[#C89B5A] focus:ring-0"
+                                            required
+                                        />
+                                        <label
+                                            htmlFor="email"
+                                            className="absolute left-9 top-1/2 -translate-y-1/2 bg-white px-1 text-[#1B2B27]/45 text-sm transition-all duration-150 pointer-events-none
+                                                peer-focus:top-0 peer-focus:left-3 peer-focus:text-xs peer-focus:text-[#C89B5A]
+                                                peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-3 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-[#1B2B27]/45"
+                                        >
+                                            Email address
+                                        </label>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="w-full h-12 rounded-full bg-[#1B2B27] text-[#F7F4EF] font-medium text-sm hover:bg-[#C89B5A] hover:text-[#1B2B27] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                Sending...
+                                            </>
+                                        ) : (
+                                            <>
+                                                Send reset link
+                                                <ArrowRight className="h-4 w-4" />
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <p className="text-center text-[13px] text-[#1B2B27]/60">
+                                        Remember it now?{" "}
+                                        <a
+                                            href={LOGIN_PATH}
+                                            className="inline-flex items-center gap-1 font-medium text-[#1B2B27] underline decoration-[#C89B5A] decoration-2 underline-offset-4 hover:text-[#C89B5A] transition-colors"
+                                        >
+                                            <ArrowLeft className="h-3 w-3" />
+                                            Back to sign in
+                                        </a>
+                                    </p>
+                                </form>
                             )}
-                        </p>
+                        </div>
                     </div>
-                </div>
-
-                {error && (
-                    <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm">
-                        {error}
-                    </div>
-                )}
-
-                {!sent ? (
-                    <form onSubmit={handleSubmit} noValidate className="space-y-6">
-                        <FloatingInput
-                            id="email"
-                            label="Email Address"
-                            type="email"
-                            required
-                            autoComplete="email"
-                            icon={<Mail className="h-4 w-4" />}
-                            value={email}
-                            onChange={(v: string) => {
-                                setEmail(v);
-                                setEmailError("");
-                            }}
-                            error={emailError}
-                        />
-
-                        <Button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
-                        >
-                            {loading ? (
-                                <span className="flex items-center justify-center gap-2">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Sending...
-                                </span>
-                            ) : (
-                                <span className="flex items-center justify-center gap-2">
-                                    <Send className="h-4 w-4" />
-                                    Send reset link
-                                </span>
-                            )}
-                        </Button>
-                    </form>
-                ) : (
-                    <div className="text-center text-sm text-gray-600 space-y-3">
-                        <p className="text-xs text-gray-500">
-                            Can't find it? Check your spam folder.
-                        </p>
-                        {secondsLeft > 0 ? (
-                            <p>
-                                You can request another link in{" "}
-                                <span className="font-semibold text-gray-800 tabular-nums">
-                                    {secondsLeft}s
-                                </span>
-                            </p>
-                        ) : (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                disabled={loading}
-                                onClick={requestLink}
-                                className="w-full h-11 border-teal-400 text-teal-700 hover:bg-teal-50"
-                            >
-                                {loading ? "Sending..." : "Resend link"}
-                            </Button>
-                        )}
-                    </div>
-                )}
-
-                <div className="text-center">
-                    <a
-                        href={LOGIN_PATH}
-                        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-                    >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        Back to sign in
-                    </a>
                 </div>
             </div>
-        </AuthLayout>
+
+            {/* Footer */}
+            <footer
+                className="py-6 text-center"
+                style={{
+                    paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+                }}
+            >
+                <p className="text-[12px] text-[#1B2B27]/40">
+                    © {new Date().getFullYear()} Travelers Inn. All rights
+                    reserved.
+                </p>
+            </footer>
+        </div>
     );
 }

@@ -7,6 +7,7 @@ use App\Events\NotificationCreated;
 use App\Models\Booking;
 use App\Models\BookingHistory;
 use App\Models\BookingPayment;
+use App\Models\Room;
 use App\Models\Shift;
 use App\Models\CashTransaction;
 use App\Models\Notification;
@@ -35,15 +36,18 @@ class PayMongoController extends Controller
         Log::info('Creating Dynamic QRPH payment', [
             'booking_id' => $booking->id,
             'amount' => $validated['amount'],
+            'booking_type' => $booking->booking_type,
         ]);
 
-        // Make sure booking still has a room waiting for payment
-        $hasPendingRoom = $booking->bookedRooms()
-            ->where('status', 'pending')
+        // Walk-in QR bookings are created with BookedRoom.status = 'confirmed'
+        // (reserved but not yet checked in), so we accept both 'pending'
+        // (online bookings) and 'confirmed' (walk-in) here.
+        $hasPayableRoom = $booking->bookedRooms()
+            ->whereIn('status', ['pending', 'confirmed'])
             ->exists();
 
-        // Fee payments (early check-in, late check-out, extension) don't need a pending room
-        if (! $isFeePayment && ! $hasPendingRoom) {
+        // Fee payments (early check-in, late check-out, extension) don't need a payable room
+        if (! $isFeePayment && ! $hasPayableRoom) {
             return response()->json([
                 'message' => 'This booking is no longer awaiting payment'
             ], 400);
@@ -73,6 +77,7 @@ class PayMongoController extends Controller
                         'metadata' => array_filter([
                             'booking_id' => (string) $booking->id,
                             'payment_method' => 'qrph',
+                            'booking_type' => $booking->booking_type,
                             'fee_type' => $validated['fee_type'] ?? null,
                         ]),
                     ],
@@ -139,7 +144,7 @@ class PayMongoController extends Controller
         */
 
         $attachResponse = Http::withBasicAuth(
-           config('services.paymongo.public_key'),
+            config('services.paymongo.public_key'),
             ''
         )->post(
             "https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}/attach",
@@ -197,6 +202,7 @@ class PayMongoController extends Controller
             'amount' => $validated['amount'],
             'qr_image_url' => $qrImage,
             'test_url' => $testUrl,
+            'expiry_seconds' => 1800,
         ], 200);
     }
 
@@ -284,6 +290,7 @@ class PayMongoController extends Controller
 
         $bookingId     = data_get($session, 'attributes.metadata.booking_id');
         $paymentMethod = data_get($session, 'attributes.metadata.payment_method', 'gcash');
+        $bookingType   = data_get($session, 'attributes.metadata.booking_type');
 
         // Direct Payment Intent flow (e.g. QRPH): amount/id sit on the payment object itself.
         // Checkout Session flow (e.g. gcash/bank via checkout): amount/id sit inside "payments[0]".
@@ -310,14 +317,20 @@ class PayMongoController extends Controller
             ], 200);
         }
 
-        $hasPendingRoom = $booking->bookedRooms()
-            ->where('status', 'pending')
+        // Determine if this is a walk-in QR payment early, so we can
+        // accept 'confirmed' rooms (walk-in reservations) as payable too.
+        $isWalkInQr = ($bookingType === 'walk_in' || $booking->booking_type === 'walk_in')
+            && $paymentMethod === 'qrph';
+
+        $hasPayableRoom = $booking->bookedRooms()
+            ->whereIn('status', $isWalkInQr ? ['pending', 'confirmed'] : ['pending'])
             ->exists();
 
-        if (! $hasPendingRoom) {
+        if (! $hasPayableRoom) {
 
-            Log::warning("PayMongo webhook: booking {$bookingId} has no pending rooms.", [
+            Log::warning("PayMongo webhook: booking {$bookingId} has no payable rooms.", [
                 'payment_reference' => $paymentReference,
+                'is_walk_in_qr' => $isWalkInQr,
             ]);
 
             return response()->json([
@@ -360,13 +373,38 @@ class PayMongoController extends Controller
             'shift_id'        => $shift?->id,
             'receipt_number'  => $receiptNumber,
             'amount'          => $amount,
-            'payment_method'  => $paymentMethod === 'gcash' ? 'gcash' : 'bank',
+            'payment_method'  => $paymentMethod,
             'payment_status'  => 'paid',
             'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : null,
             'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : null,
             'received_by'     => null,
             'payment_date'    => now(),
         ]);
+
+        // ---------------------------------------------------------------------
+        // WALK-IN QR Ph AUTO-CONFIRM
+        //
+        // For walk-ins the guest is physically at the counter, so once PayMongo
+        // confirms payment we immediately flip the BookedRoom(s) to 'checked_in'
+        // and the physical Room(s) to 'occupied'. Online bookings continue to
+        // require manual staff confirmation.
+        // ---------------------------------------------------------------------
+        if ($isWalkInQr) {
+            foreach ($booking->bookedRooms as $bookedRoom) {
+                if (in_array($bookedRoom->status, ['pending', 'confirmed'])) {
+                    $bookedRoom->update([
+                        'status' => 'checked_in',
+                        'check_in_time' => $bookedRoom->check_in_time ?? now(),
+                    ]);
+
+                    Room::where('id', $bookedRoom->room_id)->update([
+                        'status' => Room::STATUS_OCCUPIED,
+                    ]);
+                }
+            }
+
+            Log::info("PayMongo webhook auto-confirmed walk-in QR booking {$booking->id}");
+        }
 
         if ($shift) {
             $payments = BookingPayment::where('shift_id', $shift->id)
@@ -388,25 +426,23 @@ class PayMongoController extends Controller
 
         Log::info("PayMongo payment recorded for booking {$booking->id}", ['payment_id' => $payment->id]);
 
-        // Payment is recorded as 'paid' above. Booking / booked room status
-        // intentionally stays 'pending' — a staff/admin must manually confirm
-        // it from the dashboard. No auto-confirm happens here.
-
-        // Notify Admins and Staff that payment arrived and is awaiting confirmation
+        // Notify Admins and Staff
         $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])->get();
 
         foreach ($staffAndAdmins as $user) {
             $notification = Notification::create([
                 'user_id' => $user->id,
-                'title'   => 'Payment Received',
-                'message' => 'Payment received for booking ' . $booking->booking_reference . ' via QR Ph. Awaiting staff confirmation.',
+                'title'   => $isWalkInQr ? 'Walk-in QR Ph Paid' : 'Payment Received',
+                'message' => $isWalkInQr
+                    ? 'Walk-in booking ' . $booking->booking_reference . ' paid via QR Ph and auto-checked-in.'
+                    : 'Payment received for booking ' . $booking->booking_reference . ' via QR Ph. Awaiting staff confirmation.',
                 'is_read' => false,
             ]);
 
             broadcast(new NotificationCreated($notification));
         }
 
-        // Notify Guest that payment was received (booking still pending confirmation)
+        // Notify Guest (only if there's a linked user account — walk-ins usually don't have one)
         $booking->loadMissing('user');
 
         if ($booking->user_id) {
@@ -414,7 +450,9 @@ class PayMongoController extends Controller
             $notification = Notification::create([
                 'user_id' => $booking->user_id,
                 'title'   => 'Payment Received',
-                'message' => 'We received your payment for booking ' . $booking->booking_reference . '. It is now awaiting staff confirmation.',
+                'message' => $isWalkInQr
+                    ? 'We received your payment for booking ' . $booking->booking_reference . '. You are now checked in.'
+                    : 'We received your payment for booking ' . $booking->booking_reference . '. It is now awaiting staff confirmation.',
                 'is_read' => false,
             ]);
 

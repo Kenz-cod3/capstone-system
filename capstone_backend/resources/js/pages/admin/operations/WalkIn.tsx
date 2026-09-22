@@ -1,14 +1,12 @@
 // src/pages/WalkIn.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-    Form,
     Input,
     Button,
     Card,
     Select,
     DatePicker,
-    Space,
     Typography,
     Row,
     Col,
@@ -22,6 +20,7 @@ import {
     Badge,
     App,
     Avatar,
+    Progress,
 } from "antd";
 import {
     User,
@@ -42,6 +41,9 @@ import {
     ChevronDown,
     ChevronRight,
     IdCard,
+    QrCode,
+    AlertTriangle,
+    Loader2,
 } from "lucide-react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -102,6 +104,17 @@ interface WalkInGuest {
     created_at: string;
     updated_at: string;
 }
+
+interface QrSession {
+    paymentIntentId: string;
+    clientKey: string;
+    qrImageUrl: string;
+    expirySeconds: number;
+    bookingId: number;
+    testUrl?: string | null;
+}
+
+type QrStatus = "loading" | "waiting" | "succeeded" | "expired" | "error";
 
 // ==================== COLLAPSIBLE GUEST CARD ====================
 interface GuestCardProps {
@@ -752,7 +765,7 @@ function RoomCard({
     );
 }
 
-// ==================== ADD-ONS MODAL COMPONENT ====================
+// ==================== ADD-ONS MODAL ====================
 interface AddOnsModalProps {
     visible: boolean;
     onClose: () => void;
@@ -1031,18 +1044,347 @@ function AddOnsModal({
     );
 }
 
+// ==================== QR PH MODAL ====================
+interface QrModalProps {
+    open: boolean;
+    status: QrStatus;
+    session: QrSession | null;
+    amount: number;
+    secondsLeft: number;
+    totalSeconds: number;
+    errorMessage?: string;
+    onCancel: () => void;
+    onRegenerate: () => void;
+}
+
+function QrModal({
+    open,
+    status,
+    session,
+    amount,
+    secondsLeft,
+    totalSeconds,
+    errorMessage,
+    onCancel,
+    onRegenerate,
+}: QrModalProps) {
+    const minutes = Math.floor(secondsLeft / 60);
+    const seconds = secondsLeft % 60;
+    const percent =
+        totalSeconds > 0 ? Math.max(0, (secondsLeft / totalSeconds) * 100) : 0;
+
+    return (
+        <Modal
+            open={open}
+            closable={status !== "succeeded" && status !== "loading"}
+            maskClosable={false}
+            keyboard={false}
+            footer={null}
+            width={520}
+            onCancel={
+                status === "succeeded" || status === "loading"
+                    ? undefined
+                    : onCancel
+            }
+            title={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <QrCode size={20} color="#059669" />
+                    <span style={{ fontWeight: 600 }}>
+                        Scan to Pay via QR Ph
+                    </span>
+                </div>
+            }
+        >
+            <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
+                <Text type="secondary">Amount due</Text>
+                <div
+                    style={{
+                        fontSize: 32,
+                        fontWeight: 700,
+                        color: "#059669",
+                        marginBottom: 16,
+                    }}
+                >
+                    {new Intl.NumberFormat("en-PH", {
+                        style: "currency",
+                        currency: "PHP",
+                    }).format(amount)}
+                </div>
+
+                {status === "loading" && (
+                    <div style={{ padding: "48px 0" }}>
+                        <Spin size="large" />
+                        <div style={{ marginTop: 16, color: "#6c757d" }}>
+                            Generating QR code…
+                        </div>
+                    </div>
+                )}
+
+                {status === "error" && (
+                    <div style={{ padding: "24px 0" }}>
+                        <AlertTriangle size={48} color="#dc2626" />
+                        <div
+                            style={{
+                                marginTop: 12,
+                                color: "#dc2626",
+                                fontWeight: 600,
+                            }}
+                        >
+                            {errorMessage || "Failed to generate QR code"}
+                        </div>
+                        <Button
+                            type="primary"
+                            onClick={onRegenerate}
+                            style={{
+                                marginTop: 16,
+                                background: "#059669",
+                                borderColor: "#059669",
+                            }}
+                        >
+                            Try Again
+                        </Button>
+                    </div>
+                )}
+
+                {(status === "waiting" || status === "expired") && session && (
+                    <>
+                        <div
+                            style={{
+                                position: "relative",
+                                display: "inline-block",
+                                padding: 16,
+                                background: "#ffffff",
+                                border: "1px solid #e5e7eb",
+                                borderRadius: 12,
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                            }}
+                        >
+                            <img
+                                src={session.qrImageUrl}
+                                alt="QR Ph code"
+                                style={{
+                                    width: 280,
+                                    height: 280,
+                                    display: "block",
+                                    opacity: status === "expired" ? 0.3 : 1,
+                                    transition: "opacity 0.3s",
+                                }}
+                            />
+
+                            {status === "waiting" && (
+                                <div
+                                    style={{
+                                        position: "absolute",
+                                        bottom: 12,
+                                        left: "50%",
+                                        transform: "translateX(-50%)",
+                                        background: "rgba(255,255,255,0.95)",
+                                        padding: "6px 12px",
+                                        borderRadius: 999,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                                        animation:
+                                            "qrPulse 1.5s ease-in-out infinite",
+                                    }}
+                                >
+                                    <Loader2 size={14} className="qr-spin" />
+                                    <span
+                                        style={{
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            color: "#059669",
+                                        }}
+                                    >
+                                        Waiting for payment…
+                                    </span>
+                                </div>
+                            )}
+
+                            {status === "expired" && (
+                                <div
+                                    style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 8,
+                                    }}
+                                >
+                                    <AlertTriangle size={40} color="#f59e0b" />
+                                    <div
+                                        style={{
+                                            fontWeight: 700,
+                                            color: "#b45309",
+                                            fontSize: 16,
+                                        }}
+                                    >
+                                        QR Expired
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {status === "waiting" && (
+                            <>
+                                <div style={{ marginTop: 16 }}>
+                                    <Progress
+                                        percent={percent}
+                                        showInfo={false}
+                                        strokeColor="#059669"
+                                        trailColor="#e5e7eb"
+                                        strokeWidth={6}
+                                    />
+                                </div>
+                                <div
+                                    style={{
+                                        marginTop: 8,
+                                        fontSize: 14,
+                                        color: "#374151",
+                                    }}
+                                >
+                                    Expires in{" "}
+                                    <strong>
+                                        {minutes}:
+                                        {String(seconds).padStart(2, "0")}
+                                    </strong>
+                                </div>
+                                <div
+                                    style={{
+                                        marginTop: 4,
+                                        fontSize: 12,
+                                        color: "#6c757d",
+                                    }}
+                                >
+                                    Ask the guest to scan with their bank or
+                                    e-wallet app.
+                                </div>
+
+                                {import.meta.env.DEV && session.testUrl && (
+                                    <div
+                                        style={{
+                                            marginTop: 12,
+                                            padding: "8px 12px",
+                                            background: "#fffbeb",
+                                            border: "1px dashed #f59e0b",
+                                            borderRadius: 8,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: 11,
+                                                color: "#b45309",
+                                                marginBottom: 4,
+                                                fontWeight: 600,
+                                            }}
+                                        >
+                                            SANDBOX TEST TOOL
+                                        </div>
+
+                                        <a
+                                            href={session.testUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                fontSize: 12,
+                                                color: "#b45309",
+                                                textDecoration: "underline",
+                                            }}
+                                        >
+                                            Open PayMongo test payment page →
+                                        </a>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {status === "expired" && (
+                            <div style={{ marginTop: 16 }}>
+                                <Button
+                                    type="primary"
+                                    onClick={onRegenerate}
+                                    style={{
+                                        background: "#059669",
+                                        borderColor: "#059669",
+                                        height: 44,
+                                        fontWeight: 600,
+                                    }}
+                                    icon={<QrCode size={16} />}
+                                >
+                                    Generate New QR
+                                </Button>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {status === "succeeded" && (
+                    <div style={{ padding: "24px 0" }}>
+                        <CheckCircle size={56} color="#059669" />
+                        <div
+                            style={{
+                                marginTop: 12,
+                                fontSize: 18,
+                                fontWeight: 700,
+                                color: "#059669",
+                            }}
+                        >
+                            Payment Confirmed!
+                        </div>
+                        <div style={{ marginTop: 4, color: "#6c757d" }}>
+                            Finalizing check-in…
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {status !== "succeeded" && status !== "loading" && (
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        gap: 8,
+                        borderTop: "1px solid #e5e7eb",
+                        paddingTop: 12,
+                    }}
+                >
+                    <Button onClick={onCancel}>
+                        Cancel &amp; Switch Payment
+                    </Button>
+                </div>
+            )}
+
+            <style>{`
+                @keyframes qrPulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.6; }
+                }
+                .qr-spin {
+                    animation: qrSpin 1s linear infinite;
+                }
+                @keyframes qrSpin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
+        </Modal>
+    );
+}
+
 // ==================== MAIN WALK-IN COMPONENT ====================
 function WalkInContent() {
     const queryClient = useQueryClient();
+    const { modal } = App.useApp();
 
     const [rooms, setRooms] = useState<Room[]>([]);
     const [selectedRoomsDetails, setSelectedRoomsDetails] = useState<
         SelectedRoom[]
     >([]);
     const [loading, setLoading] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState("cash");
-    const [gcashReference, setGcashReference] = useState("");
-    const [bankReference, setBankReference] = useState("");
+    const [paymentMethod, setPaymentMethod] = useState<"cash" | "qrph">("cash");
     const [fetchingRooms, setFetchingRooms] = useState(false);
 
     const [selectedGuest, setSelectedGuest] = useState<WalkInGuest | null>(
@@ -1051,13 +1393,7 @@ function WalkInContent() {
     const [searchResults, setSearchResults] = useState<WalkInGuest[]>([]);
     const [searchingGuests, setSearchingGuests] = useState(false);
     const [showGuestModal, setShowGuestModal] = useState(false);
-    const [newGuestForm, setNewGuestForm] = useState<{
-        first_name: string;
-        middle_name: string;
-        last_name: string;
-        contact_number: string;
-        address: string;
-    }>({
+    const [newGuestForm, setNewGuestForm] = useState({
         first_name: "",
         middle_name: "",
         last_name: "",
@@ -1086,11 +1422,53 @@ function WalkInContent() {
         number | null
     >(null);
 
-    // Receipt Modal State
+    // Receipt modal
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(
         null,
     );
+
+    // QR Ph modal state
+    const [qrModalOpen, setQrModalOpen] = useState(false);
+    const [qrSession, setQrSession] = useState<QrSession | null>(null);
+    const [qrStatus, setQrStatus] = useState<QrStatus>("loading");
+    const [qrSecondsLeft, setQrSecondsLeft] = useState(1800);
+    const [qrTotalSeconds, setQrTotalSeconds] = useState(1800);
+    const [qrErrorMessage, setQrErrorMessage] = useState<string>("");
+    const [qrAmount, setQrAmount] = useState<number>(0);
+    const [qrInFlight, setQrInFlight] = useState<boolean>(false);
+
+    // Refs for timers/polling (avoid stale closures)
+    const pollTimerRef = useRef<number | null>(null);
+    const countdownTimerRef = useRef<number | null>(null);
+    const qrSessionRef = useRef<QrSession | null>(null);
+    const secondsLeftRef = useRef<number>(1800);
+    const qrStatusRef = useRef<QrStatus>("loading");
+
+    useEffect(() => {
+        secondsLeftRef.current = qrSecondsLeft;
+    }, [qrSecondsLeft]);
+
+    useEffect(() => {
+        qrStatusRef.current = qrStatus;
+    }, [qrStatus]);
+
+    const clearQrTimers = () => {
+        if (pollTimerRef.current) {
+            window.clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+        if (countdownTimerRef.current) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            clearQrTimers();
+        };
+    }, []);
 
     useEffect(() => {
         fetchRooms();
@@ -1122,21 +1500,15 @@ function WalkInContent() {
 
     const searchGuests = async (searchText: string) => {
         setSearchingGuests(true);
-
         try {
             let res;
-
-            // SHOW RECENT 5 GUESTS
             if (!searchText || searchText.trim().length === 0) {
                 res = await api.get("/walk-in-guests?per_page=5");
-
                 setSearchResults(res.data.data || []);
             } else {
-                // NORMAL SEARCH
                 res = await api.get(
                     `/walk-in-guests/search?q=${encodeURIComponent(searchText)}`,
                 );
-
                 setSearchResults(res.data || []);
             }
         } catch (err) {
@@ -1174,8 +1546,7 @@ function WalkInContent() {
                 "/walk-in-guests/guest",
                 newGuestForm,
             );
-            const newGuest = response.data;
-            setSelectedGuest(newGuest);
+            setSelectedGuest(response.data);
             setShowGuestModal(false);
             message.success("Guest saved successfully!");
         } catch (err) {
@@ -1259,9 +1630,6 @@ function WalkInContent() {
             return;
         }
 
-        // Double-check against real date conflicts (not just room.status),
-        // since a room can be "available" today but already booked for
-        // the requested check-in/check-out range.
         try {
             const availabilityRes = await api.get(
                 `/rooms/${roomId}/check-availability`,
@@ -1283,8 +1651,8 @@ function WalkInContent() {
             }
         } catch (err) {
             console.error("Failed to verify room availability", err);
-            // Fall through — final server-side check on submit still protects us.
         }
+
         const pricePerUnit =
             stayType === "short_stay"
                 ? roomToAdd.room_type?.short_stay_price ||
@@ -1299,6 +1667,7 @@ function WalkInContent() {
             checkIn,
             checkOut,
         );
+
         setSelectedRoomsDetails((prev) => [
             ...prev,
             {
@@ -1309,8 +1678,8 @@ function WalkInContent() {
                 stay_type: stayType,
                 check_in_date: checkIn,
                 check_out_date: checkOut,
-                nights: nights,
-                subtotal: subtotal,
+                nights,
+                subtotal,
                 addons: [],
             },
         ]);
@@ -1375,6 +1744,183 @@ function WalkInContent() {
         return room?.room_number || "";
     };
 
+    // ---------- QR Ph helpers ----------
+
+    const stopPolling = () => {
+        if (pollTimerRef.current) {
+            window.clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+    };
+
+    const stopCountdown = () => {
+        if (countdownTimerRef.current) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+        }
+    };
+
+    const startCountdown = (seconds: number) => {
+        stopCountdown();
+        setQrTotalSeconds(seconds);
+        setQrSecondsLeft(seconds);
+        secondsLeftRef.current = seconds;
+
+        countdownTimerRef.current = window.setInterval(() => {
+            setQrSecondsLeft((prev) => {
+                if (prev <= 1) {
+                    stopCountdown();
+                    stopPolling();
+                    setQrStatus("expired");
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    const startPolling = (session: QrSession) => {
+        stopPolling();
+
+        pollTimerRef.current = window.setInterval(async () => {
+            // Stop if modal was dismissed or already done
+            if (qrStatusRef.current !== "waiting") return;
+
+            try {
+                const res = await api.get(
+                    `/paymongo/qr/status/${session.paymentIntentId}`,
+                    { params: { client_key: session.clientKey } },
+                );
+
+                const status = res.data?.status as string;
+
+                if (status === "succeeded") {
+                    stopPolling();
+                    stopCountdown();
+                    setQrStatus("succeeded");
+
+                    // Confirm on backend -> flips rooms to checked_in & payment to paid
+                    const confirmRes = await api.post(
+                        `/walk-in-guests/${session.bookingId}/confirm-qr`,
+                        { payment_reference: res.data?.payment_id ?? null },
+                    );
+
+                    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+                    queryClient.invalidateQueries({ queryKey: ["rooms"] });
+                    queryClient.invalidateQueries({ queryKey: ["bookings"] });
+
+                    message.success({
+                        content: "QR Ph payment confirmed!",
+                        duration: 3,
+                    });
+
+                    // Brief delay so the success state is visible
+                    setTimeout(() => {
+                        setQrModalOpen(false);
+                        setQrStatus("loading");
+                        setQrInFlight(false);
+                        setQrSession(null);
+                        qrSessionRef.current = null;
+
+                        // Show receipt modal exactly like Cash
+                        const paymentId =
+                            confirmRes.data?.payment_id ?? res.data?.payment_id;
+
+                        if (paymentId) {
+                            setCurrentPaymentId(String(paymentId));
+                            setShowReceiptModal(true);
+                        }
+
+                        // Reset form
+                        setSelectedGuest(null);
+                        setSelectedRoomsDetails([]);
+                        setSelectedRoomValue(null);
+                        setPreviewAmount(0);
+                        fetchRooms();
+                    }, 900);
+
+                    return;
+                }
+            } catch (err: any) {
+                console.warn("QR status poll failed", err?.message || err);
+            }
+        }, 4000);
+    };
+
+    const generateQr = async (bookingId: number, amount: number) => {
+        setQrStatus("loading");
+        setQrErrorMessage("");
+        setQrAmount(amount);
+
+        try {
+            const res = await api.post("/paymongo/qr/create", {
+                booking_id: bookingId,
+                amount,
+            });
+
+            const session: QrSession = {
+                paymentIntentId: res.data.payment_intent_id,
+                clientKey: res.data.client_key,
+                qrImageUrl: res.data.qr_image_url,
+                expirySeconds: res.data.expiry_seconds || 1800,
+                bookingId,
+                testUrl: res.data.test_url ?? null,
+            };
+
+            qrSessionRef.current = session;
+            setQrSession(session);
+            setQrStatus("waiting");
+
+            startCountdown(session.expirySeconds);
+            startPolling(session);
+        } catch (err: any) {
+            console.error("QR generation failed", err);
+            setQrStatus("error");
+            setQrErrorMessage(
+                err?.response?.data?.message || "Failed to generate QR code",
+            );
+        }
+    };
+
+    const handleQrCancel = () => {
+        stopPolling();
+        stopCountdown();
+
+        modal.confirm({
+            title: "Cancel QR Ph payment?",
+            content:
+                "The booking is reserved but unpaid. You can switch to Cash, edit the booking, or retry QR Ph later.",
+            okText: "Yes, cancel",
+            okButtonProps: { danger: true },
+            cancelText: "Keep waiting",
+            onOk: () => {
+                setQrModalOpen(false);
+                setQrStatus("loading");
+                setQrInFlight(false);
+                setQrSession(null);
+                qrSessionRef.current = null;
+
+                // Leave the booking record as-is (pending). Admin can reconcile.
+                setSelectedGuest(null);
+                setSelectedRoomsDetails([]);
+                setSelectedRoomValue(null);
+                setPreviewAmount(0);
+                fetchRooms();
+                queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+            },
+        });
+    };
+
+    const handleQrRegenerate = async () => {
+        const current = qrSessionRef.current;
+        if (!current) return;
+        stopPolling();
+        stopCountdown();
+        await generateQr(current.bookingId, qrAmount);
+    };
+
+    // ---------- Submit ----------
+
     const handleSubmit = async () => {
         if (!selectedGuest) {
             message.warning("Please select or add a guest");
@@ -1384,7 +1930,10 @@ function WalkInContent() {
             message.warning("Please select at least one room");
             return;
         }
+        if (qrInFlight) return;
+
         setLoading(true);
+
         try {
             const bookingsData = selectedRoomsDetails.map((room) => ({
                 room_id: room.id,
@@ -1400,41 +1949,46 @@ function WalkInContent() {
                     name: addon.add_on_name,
                 })),
             }));
+
             const totalAmount = calculateTotal();
+
             const payload = {
                 guest_id: selectedGuest.id,
                 bookings: bookingsData,
                 total_amount: totalAmount,
                 payment_method: paymentMethod,
-                gcash_reference:
-                    paymentMethod === "gcash" ? gcashReference : null,
-                bank_reference: paymentMethod === "bank" ? bankReference : null,
             };
+
             const response = await api.post("/walk-in-guests/checkin", payload);
-            console.log("CHECK-IN RESPONSE");
-            console.log(JSON.stringify(response.data, null, 2));
 
             queryClient.invalidateQueries({ queryKey: ["dashboard"] });
             queryClient.invalidateQueries({ queryKey: ["rooms"] });
             queryClient.invalidateQueries({ queryKey: ["bookings"] });
 
-            message.success({
-                content: `Check-in successful! Guest checked into ${selectedRoomsDetails.length} room(s)`,
-                duration: 3,
-                icon: <CheckCircle size={20} />,
-            });
+            if (paymentMethod === "cash") {
+                message.success({
+                    content: `Check-in successful! Guest checked into ${selectedRoomsDetails.length} room(s)`,
+                    duration: 3,
+                    icon: <CheckCircle size={20} />,
+                });
 
-            // Show receipt modal instead of navigating
-            const paymentId = response.data.payment_id;
-            setCurrentPaymentId(paymentId);
-            setShowReceiptModal(true);
+                const paymentId = response.data.payment_id;
+                setCurrentPaymentId(paymentId);
+                setShowReceiptModal(true);
 
-            // Reset form but keep receipt modal open
-            setSelectedGuest(null);
-            setSelectedRoomsDetails([]);
-            setSelectedRoomValue(null);
-            setPreviewAmount(0);
-            await fetchRooms();
+                setSelectedGuest(null);
+                setSelectedRoomsDetails([]);
+                setSelectedRoomValue(null);
+                setPreviewAmount(0);
+                await fetchRooms();
+            } else {
+                // QR Ph: booking created as pending; now generate QR
+                const bookingId = response.data.booking_id;
+                setQrInFlight(true);
+                setQrModalOpen(true);
+                setQrAmount(totalAmount);
+                await generateQr(bookingId, totalAmount);
+            }
         } catch (err: any) {
             console.error("Walk-in error:", err);
 
@@ -1443,12 +1997,7 @@ function WalkInContent() {
                 err.response?.data?.message || "Failed to check in guest";
 
             if (status === 409) {
-                // Room got booked by someone else in the meantime.
-                // Refresh room list so the stale room drops out of the picker.
-                message.error({
-                    content: errMsg,
-                    duration: 5,
-                });
+                message.error({ content: errMsg, duration: 5 });
                 await fetchRooms();
             } else if (status === 400) {
                 message.warning(errMsg);
@@ -1520,6 +2069,9 @@ function WalkInContent() {
         setNewRoomCheckOut(date.format("YYYY-MM-DD"));
     };
 
+    const completeDisabled =
+        selectedRoomsDetails.length === 0 || !selectedGuest || qrInFlight;
+
     return (
         <div
             style={{
@@ -1577,7 +2129,6 @@ function WalkInContent() {
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                         >
-                            {/* Guest Card - Collapsible */}
                             <GuestCard
                                 selectedGuest={selectedGuest}
                                 onSelectGuest={handleSelectGuest}
@@ -1588,7 +2139,6 @@ function WalkInContent() {
                                 searchingGuests={searchingGuests}
                             />
 
-                            {/* Add Room Section - Collapsible */}
                             {selectedGuest && (
                                 <motion.div
                                     initial={{ opacity: 0, y: 20 }}
@@ -1885,8 +2435,6 @@ function WalkInContent() {
                                                                         bgGray,
                                                                     borderRadius: 8,
                                                                     border: `1px solid ${borderColor}`,
-                                                                    boxShadow:
-                                                                        "inset 0 1px 2px 0 rgba(0, 0, 0, 0.05)",
                                                                 }}
                                                             >
                                                                 <div
@@ -1967,7 +2515,6 @@ function WalkInContent() {
                                 </motion.div>
                             )}
 
-                            {/* Selected Rooms */}
                             {selectedRoomsDetails.length > 0 && (
                                 <div>
                                     <div style={{ marginBottom: 16 }}>
@@ -2191,49 +2738,54 @@ function WalkInContent() {
                                             <Select
                                                 size="large"
                                                 value={paymentMethod}
-                                                onChange={setPaymentMethod}
+                                                onChange={(value) =>
+                                                    setPaymentMethod(
+                                                        value as
+                                                            | "cash"
+                                                            | "qrph",
+                                                    )
+                                                }
                                                 style={{ width: "100%" }}
                                             >
                                                 <Select.Option value="cash">
                                                     Cash
                                                 </Select.Option>
-
-                                                <Select.Option value="gcash">
-                                                    GCash
-                                                </Select.Option>
-
-                                                <Select.Option value="bank">
-                                                    Bank
+                                                <Select.Option value="qrph">
+                                                    QR Ph
                                                 </Select.Option>
                                             </Select>
 
-                                            {paymentMethod === "gcash" && (
-                                                <Input
-                                                    size="large"
-                                                    placeholder="GCash Reference"
-                                                    value={gcashReference}
-                                                    onChange={(e) =>
-                                                        setGcashReference(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    style={{ marginTop: 12 }}
-                                                />
-                                            )}
-
-                                            {paymentMethod === "bank" && (
-                                                <Input
-                                                    size="large"
-                                                    placeholder="Bank Reference"
-                                                    value={bankReference}
-                                                    onChange={(e) =>
-                                                        setBankReference(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    style={{ marginTop: 12 }}
-                                                />
-                                            )}
+                                            <div
+                                                style={{
+                                                    marginTop: 8,
+                                                    fontSize: 12,
+                                                    color: "#6c757d",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: 6,
+                                                }}
+                                            >
+                                                {paymentMethod === "cash" ? (
+                                                    <>
+                                                        <CreditCard
+                                                            size={14}
+                                                            color="#059669"
+                                                        />
+                                                        Instant — cash collected
+                                                        at the counter.
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <QrCode
+                                                            size={14}
+                                                            color="#059669"
+                                                        />
+                                                        Guest scans a dynamic QR
+                                                        Ph. Check-in finalises
+                                                        automatically once paid.
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <Divider style={{ margin: "12px 0" }} />
@@ -2290,13 +2842,16 @@ function WalkInContent() {
                                     type="primary"
                                     size="large"
                                     block
-                                    icon={<CreditCard size={16} />}
+                                    icon={
+                                        paymentMethod === "qrph" ? (
+                                            <QrCode size={16} />
+                                        ) : (
+                                            <CreditCard size={16} />
+                                        )
+                                    }
                                     onClick={handleSubmit}
                                     loading={loading}
-                                    disabled={
-                                        selectedRoomsDetails.length === 0 ||
-                                        !selectedGuest
-                                    }
+                                    disabled={completeDisabled}
                                     style={{
                                         background: primaryColor,
                                         borderColor: primaryColor,
@@ -2305,8 +2860,9 @@ function WalkInContent() {
                                         fontWeight: 600,
                                     }}
                                 >
-                                    Complete Check-in (
-                                    {formatCurrency(totalAmount)})
+                                    {paymentMethod === "qrph"
+                                        ? `Generate QR & Check-in (${formatCurrency(totalAmount)})`
+                                        : `Complete Check-in (${formatCurrency(totalAmount)})`}
                                 </Button>
 
                                 {!selectedGuest &&
@@ -2355,7 +2911,6 @@ function WalkInContent() {
                         prefix={<User size={16} />}
                         size="large"
                     />
-
                     <Input
                         placeholder="Middle Name"
                         value={newGuestForm.middle_name}
@@ -2368,7 +2923,6 @@ function WalkInContent() {
                         prefix={<User size={16} />}
                         size="large"
                     />
-
                     <Input
                         placeholder="Last Name *"
                         value={newGuestForm.last_name}
@@ -2418,6 +2972,19 @@ function WalkInContent() {
                 onConfirm={handleAddOnsConfirm}
                 initialSelected={getCurrentRoomAddOns()}
                 roomNumber={getCurrentRoomNumber()}
+            />
+
+            {/* QR Ph Modal */}
+            <QrModal
+                open={qrModalOpen}
+                status={qrStatus}
+                session={qrSession}
+                amount={qrAmount}
+                secondsLeft={qrSecondsLeft}
+                totalSeconds={qrTotalSeconds}
+                errorMessage={qrErrorMessage}
+                onCancel={handleQrCancel}
+                onRegenerate={handleQrRegenerate}
             />
 
             {/* Receipt Modal */}
