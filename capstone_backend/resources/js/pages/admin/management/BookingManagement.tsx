@@ -84,6 +84,7 @@ interface Room {
         late_checkout_fee?: number;
         early_checkin_fee?: number;
         standard_checkin_time?: string;
+        overnight_checkout_time?: string;
         extension_fee?: number;
     };
     pivot?: {
@@ -1658,6 +1659,65 @@ export default function Bookings() {
         });
     };
 
+    const getCheckInDisplay = (record: BookingRow) => {
+        // Pending: scheduled (expected) date/time
+        if (record.status === "pending") {
+            return {
+                label: "Expected Check In",
+                date: formatDate(record.check_in_date),
+                time: formatStandardTime(
+                    record.room?.room_type?.standard_checkin_time ?? "14:00",
+                ),
+            };
+        }
+
+        // Actual check in already happened
+        if (record.check_in_time) {
+            return {
+                label: "Check In",
+                date: formatDate(record.check_in_time),
+                time: formatTime(record.check_in_time),
+            };
+        }
+
+        // Walk-in: guest is already here, so show the booking time as actual check in
+        if (record.booking_type === "walk_in" && record.created_at) {
+            return {
+                label: "Check In",
+                date: formatDate(record.created_at),
+                time: formatTime(record.created_at),
+            };
+        }
+
+        // Confirmed, not yet checked in
+        return { label: "Check In", date: "-", time: "" };
+    };
+
+    const getCheckOutDisplay = (record: BookingRow) => {
+        // Pending: scheduled (expected) date/time
+        if (record.status === "pending") {
+            return {
+                label: "Expected Check Out",
+                date: formatDate(record.check_out_date),
+                time: formatStandardTime(
+                    record.room?.room_type?.overnight_checkout_time ?? "12:00",
+                ),
+            };
+        }
+
+        // Guest already left
+        if (record.check_out_time) {
+            return {
+                label: "Check Out",
+                date: formatDate(record.check_out_time),
+                time: formatTime(record.check_out_time),
+            };
+        }
+
+        // No actual check out yet (confirmed or checked in)
+        return { label: "Check Out", date: "-", time: "" };
+    };
+
     const getStatusColor = (status: string): string => {
         const colors: Record<string, string> = {
             pending: "orange",
@@ -2220,36 +2280,29 @@ export default function Bookings() {
             key: "check_in",
             width: "10%",
             render: (_: any, record: BookingRow) => {
-                const isConfirmedOrBeyond = record.status !== "pending";
+                const d = getCheckInDisplay(record);
                 return (
                     <div>
-                        <Text
-                            type="secondary"
-                            style={{
-                                fontSize: "8px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                                display: "block",
-                                marginBottom: 2,
-                            }}
-                        >
-                            {isConfirmedOrBeyond
-                                ? "Check In"
-                                : "Expected Check In"}
-                        </Text>
+                        {record.status === "pending" && (
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "8px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                    display: "block",
+                                    marginBottom: 2,
+                                }}
+                            >
+                                {d.label}
+                            </Text>
+                        )}
                         <Text style={{ fontSize: "11px", color: "#0f172a" }}>
-                            {record.check_in_time
-                                ? formatDate(record.check_in_time)
-                                : formatDate(record.check_in_date)}
+                            {d.date}
                         </Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                            {record.check_in_time
-                                ? formatTime(record.check_in_time)
-                                : formatStandardTime(
-                                      record.room?.room_type
-                                          ?.standard_checkin_time ?? "14:00",
-                                  )}
+                            {d.time}
                         </Text>
                     </div>
                 );
@@ -2272,33 +2325,29 @@ export default function Bookings() {
             key: "check_out",
             width: "10%",
             render: (_: any, record: BookingRow) => {
-                const isConfirmedOrBeyond = record.status !== "pending";
+                const d = getCheckOutDisplay(record);
                 return (
                     <div>
-                        <Text
-                            type="secondary"
-                            style={{
-                                fontSize: "8px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                                display: "block",
-                                marginBottom: 2,
-                            }}
-                        >
-                            {isConfirmedOrBeyond
-                                ? "Check Out"
-                                : "Expected Check Out"}
-                        </Text>
+                        {d.date !== "-" && (
+                            <Text
+                                type="secondary"
+                                style={{
+                                    fontSize: "8px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                    display: "block",
+                                    marginBottom: 2,
+                                }}
+                            >
+                                {d.label}
+                            </Text>
+                        )}
                         <Text style={{ fontSize: "11px", color: "#0f172a" }}>
-                            {record.check_out_time
-                                ? formatDate(record.check_out_time)
-                                : formatDate(record.check_out_date)}
+                            {d.date}
                         </Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                            {record.check_out_time
-                                ? formatTime(record.check_out_time)
-                                : formatStandardTime("12:00")}
+                            {d.time}
                         </Text>
                     </div>
                 );
