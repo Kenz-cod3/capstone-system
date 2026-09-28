@@ -1698,6 +1698,9 @@ function WalkInContent() {
     const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(
         null,
     );
+    const [currentPaymentIds, setCurrentPaymentIds] = useState<
+        (string | number)[]
+    >([]);
 
     const [qrModalOpen, setQrModalOpen] = useState(false);
     const [qrSession, setQrSession] = useState<QrSession | null>(null);
@@ -1717,6 +1720,7 @@ function WalkInContent() {
     const countdownTimerRef = useRef<number | null>(null);
     const qrSessionRef = useRef<QrSession | null>(null);
     const qrStatusRef = useRef<QrStatus>("loading");
+    const pendingPaymentIdsRef = useRef<(string | number)[]>([]);
 
     useEffect(() => {
         qrStatusRef.current = qrStatus;
@@ -2087,12 +2091,25 @@ function WalkInContent() {
                         setQrSession(null);
                         qrSessionRef.current = null;
 
-                        const paymentId =
-                            confirmRes.data?.payment_id ?? res.data?.payment_id;
-                        if (paymentId) {
-                            setCurrentPaymentId(String(paymentId));
+                        const legIds = pendingPaymentIdsRef.current;
+                        if (legIds.length > 1) {
+                            setCurrentPaymentIds(legIds);
+                            setCurrentPaymentId(null);
                             setShowReceiptModal(true);
+                        } else {
+                            const paymentId =
+                                confirmRes.data?.payment_id ??
+                                res.data?.payment_id;
+                            if (paymentId) {
+                                setCurrentPaymentIds([]);
+                                setCurrentPaymentId(String(paymentId));
+                                setShowReceiptModal(true);
+                            }
                         }
+                        pendingPaymentIdsRef.current = [];
+                        setPaymentMode("single");
+                        setSplitCashAmount(null);
+                        setSplitQrphAmount(null);
 
                         setSelectedGuest(null);
                         setSelectedRoomsDetails([]);
@@ -2266,6 +2283,8 @@ function WalkInContent() {
                 setSplitQrphAmount(null);
                 await fetchRooms();
             } else {
+                pendingPaymentIdsRef.current = response.data.payment_ids ?? [];
+
                 const bookingId = response.data.booking_id;
                 const qrAmountToCharge =
                     paymentMode === "split"
@@ -2374,7 +2393,15 @@ function WalkInContent() {
         >
             <div style={{ maxWidth: 1280, margin: "0 auto" }}>
                 {/* ── Header ── */}
-                <div style={{ marginBottom: 28 }}>
+                <div
+                    style={{
+                        marginBottom: 28,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 16,
+                    }}
+                >
                     <div
                         style={{
                             display: "flex",
@@ -2396,6 +2423,7 @@ function WalkInContent() {
                         >
                             <Users size={20} color="#fff" />
                         </div>
+
                         <div>
                             <Title
                                 level={4}
@@ -2408,11 +2436,13 @@ function WalkInContent() {
                             >
                                 Walk-in Registration
                             </Title>
+
                             <Text style={{ color: T.muted, fontSize: 13 }}>
                                 Register guest and assign rooms
                             </Text>
                         </div>
                     </div>
+
                 </div>
 
                 <Row gutter={[20, 20]}>
@@ -3874,9 +3904,12 @@ function WalkInContent() {
                 onClose={() => {
                     setShowReceiptModal(false);
                     setCurrentPaymentId(null);
+                    setCurrentPaymentIds([]);
                 }}
                 paymentId={currentPaymentId}
+                paymentIds={currentPaymentIds}
             />
+
         </div>
     );
 }

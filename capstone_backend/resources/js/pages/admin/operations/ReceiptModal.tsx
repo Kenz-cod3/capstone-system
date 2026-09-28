@@ -1,5 +1,6 @@
-// src/components/ReceiptModal.tsx
+// src/pages/operations/ReceiptModal.tsx
 import { useEffect, useState } from "react";
+import { message } from "antd";
 import api from "@/services/api";
 import {
     Dialog,
@@ -8,6 +9,13 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+    printReceipt,
+    searchPrinter,
+    refreshPrinter,
+    isSerialSupported,
+    isPrinterConnected,
+} from "./thermalPrinter";
 
 export interface ReceiptModalProps {
     isOpen: boolean;
@@ -18,6 +26,8 @@ export interface ReceiptModalProps {
     paymentIds?: (string | number)[];
 }
 
+type PrinterStatus = "checking" | "connected" | "disconnected" | "unsupported";
+
 export default function ReceiptModal({
     isOpen,
     onClose,
@@ -26,6 +36,9 @@ export default function ReceiptModal({
 }: ReceiptModalProps) {
     const [receipts, setReceipts] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+    const [printing, setPrinting] = useState(false);
+    const [printerStatus, setPrinterStatus] =
+        useState<PrinterStatus>("checking");
 
     const idsToLoad =
         paymentIds && paymentIds.length > 0
@@ -33,13 +46,6 @@ export default function ReceiptModal({
             : paymentId
               ? [paymentId]
               : [];
-
-    useEffect(() => {
-        if (isOpen && idsToLoad.length > 0) {
-            loadReceipts();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, paymentId, JSON.stringify(paymentIds)]);
 
     const loadReceipts = async () => {
         if (idsToLoad.length === 0) return;
@@ -59,6 +65,79 @@ export default function ReceiptModal({
         }
     };
 
+    useEffect(() => {
+        if (isOpen && idsToLoad.length > 0) {
+            loadReceipts();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, paymentId, JSON.stringify(paymentIds)]);
+
+    // ---------- Printer ----------
+    const checkPrinter = async () => {
+        if (!isSerialSupported()) {
+            setPrinterStatus("unsupported");
+            return;
+        }
+        setPrinterStatus("checking");
+        const ok = isPrinterConnected() || (await refreshPrinter());
+        setPrinterStatus(ok ? "connected" : "disconnected");
+    };
+
+    useEffect(() => {
+        if (isOpen) checkPrinter();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
+
+    const handleSearchPrinter = async () => {
+        try {
+            setPrinterStatus("checking");
+            await searchPrinter();
+            setPrinterStatus("connected");
+            message.success("Printer connected");
+        } catch (err: any) {
+            setPrinterStatus("disconnected");
+            if (err?.name === "NotFoundError") return; // picker closed
+            message.error(err?.message || "Could not connect to printer");
+        }
+    };
+
+    const handleRefresh = async () => {
+        await Promise.all([loadReceipts(), checkPrinter()]);
+        message.info("Refreshed");
+    };
+
+    const handlePrint = async () => {
+        if (!receipts.length) {
+            message.warning("Receipt data is not available yet.");
+            return;
+        }
+
+        try {
+            setPrinting(true);
+
+            // PRINT THE ACTUAL CHECKOUT RECEIPT
+            await printReceipt(receipts);
+
+            setPrinterStatus("connected");
+
+            message.success("Actual receipt sent to printer");
+        } catch (err: any) {
+            if (err?.name === "NotFoundError") {
+                return;
+            }
+
+            console.error("Actual receipt printing error:", err);
+
+            setPrinterStatus("disconnected");
+
+            message.error(
+                err?.message || "Could not print. Is the printer on?",
+            );
+        } finally {
+            setPrinting(false);
+        }
+    };
+
     // Use the first receipt for shared booking-level fields (they share the
     // same booking in a split payment). Payment-specific fields (method,
     // reference, amount, cashier) are rendered per-leg below.
@@ -68,10 +147,6 @@ export default function ReceiptModal({
         (sum, r) => sum + (Number(r?.amount) || 0),
         0,
     );
-
-    const handlePrint = () => {
-        window.print();
-    };
 
     if (!isOpen) return null;
 
@@ -98,7 +173,10 @@ export default function ReceiptModal({
     const renderPaymentReference = (r: any, keySuffix: string | number) => {
         if (r.payment_method === "gcash" && r.gcash_reference) {
             return (
-                <div className="flex justify-between" key={`gcash-${keySuffix}`}>
+                <div
+                    className="flex justify-between"
+                    key={`gcash-${keySuffix}`}
+                >
                     <span className="text-gray-600">GCash Ref.</span>
                     <span>{r.gcash_reference}</span>
                 </div>
@@ -225,10 +303,7 @@ export default function ReceiptModal({
                                                         ).toLocaleString()}
                                                     </span>
                                                 </div>
-                                                {renderPaymentReference(
-                                                    r,
-                                                    idx,
-                                                )}
+                                                {renderPaymentReference(r, idx)}
                                             </div>
                                         ))}
                                     </div>
@@ -408,21 +483,72 @@ export default function ReceiptModal({
                             Thank you for staying with us.
                         </div>
 
-                        <div className="mt-6 flex gap-2">
-                            <Button onClick={handlePrint} className="flex-1">
-                                Print Receipt
-                            </Button>
-                            <Button
-                                onClick={onClose}
-                                variant="outline"
-                                className="flex-1"
-                            >
-                                Close
-                            </Button>
+                        {/* Printer controls */}
+                        <div className="mt-6 space-y-2">
+                            <div className="flex items-center text-xs">
+                                <span className="flex items-center gap-1.5 text-gray-600">
+                                    <span
+                                        className={`inline-block h-2 w-2 rounded-full ${
+                                            printerStatus === "connected"
+                                                ? "bg-green-500"
+                                                : printerStatus === "checking"
+                                                  ? "bg-amber-400"
+                                                  : "bg-red-500"
+                                        }`}
+                                    />
+                                    {printerStatus === "connected" &&
+                                        "Printer connected"}
+                                    {printerStatus === "checking" &&
+                                        "Checking printer..."}
+                                    {printerStatus === "disconnected" &&
+                                        "Printer not connected"}
+                                    {printerStatus === "unsupported" &&
+                                        "Use Chrome or Edge for thermal printing"}
+                                </span>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleSearchPrinter}
+                                    disabled={printerStatus === "unsupported"}
+                                    className="flex-1"
+                                >
+                                    Search Printer
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleRefresh}
+                                    disabled={loading}
+                                    className="flex-1"
+                                >
+                                    Refresh
+                                </Button>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button
+                                    onClick={handlePrint}
+                                    disabled={
+                                        printing ||
+                                        printerStatus === "unsupported"
+                                    }
+                                    className="flex-1"
+                                >
+                                    {printing ? "Printing..." : "Print Receipt"}
+                                </Button>
+                                <Button
+                                    onClick={onClose}
+                                    variant="outline"
+                                    className="flex-1"
+                                >
+                                    Close
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="text-center py-10 text-sm text-red-500">
+                    <div className="text-fcenter py-10 text-sm text-red-500">
                         Failed to load receipt
                     </div>
                 )}
