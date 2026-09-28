@@ -664,7 +664,7 @@ class WalkInGuestController extends Controller
 
                     Room::where('id', $bookedRoom->room_id)
                         ->update([
-                            'status' => Room::STATUS_PREPARING,
+                            'status' => Room::STATUS_OCCUPIED,
                         ]);
                 }
             }

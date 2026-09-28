@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import {
     Wifi,
-    Waves,
     Coffee,
     Car,
     MapPin,
@@ -22,6 +21,8 @@ import {
     ArrowUpRight,
     MousePointer2,
     Hand,
+    Dribbble,
+    Sparkles,
 } from "lucide-react";
 import loginLogo from "../../../images/logo.png";
 import heroImage from "../../../images/login.png";
@@ -47,14 +48,36 @@ interface RoomsPage {
 }
 
 const AMENITIES = [
-    { icon: Wifi, title: "Free WiFi", subtitle: "Stay connected everywhere" },
-    { icon: Waves, title: "Swimming Pool", subtitle: "Relax and unwind" },
     {
         icon: Coffee,
-        title: "Breakfast Included",
-        subtitle: "Start your day right",
+        title: "Free Kapihan",
+        subtitle: "Enjoy complimentary coffee and a relaxing break.",
     },
-    { icon: Car, title: "Free Parking", subtitle: "Safe and convenient" },
+    {
+        icon: Car,
+        title: "Free Parking",
+        subtitle: "Safe and convenient parking for our guests.",
+    },
+    {
+        icon: Wifi,
+        title: "WiFi Vendo Access",
+        subtitle: "Stay connected whenever you need it.",
+    },
+    {
+        icon: Dribbble,
+        title: "Basketball Court",
+        subtitle: "Enjoy an active game during your stay.",
+    },
+    {
+        icon: BedDouble,
+        title: "Comfortable Accommodation",
+        subtitle: "Relax in a welcoming and comfortable space.",
+    },
+    {
+        icon: Sparkles,
+        title: "Essential Amenities",
+        subtitle: "Everything you need for a convenient stay.",
+    },
 ];
 
 const NAV_LINKS = [
@@ -509,8 +532,7 @@ export default function LandingPage() {
                         {NAV_LINKS.map((link) => {
                             const isActive = activeSection === link.id;
                             return (
-                                <a
-                                    key={link.label}
+                                <a key={link.label}
                                     href={link.href}
                                     className={`relative py-1 transition-colors hover:text-[#1B2B27] ${
                                         isActive ? "text-[#1B2B27]" : ""
@@ -592,8 +614,7 @@ export default function LandingPage() {
                                     Reserve your stay
                                     <ArrowRight className="h-4 w-4" />
                                 </button>
-                                <a
-                                    href="#rooms"
+                                <a href="#rooms"
                                     className="h-12 px-2 flex items-center gap-2 text-sm font-medium text-[#1B2B27]/70 hover:text-[#1B2B27] transition-colors"
                                 >
                                     <span className="h-px w-8 bg-[#1B2B27]/30" />
@@ -828,12 +849,12 @@ export default function LandingPage() {
                             <h2 className="font-display text-4xl lg:text-5xl leading-tight text-[#1B2B27]">
                                 Everything you need,
                                 <br />
-                                nothing you don't.
+                                for a comfortable stay.
                             </h2>
                             <p className="mt-5 text-[15px] text-[#1B2B27]/60 leading-relaxed max-w-sm">
-                                Thoughtful amenities designed to make your stay
-                                effortless — so you can focus on what brought
-                                you here.
+                                Thoughtful amenities and convenient facilities
+                                designed to make your stay relaxing, enjoyable,
+                                and hassle-free.
                             </p>
                         </Reveal>
 
@@ -1233,8 +1254,7 @@ export default function LandingPage() {
                             <ul className="space-y-3 text-[13px]">
                                 {NAV_LINKS.map((link) => (
                                     <li key={link.label}>
-                                        <a
-                                            href={link.href}
+                                        <a href={link.href}
                                             className="text-[#F7F4EF]/70 hover:text-[#C89B5A] transition-colors"
                                         >
                                             {link.label}
@@ -1251,7 +1271,7 @@ export default function LandingPage() {
                             <ul className="space-y-3 text-[13px] text-[#F7F4EF]/70">
                                 <li className="flex items-start gap-2.5">
                                     <Phone className="h-3.5 w-3.5 mt-0.5 text-[#C89B5A] shrink-0" />
-                                    +63 912 345 6789
+                                    09177045341
                                 </li>
                                 <li className="flex items-start gap-2.5">
                                     <Mail className="h-3.5 w-3.5 mt-0.5 text-[#C89B5A] shrink-0" />
@@ -1271,8 +1291,7 @@ export default function LandingPage() {
                             <div className="flex items-center gap-3">
                                 {SOCIALS.map(
                                     ({ icon: Icon, label, href }) => (
-                                        <a
-                                            key={label}
+                                        <a key={label}
                                             href={href}
                                             target={
                                                 href.startsWith("http")
@@ -1305,14 +1324,12 @@ export default function LandingPage() {
                             rights reserved.
                         </p>
                         <div className="flex gap-6">
-                            <a
-                                href="#"
+                            <a href="#"
                                 className="hover:text-[#C89B5A] transition-colors"
                             >
                                 Privacy Policy
                             </a>
-                            <a
-                                href="#"
+                            <a href="#"
                                 className="hover:text-[#C89B5A] transition-colors"
                             >
                                 Terms of Service

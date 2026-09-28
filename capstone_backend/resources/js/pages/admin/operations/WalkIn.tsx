@@ -1515,7 +1515,7 @@ function QrModal({
                                     Guest scans with any bank or e-wallet app
                                 </div>
 
-                                {import.meta.env.DEV && session.testUrl && (
+                                {session.testUrl && (
                                     <div
                                         style={{
                                             marginTop: 14,
