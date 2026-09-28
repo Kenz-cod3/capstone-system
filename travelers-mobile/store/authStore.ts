@@ -13,6 +13,9 @@ type AuthState = {
   loadAuth: () => Promise<void>;
   logout: () => Promise<void>;
   setInactive: (value: boolean) => Promise<void>;
+
+  // ✅ NEW
+  updateUser: (user: any) => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -23,10 +26,15 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAuth: async (user, token) => {
     await AsyncStorage.setItem("auth", JSON.stringify({ user, token }));
+
     await AsyncStorage.setItem("inactive", "false");
     await setToken(token);
 
-    set({ user, token, inactive: false });
+    set({
+      user,
+      token,
+      inactive: false,
+    });
   },
 
   loadAuth: async () => {
@@ -40,13 +48,19 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     if (!stored) {
       console.log("❌ walang stored auth");
-      set({ isLoaded: true });
+
+      set({
+        isLoaded: true,
+      });
+
       return;
     }
 
     const { user, token } = JSON.parse(stored);
 
-    if (token) await setToken(token);
+    if (token) {
+      await setToken(token);
+    }
 
     try {
       console.log("🌐 mag-fetch ng user status...");
@@ -54,6 +68,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const res = await api.get("/user/status");
 
       console.log("🌐 response:", JSON.stringify(res.data));
+
       console.log("🌐 is_active:", res.data.is_active);
 
       const isInactive = !res.data.is_active;
@@ -61,12 +76,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       await AsyncStorage.setItem("inactive", String(isInactive));
 
       set({
-        user: { ...user, is_active: res.data.is_active }, // ✅ i-keep ang user data, i-update lang ang is_active
+        user: {
+          ...user,
+          is_active: res.data.is_active,
+        },
         token,
         isLoaded: true,
         inactive: isInactive,
       });
-
     } catch (e: any) {
       console.log("❌ fetch error:", e?.response?.status, e?.message);
 
@@ -88,7 +105,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
 
-      // If it's only a network problem, keep the cached login
+      // If it's only a network problem,
+      // keep the cached login
       set({
         user,
         token,
@@ -96,29 +114,64 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoaded: true,
       });
     }
-    // catch (e: any) {
-    //   console.log("❌ fetch error:", e?.response?.status, e?.message);
-
-    //   // fallback sa AsyncStorage kung walang internet
-    //   set({
-    //     user,
-    //     token,
-    //     isLoaded: true,
-    //     inactive: inactiveStored === "true",
-    //   });
-    // }
   },
+
+  // =====================================================
+  // UPDATE USER
+  // =====================================================
+
+  updateUser: async (user) => {
+    const stored = await AsyncStorage.getItem("auth");
+
+    if (stored) {
+      const { token } = JSON.parse(stored);
+
+      await AsyncStorage.setItem(
+        "auth",
+        JSON.stringify({
+          user,
+          token,
+        }),
+      );
+
+      set({
+        user,
+        token,
+      });
+    } else {
+      // Fallback in case auth storage is missing
+      set({
+        user,
+      });
+    }
+  },
+
+  // =====================================================
+  // LOGOUT
+  // =====================================================
 
   logout: async () => {
     await AsyncStorage.removeItem("auth");
     await AsyncStorage.removeItem("inactive");
     await clearToken();
 
-    set({ user: null, token: null, inactive: false });
+    set({
+      user: null,
+      token: null,
+      inactive: false,
+    });
   },
+
+  // =====================================================
+  // INACTIVE
+  // =====================================================
 
   setInactive: async (value) => {
     await AsyncStorage.setItem("inactive", String(value));
-    set((state) => ({ ...state, inactive: value }));
+
+    set((state) => ({
+      ...state,
+      inactive: value,
+    }));
   },
 }));

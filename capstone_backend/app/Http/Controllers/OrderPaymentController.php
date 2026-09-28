@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Auth;
 
 class OrderPaymentController extends Controller
 {
-    // 🔹 GET ALL PAYMENTS
+    // GET ALL PAYMENTS
     public function index()
     {
         return response()->json(
@@ -18,12 +18,13 @@ class OrderPaymentController extends Controller
         );
     }
 
+    // CREATE PAYMENT (cash / gcash / qrph)
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'order_id' => 'required|exists:orders,id',
-            'amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:cash,gcash'
+            'order_id'       => 'required|exists:orders,id',
+            'amount'         => 'required|numeric|min:0',
+            'payment_method' => 'required|in:cash,gcash,qrph',
         ]);
 
         $order = Order::findOrFail($validated['order_id']);
@@ -34,68 +35,65 @@ class OrderPaymentController extends Controller
             ], 400);
         }
 
-        $change = 0;
-
-        if ($validated['amount'] > $order->total_amount) {
-            $change = $validated['amount'] - $order->total_amount;
-        }
+        // What is still owed (supports split payments)
+        $alreadyPaid = OrderPayment::where('order_id', $order->id)->sum('amount');
+        $due         = max(0, $order->total_amount - $alreadyPaid);
+        $change      = max(0, $validated['amount'] - $due);
 
         $payment = OrderPayment::create([
-            'order_id' => $order->id,
-            'amount' => $validated['amount'],
+            'order_id'       => $order->id,
+            'amount'         => $validated['amount'],
             'payment_method' => $validated['payment_method'],
-            'user_id' => Auth::id() ?? 2, //FIX
-            'change_amount' => $change,
-            'payment_date' => now()
+            'user_id'        => Auth::id() ?? 2,
+            'change_amount'  => $change,
+            'payment_date'   => now(),
         ]);
 
-        $order->update([
-            'order_status' => 'paid'
-        ]);
+        // Only mark paid when the full total is covered
+        if ($alreadyPaid + $validated['amount'] >= $order->total_amount) {
+            $order->update(['order_status' => 'paid']);
+        }
 
         return response()->json([
             'message' => 'Payment successful',
-            'data' => $payment,
-            'change' => $change
+            'data'    => $payment,
+            'change'  => $change,
         ], 200);
     }
 
-    // 🔹 UPDATE PAYMENT
+    // UPDATE PAYMENT
     public function update(Request $request, $id)
     {
         $payment = OrderPayment::findOrFail($id);
 
         $validated = $request->validate([
-            'amount' => 'sometimes|numeric|min:0',
+            'amount'         => 'sometimes|numeric|min:0',
             'payment_method' => 'sometimes|string',
-            'status' => 'sometimes|in:pending,paid,failed'
+            'status'         => 'sometimes|in:pending,paid,failed',
         ]);
 
         $payment->update($validated);
 
         return response()->json([
             'message' => 'Payment updated',
-            'data' => $payment
+            'data'    => $payment,
         ], 200);
     }
 
-    // 🔹 DELETE PAYMENT
+    // DELETE PAYMENT
     public function destroy($id)
     {
         $payment = OrderPayment::findOrFail($id);
-        $order = $payment->order;
+        $order   = $payment->order;
 
         $payment->delete();
 
-        // 🔥 Recalculate order status
         $totalPaid = OrderPayment::where('order_id', $order->id)->sum('amount');
 
-        if ($totalPaid == 0) {
-            $order->update(['status' => 'pending']);
-        } elseif ($totalPaid < $order->total_amount) {
-            $order->update(['status' => 'partial']);
+        if ($totalPaid >= $order->total_amount) {
+            $order->update(['order_status' => 'paid']);
         } else {
-            $order->update(['status' => 'paid']);
+            $order->update(['order_status' => 'pending']);
         }
 
         return response()->json([

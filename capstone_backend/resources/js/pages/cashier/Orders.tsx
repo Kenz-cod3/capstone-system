@@ -4,6 +4,11 @@
  * Fonts used (add to your index.html <head>, or a global stylesheet):
  *   <link rel="preconnect" href="https://fonts.googleapis.com">
  *   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+ *
+ * Payment methods:
+ *   cash  - recorded immediately via POST /order-payments
+ *   qrph  - PayMongo dynamic QR; the webhook records the payment
+ *   split - cash portion + QRPH for the remainder
  */
 
 import React, { useEffect, useState } from "react";
@@ -17,7 +22,7 @@ import {
     Utensils,
     Cake,
     ShoppingBag,
-    Smartphone,
+    QrCode,
     Wallet,
     Loader2,
     Divide,
@@ -31,12 +36,13 @@ import { toast } from "sonner";
 const DARK_MINT = "#146C4B";
 const DARK_MINT_HOVER = "#0F5A3E";
 
-const CATEGORY_META: Record<string, { text: string; bg: string; dot: string }> = {
-    Drinks: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
-    Meals: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
-    Desserts: { text: "#5e3c66", bg: "#f1e9f4", dot: "#845a8f" },
-    Uncategorized: { text: "#5c6258", bg: "#f5f6f2", dot: "#8a8f83" },
-};
+const CATEGORY_META: Record<string, { text: string; bg: string; dot: string }> =
+    {
+        Drinks: { text: "#2a4f78", bg: "#e7eef7", dot: "#3b6ea5" },
+        Meals: { text: "#8a5a0f", bg: "#fbf1de", dot: "#c1861f" },
+        Desserts: { text: "#5e3c66", bg: "#f1e9f4", dot: "#845a8f" },
+        Uncategorized: { text: "#5c6258", bg: "#f5f6f2", dot: "#8a8f83" },
+    };
 
 function categoryMeta(category: string) {
     return CATEGORY_META[category] || CATEGORY_META.Uncategorized;
@@ -44,18 +50,31 @@ function categoryMeta(category: string) {
 
 const PAYMENT_META = {
     cash: { accent: "#1f7a5c", accentBg: "#e4f3ec", accentText: "#155c42" },
-    gcash: { accent: "#3b6ea5", accentBg: "#e7eef7", accentText: "#2a4f78" },
+    qrph: { accent: "#3b6ea5", accentBg: "#e7eef7", accentText: "#2a4f78" },
     split: { accent: "#845a8f", accentBg: "#f1e9f4", accentText: "#5e3c66" },
+};
+
+type QrState = {
+    orderId: number;
+    imageUrl: string;
+    intentId: string;
+    clientKey: string;
+    amount: number;
+    cash: number;
+    expiresAt: number;
+    testUrl?: string | null; // PayMongo test-mode simulator link
 };
 
 export default function Orders() {
     const [menu, setMenu] = useState<any[]>([]);
     const [cart, setCart] = useState<any[]>([]);
     const [cashAmount, setCashAmount] = useState<number | string>("");
-    const [gcashAmount, setGcashAmount] = useState<number | string>("");
+    const [qr, setQr] = useState<QrState | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("All");
-    const [paymentMethod, setPaymentMethod] = useState<"cash" | "gcash" | "split">("cash");
+    const [paymentMethod, setPaymentMethod] = useState<
+        "cash" | "qrph" | "split"
+    >("cash");
     const [isProcessingOrder, setIsProcessingOrder] = useState(false);
 
     useEffect(() => {
@@ -89,7 +108,9 @@ export default function Orders() {
             const existing = prev.find((i) => i.id === item.id);
             if (existing) {
                 if (existing.quantity + 1 > item.stock_quantity) {
-                    toast.error(`Only ${item.stock_quantity} ${item.name}(s) available!`);
+                    toast.error(
+                        `Only ${item.stock_quantity} ${item.name}(s) available!`,
+                    );
                     return prev;
                 }
                 toast.success(`Added another ${item.name} to cart`);
@@ -106,18 +127,30 @@ export default function Orders() {
         const cartItem = cart.find((i) => i.id === id);
         const menuItem = menu.find((m) => m.id === id);
 
-        if (cartItem && menuItem && cartItem.quantity + 1 > menuItem.stock_quantity) {
-            toast.error(`Only ${menuItem.stock_quantity} ${menuItem.name}(s) available!`);
+        if (
+            cartItem &&
+            menuItem &&
+            cartItem.quantity + 1 > menuItem.stock_quantity
+        ) {
+            toast.error(
+                `Only ${menuItem.stock_quantity} ${menuItem.name}(s) available!`,
+            );
             return;
         }
 
-        setCart(cart.map((i) => (i.id === id ? { ...i, quantity: i.quantity + 1 } : i)));
+        setCart(
+            cart.map((i) =>
+                i.id === id ? { ...i, quantity: i.quantity + 1 } : i,
+            ),
+        );
     };
 
     const decrease = (id: number) => {
         setCart(
             cart
-                .map((i) => (i.id === id ? { ...i, quantity: i.quantity - 1 } : i))
+                .map((i) =>
+                    i.id === id ? { ...i, quantity: i.quantity - 1 } : i,
+                )
                 .filter((i) => i.quantity > 0),
         );
     };
@@ -128,15 +161,18 @@ export default function Orders() {
         toast.info(`${item?.name} removed from cart`);
     };
 
-    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const total = cart.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0,
+    );
     const grandTotal = total;
 
-    // Parse amounts for split payment
-    const parsedCash = typeof cashAmount === "string" ? parseFloat(cashAmount) : cashAmount;
-    const parsedGcash = typeof gcashAmount === "string" ? parseFloat(gcashAmount) : gcashAmount;
-    const totalPayment =
-        (isNaN(parsedCash) ? 0 : parsedCash) + (isNaN(parsedGcash) ? 0 : parsedGcash);
-    const remainingAmount = grandTotal - totalPayment;
+    // Amount helpers
+    const cashNum = parseFloat(String(cashAmount)) || 0;
+    const qrAmount =
+        paymentMethod === "qrph"
+            ? grandTotal
+            : Math.max(0, grandTotal - cashNum);
 
     const formatCurrency = (amount: number) =>
         new Intl.NumberFormat("en-PH", {
@@ -145,119 +181,162 @@ export default function Orders() {
             minimumFractionDigits: 2,
         }).format(isNaN(amount) ? 0 : amount);
 
-    // Process payment and create order in one go
+    // -----------------------------------------------------------------------
+    // Reset / cancel
+    // -----------------------------------------------------------------------
+    const resetPos = () => {
+        setCart([]);
+        setCashAmount("");
+        setSelectedCategory("All");
+        setSearchTerm("");
+        setPaymentMethod("cash");
+        setQr(null);
+        fetchMenu(); // refresh stock
+    };
+
+    const cancelQr = async (reason = "Payment cancelled") => {
+        if (!qr) return;
+        try {
+            await api.delete(`/orders/${qr.orderId}`); // restores stock
+            toast.info(reason);
+        } catch {
+            toast.error("Could not cancel order. Check Order Management.");
+        }
+        setQr(null);
+        fetchMenu();
+    };
+
+    // -----------------------------------------------------------------------
+    // Poll QR status
+    // -----------------------------------------------------------------------
+    useEffect(() => {
+        if (!qr) return;
+
+        const timer = setInterval(async () => {
+            if (Date.now() > qr.expiresAt) {
+                clearInterval(timer);
+                await cancelQr("QR expired");
+                return;
+            }
+            try {
+                // NOTE: match this path to your registered checkQrStatus route
+                const { data } = await api.get(
+                    `/orders/qr-status/${qr.intentId}`,
+                    { params: { client_key: qr.clientKey } },
+                );
+                if (data.status === "succeeded") {
+                    clearInterval(timer);
+                    if (qr.cash > 0) {
+                        await api.post("/order-payments", {
+                            order_id: qr.orderId,
+                            amount: qr.cash,
+                            payment_method: "cash",
+                        });
+                    }
+                    toast.success("QR payment received. Order completed!");
+                    resetPos();
+                }
+            } catch {
+                // ignore transient polling errors
+            }
+        }, 3000);
+
+        return () => clearInterval(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [qr]);
+
+    // -----------------------------------------------------------------------
+    // Process order
+    // -----------------------------------------------------------------------
     const processOrder = async () => {
         if (cart.length === 0) {
             toast.error("Please add items to cart first");
             return;
         }
-
-        let amount = 0;
-
-        if (paymentMethod === "split") {
-            if (totalPayment < grandTotal) {
-                toast.error(
-                    `Total payment (${formatCurrency(totalPayment)}) is insufficient. Need ${formatCurrency(remainingAmount)} more`,
-                );
-                return;
-            }
-            amount = totalPayment;
-        } else {
-            const singleAmount =
-                paymentMethod === "cash"
-                    ? typeof cashAmount === "string"
-                        ? parseFloat(cashAmount)
-                        : cashAmount
-                    : typeof gcashAmount === "string"
-                      ? parseFloat(gcashAmount)
-                      : gcashAmount;
-
-            if (isNaN(singleAmount) || singleAmount < grandTotal) {
-                toast.error(
-                    `Insufficient ${paymentMethod === "cash" ? "cash" : "GCash balance"}. Need ${formatCurrency(grandTotal)}`,
-                );
-                return;
-            }
-            amount = singleAmount;
+        if (paymentMethod === "cash" && cashNum < grandTotal) {
+            toast.error(
+                `Insufficient cash. Need ${formatCurrency(grandTotal)}`,
+            );
+            return;
+        }
+        if (
+            paymentMethod === "split" &&
+            (cashNum <= 0 || cashNum >= grandTotal)
+        ) {
+            toast.error(
+                "Split cash must be more than 0 and less than the total",
+            );
+            return;
         }
 
         setIsProcessingOrder(true);
         const loadingToast = toast.loading("Processing order...");
+        let newOrderId: number | undefined;
 
         try {
-            const orderPayload = {
+            const orderResponse = await api.post("/orders", {
                 items: cart.map((item: any) => ({
                     menu_item_id: item.id,
                     quantity: item.quantity,
                 })),
-            };
+            });
+            newOrderId = orderResponse.data.data.id;
 
-            const orderResponse = await api.post("/orders", orderPayload);
-            const newOrderId = orderResponse.data.data.id;
-
-            if (paymentMethod === "split") {
-                const paymentPromises = [];
-
-                if (parsedCash > 0) {
-                    paymentPromises.push(
-                        api.post("/order-payments", {
-                            order_id: newOrderId,
-                            amount: parsedCash,
-                            payment_method: "cash",
-                        }),
-                    );
-                }
-
-                if (parsedGcash > 0) {
-                    paymentPromises.push(
-                        api.post("/order-payments", {
-                            order_id: newOrderId,
-                            amount: parsedGcash,
-                            payment_method: "gcash",
-                        }),
-                    );
-                }
-
-                await Promise.all(paymentPromises);
-                const change = totalPayment - grandTotal;
-
-                toast.dismiss(loadingToast);
-                toast.success(
-                    `Order completed! Split payment — cash ${formatCurrency(parsedCash)} + GCash ${formatCurrency(parsedGcash)} · Change ${formatCurrency(change)}`,
-                );
-            } else {
-                const paymentResponse = await api.post("/order-payments", {
+            if (paymentMethod === "cash") {
+                const res = await api.post("/order-payments", {
                     order_id: newOrderId,
-                    amount: amount,
-                    payment_method: paymentMethod,
+                    amount: cashNum,
+                    payment_method: "cash",
                 });
-
                 toast.dismiss(loadingToast);
                 toast.success(
-                    `Order completed! Paid via ${paymentMethod.toUpperCase()} · Change ${formatCurrency(paymentResponse.data.change)}`,
+                    `Order completed! Change ${formatCurrency(res.data.change)}`,
                 );
+                resetPos();
+            } else {
+                // qrph or split
+                const { data } = await api.post(`/orders/${newOrderId}/qrph`, {
+                    amount: qrAmount,
+                });
+                toast.dismiss(loadingToast);
+                setQr({
+                    orderId: newOrderId!,
+                    imageUrl: data.qr_image_url,
+                    intentId: data.payment_intent_id,
+                    clientKey: data.client_key,
+                    amount: data.amount,
+                    cash: paymentMethod === "split" ? cashNum : 0,
+                    expiresAt: Date.now() + data.expiry_seconds * 1000,
+                    testUrl: data.test_url ?? null,
+                });
             }
-
-            setCart([]);
-            setCashAmount("");
-            setGcashAmount("");
-            setSelectedCategory("All");
-            setSearchTerm("");
-            setPaymentMethod("cash");
         } catch (error: any) {
             toast.dismiss(loadingToast);
+            // Order was created but QR/payment failed -> restore stock
+            if (newOrderId !== undefined) {
+                await api.delete(`/orders/${newOrderId}`).catch(() => {});
+                fetchMenu();
+            }
             console.error("ORDER ERROR:", error.response?.data);
-            toast.error(error.response?.data?.message || "Failed to process order");
+            toast.error(
+                error.response?.data?.message || "Failed to process order",
+            );
         } finally {
             setIsProcessingOrder(false);
         }
     };
 
-    const categories = ["All", ...new Set(menu.map((item) => item.category).filter(Boolean))];
+    const categories = [
+        "All",
+        ...new Set(menu.map((item) => item.category).filter(Boolean)),
+    ];
 
     const filteredMenu = menu.filter((item) => {
-        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+        const matchesSearch = item.name
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase());
+        const matchesCategory =
+            selectedCategory === "All" || item.category === selectedCategory;
         return matchesSearch && matchesCategory;
     });
 
@@ -287,8 +366,8 @@ export default function Orders() {
         switch (method) {
             case "cash":
                 return <Wallet className="w-4 h-4" />;
-            case "gcash":
-                return <Smartphone className="w-4 h-4" />;
+            case "qrph":
+                return <QrCode className="w-4 h-4" />;
             case "split":
                 return <Divide className="w-4 h-4" />;
             default:
@@ -308,40 +387,17 @@ export default function Orders() {
         }
     };
 
-    const handleGcashChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
-        if (value === "") {
-            setGcashAmount("");
-            return;
-        }
-        const numValue = parseFloat(value);
-        if (!isNaN(numValue) && numValue >= 0) {
-            setGcashAmount(value);
-        }
-    };
-
     const isPayButtonDisabled = () => {
-        if (cart.length === 0 || isProcessingOrder) return true;
-
-        if (paymentMethod === "split") {
-            return totalPayment < grandTotal;
-        } else {
-            const amount =
-                paymentMethod === "cash"
-                    ? typeof cashAmount === "string"
-                        ? parseFloat(cashAmount)
-                        : cashAmount
-                    : typeof gcashAmount === "string"
-                      ? parseFloat(gcashAmount)
-                      : gcashAmount;
-            return isNaN(amount) || amount < grandTotal;
-        }
+        if (cart.length === 0 || isProcessingOrder || qr) return true;
+        if (paymentMethod === "cash") return cashNum < grandTotal;
+        if (paymentMethod === "split")
+            return cashNum <= 0 || cashNum >= grandTotal;
+        return false; // qrph
     };
 
     const payMeta = PAYMENT_META[paymentMethod];
 
     return (
-        //bg-[#eef0ea]
         <div className="h-full flex gap-4  p-4">
             {/* LEFT — MENU */}
             <div className="w-3/5 flex flex-col h-full">
@@ -363,12 +419,21 @@ export default function Orders() {
                     <div className="inline-flex items-center gap-1 bg-white border border-[#dde1d7] rounded-lg p-1">
                         {categories.map((category) => {
                             const active = selectedCategory === category;
-                            const meta = category === "All" ? null : categoryMeta(category);
+                            const meta =
+                                category === "All"
+                                    ? null
+                                    : categoryMeta(category);
                             return (
                                 <button
                                     key={category}
-                                    onClick={() => setSelectedCategory(category)}
-                                    style={active ? { backgroundColor: DARK_MINT } : undefined}
+                                    onClick={() =>
+                                        setSelectedCategory(category)
+                                    }
+                                    style={
+                                        active
+                                            ? { backgroundColor: DARK_MINT }
+                                            : undefined
+                                    }
                                     className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
                                         active
                                             ? "text-white"
@@ -378,18 +443,29 @@ export default function Orders() {
                                     {meta && (
                                         <span
                                             className="w-1.5 h-1.5 rounded-full"
-                                            style={{ backgroundColor: meta.dot }}
+                                            style={{
+                                                backgroundColor: meta.dot,
+                                            }}
                                         />
                                     )}
-                                    {category !== "All" && getCategoryIcon(category)}
+                                    {category !== "All" &&
+                                        getCategoryIcon(category)}
                                     {category}
                                     {category !== "All" && (
                                         <span
                                             className={`font-['IBM_Plex_Mono'] text-[10px] ${
-                                                active ? "text-white/70" : "text-[#a8ad9f]"
+                                                active
+                                                    ? "text-white/70"
+                                                    : "text-[#a8ad9f]"
                                             }`}
                                         >
-                                            {menu.filter((item) => item.category === category).length}
+                                            {
+                                                menu.filter(
+                                                    (item) =>
+                                                        item.category ===
+                                                        category,
+                                                ).length
+                                            }
                                         </span>
                                     )}
                                 </button>
@@ -415,7 +491,9 @@ export default function Orders() {
                     {filteredMenu.map((item) => {
                         const available = isItemAvailable(item);
                         const stockStatus = getStockStatusText(item);
-                        const catMeta = categoryMeta(item.category || "Uncategorized")!;
+                        const catMeta = categoryMeta(
+                            item.category || "Uncategorized",
+                        )!;
 
                         return (
                             <div
@@ -440,18 +518,27 @@ export default function Orders() {
                                                 className="w-full h-full flex items-center justify-center absolute inset-0"
                                                 style={{ color: catMeta.dot }}
                                             >
-                                                {React.cloneElement(getCategoryIcon(item.category), {
-                                                    className: "w-6 h-6",
-                                                })}
+                                                {React.cloneElement(
+                                                    getCategoryIcon(
+                                                        item.category,
+                                                    ),
+                                                    {
+                                                        className: "w-6 h-6",
+                                                    },
+                                                )}
                                             </div>
                                         )}
                                         {!available && (
                                             <div
                                                 className="absolute inset-0 flex items-center justify-center"
-                                                style={{ backgroundColor: `${DARK_MINT}8c` }}
+                                                style={{
+                                                    backgroundColor: `${DARK_MINT}8c`,
+                                                }}
                                             >
                                                 <span className="bg-[#a1402f] text-white text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
-                                                    {item.stock_quantity <= 0 ? "Out" : "Unavail."}
+                                                    {item.stock_quantity <= 0
+                                                        ? "Out"
+                                                        : "Unavail."}
                                                 </span>
                                             </div>
                                         )}
@@ -462,7 +549,9 @@ export default function Orders() {
                                         <div>
                                             <h3
                                                 className={`font-medium text-[13px] leading-tight truncate ${
-                                                    available ? "text-[#1c2420]" : "text-[#8a8f83]"
+                                                    available
+                                                        ? "text-[#1c2420]"
+                                                        : "text-[#8a8f83]"
                                                 }`}
                                             >
                                                 {item.name}
@@ -477,7 +566,9 @@ export default function Orders() {
                                         <div className="flex items-center justify-between mt-2">
                                             <span
                                                 className={`font-['IBM_Plex_Mono'] font-semibold text-sm tabular-nums ${
-                                                    available ? "text-[#1c2420]" : "text-[#a8ad9f]"
+                                                    available
+                                                        ? "text-[#1c2420]"
+                                                        : "text-[#a8ad9f]"
                                                 }`}
                                             >
                                                 ₱{item.price}
@@ -485,12 +576,23 @@ export default function Orders() {
                                             <button
                                                 onClick={() => addToCart(item)}
                                                 disabled={!available}
-                                                style={available ? { backgroundColor: DARK_MINT } : undefined}
+                                                style={
+                                                    available
+                                                        ? {
+                                                              backgroundColor:
+                                                                  DARK_MINT,
+                                                          }
+                                                        : undefined
+                                                }
                                                 onMouseEnter={(e) => {
-                                                    if (available) e.currentTarget.style.backgroundColor = DARK_MINT_HOVER;
+                                                    if (available)
+                                                        e.currentTarget.style.backgroundColor =
+                                                            DARK_MINT_HOVER;
                                                 }}
                                                 onMouseLeave={(e) => {
-                                                    if (available) e.currentTarget.style.backgroundColor = DARK_MINT;
+                                                    if (available)
+                                                        e.currentTarget.style.backgroundColor =
+                                                            DARK_MINT;
                                                 }}
                                                 className={`px-2.5 py-1 text-xs rounded-md font-medium transition-all ${
                                                     available
@@ -510,7 +612,9 @@ export default function Orders() {
                     {filteredMenu.length === 0 && (
                         <div className="col-span-2 flex flex-col items-center justify-center py-16 bg-white rounded-lg border border-[#dde1d7]">
                             <ShoppingBag className="h-10 w-10 text-[#dde1d7] mb-3" />
-                            <p className="text-[#8a8f83] text-sm">No items found</p>
+                            <p className="text-[#8a8f83] text-sm">
+                                No items found
+                            </p>
                         </div>
                     )}
                 </div>
@@ -527,7 +631,8 @@ export default function Orders() {
                         </h2>
                         {cart.length > 0 && (
                             <p className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
-                                {cart.length} item{cart.length > 1 ? "s" : ""} in cart
+                                {cart.length} item{cart.length > 1 ? "s" : ""}{" "}
+                                in cart
                             </p>
                         )}
                     </div>
@@ -538,13 +643,18 @@ export default function Orders() {
                     {cart.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16">
                             <ShoppingBag className="h-10 w-10 text-[#dde1d7] mb-3" />
-                            <p className="text-[#8a8f83] text-sm">No items in cart</p>
+                            <p className="text-[#8a8f83] text-sm">
+                                No items in cart
+                            </p>
                         </div>
                     ) : (
                         cart.map((item) => {
                             const menuItem = menu.find((m) => m.id === item.id);
-                            const isStillAvailable = menuItem && isItemAvailable(menuItem);
-                            const catMeta = categoryMeta(item.category || "Uncategorized")!;
+                            const isStillAvailable =
+                                menuItem && isItemAvailable(menuItem);
+                            const catMeta = categoryMeta(
+                                item.category || "Uncategorized",
+                            )!;
 
                             return (
                                 <div
@@ -599,7 +709,9 @@ export default function Orders() {
                                             <Plus className="h-3 w-3 text-[#5c6258]" />
                                         </button>
                                         <button
-                                            onClick={() => removeFromCart(item.id)}
+                                            onClick={() =>
+                                                removeFromCart(item.id)
+                                            }
                                             className="ml-0.5 text-[#a8ad9f] hover:text-[#a1402f] transition-colors"
                                         >
                                             <X className="h-4 w-4" />
@@ -647,169 +759,139 @@ export default function Orders() {
                     <div className="p-4 pt-3">
                         {/* Payment method selection */}
                         <div className="grid grid-cols-3 gap-1.5 mb-3">
-                            {(["cash", "gcash", "split"] as const).map((method) => {
-                                const active = paymentMethod === method;
-                                const meta = PAYMENT_META[method];
-                                return (
-                                    <button
-                                        key={method}
-                                        onClick={() => {
-                                            setPaymentMethod(method);
-                                            setCashAmount("");
-                                            setGcashAmount("");
-                                        }}
-                                        className={`py-2 px-2 rounded-md text-[13px] font-medium transition-all flex items-center justify-center gap-1.5 ${
-                                            active
-                                                ? "text-white"
-                                                : "bg-white border border-[#dde1d7] text-[#5c6258] hover:bg-[#f5f6f2]"
-                                        }`}
-                                        style={active ? { backgroundColor: meta.accent } : undefined}
-                                    >
-                                        {getPaymentIcon(method)}
-                                        {method === "cash" ? "Cash" : method === "gcash" ? "GCash" : "Split"}
-                                    </button>
-                                );
-                            })}
+                            {(["cash", "qrph", "split"] as const).map(
+                                (method) => {
+                                    const active = paymentMethod === method;
+                                    const meta = PAYMENT_META[method];
+                                    return (
+                                        <button
+                                            key={method}
+                                            onClick={() => {
+                                                setPaymentMethod(method);
+                                                setCashAmount("");
+                                            }}
+                                            className={`py-2 px-2 rounded-md text-[13px] font-medium transition-all flex items-center justify-center gap-1.5 ${
+                                                active
+                                                    ? "text-white"
+                                                    : "bg-white border border-[#dde1d7] text-[#5c6258] hover:bg-[#f5f6f2]"
+                                            }`}
+                                            style={
+                                                active
+                                                    ? {
+                                                          backgroundColor:
+                                                              meta.accent,
+                                                      }
+                                                    : undefined
+                                            }
+                                        >
+                                            {getPaymentIcon(method)}
+                                            {method === "cash"
+                                                ? "Cash"
+                                                : method === "qrph"
+                                                  ? "QRPH"
+                                                  : "Cash + QR"}
+                                        </button>
+                                    );
+                                },
+                            )}
                         </div>
 
                         {/* Payment inputs */}
-                        {paymentMethod === "split" ? (
-                            <div className="space-y-2.5 mb-3">
-                                <div
-                                    className="rounded-md p-3"
-                                    style={{ backgroundColor: PAYMENT_META.cash.accentBg }}
-                                >
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Wallet
-                                            className="w-3.5 h-3.5"
-                                            style={{ color: PAYMENT_META.cash.accentText }}
-                                        />
-                                        <span
-                                            className="font-semibold text-[13px]"
-                                            style={{ color: PAYMENT_META.cash.accentText }}
-                                        >
-                                            Cash amount
-                                        </span>
-                                    </div>
-                                    <input
-                                        type="number"
-                                        inputMode="decimal"
-                                        placeholder="Enter cash amount"
-                                        value={cashAmount}
-                                        onChange={handleCashChange}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className="w-full px-3 py-2 border border-[#c7ded3] rounded-md focus:ring-1 outline-none bg-white text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                    />
-                                </div>
-
-                                <div
-                                    className="rounded-md p-3"
-                                    style={{ backgroundColor: PAYMENT_META.gcash.accentBg }}
-                                >
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <Smartphone
-                                            className="w-3.5 h-3.5"
-                                            style={{ color: PAYMENT_META.gcash.accentText }}
-                                        />
-                                        <span
-                                            className="font-semibold text-[13px]"
-                                            style={{ color: PAYMENT_META.gcash.accentText }}
-                                        >
-                                            GCash amount
-                                        </span>
-                                    </div>
-                                    <input
-                                        type="number"
-                                        inputMode="decimal"
-                                        placeholder="Enter GCash amount"
-                                        value={gcashAmount}
-                                        onChange={handleGcashChange}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className="w-full px-3 py-2 border border-[#c3d4e3] rounded-md focus:ring-1 outline-none bg-white text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                    />
-                                </div>
-
-                                <div className="bg-[#f5f6f2] rounded-md p-3 border border-[#e4e7dd]">
-                                    <div className="flex justify-between text-[13px] mb-1.5">
-                                        <span className="font-medium text-[#5c6258]">Total payment</span>
-                                        <span
-                                            className="font-['IBM_Plex_Mono'] font-semibold"
-                                            style={{
-                                                color: totalPayment >= grandTotal ? "#1f7a5c" : "#c1861f",
-                                            }}
-                                        >
-                                            {formatCurrency(totalPayment)}
-                                        </span>
-                                    </div>
-                                    {totalPayment < grandTotal && totalPayment > 0 && (
-                                        <div className="flex justify-between text-[13px]">
-                                            <span className="text-[#a1402f]">Remaining</span>
-                                            <span className="text-[#a1402f] font-['IBM_Plex_Mono'] font-semibold">
-                                                {formatCurrency(remainingAmount)}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {totalPayment >= grandTotal && (
-                                        <div className="flex justify-between text-[13px]">
-                                            <span className="text-[#1f7a5c]">Change</span>
-                                            <span className="text-[#1f7a5c] font-['IBM_Plex_Mono'] font-semibold">
-                                                {formatCurrency(totalPayment - grandTotal)}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ) : (
+                        {paymentMethod === "qrph" ? (
                             <div
                                 className="rounded-md p-3 mb-3"
                                 style={{ backgroundColor: payMeta.accentBg }}
                             >
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span style={{ color: payMeta.accentText }}>{getPaymentIcon()}</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <QrCode
+                                        className="w-3.5 h-3.5"
+                                        style={{ color: payMeta.accentText }}
+                                    />
                                     <span
                                         className="font-semibold text-[13px]"
                                         style={{ color: payMeta.accentText }}
                                     >
-                                        {paymentMethod === "cash" ? "Cash payment" : "GCash payment"}
+                                        QRPH payment
                                     </span>
                                 </div>
-
+                                <p
+                                    className="text-xs font-['IBM_Plex_Mono']"
+                                    style={{ color: payMeta.accentText }}
+                                >
+                                    A QR for {formatCurrency(grandTotal)} will
+                                    be generated.
+                                </p>
+                            </div>
+                        ) : (
+                            <div
+                                className="rounded-md p-3 mb-3"
+                                style={{
+                                    backgroundColor: PAYMENT_META.cash.accentBg,
+                                }}
+                            >
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Wallet
+                                        className="w-3.5 h-3.5"
+                                        style={{
+                                            color: PAYMENT_META.cash.accentText,
+                                        }}
+                                    />
+                                    <span
+                                        className="font-semibold text-[13px]"
+                                        style={{
+                                            color: PAYMENT_META.cash.accentText,
+                                        }}
+                                    >
+                                        Cash amount
+                                    </span>
+                                </div>
                                 <input
                                     type="number"
                                     inputMode="decimal"
-                                    placeholder={`Enter ${paymentMethod === "cash" ? "cash" : "GCash"} amount`}
-                                    value={paymentMethod === "cash" ? cashAmount : gcashAmount}
-                                    onChange={paymentMethod === "cash" ? handleCashChange : handleGcashChange}
+                                    placeholder="Enter cash amount"
+                                    value={cashAmount}
+                                    onChange={handleCashChange}
                                     onWheel={(e) => e.currentTarget.blur()}
-                                    className="w-full px-3.5 py-2.5 border rounded-md focus:ring-1 outline-none bg-white text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                    style={{ borderColor: payMeta.accent + "55" }}
+                                    className="w-full px-3 py-2 border border-[#c7ded3] rounded-md focus:ring-1 outline-none bg-white text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
 
-                                {(() => {
-                                    const amount =
-                                        paymentMethod === "cash"
-                                            ? typeof cashAmount === "string"
-                                                ? parseFloat(cashAmount)
-                                                : cashAmount
-                                            : typeof gcashAmount === "string"
-                                              ? parseFloat(gcashAmount)
-                                              : gcashAmount;
-                                    if (!isNaN(amount) && amount > 0 && amount < grandTotal) {
-                                        return (
-                                            <p className="text-xs text-[#a1402f] mt-2 font-['IBM_Plex_Mono']">
-                                                Need {formatCurrency(grandTotal - amount)} more
-                                            </p>
-                                        );
-                                    }
-                                    if (!isNaN(amount) && amount >= grandTotal) {
-                                        return (
-                                            <p className="text-xs text-[#1f7a5c] mt-2 font-['IBM_Plex_Mono']">
-                                                Change {formatCurrency(amount - grandTotal)}
-                                            </p>
-                                        );
-                                    }
-                                    return null;
-                                })()}
+                                {paymentMethod === "cash" &&
+                                    cashNum >= grandTotal &&
+                                    grandTotal > 0 && (
+                                        <p className="text-xs text-[#1f7a5c] mt-2 font-['IBM_Plex_Mono']">
+                                            Change{" "}
+                                            {formatCurrency(
+                                                cashNum - grandTotal,
+                                            )}
+                                        </p>
+                                    )}
+                                {paymentMethod === "cash" &&
+                                    cashNum > 0 &&
+                                    cashNum < grandTotal && (
+                                        <p className="text-xs text-[#a1402f] mt-2 font-['IBM_Plex_Mono']">
+                                            Need{" "}
+                                            {formatCurrency(
+                                                grandTotal - cashNum,
+                                            )}{" "}
+                                            more
+                                        </p>
+                                    )}
+                                {paymentMethod === "split" &&
+                                    cashNum > 0 &&
+                                    cashNum < grandTotal && (
+                                        <p className="text-xs text-[#2a4f78] mt-2 font-['IBM_Plex_Mono']">
+                                            QR portion{" "}
+                                            {formatCurrency(qrAmount)}
+                                        </p>
+                                    )}
+                                {paymentMethod === "split" &&
+                                    cashNum >= grandTotal &&
+                                    grandTotal > 0 && (
+                                        <p className="text-xs text-[#a1402f] mt-2 font-['IBM_Plex_Mono']">
+                                            Cash covers the total — use the Cash
+                                            method instead
+                                        </p>
+                                    )}
                             </div>
                         )}
 
@@ -822,19 +904,71 @@ export default function Orders() {
                                     ? "bg-[#e4e7dd] cursor-not-allowed text-[#a8ad9f]"
                                     : "text-white active:scale-[0.98]"
                             }`}
-                            style={!isPayButtonDisabled() ? { backgroundColor: payMeta.accent } : undefined}
+                            style={
+                                !isPayButtonDisabled()
+                                    ? { backgroundColor: payMeta.accent }
+                                    : undefined
+                            }
                         >
-                            {isProcessingOrder && <Loader2 className="w-4 h-4 animate-spin" />}
+                            {isProcessingOrder && (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            )}
                             {getPaymentIcon()}
                             {isProcessingOrder
                                 ? "Processing order..."
                                 : paymentMethod === "split"
-                                  ? "Complete split payment"
+                                  ? "Generate QR + complete"
                                   : `Pay with ${paymentMethod.toUpperCase()}`}
                         </button>
                     </div>
                 </div>
             </div>
+
+            {/* QR MODAL */}
+            {qr && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+                    <div className="bg-white rounded-lg p-6 w-[360px] text-center">
+                        <h3 className="font-['Space_Grotesk'] font-semibold text-lg text-[#1c2420]">
+                            Scan to pay
+                        </h3>
+                        <p className="font-['IBM_Plex_Mono'] text-2xl font-semibold my-2">
+                            {formatCurrency(qr.amount)}
+                        </p>
+                        {qr.cash > 0 && (
+                            <p className="text-xs text-[#8a8f83] mb-2">
+                                + {formatCurrency(qr.cash)} cash to collect
+                            </p>
+                        )}
+                        <img
+                            src={qr.imageUrl}
+                            alt="QRPH"
+                            className="mx-auto w-64 h-64 object-contain"
+                        />
+                        <p className="text-xs text-[#8a8f83] mt-2 flex items-center justify-center gap-1.5">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Waiting
+                            for payment...
+                        </p>
+                        {/* TEST MODE ONLY — PayMongo returns test_url only for test keys */}
+                        {qr.testUrl && (
+                            <a
+                                href={qr.testUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 flex w-full items-center justify-center gap-1.5 py-2.5 rounded-md bg-[#fbf1de] border border-[#e8d3a3] text-sm font-medium text-[#8a5a0f] hover:bg-[#f7e8c6]"
+                            >
+                                <QrCode className="w-4 h-4" />
+                                Test payment (PayMongo sandbox)
+                            </a>
+                        )}
+                        <button
+                            onClick={() => cancelQr()}
+                            className="mt-4 w-full py-2.5 rounded-md border border-[#dde1d7] text-sm text-[#5c6258] hover:bg-[#f5f6f2]"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

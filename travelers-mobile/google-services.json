@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "257321682973",
+    "project_id": "lyn-enia-travelers-inn",
+    "storage_bucket": "lyn-enia-travelers-inn.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:257321682973:android:9b21b2d55ec8c67aecdef4",
+        "android_client_info": {
+          "package_name": "com.lynenia.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3f7nSB3gGY8XycszYwGSuYLBBoXQ2vdE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

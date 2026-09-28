@@ -1,28 +1,30 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const IP = process.env.EXPO_PUBLIC_IP_ADDRESS;
+
 const api = axios.create({
-  baseURL: "http://192.168.8.117:8000/api",
+  baseURL: `${IP}/api`,
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
   },
 });
 
-// STORAGE BASE (ADD THIS)
-const STORAGE_BASE = "http://192.168.8.117:8000/storage/";
+// STORAGE BASE
+const STORAGE_BASE = `${IP}/storage/`;
 
-// IMAGE HELPER (ADD THIS)
+// IMAGE HELPER
 export const getImageUrl = (path?: string | null) => {
   if (!path) return null;
 
-  // kung full URL na (http...), return agad
+  // Kung full URL na, return agad
   if (path.startsWith("http")) return path;
 
   return STORAGE_BASE + path;
 };
 
-//  SET TOKEN AFTER LOGIN
+// SET TOKEN AFTER LOGIN
 export const setToken = async (token: string) => {
   await AsyncStorage.setItem("token", token);
   api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -45,7 +47,7 @@ export const clearToken = async () => {
   await AsyncStorage.removeItem("token");
 };
 
-//  REQUEST INTERCEPTOR
+// REQUEST INTERCEPTOR
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem("token");
 
@@ -56,7 +58,7 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-//  RESPONSE INTERCEPTOR
+// RESPONSE INTERCEPTOR
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -65,29 +67,24 @@ api.interceptors.response.use(
 
     const token = await AsyncStorage.getItem("token");
 
-    console.log("🔥 API ERROR:", status, message); // DEBUG
+    console.log("🔥 API ERROR:", status, message);
 
     try {
       const { useAuthStore } = require("../store/authStore");
 
-      //  401 → TOKEN INVALID → FORCE LOGOUT
+      // 401 → TOKEN INVALID → FORCE LOGOUT
       if (status === 401 && token) {
         console.log("🚪 401 → Auto logout");
 
         await useAuthStore.getState().logout();
       }
 
-      // 403 → ACCOUNT INACTIVE (FIXED CONDITION)
+      // 403 → ACCOUNT INACTIVE
       if (status === 403 && message?.toLowerCase().includes("inactive")) {
         console.log("⛔ Account inactive detected");
 
-        // OPTION A: FORCE LOGOUT (RECOMMENDED)
         await useAuthStore.getState().logout();
-
-        //  OPTION B (if you want screen instead)
-        // useAuthStore.getState().setInactive(true);
       }
-
     } catch (e) {
       console.log("Interceptor error:", e);
     }

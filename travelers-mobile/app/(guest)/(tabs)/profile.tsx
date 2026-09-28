@@ -40,7 +40,7 @@ export default function Profile() {
         fetchUser(false);
         isFirstLoad.current = false;
       }
-    }, [])
+    }, []),
   );
 
   // Separate refresh function for pull-to-refresh
@@ -73,10 +73,7 @@ export default function Profile() {
       return num;
     }
     const formatted = clean.replace(/^0/, "+63");
-    return formatted.replace(
-      /(\+63)(\d{3})(\d{3})(\d{4})/,
-      "$1 $2 $3 $4"
-    );
+    return formatted.replace(/(\+63)(\d{3})(\d{3})(\d{4})/, "$1 $2 $3 $4");
   };
 
   const handleLogout = () => {
@@ -90,8 +87,6 @@ export default function Profile() {
             setLogoutLoading(true);
 
             await logout();
-
-            router.replace("/auth/login");
           } catch (e) {
             console.log("Logout error:", e);
           } finally {
@@ -137,7 +132,7 @@ export default function Profile() {
   // };
 
   const handleProfileUpdate = () => {
-    setRefreshKey(prev => prev + 1);
+    setRefreshKey((prev) => prev + 1);
     fetchUser(true); // Refresh data when profile is updated
   };
 
@@ -197,7 +192,11 @@ export default function Profile() {
             colors={["#0d2e1f", "#1a4a35"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={{ paddingTop: insets.top + 16, paddingBottom: 72, paddingHorizontal: 24 }}
+            style={{
+              paddingTop: insets.top + 16,
+              paddingBottom: 72,
+              paddingHorizontal: 24,
+            }}
           >
             {/* Decorative circles */}
             <View
@@ -260,9 +259,7 @@ export default function Profile() {
                 className="w-28 h-28 rounded-full border-4 border-[#faf8f3]"
               />
             ) : (
-              <View
-                className="w-28 h-28 rounded-full bg-[#1a4a35] border-4 border-[#faf8f3] justify-center items-center"
-              >
+              <View className="w-28 h-28 rounded-full bg-[#1a4a35] border-4 border-[#faf8f3] justify-center items-center">
                 <Text
                   className="text-white text-5xl"
                   style={{ fontFamily: "Georgia" }}
@@ -322,8 +319,15 @@ export default function Profile() {
                 <View className="w-8 h-8 rounded-full bg-[#1a4a35]/06 justify-center items-center mr-4">
                   <Ionicons name="create-outline" size={15} color="#1a4a35" />
                 </View>
-                <Text className="flex-1 text-[#1a4a35] text-sm">Edit Profile</Text>
-                <Ionicons name="chevron-forward" size={15} color="#1a4a35" style={{ opacity: 0.3 }} />
+                <Text className="flex-1 text-[#1a4a35] text-sm">
+                  Edit Profile
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={15}
+                  color="#1a4a35"
+                  style={{ opacity: 0.3 }}
+                />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -332,10 +336,21 @@ export default function Profile() {
                 className="flex-row items-center px-5 py-4"
               >
                 <View className="w-8 h-8 rounded-full bg-[#1a4a35]/06 justify-center items-center mr-4">
-                  <Ionicons name="lock-closed-outline" size={15} color="#1a4a35" />
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={15}
+                    color="#1a4a35"
+                  />
                 </View>
-                <Text className="flex-1 text-[#1a4a35] text-sm">Change Password</Text>
-                <Ionicons name="chevron-forward" size={15} color="#1a4a35" style={{ opacity: 0.3 }} />
+                <Text className="flex-1 text-[#1a4a35] text-sm">
+                  Change Password
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={15}
+                  color="#1a4a35"
+                  style={{ opacity: 0.3 }}
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -406,8 +421,9 @@ const InfoRow = ({
   isLast: boolean;
 }) => (
   <View
-    className={`flex-row items-center px-5 py-4 ${!isLast ? "border-b border-[#1a4a35]/06" : ""
-      }`}
+    className={`flex-row items-center px-5 py-4 ${
+      !isLast ? "border-b border-[#1a4a35]/06" : ""
+    }`}
   >
     <View className="w-8 h-8 rounded-full bg-[#1a4a35]/06 justify-center items-center mr-4">
       <Ionicons name={icon as any} size={15} color="#1a4a35" />
