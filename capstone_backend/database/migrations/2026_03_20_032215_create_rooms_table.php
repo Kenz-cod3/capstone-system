@@ -25,8 +25,8 @@ return new class extends Migration
                 'reserved',
                 'occupied',
                 'maintenance',
-                'dirty',
-                'cleaning',
+                'preparing',
+                'ongoing',
             ])->default('available');
 
             $table->foreignId('cleaned_by')

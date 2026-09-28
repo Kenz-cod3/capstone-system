@@ -22,6 +22,7 @@ class User extends Authenticatable
         'role',
         'is_active',
         'is_verified',
+        'expo_push_token',
         'email_verified_at',
         'profile_image',
     ];

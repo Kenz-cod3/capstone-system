@@ -21,6 +21,7 @@ Route::get('/occupancy', [RoomController::class, 'occupancy']);
 Route::get('/occupancy-trend', [RoomController::class, 'occupancyTrend']);
 
 Route::apiResource('rooms', RoomController::class);
+Route::get('/rooms/{id}/details', [RoomController::class, 'details']);
 Route::apiResource('room-types', RoomTypeController::class);
 Route::apiResource('amenities', AmenityController::class);
 Route::apiResource('room-status-history', RoomStatusHistoryController::class);

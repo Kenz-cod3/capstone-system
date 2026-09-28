@@ -36,12 +36,12 @@
     "src": "resources/images/logo1.png"
   },
   "resources/js/main.tsx": {
-    "file": "assets/main-DkKv74Kh.js",
+    "file": "assets/main-D_kgArzJ.js",
     "name": "main",
     "src": "resources/js/main.tsx",
     "isEntry": true,
     "css": [
-      "assets/main-B0mp6K-V.css"
+      "assets/main-CjjrWsei.css"
     ],
     "assets": [
       "assets/logo-7g_sbbQ6.png",

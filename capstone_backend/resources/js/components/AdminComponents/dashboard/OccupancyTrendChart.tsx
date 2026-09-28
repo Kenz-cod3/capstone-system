@@ -1,6 +1,13 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import api from "@/services/api";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import {
+    Calendar as CalendarIcon,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    X,
+} from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
     ResponsiveContainer,
@@ -17,6 +24,7 @@ import { DateRange } from "react-day-picker";
 interface OccupancyTrendItem {
     day: string;
     occupancy: number;
+    fullDate?: string;
 }
 
 interface ChartDataItem {
@@ -25,7 +33,12 @@ interface ChartDataItem {
     fullDate?: string | undefined;
 }
 
-type TimeRange = "last7days" | "last30days" | "thismonth" | "thisyear" | "custom";
+type TimeRange =
+    | "last7days"
+    | "last30days"
+    | "thismonth"
+    | "thisyear"
+    | "custom";
 
 // ----- MONTH CAPTION COMPONENT ----->
 const MonthCaption = ({
@@ -66,7 +79,7 @@ const MonthCaption = ({
 const CustomRangePicker = ({
     onSelect,
     onClose,
-    initialRange
+    initialRange,
 }: {
     onSelect: (from: Date, to: Date) => void;
     onClose: () => void;
@@ -74,11 +87,11 @@ const CustomRangePicker = ({
 }) => {
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: initialRange.from || undefined,
-        to: initialRange.to || undefined
+        to: initialRange.to || undefined,
     });
 
     const [leftMonth, setLeftMonth] = useState<Date>(
-        initialRange.from ?? new Date()
+        initialRange.from ?? new Date(),
     );
 
     const rightMonth = addMonths(leftMonth, 1);
@@ -106,7 +119,10 @@ const CustomRangePicker = ({
 
     const durationDays =
         dateRange?.from && dateRange?.to
-            ? Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 3600 * 24))
+            ? Math.ceil(
+                  (dateRange.to.getTime() - dateRange.from.getTime()) /
+                      (1000 * 3600 * 24),
+              )
             : null;
 
     const sharedClassNames = {
@@ -117,7 +133,8 @@ const CustomRangePicker = ({
         nav: "hidden",
         table: "border-collapse mx-auto",
         head_row: "flex justify-center",
-        head_cell: "text-gray-400 w-9 font-normal text-[11px] uppercase tracking-wider text-center py-1.5",
+        head_cell:
+            "text-gray-400 w-9 font-normal text-[11px] uppercase tracking-wider text-center py-1.5",
         row: "flex justify-center mt-1",
         cell: [
             "relative text-center text-sm p-0",
@@ -132,13 +149,18 @@ const CustomRangePicker = ({
             "hover:bg-emerald-200 hover:text-emerald-900 hover:scale-105",
             "aria-disabled:hover:bg-transparent aria-disabled:hover:text-gray-400 aria-disabled:hover:scale-100",
         ].join(" "),
-        day_selected: "bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white shadow-md shadow-emerald-200 scale-105 font-semibold rounded-full",
-        day_today: "ring-2 ring-emerald-400 ring-offset-1 text-emerald-700 font-semibold rounded-full",
+        day_selected:
+            "bg-emerald-500 text-white hover:bg-emerald-600 hover:text-white shadow-md shadow-emerald-200 scale-105 font-semibold rounded-full",
+        day_today:
+            "ring-2 ring-emerald-400 ring-offset-1 text-emerald-700 font-semibold rounded-full",
         day_outside: "opacity-20 blur-[1px] pointer-events-none select-none",
         day_disabled: "text-gray-300 opacity-30",
-        day_range_middle: "aria-selected:bg-emerald-100 aria-selected:text-emerald-900 rounded-none",
-        day_range_start: "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
-        day_range_end: "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
+        day_range_middle:
+            "aria-selected:bg-emerald-100 aria-selected:text-emerald-900 rounded-none",
+        day_range_start:
+            "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
+        day_range_end:
+            "rounded-full bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-200",
         day_hidden: "invisible",
     };
 
@@ -178,13 +200,18 @@ const CustomRangePicker = ({
             <div className="bg-white rounded-xl border border-gray-200 shadow-lg w-full max-w-2xl overflow-hidden">
                 <div className="flex items-start justify-between px-5 pt-5 pb-3">
                     <div>
-                        <p className="text-sm font-medium text-gray-900">Select Date Range</p>
+                        <p className="text-sm font-medium text-gray-900">
+                            Select Date Range
+                        </p>
                         {dateRange?.from && dateRange?.to ? (
                             <p className="text-xs text-emerald-600 mt-0.5 font-medium">
-                                {format(dateRange.from, "MMM d, yyyy")} – {format(dateRange.to, "MMM d, yyyy")}
+                                {format(dateRange.from, "MMM d, yyyy")} –{" "}
+                                {format(dateRange.to, "MMM d, yyyy")}
                             </p>
                         ) : (
-                            <p className="text-xs text-gray-400 mt-0.5">Choose start and end dates</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                Choose start and end dates
+                            </p>
                         )}
                     </div>
                     <button
@@ -198,9 +225,15 @@ const CustomRangePicker = ({
                 <div className="flex flex-wrap gap-1.5 px-5 pb-3">
                     {[
                         { label: "Last 7 days", action: () => quickSelect(7) },
-                        { label: "Last 30 days", action: () => quickSelect(30) },
+                        {
+                            label: "Last 30 days",
+                            action: () => quickSelect(30),
+                        },
                         { label: "This month", action: selectCurrentMonth },
-                        { label: "Last 3 months", action: () => quickSelect(90) },
+                        {
+                            label: "Last 3 months",
+                            action: () => quickSelect(90),
+                        },
                         { label: "Last year", action: () => quickSelect(365) },
                     ].map(({ label, action }) => (
                         <button
@@ -219,7 +252,9 @@ const CustomRangePicker = ({
                     <div className="flex-1">
                         <MonthCaption
                             displayMonth={leftMonth}
-                            onPrev={() => setLeftMonth(addMonths(leftMonth, -1))}
+                            onPrev={() =>
+                                setLeftMonth(addMonths(leftMonth, -1))
+                            }
                             onNext={() => setLeftMonth(addMonths(leftMonth, 1))}
                             hideNext
                         />
@@ -232,8 +267,16 @@ const CustomRangePicker = ({
                             onMonthChange={setLeftMonth}
                             showOutsideDays
                             disabled={(date) => {
-                                const start = new Date(leftMonth.getFullYear(), leftMonth.getMonth(), 1);
-                                const end = new Date(leftMonth.getFullYear(), leftMonth.getMonth() + 1, 0);
+                                const start = new Date(
+                                    leftMonth.getFullYear(),
+                                    leftMonth.getMonth(),
+                                    1,
+                                );
+                                const end = new Date(
+                                    leftMonth.getFullYear(),
+                                    leftMonth.getMonth() + 1,
+                                    0,
+                                );
                                 return date < start || date > end;
                             }}
                             className="border-0 p-0"
@@ -247,7 +290,9 @@ const CustomRangePicker = ({
                     <div className="flex-1">
                         <MonthCaption
                             displayMonth={rightMonth}
-                            onPrev={() => setLeftMonth(addMonths(leftMonth, -1))}
+                            onPrev={() =>
+                                setLeftMonth(addMonths(leftMonth, -1))
+                            }
                             onNext={() => setLeftMonth(addMonths(leftMonth, 1))}
                             hidePrev
                         />
@@ -257,11 +302,21 @@ const CustomRangePicker = ({
                             onSelect={setDateRange}
                             numberOfMonths={1}
                             month={rightMonth}
-                            onMonthChange={(m) => setLeftMonth(addMonths(m, -1))}
+                            onMonthChange={(m) =>
+                                setLeftMonth(addMonths(m, -1))
+                            }
                             showOutsideDays
                             disabled={(date) => {
-                                const start = new Date(rightMonth.getFullYear(), rightMonth.getMonth(), 1);
-                                const end = new Date(rightMonth.getFullYear(), rightMonth.getMonth() + 1, 0);
+                                const start = new Date(
+                                    rightMonth.getFullYear(),
+                                    rightMonth.getMonth(),
+                                    1,
+                                );
+                                const end = new Date(
+                                    rightMonth.getFullYear(),
+                                    rightMonth.getMonth() + 1,
+                                    0,
+                                );
                                 return date < start || date > end;
                             }}
                             className="border-0 p-0"
@@ -275,25 +330,37 @@ const CustomRangePicker = ({
                     <div className="mx-5 mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
                         <div className="flex gap-6">
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">Start date</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    Start date
+                                </p>
                                 <p className="text-sm font-medium text-gray-800 mt-0.5">
                                     {format(dateRange.from, "MMM d, yyyy")}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">End date</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    End date
+                                </p>
                                 <p className="text-sm font-medium text-gray-800 mt-0.5">
                                     {format(dateRange.to, "MMM d, yyyy")}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">Duration</p>
-                                <p className="text-sm font-medium text-emerald-600 mt-0.5">{durationDays} days</p>
+                                <p className="text-[10px] uppercase tracking-wide text-gray-500 font-medium">
+                                    Duration
+                                </p>
+                                <p className="text-sm font-medium text-emerald-600 mt-0.5">
+                                    {durationDays} days
+                                </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <p className="text-[10px] text-gray-400">Total days</p>
-                            <p className="text-2xl font-semibold text-emerald-600">{(durationDays ?? 0) + 1}</p>
+                            <p className="text-[10px] text-gray-400">
+                                Total days
+                            </p>
+                            <p className="text-2xl font-semibold text-emerald-600">
+                                {(durationDays ?? 0) + 1}
+                            </p>
                         </div>
                     </div>
                 )}
@@ -323,14 +390,14 @@ const CustomRangePicker = ({
 const DropdownMenu = ({
     options,
     value,
-    onChange
+    onChange,
 }: {
     options: { value: TimeRange; label: string; subtext?: string }[];
     value: TimeRange;
     onChange: (value: TimeRange) => void;
 }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const selectedOption = options.find(opt => opt.value === value);
+    const selectedOption = options.find((opt) => opt.value === value);
 
     return (
         <div className="relative">
@@ -342,12 +409,17 @@ const DropdownMenu = ({
             >
                 <CalendarIcon className="h-3.5 w-3.5" />
                 {selectedOption?.label}
-                <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                    className={`h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                />
             </Button>
 
             {isOpen && (
                 <>
-                    <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+                    <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setIsOpen(false)}
+                    />
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20 overflow-hidden">
                         {options.map((option) => (
                             <button
@@ -356,12 +428,19 @@ const DropdownMenu = ({
                                     onChange(option.value);
                                     setIsOpen(false);
                                 }}
-                                className={`w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors ${value === option.value ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700'
-                                    }`}
+                                className={`w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors ${
+                                    value === option.value
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "text-gray-700"
+                                }`}
                             >
-                                <div className="text-sm font-medium">{option.label}</div>
+                                <div className="text-sm font-medium">
+                                    {option.label}
+                                </div>
                                 {option.subtext && (
-                                    <div className="text-xs text-gray-400">{option.subtext}</div>
+                                    <div className="text-xs text-gray-400">
+                                        {option.subtext}
+                                    </div>
                                 )}
                             </button>
                         ))}
@@ -374,29 +453,45 @@ const DropdownMenu = ({
 
 export default function OccupancyTrendChart({
     data,
+    yearData,
     activeRange: externalActiveRange,
     customRange: externalCustomRange,
     onRangeChange,
-    onCustomRangeChange
+    onCustomRangeChange,
 }: {
     data: OccupancyTrendItem[];
+    yearData?: OccupancyTrendItem[];
     activeRange?: TimeRange;
     customRange?: { from: Date | null; to: Date | null };
     onRangeChange?: (range: TimeRange) => void;
-    onCustomRangeChange?: (range: { from: Date | null; to: Date | null }) => void;
+    onCustomRangeChange?: (range: {
+        from: Date | null;
+        to: Date | null;
+    }) => void;
 }) {
     // Internal state for when component is used standalone
-    const [internalActiveRange, setInternalActiveRange] = useState<TimeRange>("last7days");
-    const [internalCustomRange, setInternalCustomRange] = useState<{ from: Date | null; to: Date | null }>({
+    const [internalActiveRange, setInternalActiveRange] =
+        useState<TimeRange>("last7days");
+    const [internalCustomRange, setInternalCustomRange] = useState<{
+        from: Date | null;
+        to: Date | null;
+    }>({
         from: null,
         to: null,
     });
     const [showCustomPicker, setShowCustomPicker] = useState(false);
     const chartContainerRef = useRef<HTMLDivElement>(null);
+    const [rangeData, setRangeData] = useState<OccupancyTrendItem[]>([]);
 
     // Use external state if provided, otherwise use internal state
-    const activeRange = externalActiveRange !== undefined ? externalActiveRange : internalActiveRange;
-    const customRange = externalCustomRange !== undefined ? externalCustomRange : internalCustomRange;
+    const activeRange =
+        externalActiveRange !== undefined
+            ? externalActiveRange
+            : internalActiveRange;
+    const customRange =
+        externalCustomRange !== undefined
+            ? externalCustomRange
+            : internalCustomRange;
 
     const setActiveRange = (range: TimeRange) => {
         if (onRangeChange) {
@@ -416,22 +511,69 @@ export default function OccupancyTrendChart({
 
     const currentYear = new Date().getFullYear();
 
+    // Fetch daily occupancy from the server for the custom range
+    useEffect(() => {
+        if (activeRange !== "custom" || !customRange.from || !customRange.to) {
+            return;
+        }
+
+        let cancelled = false;
+
+        api.get("/dashboard/occupancy-range", {
+            params: {
+                from: format(customRange.from, "yyyy-MM-dd"),
+                to: format(customRange.to, "yyyy-MM-dd"),
+            },
+        })
+            .then((res) => {
+                if (!cancelled)
+                    setRangeData(res.data.occupancyRangeTrend ?? []);
+            })
+            .catch(() => {
+                if (!cancelled) setRangeData([]);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeRange, customRange.from, customRange.to]);
+
     const rangeOptions = [
-        { value: "last7days" as const, label: "Last 7 Days", subtext: "daily trend" },
-        { value: "last30days" as const, label: "Last 30 Days", subtext: "monthly view" },
-        { value: "thismonth" as const, label: "This Month", subtext: format(new Date(), "MMMM yyyy") },
-        { value: "thisyear" as const, label: "This Year", subtext: `Jan ${currentYear} - Dec ${currentYear}` },
-        { value: "custom" as const, label: "Custom Range", subtext: "select dates" },
+        {
+            value: "last7days" as const,
+            label: "Last 7 Days",
+            subtext: "daily trend",
+        },
+        {
+            value: "last30days" as const,
+            label: "Last 30 Days",
+            subtext: "monthly view",
+        },
+        {
+            value: "thismonth" as const,
+            label: "This Month",
+            subtext: format(new Date(), "MMMM yyyy"),
+        },
+        {
+            value: "thisyear" as const,
+            label: "This Year",
+            subtext: `Jan ${currentYear} - Dec ${currentYear}`,
+        },
+        {
+            value: "custom" as const,
+            label: "Custom Range",
+            subtext: "select dates",
+        },
     ];
 
     // Helper function to parse date from various formats
     const parseDateString = (dateStr: string | undefined): Date | null => {
         if (!dateStr) return null;
-        
+
         try {
             // Try to parse as YYYY-MM-DD
-            if (dateStr.includes('-')) {
-                const parts = dateStr.split('-');
+            if (dateStr.includes("-")) {
+                const parts = dateStr.split("-");
                 if (parts.length === 3) {
                     const year = parseInt(parts[0] || "0");
                     const month = parseInt(parts[1] || "1") - 1;
@@ -465,13 +607,18 @@ export default function OccupancyTrendChart({
         if (!data || data.length === 0) return [];
 
         const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const today = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+        );
 
         // Convert data to map for easy lookup
         const dataMap = new Map<string, number>();
-        data.forEach(item => {
-            if (item.day) {
-                const parsedDate = parseDateString(item.day);
+        const source = activeRange === "custom" ? rangeData : data;
+        source.forEach((item) => {
+            if (item.day || item.fullDate) {
+                const parsedDate = parseDateString(item.fullDate ?? item.day);
                 if (parsedDate) {
                     const dateKey = toDateKey(parsedDate);
                     dataMap.set(dateKey, item.occupancy);
@@ -490,7 +637,7 @@ export default function OccupancyTrendChart({
                     result.push({
                         day: format(date, "MMM d"),
                         occupancy: occupancy,
-                        fullDate: dateKey
+                        fullDate: dateKey,
                     });
                 }
                 return result;
@@ -506,7 +653,7 @@ export default function OccupancyTrendChart({
                     result.push({
                         day: format(date, "MMM d"),
                         occupancy: occupancy,
-                        fullDate: dateKey
+                        fullDate: dateKey,
                     });
                 }
                 return result;
@@ -515,7 +662,11 @@ export default function OccupancyTrendChart({
             case "thismonth": {
                 const currentMonth = today.getMonth();
                 const currentYear = today.getFullYear();
-                const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+                const daysInMonth = new Date(
+                    currentYear,
+                    currentMonth + 1,
+                    0,
+                ).getDate();
                 const result: ChartDataItem[] = [];
 
                 for (let day = 1; day <= daysInMonth; day++) {
@@ -526,19 +677,33 @@ export default function OccupancyTrendChart({
                     result.push({
                         day: format(date, "MMM d"),
                         occupancy: occupancy,
-                        fullDate: dateKey
+                        fullDate: dateKey,
                     });
                 }
                 return result;
             }
 
             case "thisyear": {
+                if (yearData && yearData.length > 0) {
+                    return yearData.map((item) => ({
+                        day: format(new Date(item.fullDate ?? item.day), "MMM"),
+                        occupancy: Math.round(item.occupancy),
+                        fullDate: item.fullDate,
+                    }));
+                }
                 const monthlyData: ChartDataItem[] = [];
                 for (let month = 0; month < 12; month++) {
-                    const monthName = format(new Date(currentYear, month, 1), "MMM");
+                    const monthName = format(
+                        new Date(currentYear, month, 1),
+                        "MMM",
+                    );
 
                     // Get all days in this month
-                    const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
+                    const daysInMonth = new Date(
+                        currentYear,
+                        month + 1,
+                        0,
+                    ).getDate();
                     let totalOccupancy = 0;
                     let daysWithData = 0;
 
@@ -552,14 +717,18 @@ export default function OccupancyTrendChart({
                         }
                     }
 
-                    const avgOccupancy = daysWithData > 0
-                        ? Math.round(totalOccupancy / daysWithData)
-                        : 0;
+                    const avgOccupancy =
+                        daysWithData > 0
+                            ? Math.round(totalOccupancy / daysWithData)
+                            : 0;
 
                     monthlyData.push({
                         day: monthName,
                         occupancy: avgOccupancy,
-                        fullDate: format(new Date(currentYear, month, 1), "yyyy-MM-dd")
+                        fullDate: format(
+                            new Date(currentYear, month, 1),
+                            "yyyy-MM-dd",
+                        ),
                     });
                 }
                 return monthlyData;
@@ -578,7 +747,7 @@ export default function OccupancyTrendChart({
                         result.push({
                             day: format(currentDate, "MMM d"),
                             occupancy: occupancy,
-                            fullDate: dateKey
+                            fullDate: dateKey,
                         });
 
                         currentDate.setDate(currentDate.getDate() + 1);
@@ -590,7 +759,7 @@ export default function OccupancyTrendChart({
             default:
                 return [];
         }
-    }, [activeRange, data, customRange]);
+    }, [activeRange, data, yearData, customRange, rangeData]);
 
     const handleRangeChange = (range: TimeRange) => {
         setActiveRange(range);
@@ -607,7 +776,7 @@ export default function OccupancyTrendChart({
     };
 
     // SAFETY: ensure no negative values (but allow values up to 100 naturally)
-    const safeData = displayData.map(item => ({
+    const safeData = displayData.map((item) => ({
         ...item,
         occupancy: Math.max(0, item.occupancy || 0), // No upper cap, just prevent negatives
     }));
@@ -628,7 +797,7 @@ export default function OccupancyTrendChart({
             return `${Math.max(800, dataLength * 45)}px`;
         }
 
-        return '100%';
+        return "100%";
     };
 
     // Get X axis props based on data length
@@ -640,7 +809,7 @@ export default function OccupancyTrendChart({
                 interval: Math.floor(dataLength / 10),
                 angle: -45,
                 height: 80,
-                fontSize: 10
+                fontSize: 10,
             };
         }
 
@@ -649,7 +818,7 @@ export default function OccupancyTrendChart({
                 interval: Math.floor(dataLength / 8),
                 angle: -40,
                 height: 70,
-                fontSize: 10
+                fontSize: 10,
             };
         }
 
@@ -658,7 +827,7 @@ export default function OccupancyTrendChart({
                 interval: Math.floor(dataLength / 10),
                 angle: -35,
                 height: 65,
-                fontSize: 10
+                fontSize: 10,
             };
         }
 
@@ -667,7 +836,7 @@ export default function OccupancyTrendChart({
                 interval: 0,
                 angle: 0,
                 height: 40,
-                fontSize: 11
+                fontSize: 11,
             };
         }
 
@@ -675,7 +844,7 @@ export default function OccupancyTrendChart({
             interval: 0,
             angle: -35,
             height: 60,
-            fontSize: 11
+            fontSize: 11,
         };
     };
 
@@ -711,9 +880,22 @@ export default function OccupancyTrendChart({
     };
 
     // Get current average occupancy
-    const averageOccupancy = safeData.length > 0
-        ? Math.round(safeData.reduce((sum, item) => sum + (item.occupancy || 0), 0) / safeData.length)
-        : 0;
+    const avgSource =
+        activeRange === "thisyear"
+            ? safeData.filter(
+                  (d) => !d.fullDate || new Date(d.fullDate) <= new Date(),
+              )
+            : safeData;
+
+    const averageOccupancy =
+        avgSource.length > 0
+            ? Math.round(
+                  avgSource.reduce(
+                      (sum, item) => sum + (item.occupancy || 0),
+                      0,
+                  ) / avgSource.length,
+              )
+            : 0;
 
     return (
         <div className="bg-white rounded-2xl p-5 text-gray-800 shadow-sm border border-gray-200 flex flex-col h-full">
@@ -721,9 +903,15 @@ export default function OccupancyTrendChart({
             <div className="flex justify-between items-start mb-3">
                 <div>
                     <h2 className="text-lg font-semibold">Occupancy Trend</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">{getRangeSubtext()}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                        {getRangeSubtext()}
+                    </p>
                 </div>
-                <DropdownMenu options={rangeOptions} value={activeRange} onChange={handleRangeChange} />
+                <DropdownMenu
+                    options={rangeOptions}
+                    value={activeRange}
+                    onChange={handleRangeChange}
+                />
             </div>
 
             {/* AVERAGE OCCUPANCY METRIC */}
@@ -731,12 +919,18 @@ export default function OccupancyTrendChart({
                 <div className="mb-4 pb-3 border-b border-gray-100">
                     <div className="flex items-baseline justify-between">
                         <div>
-                            <p className="text-xs text-gray-500 font-medium">Average Occupancy</p>
-                            <p className="text-2xl font-bold text-emerald-600">{averageOccupancy}%</p>
+                            <p className="text-xs text-gray-500 font-medium">
+                                Average Occupancy
+                            </p>
+                            <p className="text-2xl font-bold text-emerald-600">
+                                {averageOccupancy}%
+                            </p>
                         </div>
                         <div className="text-right">
                             <p className="text-xs text-gray-500">Total Days</p>
-                            <p className="text-sm font-medium text-gray-700">{safeData.length} days</p>
+                            <p className="text-sm font-medium text-gray-700">
+                                {safeData.length} days
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -759,25 +953,39 @@ export default function OccupancyTrendChart({
                 ref={chartContainerRef}
                 className="w-full overflow-x-auto overflow-y-hidden"
                 style={{
-                    minHeight: '320px',
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: '#cbd5e1 #f1f5f9'
+                    minHeight: "320px",
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "#cbd5e1 #f1f5f9",
                 }}
             >
                 <div
                     style={{
                         width: getChartWidth(),
-                        minWidth: '100%',
-                        height: '300px'
+                        minWidth: "100%",
+                        height: "300px",
                     }}
                 >
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={safeData}>
                             {/* GRADIENT */}
                             <defs>
-                                <linearGradient id="mintGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                <linearGradient
+                                    id="mintGradient"
+                                    x1="0"
+                                    y1="0"
+                                    x2="0"
+                                    y2="1"
+                                >
+                                    <stop
+                                        offset="5%"
+                                        stopColor="#10b981"
+                                        stopOpacity={0.3}
+                                    />
+                                    <stop
+                                        offset="95%"
+                                        stopColor="#10b981"
+                                        stopOpacity={0}
+                                    />
                                 </linearGradient>
                             </defs>
 
@@ -797,14 +1005,16 @@ export default function OccupancyTrendChart({
                                 axisLine={false}
                                 interval={xAxisProps.interval}
                                 angle={xAxisProps.angle}
-                                textAnchor={xAxisProps.angle === 0 ? "middle" : "end"}
+                                textAnchor={
+                                    xAxisProps.angle === 0 ? "middle" : "end"
+                                }
                                 height={xAxisProps.height}
                                 dy={xAxisProps.angle === 0 ? 10 : 5}
                             />
 
                             {/* Y AXIS - Changed to auto domain for realistic display */}
                             <YAxis
-                                domain={[0, 'auto']}
+                                domain={[0, "auto"]}
                                 tickFormatter={(val) => `${Math.round(val)}%`}
                                 stroke="#9ca3af"
                                 fontSize={11}
@@ -819,9 +1029,13 @@ export default function OccupancyTrendChart({
                                     "Occupancy Rate",
                                 ]}
                                 labelFormatter={(label) => {
-                                    const dataPoint = safeData.find(d => d.day === label);
+                                    const dataPoint = safeData.find(
+                                        (d) => d.day === label,
+                                    );
                                     if (dataPoint && dataPoint.fullDate) {
-                                        const date = new Date(dataPoint.fullDate);
+                                        const date = new Date(
+                                            dataPoint.fullDate,
+                                        );
                                         if (!isNaN(date.getTime())) {
                                             return format(date, "MMMM d, yyyy");
                                         }
@@ -835,7 +1049,10 @@ export default function OccupancyTrendChart({
                                     fontSize: "12px",
                                     padding: "8px 12px",
                                 }}
-                                labelStyle={{ color: "#374151", fontWeight: 600 }}
+                                labelStyle={{
+                                    color: "#374151",
+                                    fontWeight: 600,
+                                }}
                             />
 
                             {/* AREA */}
@@ -846,7 +1063,12 @@ export default function OccupancyTrendChart({
                                 strokeWidth={2}
                                 fill="url(#mintGradient)"
                                 dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
-                                activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
+                                activeDot={{
+                                    r: 6,
+                                    fill: "#10b981",
+                                    stroke: "#fff",
+                                    strokeWidth: 2,
+                                }}
                                 connectNulls={true}
                             />
                         </AreaChart>
@@ -856,12 +1078,14 @@ export default function OccupancyTrendChart({
 
             {/* Horizontal scroll indicator for large ranges */}
             {(activeRange === "custom" && safeData.length > 15) ||
-                (activeRange === "last30days" && safeData.length > 20) ||
-                (activeRange === "thismonth" && safeData.length > 25) ? (
+            (activeRange === "last30days" && safeData.length > 20) ||
+            (activeRange === "thismonth" && safeData.length > 25) ? (
                 <div className="text-center mt-3">
                     <p className="text-xs text-gray-400">
                         ← Scroll horizontally to see more data →
-                        <span className="inline-block ml-2 text-emerald-500">({safeData.length} days)</span>
+                        <span className="inline-block ml-2 text-emerald-500">
+                            ({safeData.length} days)
+                        </span>
                     </p>
                 </div>
             ) : null}

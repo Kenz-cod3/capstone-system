@@ -24,6 +24,9 @@ return new class extends Migration
             $table->enum('role', ['admin', 'staff', 'guest', 'cashier', 'housekeeper']);
             $table->boolean('is_active')->default(true);
             $table->boolean('is_verified')->default(false);
+
+            $table->text('expo_push_token')->nullable();
+
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('last_login')->nullable();
             $table->rememberToken();

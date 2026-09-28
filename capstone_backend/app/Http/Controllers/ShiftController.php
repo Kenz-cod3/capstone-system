@@ -192,8 +192,11 @@ class ShiftController extends Controller
         }
 
         $shifts = Shift::with([
-            'openedBy:id,first_name,last_name'
+            'openedBy:id,first_name,last_name,role'
         ])
+            ->whereHas('openedBy', function ($q) {
+                $q->where('role', 'staff');
+            })
             ->latest('opened_at')
             ->paginate(10);
 

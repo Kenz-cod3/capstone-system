@@ -17,6 +17,9 @@ class CashTransactionController extends Controller
             'category',
             'user:id,first_name,last_name,role'
         ])
+            ->whereHas('user', function ($q) {
+                $q->where('role', 'staff');
+            })
             ->latest()
             ->get();
     }

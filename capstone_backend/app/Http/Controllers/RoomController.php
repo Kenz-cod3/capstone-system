@@ -8,6 +8,20 @@ use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
+    // Format room images so the frontend always gets id, type and a full URL
+    private function formatImages($images)
+    {
+        return $images
+            ->sortBy('id')
+            ->values()
+            ->map(fn($img) => [
+                'id'         => $img->id,
+                'image_type' => $img->image_type,
+                'image_path' => $img->image_path,
+                'url'        => asset('storage/' . $img->image_path),
+            ]);
+    }
+
     public function index(Request $request)
     {
         $checkIn = $request->check_in_date;
@@ -61,9 +75,11 @@ class RoomController extends Controller
         return response()->json(
             $rooms->map(function ($room) use ($today) {
 
+                // PALITAN NG
+                // NORMAL IMAGE
                 $normalImage = $room->images
                     ->where('image_type', 'normal')
-                    ->sortByDesc('created_at')
+                    ->sortBy('id')
                     ->first();
 
                 $panoramaImage = $room->images
@@ -122,8 +138,9 @@ class RoomController extends Controller
                     'room_number' => $room->room_number,
                     'status'      => $displayStatus,
                     'is_deleted'  => $room->deleted_at !== null,
+                    'updated_at'  => $room->updated_at,
 
-                    'images' => $room->images,
+                    'images' => $this->formatImages($room->images),
 
                     'room_type_id' => $room->room_type_id,
                     'room_type'    => $room->roomType,
@@ -140,6 +157,53 @@ class RoomController extends Controller
                 ];
             })
         );
+    }
+
+    // ROOM DETAILS (for 3-dot View Info modal)
+    public function details($id)
+    {
+        $room = Room::with([
+            'roomType',
+            'images',
+            'amenities:id,name',
+        ])->findOrFail($id);
+
+        // PALITAN NG
+        $normalImages = $room->images
+            ->where('image_type', 'normal')
+            ->sortBy('id')
+            ->values();
+
+        $panoramaImage = $room->images
+            ->where('image_type', '360')
+            ->sortByDesc('created_at')
+            ->first();
+
+        return response()->json([
+            'id'          => $room->id,
+            'room_number' => $room->room_number,
+            'status'      => $room->status,
+            'updated_at'  => $room->updated_at,
+
+            'room_type'   => $room->roomType,
+            'amenities'   => $room->amenities,
+
+            'images' => $normalImages->map(fn($img) => [
+                'id'         => $img->id,
+                'image_type' => $img->image_type,
+                'url'        => asset('storage/' . $img->image_path),
+            ]),
+
+            'panorama_id' => $panoramaImage?->id,
+
+            'image_url' => $normalImages->first()
+                ? asset('storage/' . $normalImages->first()->image_path)
+                : null,
+
+            'panorama_url' => $panoramaImage
+                ? asset('storage/' . $panoramaImage->image_path)
+                : null,
+        ]);
     }
 
     public function checkAvailability(Request $request, $id)
@@ -230,40 +294,44 @@ class RoomController extends Controller
         return response()->json(['data' => $ranges]);
     }
 
-    public function publicAvailable()
+    public function publicAvailable(Request $request)
     {
+        // 6 by default, never more than 24 per request
+        $perPage = min(max((int) $request->query('per_page', 6), 1), 24);
+
         $rooms = Room::with([
             'roomType:id,type_name,description,base_price,short_stay_price,max_occupancy',
-            'images',
-            'amenities:id,name'
+            // only the photo the landing page uses, not the 360 images
+            'images' => fn($q) => $q->where('image_type', 'normal')->orderBy('id'),
         ])
-            ->where('status', 'available')
+            ->where('status', '!=', 'maintenance')
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
-            ->get();
+            ->orderBy('id') // stable order between pages
+            ->paginate($perPage);
 
-        return response()->json(
-            $rooms->map(function ($room) {
+        $items = collect($rooms->items())->map(function ($room) {
+            $normalImage = $room->images->first();
 
-                $normalImage = $room->images
-                    ->where('image_type', 'normal')
-                    ->sortByDesc('created_at')
-                    ->first();
+            return [
+                'id'            => $room->id,
+                'name'          => 'Room ' . $room->room_number,
+                'type'          => $room->roomType?->type_name,
+                'description'   => $room->roomType?->description,
+                'pricePerNight' => $room->roomType?->base_price ?? 0,
+                'capacity'      => $room->roomType?->max_occupancy ?? 0,
+                'imageUrl'      => $normalImage
+                    ? asset('storage/' . $normalImage->image_path)
+                    : null,
+            ];
+        })->values();
 
-                return [
-                    'id' => $room->id,
-                    'name' => 'Room ' . $room->room_number,
-                    'type' => $room->roomType?->type_name,
-                    'pricePerNight' => $room->roomType?->base_price ?? 0,
-                    'capacity' => $room->roomType?->max_occupancy ?? 0,
-
-                    'imageUrl' => $normalImage
-                        ? asset('storage/' . $normalImage->image_path)
-                        : null,
-
-                    'amenities' => $room->amenities,
-                ];
-            })
-        );
+        return response()->json([
+            'data'         => $items,
+            'current_page' => $rooms->currentPage(),
+            'last_page'    => $rooms->lastPage(),
+            'per_page'     => $rooms->perPage(),
+            'total'        => $rooms->total(),
+        ]);
     }
 
     public function statusGrid()
@@ -271,9 +339,17 @@ class RoomController extends Controller
         $today = \Carbon\Carbon::now()->startOfDay();
 
         $rooms = Room::with([
-            'bookedRooms.booking.user',
-            'bookedRooms.booking.walkInGuest',
-            'bookedRooms.room.roomType',
+            'bookedRooms' => function ($q) {
+                // Archived/trashed bookings must NEVER count toward the
+                // live room status or checkout countdown on the dashboard.
+                $q->whereNull('archived_at')
+                    ->whereNull('deleted_at')
+                    ->with([
+                        'booking.user',
+                        'booking.walkInGuest',
+                        'room.roomType',
+                    ]);
+            },
         ])
             ->select(
                 'id',
@@ -318,7 +394,7 @@ class RoomController extends Controller
             // Cleaning rooms are being prepared, so don't attach a pending/confirmed
             // booking's guest info to them. A real checked-in stay stays visible.
             if (
-                $room->status === 'cleaning' &&
+                $room->status === 'ongoing' &&
                 $bookedRoom?->status !== 'checked_in'
             ) {
                 $bookedRoom = null;
@@ -358,8 +434,21 @@ class RoomController extends Controller
             $displayStatus = $room->status;
 
             if ($displayStatus === 'reserved' && !$bookedRoom) {
+                // stale "reserved" with no active booking -> available
                 $displayStatus = 'available';
                 $room->status = 'available';
+                $room->save();
+            } elseif ($displayStatus === 'occupied' && !$bookedRoom) {
+                // stale "occupied" with no active (non-archived) booking behind
+                // it — the guest's stay was archived/trashed without resetting
+                // the room. Treat it like a normal checkout: needs preparing.
+                $displayStatus = 'preparing';
+                $room->status = 'preparing';
+                $room->save();
+            } elseif ($bookedRoom && $bookedRoom->status === 'checked_in' && $displayStatus !== 'occupied') {
+                // guest is actually checked in but room row says otherwise -> occupied
+                $displayStatus = 'occupied';
+                $room->status = 'occupied';
                 $room->save();
             } else {
                 $room->status = $displayStatus;
@@ -473,7 +562,7 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_type_id' => 'required|exists:room_types,id',
             'room_number'  => 'required|string|unique:rooms,room_number',
-            'status'       => 'required|in:available,reserved,occupied,maintenance,dirty,cleaning',
+            'status'       => 'required|in:available,reserved,occupied,maintenance,preparing,ongoing',
 
             'amenities'   => 'nullable|array',
             'amenities.*' => 'exists:amenities,id',
@@ -509,10 +598,11 @@ class RoomController extends Controller
             'amenities'
         ])->findOrFail($id);
 
+        // PALITAN NG
         // NORMAL IMAGE
         $normalImage = $room->images
             ->where('image_type', 'normal')
-            ->sortByDesc('created_at')
+            ->sortBy('id')
             ->first();
 
         // 360 IMAGE
@@ -530,7 +620,7 @@ class RoomController extends Controller
             'room_type'    => $room->roomType,
 
             'amenities' => $room->amenities,
-            'images'    => $room->images,
+            'images'    => $this->formatImages($room->images),
 
             'image_url'    => $normalImage
                 ? asset('storage/' . $normalImage->image_path)
@@ -550,7 +640,7 @@ class RoomController extends Controller
         $validated = $request->validate([
             'room_type_id' => 'sometimes|exists:room_types,id',
             'room_number'  => 'sometimes|string|unique:rooms,room_number,' . $id,
-            'status'       => 'sometimes|in:available,reserved,occupied,maintenance,dirty,cleaning',
+            'status'       => 'sometimes|in:available,reserved,occupied,maintenance,preparing,ongoing',
 
             'amenities'   => 'nullable|array',
             'amenities.*' => 'exists:amenities,id',
@@ -651,8 +741,8 @@ class RoomController extends Controller
         $occupiedRooms   = Room::where('status', 'occupied')->count();
         $availableRooms  = Room::where('status', 'available')->count();
         $maintenanceRooms = Room::where('status', 'maintenance')->count();
-        $dirtyRooms      = Room::where('status', 'dirty')->count();
-        $cleaningRooms   = Room::where('status', 'cleaning')->count();
+        $preparingRooms  = Room::where('status', 'preparing')->count();
+        $ongoingRooms    = Room::where('status', 'ongoing')->count();
 
         $occupancyRate = $totalRooms > 0
             ? round(($occupiedRooms / $totalRooms) * 100, 2)
@@ -663,8 +753,8 @@ class RoomController extends Controller
             'occupied_rooms'    => $occupiedRooms,
             'available_rooms'   => $availableRooms,
             'maintenance_rooms' => $maintenanceRooms,
-            'dirty_rooms'       => $dirtyRooms,
-            'cleaning_rooms'    => $cleaningRooms,
+            'preparing_rooms'   => $preparingRooms,
+            'ongoing_rooms'     => $ongoingRooms,
             'occupancy_rate'    => $occupancyRate
         ]);
     }

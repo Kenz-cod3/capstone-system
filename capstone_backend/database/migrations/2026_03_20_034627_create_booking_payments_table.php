@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('booking_payments', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('booking_id') 
+            $table->foreignId('booking_id')
                 ->constrained('bookings');
 
             $table->foreignId('shift_id')
@@ -26,9 +26,13 @@ return new class extends Migration
 
             $table->decimal('amount', 10, 2);
 
+            $table->uuid('split_group_id')->nullable()->index();
+            $table->unsignedTinyInteger('split_sequence')->nullable();
+            $table->decimal('amount_due_at_split', 10, 2)->nullable();
+
             $table->string('payment_method');
 
-             $table->enum('payment_status', [
+            $table->enum('payment_status', [
                 'pending',
                 'paid',
                 'refunded',
@@ -37,6 +41,8 @@ return new class extends Migration
 
             $table->string('gcash_reference')->nullable();
             $table->string('bank_reference')->nullable();
+
+            $table->boolean('is_split_payment')->default(false);
 
             $table->foreignId('received_by')
                 ->nullable()

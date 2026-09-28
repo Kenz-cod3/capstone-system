@@ -22,7 +22,7 @@ class RoomStatusHistoryController extends Controller
     {
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
-            'status' => 'required|in:available,occupied,maintenance,dirty,cleaning'
+            'status' => 'required|in:available,occupied,maintenance,preparing,ongoing'
         ]);
 
         $validated['changed_at'] = Carbon::now();
@@ -52,7 +52,7 @@ class RoomStatusHistoryController extends Controller
         $history = RoomStatusHistory::findOrFail($id);
 
         $validated = $request->validate([
-            'status' => 'sometimes|in:available,occupied,maintenance,dirty,cleaning',
+            'status' => 'sometimes|in:available,occupied,maintenance,preparing,ongoing',
             'changed_at' => 'sometimes|date'
         ]);
 
@@ -79,7 +79,7 @@ class RoomStatusHistoryController extends Controller
 
         $history->delete();
 
-        // 🔥 REALTIME DASHBOARD UPDATE
+        //  REALTIME DASHBOARD UPDATE
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json([

@@ -266,13 +266,19 @@ export default function TransactionsPage() {
         worksheet.mergeCells(`A${totalRowIndex}:E${totalRowIndex}`);
         totalRow.getCell(1).value = "TOTAL";
         totalRow.getCell(1).font = { bold: true, size: 12 };
-        totalRow.getCell(1).alignment = { horizontal: "right", vertical: "middle" };
+        totalRow.getCell(1).alignment = {
+            horizontal: "right",
+            vertical: "middle",
+        };
 
         // Set total amount in column F
         totalRow.getCell(6).value = totalAmount;
         totalRow.getCell(6).numFmt = "₱#,##0.00";
         totalRow.getCell(6).font = { bold: true, size: 12 };
-        totalRow.getCell(6).alignment = { horizontal: "right", vertical: "middle" };
+        totalRow.getCell(6).alignment = {
+            horizontal: "right",
+            vertical: "middle",
+        };
 
         // Style total row borders
         totalRow.eachCell((cell, colNumber) => {
@@ -308,7 +314,8 @@ export default function TransactionsPage() {
         summaryRow.getCell(1).alignment = { horizontal: "left" };
 
         worksheet.mergeCells(`F${summaryRowIndex}:H${summaryRowIndex}`);
-        summaryRow.getCell(6).value = `Total Income: ₱${totalAmount.toLocaleString()}`;
+        summaryRow.getCell(6).value =
+            `Total Income: ₱${totalAmount.toLocaleString()}`;
         summaryRow.getCell(6).font = { bold: true, size: 11 };
         summaryRow.getCell(6).alignment = { horizontal: "right" };
         // ──────────────────────────────────────────────────────────────────────
@@ -381,7 +388,7 @@ export default function TransactionsPage() {
         "Booking Type",
         "Rooms",
         "Total Rooms",
-        "Amount Recieved",
+        "Amount Received",
         "Date",
     ];
     const pageSizeOptions = [
@@ -554,9 +561,8 @@ export default function TransactionsPage() {
                                       )
                                     : data.map((row: any, idx: number) => (
                                           <tr
-                                              key={row.key || idx}
+                                              key={row.id}
                                               onClick={() => {
-                                                  console.log(row);
                                                   setSelected(row);
                                                   setOpen(true);
                                               }}
@@ -1060,6 +1066,64 @@ export default function TransactionsPage() {
                         />
 
                         <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a8878] mb-3">
+                            Payment History
+                        </p>
+
+                        <div className="space-y-2 mb-5">
+                            {selected.payments?.length ? (
+                                selected.payments.map((p: any, i: number) => (
+                                    <div
+                                        key={i}
+                                        className="flex justify-between items-center bg-[#f8f7f4] border border-[#e8e6df] rounded-lg px-3 py-2"
+                                    >
+                                        <div>
+                                            <p className="text-xs font-semibold text-[#1a1a18]">
+                                                {p.payment_method?.toUpperCase() ??
+                                                    "N/A"}
+                                                {p.payment_status ===
+                                                    "refunded" && (
+                                                    <span className="ml-2 text-red-600">
+                                                        (Refunded)
+                                                    </span>
+                                                )}
+                                            </p>
+                                            <p className="text-[10px] text-[#8a8878]">
+                                                {p.payment_date
+                                                    ? new Date(
+                                                          p.payment_date,
+                                                      ).toLocaleString("en-PH")
+                                                    : "—"}
+                                                {p.reference
+                                                    ? ` • ${p.reference}`
+                                                    : ""}
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`font-bold ${
+                                                p.payment_status === "refunded"
+                                                    ? "text-red-600"
+                                                    : "text-[#1e7a45]"
+                                            }`}
+                                        >
+                                            {p.payment_status === "refunded"
+                                                ? "-"
+                                                : ""}
+                                            ₱{Number(p.amount).toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-xs text-[#8a8878]">
+                                    No payments recorded
+                                </p>
+                            )}
+                        </div>
+
+                        <Divider
+                            style={{ margin: "16px 0", borderColor: "#eeece6" }}
+                        />
+
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a8878] mb-3">
                             Payment Summary
                         </p>
 
@@ -1109,7 +1173,7 @@ export default function TransactionsPage() {
                                     </span>
 
                                     <span className="font-bold text-gray-600">
-                                        -₱
+                                        -₱ ₱
                                         {Number(
                                             selected.cancelled_amount,
                                         ).toLocaleString()}
@@ -1125,15 +1189,8 @@ export default function TransactionsPage() {
 
                                 <span className="font-bold text-lg text-[#1e7a45]">
                                     ₱
-                                    {Math.max(
-                                        0,
-                                        Number(selected.paid_amount || 0) -
-                                            Number(
-                                                selected.refunded_amount || 0,
-                                            ) -
-                                            Number(
-                                                selected.cancelled_amount || 0,
-                                            ),
+                                    {Number(
+                                        selected.amount || 0,
                                     ).toLocaleString()}
                                 </span>
                             </div>

@@ -500,8 +500,7 @@ class AuthController extends Controller
                 'message' => 'Invalid email or password'
             ], 401);
         }
-
-        // GUESTS MUST VERIFY THEIR EMAIL BEFORE LOGGING IN
+        
         if ($user->role === 'guest' && !$user->is_verified) {
             $verification = EmailVerification::where('user_id', $user->id)->first();
             $otpActive = $verification && now()->lessThan($verification->expires_at);
@@ -516,7 +515,6 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // ALLOW ADMIN, STAFF, CASHIER, AND GUEST
         if (!in_array($user->role, ['admin', 'staff', 'cashier', 'guest'])) {
             return response()->json([
                 'message' => 'Access Denied'
@@ -531,8 +529,6 @@ class AuthController extends Controller
 
         $user->last_login = now();
         $user->save();
-
-        // Shift is opened manually from the shift modal.
 
         $token = $user->createToken('admin')->plainTextToken;
 

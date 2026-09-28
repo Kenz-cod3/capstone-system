@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 import api from "../../services/api";
-import PanoramaModal from "../../components/AdminComponents/room/PanoramaModal";
+import PanoramaModal from "../../components/AdminComponents/room/modal/PanoramaModal";
 import CustomDatePicker from "./CustomDatePicker";
 
 interface RoomImage {

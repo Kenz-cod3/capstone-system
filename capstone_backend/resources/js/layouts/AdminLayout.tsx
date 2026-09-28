@@ -804,20 +804,9 @@ const AdminLayout = ({
                             href: "/booking-transaction",
                             icon: ClipboardList,
                         },
-                        {
-                            name: "Room Incidents",
-                            description: "View reported Incidents",
-                            href: "/incidents",
-                            icon: ClipboardList,
-                        },
                     ],
                 },
-                {
-                    name: "Rooms",
-                    description: "Room Management",
-                    href: "/rooms",
-                    icon: Key,
-                },
+
                 // {
                 //     name: "Add-Ons",
                 //     description: "Manage room add-ons",
@@ -857,6 +846,18 @@ const AdminLayout = ({
                         // }
                     ],
                 },
+                {
+                    name: "Rooms",
+                    description: "Room Management",
+                    href: "/rooms",
+                    icon: Key,
+                },
+                {
+                    name: "Room Incidents",
+                    description: "View reported Incidents",
+                    href: "/incidents",
+                    icon: ClipboardList,
+                },
             ],
         },
         {
@@ -885,12 +886,6 @@ const AdminLayout = ({
                     href: "/admin/menu",
                     icon: ShoppingCart,
                 },
-                {
-                    name: "Orders Report",
-                    description: "Order Sales Management",
-                    href: "/admin/orders",
-                    icon: UtensilsCrossed,
-                },
             ],
         },
         {
@@ -901,6 +896,12 @@ const AdminLayout = ({
                     description: "Reports & Analytics",
                     href: "/reports",
                     icon: ClipboardList,
+                },
+                {
+                    name: "Orders Report",
+                    description: "Order Sales Management",
+                    href: "/admin/orders",
+                    icon: UtensilsCrossed,
                 },
             ],
         },
@@ -1053,51 +1054,48 @@ const AdminLayout = ({
                                 <div className="absolute left-2 top-5 bottom-5 w-px bg-gray-200"></div>{" "}
                                 {/*line for dropdown*/}
                                 <div className="space-y-1">
-                                    {item.dropdownItems.map(
-                                        (subItem: any) => {
-                                            const isSubActive =
-                                                location.pathname ===
-                                                subItem.href;
-                                            return (
-                                                <div
-                                                    key={subItem.name}
-                                                    data-dropdown-item="true"
-                                                    onClick={() => {
-                                                        handleNavigation(
-                                                            subItem.href,
-                                                        );
-                                                    }}
-                                                    className={cn(
-                                                        "relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer",
-                                                        isSubActive
-                                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                            : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700",
+                                    {item.dropdownItems.map((subItem: any) => {
+                                        const isSubActive =
+                                            location.pathname === subItem.href;
+                                        return (
+                                            <div
+                                                key={subItem.name}
+                                                data-dropdown-item="true"
+                                                onClick={() => {
+                                                    handleNavigation(
+                                                        subItem.href,
+                                                    );
+                                                }}
+                                                className={cn(
+                                                    "relative flex items-center gap-2 px-3 py-1 rounded-lg transition-all duration-200 group cursor-pointer",
+                                                    isSubActive
+                                                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                        : "text-gray-600 hover:bg-emerald-50 hover:text-emerald-700",
+                                                )}
+                                            >
+                                                <subItem.icon className="h-4 w-4 shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-xs font-medium truncate block">
+                                                        {subItem.name}
+                                                    </span>
+                                                    {subItem.description && (
+                                                        <p
+                                                            className={cn(
+                                                                "text-[8px] truncate",
+                                                                isSubActive
+                                                                    ? "text-emerald-600"
+                                                                    : "text-gray-400",
+                                                            )}
+                                                        >
+                                                            {
+                                                                subItem.description
+                                                            }
+                                                        </p>
                                                     )}
-                                                >
-                                                    <subItem.icon className="h-4 w-4 shrink-0" />
-                                                    <div className="flex-1 min-w-0">
-                                                        <span className="text-xs font-medium truncate block">
-                                                            {subItem.name}
-                                                        </span>
-                                                        {subItem.description && (
-                                                            <p
-                                                                className={cn(
-                                                                    "text-[8px] truncate",
-                                                                    isSubActive
-                                                                        ? "text-emerald-600"
-                                                                        : "text-gray-400",
-                                                                )}
-                                                            >
-                                                                {
-                                                                    subItem.description
-                                                                }
-                                                            </p>
-                                                        )}
-                                                    </div>
                                                 </div>
-                                            );
-                                        },
-                                    )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -1117,8 +1115,7 @@ const AdminLayout = ({
                                 setSidebarOpen(true);
                                 setOpenDropdowns((prev) => ({
                                     ...prev,
-                                    [`${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`]:
-                                        true,
+                                    [`${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`]: true,
                                 }));
                             } else {
                                 handleNavigation(item.href);
@@ -1162,9 +1159,7 @@ const AdminLayout = ({
                                 className={cn(
                                     "h-4 w-4 shrink-0 transition-transform duration-200",
                                     isOpen ? "rotate-90" : "",
-                                    isActive
-                                        ? "text-white"
-                                        : "text-gray-400",
+                                    isActive ? "text-white" : "text-gray-400",
                                     "transition-opacity duration-200 ease-linear",
                                     !expanded && "opacity-0",
                                 )}

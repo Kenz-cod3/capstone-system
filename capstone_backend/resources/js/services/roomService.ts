@@ -4,6 +4,10 @@ export const getRooms = () => {
     return api.get("/rooms");
 };
 
+// ── NEW: full details for the View Info modal ──
+export const getRoomDetails = (id: number) =>
+    api.get(`/rooms/${id}/details`);
+
 export const createRoom = (data: any) => api.post("/rooms", data);
 
 export const updateRoom = (id: number, data: any) =>

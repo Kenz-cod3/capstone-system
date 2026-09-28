@@ -630,6 +630,17 @@ class BookingController extends Controller
                 ], 403);
             }
 
+            // Guard: don't allow confirm unless payment is already verified as paid
+            $hasVerifiedPayment = $booking->payments()
+                ->where('payment_status', 'paid')
+                ->exists();
+
+            if (!$hasVerifiedPayment) {
+                return response()->json([
+                    'message' => 'Cannot confirm — payment is still pending. Please verify the payment first.'
+                ], 409);
+            }
+
             foreach ($targetRooms as $bookedRoom) {
                 $bookedRoom->update([
                     'status' => 'confirmed'
@@ -763,7 +774,7 @@ class BookingController extends Controller
                 }
 
                 if ($wasCheckedIn && $room->status === Room::STATUS_OCCUPIED) {
-                    $room->status = Room::STATUS_DIRTY;
+                    $room->status = Room::STATUS_PREPARING;
                     $room->save();
                 }
             }
@@ -838,7 +849,7 @@ class BookingController extends Controller
                 $room = $bookedRoom->room;
 
                 if ($room && $wasCheckedIn && $room->status === Room::STATUS_OCCUPIED) {
-                    $room->status = Room::STATUS_DIRTY;
+                    $room->status = Room::STATUS_PREPARING;
                     $room->save();
                 }
             }

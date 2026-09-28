@@ -13,35 +13,61 @@ export interface ReceiptModalProps {
     isOpen: boolean;
     onClose: () => void;
     paymentId: string | null;
+    // For a split payment checkout, pass all leg payment ids here instead.
+    // Takes precedence over paymentId when non-empty.
+    paymentIds?: (string | number)[];
 }
 
 export default function ReceiptModal({
     isOpen,
     onClose,
     paymentId,
+    paymentIds,
 }: ReceiptModalProps) {
-    const [receipt, setReceipt] = useState<any>(null);
+    const [receipts, setReceipts] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        if (isOpen && paymentId) {
-            loadReceipt();
-        }
-    }, [isOpen, paymentId]);
+    const idsToLoad =
+        paymentIds && paymentIds.length > 0
+            ? paymentIds
+            : paymentId
+              ? [paymentId]
+              : [];
 
-    const loadReceipt = async () => {
-        if (!paymentId) return;
+    useEffect(() => {
+        if (isOpen && idsToLoad.length > 0) {
+            loadReceipts();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, paymentId, JSON.stringify(paymentIds)]);
+
+    const loadReceipts = async () => {
+        if (idsToLoad.length === 0) return;
         setLoading(true);
         try {
-            const res = await api.get(`/receipts/${paymentId}`);
-            console.log(JSON.stringify(res.data, null, 2));
-            setReceipt(res.data);
+            const results = await Promise.all(
+                idsToLoad.map((id) =>
+                    api.get(`/receipts/${id}`).then((res) => res.data),
+                ),
+            );
+            setReceipts(results);
         } catch (err) {
             console.error(err);
+            setReceipts([]);
         } finally {
             setLoading(false);
         }
     };
+
+    // Use the first receipt for shared booking-level fields (they share the
+    // same booking in a split payment). Payment-specific fields (method,
+    // reference, amount, cashier) are rendered per-leg below.
+    const receipt = receipts[0] ?? null;
+    const isSplit = receipts.length > 1;
+    const totalAmount = receipts.reduce(
+        (sum, r) => sum + (Number(r?.amount) || 0),
+        0,
+    );
 
     const handlePrint = () => {
         window.print();
@@ -64,6 +90,43 @@ export default function ReceiptModal({
             default:
                 return method ?? "-";
         }
+    };
+
+    // Renders the reference number line for a given receipt/payment leg,
+    // based on its payment method (gcash / bank / qrph each store their
+    // reference in a different field).
+    const renderPaymentReference = (r: any, keySuffix: string | number) => {
+        if (r.payment_method === "gcash" && r.gcash_reference) {
+            return (
+                <div className="flex justify-between" key={`gcash-${keySuffix}`}>
+                    <span className="text-gray-600">GCash Ref.</span>
+                    <span>{r.gcash_reference}</span>
+                </div>
+            );
+        }
+        if (
+            (r.payment_method === "bank" ||
+                r.payment_method === "bank_transfer") &&
+            r.bank_reference
+        ) {
+            return (
+                <div className="flex justify-between" key={`bank-${keySuffix}`}>
+                    <span className="text-gray-600">Bank Ref.</span>
+                    <span>{r.bank_reference}</span>
+                </div>
+            );
+        }
+        if (r.payment_method === "qrph" && r.bank_reference) {
+            return (
+                <div className="flex justify-between" key={`qrph-${keySuffix}`}>
+                    <span className="text-gray-600">QR Ph Ref.</span>
+                    <span className="text-xs break-all">
+                        {r.bank_reference}
+                    </span>
+                </div>
+            );
+        }
+        return null;
     };
 
     return (
@@ -98,10 +161,14 @@ export default function ReceiptModal({
                         <div className="space-y-1.5 pb-4 border-b border-dashed border-gray-400">
                             <div className="flex justify-between">
                                 <span className="text-gray-600">
-                                    Receipt No.
+                                    {isSplit ? "Receipt Nos." : "Receipt No."}
                                 </span>
                                 <span className="font-semibold">
-                                    {receipt.receipt_number}
+                                    {isSplit
+                                        ? receipts
+                                              .map((r) => r.receipt_number)
+                                              .join(", ")
+                                        : receipt.receipt_number}
                                 </span>
                             </div>
 
@@ -123,50 +190,50 @@ export default function ReceiptModal({
                                 </span>
                             </div>
 
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">
-                                    Payment Method
-                                </span>
-                                <span>
-                                    {paymentMethodLabel(receipt.payment_method)}
-                                </span>
-                            </div>
-
-                            {/* GCash reference */}
-                            {receipt.payment_method === "gcash" &&
-                                receipt.gcash_reference && (
+                            {!isSplit ? (
+                                <>
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">
-                                            GCash Ref.
+                                            Payment Method
                                         </span>
-                                        <span>{receipt.gcash_reference}</span>
-                                    </div>
-                                )}
-
-                            {/* Bank transfer reference */}
-                            {(receipt.payment_method === "bank" ||
-                                receipt.payment_method === "bank_transfer") &&
-                                receipt.bank_reference && (
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                            Bank Ref.
-                                        </span>
-                                        <span>{receipt.bank_reference}</span>
-                                    </div>
-                                )}
-
-                            {/* QR Ph reference (PayMongo payment id stored in bank_reference) */}
-                            {receipt.payment_method === "qrph" &&
-                                receipt.bank_reference && (
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">
-                                            QR Ph Ref.
-                                        </span>
-                                        <span className="text-xs break-all">
-                                            {receipt.bank_reference}
+                                        <span>
+                                            {paymentMethodLabel(
+                                                receipt.payment_method,
+                                            )}
                                         </span>
                                     </div>
-                                )}
+                                    {renderPaymentReference(receipt, "single")}
+                                </>
+                            ) : (
+                                <div className="pt-1">
+                                    <div className="text-gray-600 mb-1">
+                                        Payment Breakdown
+                                    </div>
+                                    <div className="space-y-1 pl-2">
+                                        {receipts.map((r, idx) => (
+                                            <div key={r.id ?? idx}>
+                                                <div className="flex justify-between">
+                                                    <span>
+                                                        {paymentMethodLabel(
+                                                            r.payment_method,
+                                                        )}
+                                                    </span>
+                                                    <span className="font-semibold">
+                                                        ₱
+                                                        {Number(
+                                                            r.amount,
+                                                        ).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                {renderPaymentReference(
+                                                    r,
+                                                    idx,
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="flex justify-between">
                                 <span className="text-gray-600">Cashier</span>
@@ -226,18 +293,45 @@ export default function ReceiptModal({
                                                 </div>
 
                                                 <div className="mt-2 text-xs text-gray-600">
-                                                    Check-in:{" "}
+                                                    Scheduled Check-in:{" "}
                                                     {new Date(
                                                         room.check_in_date,
                                                     ).toLocaleDateString()}
                                                 </div>
 
+                                                {room.check_in_time && (
+                                                    <div className="text-xs text-gray-600">
+                                                        Actual Check-in:{" "}
+                                                        {new Date(
+                                                            room.check_in_time,
+                                                        ).toLocaleString()}
+                                                    </div>
+                                                )}
+
                                                 <div className="text-xs text-gray-600">
-                                                    Check-out:{" "}
+                                                    Scheduled Check-out:{" "}
                                                     {new Date(
                                                         room.check_out_date,
                                                     ).toLocaleDateString()}
                                                 </div>
+
+                                                {room.expected_checkout_at && (
+                                                    <div className="text-xs text-amber-700 font-medium">
+                                                        Expected Checkout:{" "}
+                                                        {new Date(
+                                                            room.expected_checkout_at,
+                                                        ).toLocaleString()}
+                                                    </div>
+                                                )}
+
+                                                {room.check_out_time && (
+                                                    <div className="text-xs text-gray-600">
+                                                        Actual Check-out:{" "}
+                                                        {new Date(
+                                                            room.check_out_time,
+                                                        ).toLocaleString()}
+                                                    </div>
+                                                )}
 
                                                 <div className="flex justify-between mt-2">
                                                     <span>Room Amount</span>
@@ -302,7 +396,11 @@ export default function ReceiptModal({
                                 Total Amount
                             </span>
                             <span className="font-bold text-lg">
-                                ₱{Number(receipt.amount).toLocaleString()}
+                                ₱
+                                {(isSplit
+                                    ? totalAmount
+                                    : Number(receipt.amount)
+                                ).toLocaleString()}
                             </span>
                         </div>
 

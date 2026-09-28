@@ -175,7 +175,7 @@ class WalkInGuestController extends Controller
             'first_name' => 'required|string|max:255',
             'middle_name' => 'nullable|string|max:255',
             'last_name' => 'required|string|max:255',
-            'contact_number' => 'nullable|string|max:20',
+            'contact_number' => ['required', 'string', 'regex:/^09\\d{9}$/'],
             'address' => 'nullable|string|max:255',
         ]);
 
@@ -216,7 +216,18 @@ class WalkInGuestController extends Controller
             'bookings.*.addons.*.id' => 'exists:add_ons,id',
             'bookings.*.addons.*.quantity' => 'integer|min:1',
             'total_amount' => 'required|numeric|min:0',
-            'payment_method' => 'required|in:cash,qrph',
+
+            // Single payment method (cash or qrph) — unchanged behaviour.
+            // Not required when a split "payments" array is sent instead.
+            'payment_method' => 'required_without:payments|in:cash,qrph',
+
+            // SPLIT PAYMENT: exactly cash + qrph, in either order.
+            // The cash portion is paid immediately at the counter; the
+            // qrph portion is generated as a QR right after this request
+            // and only marks the booking checked-in once confirmed.
+            'payments' => 'nullable|array|min:2|max:2',
+            'payments.*.payment_method' => 'required|in:cash,qrph',
+            'payments.*.amount' => 'required|numeric|min:0.01',
         ]);
 
         DB::beginTransaction();
@@ -225,7 +236,48 @@ class WalkInGuestController extends Controller
 
             $guest = WalkInGuest::findOrFail($validated['guest_id']);
 
-            $isCash = $validated['payment_method'] === 'cash';
+            $paymentLegs = $validated['payments'] ?? null;
+            $isSplit = false;
+            $splitHasQrph = false;
+            $qrphLegAmount = 0;
+
+            if ($paymentLegs) {
+
+                $legsTotal = round(array_sum(array_column($paymentLegs, 'amount')), 2);
+
+                if ($legsTotal !== round($validated['total_amount'], 2)) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'message' => 'Split payment amounts (₱' . number_format($legsTotal, 2) .
+                            ') do not match the total amount (₱' . number_format($validated['total_amount'], 2) . ').'
+                    ], 422);
+                }
+
+                $methods = array_column($paymentLegs, 'payment_method');
+
+                if (count($methods) !== count(array_unique($methods))) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'message' => 'Split payment cannot use the same method twice.'
+                    ], 422);
+                }
+
+                $isSplit = count($paymentLegs) > 1;
+
+                $qrphLeg = collect($paymentLegs)->firstWhere('payment_method', 'qrph');
+                $splitHasQrph = (bool) $qrphLeg;
+                $qrphLegAmount = $qrphLeg['amount'] ?? 0;
+
+                // If the split includes a QRPh leg, the booking is NOT fully
+                // paid immediately — the room stays 'confirmed' (reserved)
+                // until that leg is confirmed, same as a pure QRPh walk-in.
+                $isCash = !$splitHasQrph;
+            } else {
+                $isCash = $validated['payment_method'] === 'cash';
+            }
+
             $roomStatus = $isCash ? 'checked_in' : 'confirmed';
             $paymentStatus = $isCash ? 'paid' : 'pending';
 
@@ -406,34 +458,86 @@ class WalkInGuestController extends Controller
                 ->latest()
                 ->first();
 
-            $lastPayment = BookingPayment::whereNotNull('receipt_number')
-                ->lockForUpdate()
-                ->latest('id')
-                ->first();
+            $paymentsCreated = [];
+            $splitGroupId = $isSplit ? (string) Str::uuid() : null;
 
-            $nextNumber = 1;
+            if ($paymentLegs) {
 
-            if ($lastPayment && $lastPayment->receipt_number) {
-                $nextNumber = ((int) substr($lastPayment->receipt_number, -6)) + 1;
+                // SPLIT PAYMENT — one BookingPayment row per leg, all
+                // sharing the same split_group_id.
+                foreach ($paymentLegs as $index => $leg) {
+
+                    $legIsQrph = $leg['payment_method'] === 'qrph';
+
+                    $lastPayment = BookingPayment::whereNotNull('receipt_number')
+                        ->lockForUpdate()
+                        ->latest('id')
+                        ->first();
+
+                    $nextNumber = 1;
+
+                    if ($lastPayment && $lastPayment->receipt_number) {
+                        $nextNumber = ((int) substr($lastPayment->receipt_number, -6)) + 1;
+                    }
+
+                    $receiptNumber = 'OR-' .
+                        date('Y') .
+                        '-' .
+                        str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+
+                    $paymentsCreated[] = BookingPayment::create([
+                        'booking_id' => $booking->id,
+                        'shift_id' => $shift?->id,
+                        'receipt_number' => $receiptNumber,
+                        'amount' => $leg['amount'],
+                        'split_group_id' => $splitGroupId,
+                        'split_sequence' => $index + 1,
+                        'amount_due_at_split' => $totalPrice,
+                        'payment_method' => $leg['payment_method'],
+                        // Cash leg is paid on the spot; the QRPh leg stays
+                        // pending until the guest scans and confirmQr runs.
+                        'payment_status' => $legIsQrph ? 'pending' : 'paid',
+                        'gcash_reference' => null,
+                        'bank_reference' => null,
+                        'is_split_payment' => $isSplit,
+                        'received_by' => Auth::id(),
+                        'payment_date' => $legIsQrph ? null : now(),
+                    ]);
+                }
+            } else {
+
+                // SINGLE PAYMENT METHOD (cash or qrph) — unchanged behaviour.
+                $lastPayment = BookingPayment::whereNotNull('receipt_number')
+                    ->lockForUpdate()
+                    ->latest('id')
+                    ->first();
+
+                $nextNumber = 1;
+
+                if ($lastPayment && $lastPayment->receipt_number) {
+                    $nextNumber = ((int) substr($lastPayment->receipt_number, -6)) + 1;
+                }
+
+                $receiptNumber = 'OR-' .
+                    date('Y') .
+                    '-' .
+                    str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+
+                $paymentsCreated[] = BookingPayment::create([
+                    'booking_id' => $booking->id,
+                    'shift_id' => $shift?->id,
+                    'receipt_number' => $receiptNumber,
+                    'amount' => $totalPrice,
+                    'payment_method' => $validated['payment_method'],
+                    'payment_status' => $paymentStatus,
+                    'gcash_reference' => null,
+                    'bank_reference' => null,
+                    'received_by' => Auth::id(),
+                    'payment_date' => $isCash ? now() : null,
+                ]);
             }
 
-            $receiptNumber = 'OR-' .
-                date('Y') .
-                '-' .
-                str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
-
-            $payment = BookingPayment::create([
-                'booking_id' => $booking->id,
-                'shift_id' => $shift?->id,
-                'receipt_number' => $receiptNumber,
-                'amount' => $totalPrice,
-                'payment_method' => $validated['payment_method'],
-                'payment_status' => $paymentStatus,
-                'gcash_reference' => null,
-                'bank_reference' => null,
-                'received_by' => Auth::id(),
-                'payment_date' => $isCash ? now() : null,
-            ]);
+            $payment = $paymentsCreated[0];
 
             DB::commit();
 
@@ -499,6 +603,10 @@ class WalkInGuestController extends Controller
                 'booking_id' => $booking->id,
                 'booking_reference' => $reference,
                 'payment_id' => $payment->id,
+                'payment_ids' => collect($paymentsCreated)->pluck('id'),
+                'is_split_payment' => $isSplit,
+                'requires_qr_confirmation' => $splitHasQrph,
+                'qrph_amount' => $splitHasQrph ? $qrphLegAmount : null,
                 'total_amount' => $totalPrice,
                 'payment_status' => $paymentStatus,
             ], 201);
@@ -526,7 +634,7 @@ class WalkInGuestController extends Controller
 
         // Idempotency: already confirmed?
         $allCheckedIn = $booking->bookedRooms->every(
-            fn ($br) => in_array($br->status, ['checked_in', 'checked_out'])
+            fn($br) => in_array($br->status, ['checked_in', 'checked_out'])
         );
 
         $payment = $booking->payments()
@@ -554,9 +662,10 @@ class WalkInGuestController extends Controller
                         'check_in_time' => now(),
                     ]);
 
-                    Room::where('id', $bookedRoom->room_id)->update([
-                        'status' => Room::STATUS_OCCUPIED,
-                    ]);
+                    Room::where('id', $bookedRoom->room_id)
+                        ->update([
+                            'status' => Room::STATUS_PREPARING,
+                        ]);
                 }
             }
 
@@ -672,7 +781,7 @@ class WalkInGuestController extends Controller
 
                 Room::where('id', $bookedRoom->room_id)
                     ->update([
-                        'status' => 'dirty',
+                        'status' => Room::STATUS_PREPARING,
                     ]);
             }
 

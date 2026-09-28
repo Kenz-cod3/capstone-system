@@ -58,6 +58,7 @@ export interface RoomDetail {
     room_type: string;
     rate_plan: string;
     rate: number;
+    subtotal?: number;
     nights: number;
     guests: string;
     check_in_time?: string | null;
@@ -102,6 +103,7 @@ export interface TimelineItem {
     title: string;
     description: string;
     time: string;
+    raw_time?: string;
     by: string;
     by_role?: string;
     status?: string;
@@ -327,11 +329,14 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         const items: MenuProps["items"] = [];
 
         if (mainStatus === "PENDING") {
+            const isPaid = booking.payment_status?.toUpperCase() === "PAID";
+
             items.push(
                 {
                     key: "confirm",
-                    label: "Confirm",
-                    onClick: () => onAction && onAction("confirm"),
+                    label: isPaid ? "Confirm" : "Confirm (payment pending)",
+                    disabled: !isPaid,
+                    onClick: () => isPaid && onAction && onAction("confirm"),
                 },
                 {
                     key: "cancel",
@@ -341,7 +346,6 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                 },
             );
         }
-
         if (mainStatus === "CONFIRMED") {
             items.push(
                 {
@@ -423,11 +427,15 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         const roomStatus = room.status;
 
         if (roomStatus === "PENDING") {
+            const isPaid = booking.payment_status?.toUpperCase() === "PAID";
+
             items.push(
                 {
                     key: `confirm:${room.id}`,
-                    label: "Confirm",
-                    onClick: () => onAction && onAction(`confirm:${room.id}`),
+                    label: isPaid ? "Confirm" : "Confirm (payment pending)",
+                    disabled: !isPaid,
+                    onClick: () =>
+                        isPaid && onAction && onAction(`confirm:${room.id}`),
                 },
                 {
                     key: `cancel:${room.id}`,
@@ -560,7 +568,8 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
         const isRoomRefunded = selectedRoom.is_refunded || false;
         const refundAmount = selectedRoom.refund_amount || 0;
-        const roomTotal = selectedRoom.rate * selectedRoom.nights;
+        const roomTotal =
+            selectedRoom.subtotal ?? selectedRoom.rate * selectedRoom.nights;
         const guests = splitGuests(selectedRoom.guests);
 
         let roomPaymentStatus = "PENDING";
@@ -1701,7 +1710,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                     background: MINT_GREEN_BG,
                                     color: MINT_GREEN,
                                     border: "none",
-                                    borderRadius: "999px",
+                                    borderRadius: "6px",
                                     padding: "1px 12px",
                                     fontSize: "12px",
                                     fontWeight: 600,
@@ -1713,7 +1722,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     </div>
 
                     <div>
-                        <Label>Check-in</Label>
+                        <Label>Expected Check-in</Label>
                         <div style={{ marginTop: 4 }}>
                             <Text
                                 strong
@@ -1728,7 +1737,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     </div>
 
                     <div>
-                        <Label>Check-out</Label>
+                        <Label>Expected Check-out</Label>
                         <div style={{ marginTop: 4 }}>
                             <Text
                                 strong
@@ -1894,94 +1903,114 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                 flex: addOns.length > 0 ? "0 0 auto" : 1,
                             }}
                         >
-                            {/* Header — Type & Rate removed */}
-                            <div
-                                className="room-row-grid"
-                                style={{
-                                    padding: "14px 16px 10px",
-                                    marginTop: 12,
-                                    background: "#fafbfc",
-                                    borderTop: `1px solid ${BORDER}`,
-                                    borderBottom: `1.5px solid ${BORDER}`,
-                                }}
-                            >
-                                <Text className="room-col-header">Room</Text>
-                                <Text className="room-col-header">Nights</Text>
-                                <Text className="room-col-header">Guests</Text>
-                                <Text className="room-col-header">
-                                    Expected Checkout
-                                </Text>
-                                <Text className="room-col-header">Amount</Text>
-                                <span />
-                            </div>
+                            <div style={{ overflowX: "hidden" }}>
+                                {/* Header — Type & Rate removed */}
+                                <div
+                                    className="room-row-grid"
+                                    style={{
+                                        padding: "14px 16px 10px",
+                                        marginTop: 12,
+                                        background: "#fafbfc",
+                                        borderTop: `1px solid ${BORDER}`,
+                                        borderBottom: `1.5px solid ${BORDER}`,
+                                    }}
+                                >
+                                    <Text className="room-col-header">
+                                        Room
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Stay Type
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Status
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Guests
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Check In
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Check Out
+                                    </Text>
+                                    <Text className="room-col-header">
+                                        Amount
+                                    </Text>
+                                    <span />
+                                </div>
 
-                            {booking.rooms.map((room, index) => {
-                                const guests = splitGuests(room.guests);
-                                const isRoomRefunded =
-                                    room.is_refunded || false;
-                                const isLastRoom =
-                                    index === booking.rooms.length - 1;
+                                {booking.rooms.map((room, index) => {
+                                    const guests = splitGuests(room.guests);
+                                    const isRoomRefunded =
+                                        room.is_refunded || false;
+                                    const isLastRoom =
+                                        index === booking.rooms.length - 1;
 
-                                return (
-                                    <div
-                                        key={room.id ?? index}
-                                        className="room-row-grid"
-                                        style={{
-                                            padding: isLastRoom
-                                                ? "12px 16px 16px"
-                                                : "12px 16px",
-                                            borderBottom: isLastRoom
-                                                ? "none"
-                                                : "1px solid #f1f5f9",
-                                            alignItems: "center",
-                                            background: isRoomRefunded
-                                                ? "#fff1f0"
-                                                : "transparent",
-                                        }}
-                                    >
-                                        {/* Room cell */}
+                                    return (
                                         <div
+                                            key={room.id ?? index}
+                                            className="room-row-grid"
                                             style={{
-                                                display: "flex",
+                                                padding: isLastRoom
+                                                    ? "12px 16px 16px"
+                                                    : "12px 16px",
+                                                borderBottom: isLastRoom
+                                                    ? "none"
+                                                    : "1px solid #f1f5f9",
                                                 alignItems: "center",
-                                                gap: 10,
-                                                minWidth: 0,
+                                                background: isRoomRefunded
+                                                    ? "#fff1f0"
+                                                    : "transparent",
                                             }}
                                         >
+                                            {/* Room cell */}
                                             <div
                                                 style={{
-                                                    width: 52,
-                                                    height: 40,
-                                                    borderRadius: "8px",
-                                                    overflow: "hidden",
-                                                    flexShrink: 0,
-                                                    background: MINT_GREEN_BG,
                                                     display: "flex",
                                                     alignItems: "center",
-                                                    justifyContent: "center",
+                                                    gap: 10,
+                                                    minWidth: 0,
                                                 }}
                                             >
-                                                {room.image_url ? (
-                                                    <img
-                                                        src={room.image_url}
-                                                        alt={room.room_number}
-                                                        style={{
-                                                            width: "100%",
-                                                            height: "100%",
-                                                            objectFit: "cover",
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <HomeOutlined
-                                                        style={{
-                                                            fontSize: "16px",
-                                                            color: MINT_GREEN,
-                                                        }}
-                                                    />
-                                                )}
-                                            </div>
-                                            <div style={{ minWidth: 0 }}>
-                                                <Space size={6} align="center">
+                                                <div
+                                                    style={{
+                                                        width: 52,
+                                                        height: 40,
+                                                        borderRadius: "8px",
+                                                        overflow: "hidden",
+                                                        flexShrink: 0,
+                                                        background:
+                                                            MINT_GREEN_BG,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent:
+                                                            "center",
+                                                    }}
+                                                >
+                                                    {room.image_url ? (
+                                                        <img
+                                                            src={room.image_url}
+                                                            alt={
+                                                                room.room_number
+                                                            }
+                                                            style={{
+                                                                width: "100%",
+                                                                height: "100%",
+                                                                objectFit:
+                                                                    "cover",
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <HomeOutlined
+                                                            style={{
+                                                                fontSize:
+                                                                    "16px",
+                                                                color: MINT_GREEN,
+                                                            }}
+                                                        />
+                                                    )}
+                                                </div>
+                                                <div style={{ minWidth: 0 }}>
                                                     <Text
                                                         strong
                                                         style={{
@@ -1991,194 +2020,246 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                                     >
                                                         {room.room_number}
                                                     </Text>
-                                                    {!isRoomRefunded && (
-                                                        <Tag
-                                                            style={{
-                                                                fontSize: "9px",
-                                                                borderRadius:
-                                                                    "999px",
-                                                                border: "none",
-                                                                padding:
-                                                                    "0 8px",
-                                                                background:
-                                                                    getStatusBg(
-                                                                        room.status,
-                                                                    ),
-                                                                color: getStatusColor(
-                                                                    room.status,
-                                                                ),
-                                                                fontWeight: 600,
-                                                            }}
-                                                        >
-                                                            {room.status}
-                                                        </Tag>
-                                                    )}
-                                                    {isRoomRefunded && (
-                                                        <Tag
-                                                            color="red"
-                                                            style={{
-                                                                fontSize: "8px",
-                                                                borderRadius:
-                                                                    "4px",
-                                                                padding:
-                                                                    "0 6px",
-                                                            }}
-                                                        >
-                                                            REFUNDED
-                                                        </Tag>
-                                                    )}
-                                                    {room.is_extended && (
-                                                        <Tag
-                                                            color="gold"
-                                                            style={{
-                                                                fontSize: "8px",
-                                                                borderRadius:
-                                                                    "4px",
-                                                                padding:
-                                                                    "0 6px",
-                                                            }}
-                                                        >
-                                                            EXTENDED
-                                                        </Tag>
-                                                    )}
-                                                    {room.is_early_checkin && (
-                                                        <Tag
-                                                            color="cyan"
-                                                            style={{
-                                                                fontSize: "8px",
-                                                                borderRadius:
-                                                                    "4px",
-                                                                padding:
-                                                                    "0 6px",
-                                                            }}
-                                                        >
-                                                            EARLY
-                                                        </Tag>
-                                                    )}
-                                                </Space>
-                                                <div style={{ marginTop: 2 }}>
-                                                    <Text
-                                                        type="secondary"
-                                                        style={{
-                                                            fontSize: "11px",
-                                                        }}
+                                                    <div
+                                                        style={{ marginTop: 2 }}
                                                     >
-                                                        {room.room_type}
-                                                    </Text>
+                                                        <Text
+                                                            type="secondary"
+                                                            style={{
+                                                                fontSize:
+                                                                    "11px",
+                                                            }}
+                                                        >
+                                                            {room.room_type}
+                                                        </Text>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        {/* Nights cell */}
-                                        <Text
-                                            style={{
-                                                fontSize: "12px",
-                                                color: INK,
-                                            }}
-                                        >
-                                            {room.nights} Night
-                                            {room.nights > 1 ? "s" : ""}
-                                        </Text>
+                                            {/* Stay Type cell */}
+                                            <Tag
+                                                style={{
+                                                    fontSize: "10px",
+                                                    borderRadius: "6px",
+                                                    border: "none",
+                                                    padding: "2px 10px",
+                                                    background:
+                                                        room.stay_type ===
+                                                        "short_stay"
+                                                            ? "#f9f0ff"
+                                                            : "#e6fffb",
+                                                    color:
+                                                        room.stay_type ===
+                                                        "short_stay"
+                                                            ? "#722ed1"
+                                                            : "#08979c",
+                                                    fontWeight: 600,
+                                                    width: "fit-content",
+                                                    justifySelf: "start",
+                                                }}
+                                            >
+                                                {room.rate_plan}
+                                            </Tag>
 
-                                        {/* Guests cell */}
-                                        <Text
-                                            style={{
-                                                fontSize: "12px",
-                                                color: INK,
-                                            }}
-                                        >
-                                            {guests.primary}
-                                        </Text>
-
-                                        {/* Expected Checkout cell */}
-                                        <div>
-                                            {room.expected_checkout_at ? (
-                                                <>
-                                                    <Text
-                                                        strong
+                                            {/* Status cell */}
+                                            <div>
+                                                {isRoomRefunded ? (
+                                                    <Tag
+                                                        color="red"
                                                         style={{
-                                                            fontSize: "11px",
-                                                            color:
-                                                                room.checkout_status ===
-                                                                "overdue"
-                                                                    ? "#ff4d4f"
-                                                                    : INK,
+                                                            fontSize: "9px",
+                                                            borderRadius: "6px",
+                                                            padding: "2px 8px",
                                                         }}
                                                     >
-                                                        {new Date(
-                                                            room.expected_checkout_at,
-                                                        ).toLocaleDateString(
-                                                            "en-PH",
-                                                            {
-                                                                month: "short",
-                                                                day: "numeric",
-                                                            },
-                                                        )}
-                                                    </Text>
-                                                    <br />
+                                                        REFUNDED
+                                                    </Tag>
+                                                ) : (
+                                                    <Tag
+                                                        style={{
+                                                            fontSize: "9px",
+                                                            borderRadius: "6px",
+                                                            border: "none",
+                                                            padding: "2px 8px",
+                                                            background:
+                                                                getStatusBg(
+                                                                    room.status,
+                                                                ),
+                                                            color: getStatusColor(
+                                                                room.status,
+                                                            ),
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        {room.status}
+                                                    </Tag>
+                                                )}
+                                            </div>
+
+                                            {/* Guests cell */}
+                                            <Text
+                                                style={{
+                                                    fontSize: "12px",
+                                                    color: INK,
+                                                }}
+                                            >
+                                                {guests.primary}
+                                            </Text>
+
+                                            {/* Check In cell */}
+                                            <div>
+                                                {room.check_in_time ? (
+                                                    <>
+                                                        <Text
+                                                            strong
+                                                            style={{
+                                                                fontSize:
+                                                                    "11px",
+                                                                color: INK,
+                                                            }}
+                                                        >
+                                                            {new Date(
+                                                                room.check_in_time,
+                                                            ).toLocaleDateString(
+                                                                "en-PH",
+                                                                {
+                                                                    month: "short",
+                                                                    day: "numeric",
+                                                                },
+                                                            )}
+                                                        </Text>
+                                                        <br />
+                                                        <Text
+                                                            type="secondary"
+                                                            style={{
+                                                                fontSize:
+                                                                    "10px",
+                                                            }}
+                                                        >
+                                                            {new Date(
+                                                                room.check_in_time,
+                                                            ).toLocaleTimeString(
+                                                                "en-PH",
+                                                                {
+                                                                    hour: "2-digit",
+                                                                    minute: "2-digit",
+                                                                },
+                                                            )}
+                                                        </Text>
+                                                    </>
+                                                ) : (
                                                     <Text
                                                         type="secondary"
                                                         style={{
-                                                            fontSize: "10px",
+                                                            fontSize: "11px",
                                                         }}
                                                     >
-                                                        {new Date(
-                                                            room.expected_checkout_at,
-                                                        ).toLocaleTimeString(
-                                                            "en-PH",
-                                                            {
-                                                                hour: "2-digit",
-                                                                minute: "2-digit",
-                                                            },
-                                                        )}
+                                                        —
                                                     </Text>
-                                                </>
-                                            ) : (
-                                                <Text
-                                                    type="secondary"
-                                                    style={{ fontSize: "11px" }}
-                                                >
-                                                    —
-                                                </Text>
-                                            )}
-                                        </div>
+                                                )}
+                                            </div>
 
-                                        {/* Amount cell */}
-                                        <Text
-                                            strong
-                                            style={{
-                                                fontSize: "13px",
-                                                color: isRoomRefunded
-                                                    ? "#8c8c8c"
-                                                    : MINT_GREEN,
-                                            }}
-                                        >
-                                            ₱
-                                            {(
-                                                room.rate * room.nights
-                                            ).toLocaleString()}
-                                        </Text>
+                                            {/* Check Out cell */}
+                                            <div>
+                                                {room.check_out_time ? (
+                                                    <>
+                                                        <Text
+                                                            strong
+                                                            style={{
+                                                                fontSize:
+                                                                    "11px",
+                                                                color:
+                                                                    room.checkout_status ===
+                                                                    "overdue"
+                                                                        ? "#ff4d4f"
+                                                                        : INK,
+                                                            }}
+                                                        >
+                                                            {new Date(
+                                                                room.check_out_time,
+                                                            ).toLocaleDateString(
+                                                                "en-PH",
+                                                                {
+                                                                    month: "short",
+                                                                    day: "numeric",
+                                                                },
+                                                            )}
+                                                        </Text>
+                                                        <br />
+                                                        <Text
+                                                            type="secondary"
+                                                            style={{
+                                                                fontSize:
+                                                                    "10px",
+                                                            }}
+                                                        >
+                                                            {new Date(
+                                                                room.check_out_time,
+                                                            ).toLocaleTimeString(
+                                                                "en-PH",
+                                                                {
+                                                                    hour: "2-digit",
+                                                                    minute: "2-digit",
+                                                                },
+                                                            )}
+                                                        </Text>
+                                                    </>
+                                                ) : (
+                                                    <Text
+                                                        type="secondary"
+                                                        style={{
+                                                            fontSize: "11px",
+                                                        }}
+                                                    >
+                                                        —
+                                                    </Text>
+                                                )}
+                                            </div>
 
-                                        {/* Actions cell */}
-                                        <div
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{ textAlign: "right" }}
-                                        >
-                                            <Dropdown
-                                                menu={getRoomActionMenu(room)}
-                                                trigger={["click"]}
+                                            {/* Amount cell */}
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: "13px",
+                                                    color: isRoomRefunded
+                                                        ? "#8c8c8c"
+                                                        : MINT_GREEN,
+                                                }}
                                             >
-                                                <Button
-                                                    type="text"
-                                                    size="small"
-                                                    icon={<MoreOutlined />}
-                                                    style={{ fontSize: "14px" }}
-                                                />
-                                            </Dropdown>
+                                                ₱
+                                                {(
+                                                    room.subtotal ??
+                                                    room.rate * room.nights
+                                                ).toLocaleString()}
+                                            </Text>
+
+                                            {/* Actions cell */}
+                                            <div
+                                                onClick={(e) =>
+                                                    e.stopPropagation()
+                                                }
+                                                style={{ textAlign: "right" }}
+                                            >
+                                                <Dropdown
+                                                    menu={getRoomActionMenu(
+                                                        room,
+                                                    )}
+                                                    trigger={["click"]}
+                                                >
+                                                    <Button
+                                                        type="text"
+                                                        size="small"
+                                                        icon={<MoreOutlined />}
+                                                        style={{
+                                                            fontSize: "14px",
+                                                        }}
+                                                    />
+                                                </Dropdown>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                         </SectionCard>
 
                         {addOns.length > 0 && (
@@ -2459,7 +2540,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
 
                             {showsPaymentReference && (
                                 <Col span={24}>
-                                    <Label>Reference No.</Label>
+                                    <Label>
+                                        {isRefunded
+                                            ? "Refund Reference No."
+                                            : "Reference No."}
+                                    </Label>
                                     <div
                                         style={{
                                             marginTop: 6,
@@ -2550,27 +2635,32 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                         })}
                                     </Text>
                                 </div>
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        marginBottom: 8,
-                                    }}
-                                >
-                                    <Text
-                                        type="secondary"
-                                        style={{ fontSize: "12.5px" }}
+                                {addOnTotal > 0 && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            marginBottom: 8,
+                                        }}
                                     >
-                                        Add-ons
-                                    </Text>
-                                    <Text style={{ fontSize: "12.5px" }}>
-                                        ₱
-                                        {addOnTotal.toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                        })}
-                                    </Text>
-                                </div>
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: "12.5px" }}
+                                        >
+                                            Add-ons
+                                        </Text>
+                                        <Text style={{ fontSize: "12.5px" }}>
+                                            ₱
+                                            {addOnTotal.toLocaleString(
+                                                undefined,
+                                                {
+                                                    minimumFractionDigits: 2,
+                                                    maximumFractionDigits: 2,
+                                                },
+                                            )}
+                                        </Text>
+                                    </div>
+                                )}
 
                                 {/* Early Check-in Fee */}
                                 {totalEarlyCheckinFee > 0 && (
@@ -3111,14 +3201,21 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     .room-row-grid {
                         display: grid;
                         grid-template-columns:
-                            minmax(260px, 3fr)     /* Room (image + badges + type) */
-                            minmax(80px, 0.8fr)    /* Nights */
-                            minmax(100px, 1fr)     /* Guests */
-                            minmax(140px, 1.4fr)   /* Expected Checkout */
-                            minmax(130px, 1.4fr)   /* Amount */
-                            40px;                  /* Actions */
-                        gap: 12px;
+                            minmax(110px, 1.4fr)   /* Room (image + type) */
+                            minmax(60px, 0.8fr)    /* Stay Type */
+                            minmax(60px, 0.8fr)    /* Status */
+                            minmax(50px, 0.6fr)    /* Guests */
+                            minmax(65px, 0.9fr)    /* Check In */
+                            minmax(65px, 0.9fr)    /* Check Out */
+                            minmax(65px, 0.9fr)    /* Amount */
+                            36px;                  /* Actions */
+                        gap: 18px;
                         align-items: center;
+                        min-width: 0;
+                    }
+                    .room-row-grid > *:last-child {
+                        display: flex;
+                        justify-content: flex-end;
                     }
                     .room-col-header {
                         font-size: 10.5px !important;
@@ -3144,9 +3241,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                         .room-row-grid {
                             grid-template-columns: minmax(180px, 1.6fr) 1fr 1fr 40px;
                         }
-                        /* Hide Nights & Expected Checkout on mobile */
+                        /* Hide Stay Type, Status, Check In & Check Out on mobile */
                         .room-row-grid > *:nth-child(2),
-                        .room-row-grid > *:nth-child(4) {
+                        .room-row-grid > *:nth-child(3),
+                        .room-row-grid > *:nth-child(5),
+                        .room-row-grid > *:nth-child(6) {
                             display: none;
                         }
                     }

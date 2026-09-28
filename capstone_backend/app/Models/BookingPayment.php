@@ -13,10 +13,14 @@ class BookingPayment extends Model
         'shift_id',
         'receipt_number',
         'amount',
+        'split_group_id',
+        'split_sequence',
+        'amount_due_at_split',
         'payment_method',
         'payment_status',
         'gcash_reference',
         'bank_reference',
+        'is_split_payment',
         'received_by',
         'payment_date'
     ];
@@ -34,5 +38,15 @@ class BookingPayment extends Model
     public function shift()
     {
         return $this->belongsTo(Shift::class);
+    }
+
+    /**
+     * All payment rows that belong to the same split checkout as this one.
+     */
+    public function splitSiblings()
+    {
+        return self::where('split_group_id', $this->split_group_id)
+            ->when($this->split_group_id === null, fn ($q) => $q->whereRaw('0 = 1'))
+            ->orderBy('split_sequence');
     }
 }

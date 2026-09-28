@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
     Input,
     Button,
-    Card,
     Select,
     DatePicker,
     Typography,
@@ -15,9 +14,7 @@ import {
     message,
     Modal,
     Empty,
-    Spin,
     AutoComplete,
-    Badge,
     App,
     Avatar,
     Progress,
@@ -36,14 +33,13 @@ import {
     Gift,
     Minus,
     CheckCircle,
-    Calendar,
     Home,
     ChevronDown,
     ChevronRight,
-    IdCard,
     QrCode,
     AlertTriangle,
     Loader2,
+    ArrowRight,
 } from "lucide-react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -52,6 +48,89 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReceiptModal from "./ReceiptModal";
 
 const { Title, Text } = Typography;
+
+// ==================== DESIGN TOKENS ====================
+const T = {
+    primary: "#0f766e",
+    primaryHover: "#0d5f59",
+    primarySoft: "#f0fdfa",
+    primaryBorder: "#99f6e4",
+    ink: "#0f172a",
+    inkSoft: "#334155",
+    muted: "#64748b",
+    faint: "#94a3b8",
+    line: "#e2e8f0",
+    lineSoft: "#f1f5f9",
+    bg: "#f8fafc",
+    white: "#ffffff",
+    warn: "#b45309",
+    warnSoft: "#fffbeb",
+    warnBorder: "#fcd34d",
+    danger: "#dc2626",
+    radius: 10,
+    radiusLg: 14,
+};
+
+const shadow = {
+    card: "0 1px 2px rgba(15, 23, 42, 0.04)",
+    raised: "0 4px 12px rgba(15, 23, 42, 0.06)",
+};
+
+// ==================== HELPERS ====================
+function formatPeso(amount: number): string {
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+}
+
+/**
+ * Normalize any mobile input into a 10-digit local PH mobile (9XXXXXXXXX).
+ * Strips non-digits, leading "63", or leading "0".
+ */
+function normalizeMobile(input: string): string {
+    const digits = (input || "").replace(/\D/g, "");
+    let local = digits;
+    if (local.startsWith("63")) local = local.slice(2);
+    if (local.startsWith("0")) local = local.slice(1);
+    return local.slice(0, 10);
+}
+
+/**
+ * Simple mobile validation:
+ * - Must start with 9
+ * - Must be exactly 10 digits (9XXXXXXXXX)
+ */
+function isValidMobileLocal(local: string): boolean {
+    return /^9\d{9}$/.test(local);
+}
+
+/**
+ * Live feedback helper:
+ * - Show error if user has started typing (>= 1 digit)
+ * - and the current value is NOT a valid 10-digit mobile
+ */
+function hasInvalidPrefix(local: string): boolean {
+    return local.length > 0 && !isValidMobileLocal(local);
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+    return (
+        <div
+            style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: T.muted,
+                marginBottom: 6,
+                letterSpacing: 0.1,
+            }}
+        >
+            {children}
+        </div>
+    );
+}
 
 // ==================== TYPES ====================
 interface Room {
@@ -116,7 +195,80 @@ interface QrSession {
 
 type QrStatus = "loading" | "waiting" | "succeeded" | "expired" | "error";
 
-// ==================== COLLAPSIBLE GUEST CARD ====================
+// Split payment is fixed to Cash + QR Ph only. Cash is paid on the spot;
+// the QR Ph portion opens the same QR modal used for a pure QRPh walk-in.
+
+// ==================== SECTION HEADER ====================
+function SectionHeader({
+    step,
+    title,
+    subtitle,
+    right,
+}: {
+    step?: string;
+    title: string;
+    subtitle?: string;
+    right?: React.ReactNode;
+}) {
+    return (
+        <div
+            style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+            }}
+        >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {step && (
+                    <div
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 8,
+                            background: T.primarySoft,
+                            color: T.primary,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            border: `1px solid ${T.primaryBorder}`,
+                        }}
+                    >
+                        {step}
+                    </div>
+                )}
+                <div>
+                    <div
+                        style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: T.ink,
+                            letterSpacing: -0.1,
+                        }}
+                    >
+                        {title}
+                    </div>
+                    {subtitle && (
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: T.muted,
+                                marginTop: 2,
+                            }}
+                        >
+                            {subtitle}
+                        </div>
+                    )}
+                </div>
+            </div>
+            {right}
+        </div>
+    );
+}
+
+// ==================== GUEST CARD ====================
 interface GuestCardProps {
     selectedGuest: WalkInGuest | null;
     onSelectGuest: (guest: WalkInGuest) => void;
@@ -134,339 +286,241 @@ function GuestCard({
     onClearGuest,
     searchResults,
     onSearchGuests,
-    searchingGuests,
 }: GuestCardProps) {
-    const [expanded, setExpanded] = useState(!selectedGuest);
-
-    useEffect(() => {
-        if (!selectedGuest) {
-            setExpanded(true);
-        }
-    }, [selectedGuest]);
-
     if (selectedGuest) {
         return (
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
+            <div
                 style={{
-                    background: "#ffffff",
-                    borderRadius: 12,
-                    border: "1px solid #e5e7eb",
-                    overflow: "hidden",
-                    marginBottom: 24,
+                    background: T.white,
+                    border: `1px solid ${T.line}`,
+                    borderRadius: T.radiusLg,
+                    padding: 20,
+                    boxShadow: shadow.card,
                 }}
             >
-                <div
-                    style={{
-                        padding: "16px 20px",
-                        background: "#f8f9fa",
-                        borderBottom: "1px solid #e5e7eb",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        cursor: "pointer",
-                    }}
-                    onClick={() => setExpanded(!expanded)}
-                >
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                        }}
-                    >
-                        <Avatar
-                            icon={<User size={20} />}
-                            style={{
-                                background: "#059669",
-                                width: 40,
-                                height: 40,
-                            }}
-                        />
-                        <div>
-                            <Text
-                                strong
-                                style={{ fontSize: 16, color: "#111827" }}
-                            >
-                                {selectedGuest.full_name}
-                            </Text>
-                            <div style={{ fontSize: 12, color: "#6c757d" }}>
-                                Selected Guest
-                            </div>
-                        </div>
-                    </div>
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                        }}
-                    >
-                        {!expanded && (
-                            <div style={{ display: "flex", gap: 8 }}>
-                                {selectedGuest.contact_number && (
-                                    <Tag
-                                        icon={<Phone size={12} />}
-                                        color="default"
-                                    >
-                                        {selectedGuest.contact_number}
-                                    </Tag>
-                                )}
-                            </div>
-                        )}
-                        {expanded ? (
-                            <ChevronDown size={16} />
-                        ) : (
-                            <ChevronRight size={16} />
-                        )}
+                <SectionHeader
+                    step="1"
+                    title="Guest"
+                    subtitle="Verified guest information"
+                    right={
                         <Button
+                            type="text"
                             size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onClearGuest();
-                            }}
+                            onClick={onClearGuest}
                             icon={<X size={14} />}
+                            style={{ color: T.muted, fontSize: 12 }}
                         >
                             Change
                         </Button>
-                    </div>
-                </div>
+                    }
+                />
 
-                <AnimatePresence>
-                    {expanded && (
-                        <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            style={{ overflow: "hidden" }}
+                <Divider
+                    style={{ margin: "16px 0", borderColor: T.lineSoft }}
+                />
+
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                    }}
+                >
+                    <Avatar
+                        size={44}
+                        icon={<User size={18} />}
+                        style={{
+                            background: T.primarySoft,
+                            color: T.primary,
+                            border: `1px solid ${T.primaryBorder}`,
+                        }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                            style={{
+                                fontSize: 15,
+                                fontWeight: 600,
+                                color: T.ink,
+                                letterSpacing: -0.1,
+                            }}
                         >
-                            <div style={{ padding: 20 }}>
-                                <Row gutter={[16, 16]}>
-                                    {selectedGuest.contact_number && (
-                                        <Col xs={24} sm={12}>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 8,
-                                                }}
-                                            >
-                                                <Phone
-                                                    size={16}
-                                                    style={{ color: "#059669" }}
-                                                />
-                                                <div>
-                                                    <Text
-                                                        type="secondary"
-                                                        style={{ fontSize: 12 }}
-                                                    >
-                                                        Contact Number
-                                                    </Text>
-                                                    <div>
-                                                        <Text>
-                                                            {
-                                                                selectedGuest.contact_number
-                                                            }
-                                                        </Text>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </Col>
-                                    )}
-                                    {selectedGuest.address && (
-                                        <Col xs={24} sm={12}>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 8,
-                                                }}
-                                            >
-                                                <MapPin
-                                                    size={16}
-                                                    style={{ color: "#059669" }}
-                                                />
-                                                <div>
-                                                    <Text
-                                                        type="secondary"
-                                                        style={{ fontSize: 12 }}
-                                                    >
-                                                        Address
-                                                    </Text>
-                                                    <div>
-                                                        <Text>
-                                                            {
-                                                                selectedGuest.address
-                                                            }
-                                                        </Text>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </Col>
-                                    )}
-                                    <Col xs={24}>
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                            }}
-                                        >
-                                            <IdCard
-                                                size={16}
-                                                style={{ color: "#059669" }}
-                                            />
-                                            <div>
-                                                <Text
-                                                    type="secondary"
-                                                    style={{ fontSize: 12 }}
-                                                >
-                                                    Guest ID
-                                                </Text>
-                                                <div>
-                                                    <Text code>
-                                                        #{selectedGuest.id}
-                                                    </Text>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </Col>
-                                </Row>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </motion.div>
+                            {selectedGuest.full_name}
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: T.muted,
+                                marginTop: 2,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                flexWrap: "wrap",
+                            }}
+                        >
+                            {selectedGuest.contact_number && (
+                                <span
+                                    style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                    }}
+                                >
+                                    <Phone size={11} />
+                                    {selectedGuest.contact_number}
+                                </span>
+                            )}
+                            {selectedGuest.address && (
+                                <span
+                                    style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                    }}
+                                >
+                                    <MapPin size={11} />
+                                    {selectedGuest.address}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <Tag
+                        style={{
+                            background: T.lineSoft,
+                            border: "none",
+                            color: T.muted,
+                            fontSize: 11,
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                            margin: 0,
+                            fontWeight: 500,
+                        }}
+                    >
+                        ID #{selectedGuest.id}
+                    </Tag>
+                </div>
+            </div>
         );
     }
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+        <div
             style={{
-                background: "#ffffff",
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                marginBottom: 24,
+                background: T.white,
+                border: `1px solid ${T.line}`,
+                borderRadius: T.radiusLg,
+                padding: 20,
+                boxShadow: shadow.card,
             }}
         >
-            <div
-                style={{
-                    padding: "16px 20px",
-                    background: "#f8f9fa",
-                    borderBottom: "1px solid #e5e7eb",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                }}
-            >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Avatar
-                        icon={<User size={20} />}
-                        style={{ background: "#9ca3af", width: 40, height: 40 }}
-                    />
-                    <div>
-                        <Text strong style={{ fontSize: 16, color: "#111827" }}>
-                            Guest Information
-                        </Text>
-                        <div style={{ fontSize: 12, color: "#6c757d" }}>
-                            Select or add a guest
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <SectionHeader
+                step="1"
+                title="Guest"
+                subtitle="Search existing or add a new guest"
+            />
 
-            <div style={{ padding: 20 }}>
-                <Row gutter={16}>
-                    <Col xs={24} md={18}>
-                        <AutoComplete
-                            style={{ width: "100%" }}
-                            onSearch={onSearchGuests}
-                            onFocus={() => onSearchGuests("")}
-                            options={searchResults.map((guest) => ({
-                                key: guest.id,
-                                value: guest.full_name || "",
-                                label: (
+            <Divider style={{ margin: "16px 0", borderColor: T.lineSoft }} />
+
+            <Row gutter={10}>
+                <Col flex="auto">
+                    <AutoComplete
+                        style={{ width: "100%" }}
+                        onSearch={onSearchGuests}
+                        onFocus={() => onSearchGuests("")}
+                        options={searchResults.map((guest) => ({
+                            key: guest.id,
+                            value: guest.full_name || "",
+                            label: (
+                                <div
+                                    onClick={() => onSelectGuest(guest)}
+                                    style={{ padding: "6px 4px" }}
+                                >
                                     <div
-                                        onClick={() => onSelectGuest(guest)}
-                                        style={{ padding: 8 }}
+                                        style={{
+                                            fontWeight: 600,
+                                            color: T.ink,
+                                            fontSize: 13,
+                                        }}
                                     >
-                                        <div>
-                                            <strong>{guest.full_name}</strong>
-                                        </div>
-                                        <div
-                                            style={{
-                                                fontSize: 12,
-                                                color: "#6c757d",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                                flexWrap: "wrap",
-                                            }}
-                                        >
-                                            {guest.contact_number && (
-                                                <span
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 4,
-                                                    }}
-                                                >
-                                                    <Phone size={12} />
-                                                    {guest.contact_number}
-                                                </span>
-                                            )}
-                                            {guest.address && (
-                                                <span
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 4,
-                                                    }}
-                                                >
-                                                    <MapPin size={12} />
-                                                    {guest.address}
-                                                </span>
-                                            )}
-                                        </div>
+                                        {guest.full_name}
                                     </div>
-                                ),
-                            }))}
-                            filterOption={false}
-                        >
-                            <Input
-                                size="large"
-                                placeholder="Search existing guest by name, contact, or address..."
-                                prefix={
-                                    <Search
-                                        size={16}
-                                        style={{ color: "#9ca3af" }}
-                                    />
-                                }
-                            />
-                        </AutoComplete>
-                    </Col>
-                    <Col xs={24} md={6}>
-                        <Button
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: T.muted,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 10,
+                                            marginTop: 2,
+                                        }}
+                                    >
+                                        {guest.contact_number && (
+                                            <span>
+                                                <Phone
+                                                    size={10}
+                                                    style={{
+                                                        marginRight: 3,
+                                                        verticalAlign: -1,
+                                                    }}
+                                                />
+                                                {guest.contact_number}
+                                            </span>
+                                        )}
+                                        {guest.address && (
+                                            <span
+                                                style={{
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                    maxWidth: 200,
+                                                }}
+                                            >
+                                                <MapPin
+                                                    size={10}
+                                                    style={{
+                                                        marginRight: 3,
+                                                        verticalAlign: -1,
+                                                    }}
+                                                />
+                                                {guest.address}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ),
+                        }))}
+                        filterOption={false}
+                    >
+                        <Input
                             size="large"
-                            icon={<UserPlus size={16} />}
-                            onClick={onNewGuest}
-                            block
-                            style={{ borderColor: "#e5e7eb" }}
-                        >
-                            New Guest
-                        </Button>
-                    </Col>
-                </Row>
-            </div>
-        </motion.div>
+                            placeholder="Search by name, contact, or address…"
+                            prefix={
+                                <Search size={14} style={{ color: T.faint }} />
+                            }
+                            style={{ borderRadius: T.radius }}
+                        />
+                    </AutoComplete>
+                </Col>
+                <Col>
+                    <Button
+                        size="large"
+                        icon={<UserPlus size={15} />}
+                        onClick={onNewGuest}
+                        style={{
+                            borderRadius: T.radius,
+                            borderColor: T.line,
+                            color: T.inkSoft,
+                            fontWeight: 500,
+                        }}
+                    >
+                        New
+                    </Button>
+                </Col>
+            </Row>
+        </div>
     );
 }
 
-// ==================== COLLAPSIBLE ROOM CARD ====================
+// ==================== ROOM CARD ====================
 interface RoomCardProps {
     room: SelectedRoom;
     onRemove: (roomId: number) => void;
@@ -488,28 +542,24 @@ function RoomCard({
     const total = calculateRoomTotal(room);
 
     return (
-        <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
+        <div
             style={{
-                background: "#ffffff",
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
+                background: T.white,
+                border: `1px solid ${T.line}`,
+                borderRadius: T.radius,
+                marginBottom: 8,
                 overflow: "hidden",
-                marginBottom: 12,
+                transition: "border-color 0.15s",
             }}
         >
             <div
                 style={{
-                    padding: "16px 20px",
-                    background: "#fafbfc",
-                    borderBottom: expanded ? "1px solid #e5e7eb" : "none",
+                    padding: "12px 16px",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     cursor: "pointer",
-                    transition: "all 0.2s",
+                    gap: 12,
                 }}
                 onClick={() => setExpanded(!expanded)}
             >
@@ -517,15 +567,27 @@ function RoomCard({
                     style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 12,
+                        gap: 10,
                         flex: 1,
+                        minWidth: 0,
                     }}
                 >
-                    <Avatar
-                        icon={<Home size={20} />}
-                        style={{ background: "#059669", width: 40, height: 40 }}
-                    />
-                    <div>
+                    <div
+                        style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            background: T.lineSoft,
+                            color: T.inkSoft,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                        }}
+                    >
+                        <Home size={14} />
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                             style={{
                                 display: "flex",
@@ -534,74 +596,97 @@ function RoomCard({
                                 flexWrap: "wrap",
                             }}
                         >
-                            <Text
-                                strong
-                                style={{ fontSize: 16, color: "#111827" }}
-                            >
-                                Room {room.room_number}
-                            </Text>
-                            <Tag
-                                color={
-                                    room.stay_type === "short_stay"
-                                        ? "orange"
-                                        : "blue"
-                                }
-                            >
-                                {room.stay_type === "short_stay"
-                                    ? "Short Stay"
-                                    : `Overnight (${room.nights} night${room.nights > 1 ? "s" : ""})`}
-                            </Tag>
-                            {room.addons.length > 0 && (
-                                <Tag
-                                    color="green"
-                                    style={{
-                                        background: "#ecfdf5",
-                                        borderColor: "#d1fae5",
-                                    }}
-                                >
-                                    {room.addons.length} Extras
-                                </Tag>
-                            )}
-                        </div>
-                        {!expanded && (
-                            <div
+                            <span
                                 style={{
-                                    fontSize: 12,
-                                    color: "#6c757d",
-                                    marginTop: 4,
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: T.ink,
                                 }}
                             >
-                                <Calendar
-                                    size={12}
-                                    style={{ marginRight: 4 }}
-                                />{" "}
-                                {formatDate(room.check_in_date)} →{" "}
-                                {formatDate(room.check_out_date)}
-                            </div>
-                        )}
+                                Room {room.room_number}
+                            </span>
+                            <span
+                                style={{
+                                    fontSize: 11,
+                                    color: T.muted,
+                                    background: T.lineSoft,
+                                    padding: "1px 7px",
+                                    borderRadius: 5,
+                                    fontWeight: 500,
+                                }}
+                            >
+                                {room.stay_type === "short_stay"
+                                    ? "Short stay"
+                                    : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
+                            </span>
+                            {room.addons.length > 0 && (
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        color: T.primary,
+                                        background: T.primarySoft,
+                                        padding: "1px 7px",
+                                        borderRadius: 5,
+                                        fontWeight: 500,
+                                    }}
+                                >
+                                    +{room.addons.length} extras
+                                </span>
+                            )}
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 11,
+                                color: T.faint,
+                                marginTop: 2,
+                            }}
+                        >
+                            {formatDate(room.check_in_date)} →{" "}
+                            {formatDate(room.check_out_date)}
+                        </div>
                     </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <Text strong style={{ fontSize: 18, color: "#059669" }}>
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                    }}
+                >
+                    <span
+                        style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: T.ink,
+                            fontVariantNumeric: "tabular-nums",
+                        }}
+                    >
                         {formatCurrency(total)}
-                    </Text>
-                    {expanded ? (
-                        <ChevronDown size={16} />
-                    ) : (
-                        <ChevronRight size={16} />
-                    )}
+                    </span>
+                    <div
+                        style={{
+                            color: T.faint,
+                            display: "flex",
+                            alignItems: "center",
+                        }}
+                    >
+                        {expanded ? (
+                            <ChevronDown size={14} />
+                        ) : (
+                            <ChevronRight size={14} />
+                        )}
+                    </div>
                     <Button
-                        danger
+                        type="text"
                         size="small"
-                        icon={<Trash2 size={14} />}
                         onClick={(e) => {
                             e.stopPropagation();
                             onRemove(room.id);
                         }}
-                    >
-                        Remove
-                    </Button>
+                        icon={<Trash2 size={13} />}
+                        style={{ color: T.faint }}
+                    />
                 </div>
             </div>
 
@@ -611,157 +696,207 @@ function RoomCard({
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3 }}
+                        transition={{ duration: 0.2 }}
                         style={{ overflow: "hidden" }}
                     >
-                        <div style={{ padding: 20 }}>
-                            <Row gutter={[16, 16]}>
-                                <Col xs={24} sm={12}>
+                        <div
+                            style={{
+                                padding: "0 16px 16px",
+                                borderTop: `1px solid ${T.lineSoft}`,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    paddingTop: 14,
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr",
+                                    gap: 16,
+                                }}
+                            >
+                                <div>
                                     <div
                                         style={{
-                                            background: "#f8f9fa",
-                                            padding: 12,
-                                            borderRadius: 8,
-                                            border: "1px solid #e5e7eb",
+                                            fontSize: 10,
+                                            fontWeight: 600,
+                                            color: T.faint,
+                                            textTransform: "uppercase",
+                                            letterSpacing: 0.5,
+                                            marginBottom: 8,
                                         }}
                                     >
-                                        <Text
-                                            type="secondary"
-                                            style={{ fontSize: 12 }}
+                                        Stay details
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 12,
+                                            color: T.inkSoft,
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 6,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                            }}
                                         >
-                                            Stay Details
-                                        </Text>
-                                        <div style={{ marginTop: 8 }}>
-                                            <div>
-                                                <Text strong>Check-in:</Text>{" "}
-                                                <Text>
-                                                    {formatDate(
-                                                        room.check_in_date,
-                                                    )}
-                                                </Text>
-                                            </div>
-                                            <div>
-                                                <Text strong>Check-out:</Text>{" "}
-                                                <Text>
-                                                    {formatDate(
-                                                        room.check_out_date,
-                                                    )}
-                                                </Text>
-                                            </div>
-                                            <div>
-                                                <Text strong>Duration:</Text>{" "}
-                                                <Text>
-                                                    {room.stay_type ===
-                                                    "short_stay"
-                                                        ? "3 hours"
-                                                        : `${room.nights} night(s)`}
-                                                </Text>
-                                            </div>
+                                            <span style={{ color: T.muted }}>
+                                                Check-in
+                                            </span>
+                                            <span style={{ fontWeight: 500 }}>
+                                                {formatDate(room.check_in_date)}
+                                            </span>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                            }}
+                                        >
+                                            <span style={{ color: T.muted }}>
+                                                Check-out
+                                            </span>
+                                            <span style={{ fontWeight: 500 }}>
+                                                {formatDate(
+                                                    room.check_out_date,
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                            }}
+                                        >
+                                            <span style={{ color: T.muted }}>
+                                                Duration
+                                            </span>
+                                            <span style={{ fontWeight: 500 }}>
+                                                {room.stay_type === "short_stay"
+                                                    ? "3 hours"
+                                                    : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
+                                            </span>
                                         </div>
                                     </div>
-                                </Col>
+                                </div>
 
-                                <Col xs={24} sm={12}>
+                                <div>
                                     <div
                                         style={{
-                                            background: "#f8f9fa",
-                                            padding: 12,
-                                            borderRadius: 8,
-                                            border: "1px solid #e5e7eb",
+                                            fontSize: 10,
+                                            fontWeight: 600,
+                                            color: T.faint,
+                                            textTransform: "uppercase",
+                                            letterSpacing: 0.5,
+                                            marginBottom: 8,
                                         }}
                                     >
-                                        <Text
-                                            type="secondary"
-                                            style={{ fontSize: 12 }}
+                                        Rate breakdown
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 12,
+                                            color: T.inkSoft,
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 6,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                            }}
                                         >
-                                            Rate Breakdown
-                                        </Text>
-                                        <div style={{ marginTop: 8 }}>
+                                            <span style={{ color: T.muted }}>
+                                                Room rate
+                                            </span>
+                                            <span style={{ fontWeight: 500 }}>
+                                                {formatCurrency(room.subtotal)}
+                                            </span>
+                                        </div>
+                                        {room.addons.map((addon) => (
                                             <div
+                                                key={addon.id}
                                                 style={{
                                                     display: "flex",
                                                     justifyContent:
                                                         "space-between",
                                                 }}
                                             >
-                                                <Text>Room rate:</Text>
-                                                <Text strong>
+                                                <span
+                                                    style={{ color: T.muted }}
+                                                >
+                                                    {addon.add_on_name} ×{" "}
+                                                    {addon.quantity}
+                                                </span>
+                                                <span
+                                                    style={{
+                                                        fontWeight: 500,
+                                                        color: T.primary,
+                                                    }}
+                                                >
+                                                    +
                                                     {formatCurrency(
-                                                        room.subtotal,
+                                                        addon.subtotal,
                                                     )}
-                                                </Text>
+                                                </span>
                                             </div>
-                                            {room.addons.map((addon) => (
-                                                <div
-                                                    key={addon.id}
-                                                    style={{
-                                                        display: "flex",
-                                                        justifyContent:
-                                                            "space-between",
-                                                        marginTop: 4,
-                                                    }}
-                                                >
-                                                    <Text>
-                                                        {addon.add_on_name} x
-                                                        {addon.quantity}:
-                                                    </Text>
-                                                    <Text
-                                                        style={{
-                                                            color: "#059669",
-                                                        }}
-                                                    >
-                                                        +
-                                                        {formatCurrency(
-                                                            addon.subtotal,
-                                                        )}
-                                                    </Text>
-                                                </div>
-                                            ))}
-                                            <Divider
-                                                style={{ margin: "8px 0" }}
-                                            />
-                                            <div
+                                        ))}
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                                paddingTop: 6,
+                                                borderTop: `1px solid ${T.lineSoft}`,
+                                                marginTop: 2,
+                                            }}
+                                        >
+                                            <span
                                                 style={{
-                                                    display: "flex",
-                                                    justifyContent:
-                                                        "space-between",
+                                                    fontWeight: 600,
+                                                    color: T.ink,
                                                 }}
                                             >
-                                                <Text strong>Total:</Text>
-                                                <Text
-                                                    strong
-                                                    style={{
-                                                        color: "#059669",
-                                                        fontSize: 16,
-                                                    }}
-                                                >
-                                                    {formatCurrency(total)}
-                                                </Text>
-                                            </div>
+                                                Total
+                                            </span>
+                                            <span
+                                                style={{
+                                                    fontWeight: 700,
+                                                    color: T.ink,
+                                                }}
+                                            >
+                                                {formatCurrency(total)}
+                                            </span>
                                         </div>
                                     </div>
-                                </Col>
+                                </div>
+                            </div>
 
-                                <Col xs={24}>
-                                    <Button
-                                        icon={<Gift size={16} />}
-                                        onClick={() => onAddExtras(room.id)}
-                                        style={{
-                                            width: "100%",
-                                            borderColor: "#e5e7eb",
-                                        }}
-                                    >
-                                        {room.addons.length > 0
-                                            ? "Edit Extras & Amenities"
-                                            : "Add Extras & Amenities"}
-                                    </Button>
-                                </Col>
-                            </Row>
+                            <Button
+                                size="small"
+                                icon={<Gift size={13} />}
+                                onClick={() => onAddExtras(room.id)}
+                                style={{
+                                    marginTop: 14,
+                                    width: "100%",
+                                    borderColor: T.line,
+                                    color: T.inkSoft,
+                                    fontSize: 12,
+                                    borderRadius: 8,
+                                    height: 32,
+                                }}
+                            >
+                                {room.addons.length > 0
+                                    ? "Edit extras"
+                                    : "Add extras & amenities"}
+                            </Button>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
-        </motion.div>
+        </div>
     );
 }
 
@@ -827,7 +962,7 @@ function AddOnsModal({
                 newMap.set(addon.id, {
                     id: addon.id,
                     add_on_name: addon.add_on_name,
-                    quantity: quantity,
+                    quantity,
                     price: addon.price,
                     subtotal: Number(addon.price) * Number(quantity),
                 });
@@ -844,30 +979,32 @@ function AddOnsModal({
         return total;
     };
 
-    const handleConfirm = () => {
-        const selectedList = Array.from(selected.values());
-        onConfirm(selectedList);
-        onClose();
-    };
-
     return (
         <Modal
             title={
-                <div
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                    }}
-                >
-                    <span style={{ fontSize: "18px", fontWeight: 600 }}>
-                        Add Extras & Amenities
-                    </span>
+                <div>
+                    <div
+                        style={{ fontSize: 15, fontWeight: 600, color: T.ink }}
+                    >
+                        Extras & amenities
+                    </div>
+                    {roomNumber && (
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: T.muted,
+                                fontWeight: 400,
+                                marginTop: 2,
+                            }}
+                        >
+                            For room {roomNumber}
+                        </div>
+                    )}
                 </div>
             }
             open={visible}
             onCancel={onClose}
-            width={600}
+            width={560}
             footer={[
                 <Button key="cancel" onClick={onClose}>
                     Cancel
@@ -875,24 +1012,67 @@ function AddOnsModal({
                 <Button
                     key="confirm"
                     type="primary"
-                    onClick={handleConfirm}
-                    style={{ background: "#059669", borderColor: "#059669" }}
-                    icon={<CheckCircle size={16} />}
+                    onClick={() => {
+                        onConfirm(Array.from(selected.values()));
+                        onClose();
+                    }}
+                    style={{
+                        background: T.primary,
+                        borderColor: T.primary,
+                    }}
                 >
-                    Add to Booking
+                    Add to booking
                 </Button>,
             ]}
         >
-            <div style={{ padding: "16px 0" }}>
+            <div style={{ padding: "8px 0" }}>
                 {loading ? (
                     <div
                         style={{
                             display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
                             justifyContent: "center",
-                            padding: "48px",
+                            padding: 56,
+                            gap: 16,
                         }}
                     >
-                        <Spin size="large" />
+                        <div
+                            style={{
+                                position: "relative",
+                                width: 36,
+                                height: 36,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    borderRadius: "50%",
+                                    border: `2.5px solid ${T.line}`,
+                                }}
+                            />
+                            <div
+                                className="qr-modal-spinner"
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    borderRadius: "50%",
+                                    border: "2.5px solid transparent",
+                                    borderTopColor: T.primary,
+                                    borderRightColor: T.primary,
+                                }}
+                            />
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: T.muted,
+                                fontWeight: 500,
+                            }}
+                        >
+                            Loading add-ons…
+                        </div>
                     </div>
                 ) : addOns.length === 0 ? (
                     <Empty description="No add-ons available" />
@@ -901,12 +1081,13 @@ function AddOnsModal({
                         style={{
                             display: "flex",
                             flexDirection: "column",
-                            gap: "12px",
+                            gap: 6,
                         }}
                     >
                         {addOns.map((addon) => {
                             const selectedAddon = selected.get(addon.id);
                             const quantity = selectedAddon?.quantity || 0;
+                            const active = quantity > 0;
 
                             return (
                                 <div
@@ -915,30 +1096,33 @@ function AddOnsModal({
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "space-between",
-                                        padding: "16px",
-                                        background: "#f8f9fa",
-                                        borderRadius: "8px",
-                                        border: "1px solid #e9ecef",
-                                        transition: "all 0.2s",
+                                        padding: "12px 14px",
+                                        background: active
+                                            ? T.primarySoft
+                                            : T.white,
+                                        borderRadius: T.radius,
+                                        border: `1px solid ${active ? T.primaryBorder : T.line}`,
+                                        transition: "all 0.15s",
                                     }}
                                 >
                                     <div style={{ flex: 1 }}>
                                         <div
                                             style={{
+                                                fontSize: 13,
                                                 fontWeight: 600,
-                                                color: "#212529",
-                                                marginBottom: "4px",
+                                                color: T.ink,
                                             }}
                                         >
                                             {addon.add_on_name}
                                         </div>
                                         <div
                                             style={{
-                                                color: "#059669",
-                                                fontWeight: 600,
+                                                fontSize: 12,
+                                                color: T.muted,
+                                                marginTop: 2,
                                             }}
                                         >
-                                            ₱{addon.price.toLocaleString()}
+                                            {formatPeso(addon.price)}
                                         </div>
                                     </div>
 
@@ -946,12 +1130,12 @@ function AddOnsModal({
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: "12px",
+                                            gap: 10,
                                         }}
                                     >
                                         <Button
                                             size="small"
-                                            icon={<Minus size={14} />}
+                                            icon={<Minus size={12} />}
                                             onClick={() =>
                                                 updateQuantity(
                                                     addon,
@@ -960,16 +1144,24 @@ function AddOnsModal({
                                             }
                                             disabled={quantity === 0}
                                             style={{
-                                                borderRadius: "6px",
-                                                width: "32px",
-                                                height: "32px",
+                                                width: 28,
+                                                height: 28,
+                                                borderRadius: 7,
+                                                borderColor: T.line,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
                                             }}
                                         />
                                         <span
                                             style={{
-                                                width: "40px",
+                                                width: 24,
                                                 textAlign: "center",
+                                                fontSize: 13,
                                                 fontWeight: 600,
+                                                fontVariantNumeric:
+                                                    "tabular-nums",
+                                                color: T.ink,
                                             }}
                                         >
                                             {quantity}
@@ -977,7 +1169,7 @@ function AddOnsModal({
                                         <Button
                                             size="small"
                                             type="primary"
-                                            icon={<Plus size={14} />}
+                                            icon={<Plus size={12} />}
                                             onClick={() =>
                                                 updateQuantity(
                                                     addon,
@@ -985,11 +1177,14 @@ function AddOnsModal({
                                                 )
                                             }
                                             style={{
-                                                borderRadius: "6px",
-                                                width: "32px",
-                                                height: "32px",
-                                                background: "#059669",
-                                                borderColor: "#059669",
+                                                width: 28,
+                                                height: 28,
+                                                borderRadius: 7,
+                                                background: T.primary,
+                                                borderColor: T.primary,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
                                             }}
                                         />
                                     </div>
@@ -1002,41 +1197,27 @@ function AddOnsModal({
                 {getTotal() > 0 && (
                     <div
                         style={{
-                            marginTop: "24px",
-                            paddingTop: "16px",
-                            borderTop: "2px solid #e9ecef",
+                            marginTop: 16,
+                            paddingTop: 14,
+                            borderTop: `1px solid ${T.line}`,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
                         }}
                     >
-                        <div
+                        <span style={{ fontSize: 12, color: T.muted }}>
+                            Subtotal
+                        </span>
+                        <span
                             style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
+                                fontSize: 16,
+                                fontWeight: 700,
+                                color: T.ink,
+                                fontVariantNumeric: "tabular-nums",
                             }}
                         >
-                            <span
-                                style={{
-                                    fontSize: "16px",
-                                    fontWeight: 500,
-                                    color: "#6c757d",
-                                }}
-                            >
-                                Selected items total:
-                            </span>
-                            <span
-                                style={{
-                                    fontSize: "24px",
-                                    fontWeight: "bold",
-                                    color: "#059669",
-                                }}
-                            >
-                                ₱
-                                {getTotal().toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                })}
-                            </span>
-                        </div>
+                            {formatPeso(getTotal())}
+                        </span>
                     </div>
                 )}
             </div>
@@ -1044,7 +1225,7 @@ function AddOnsModal({
     );
 }
 
-// ==================== QR PH MODAL ====================
+// ==================== QR MODAL ====================
 interface QrModalProps {
     open: boolean;
     status: QrStatus;
@@ -1080,7 +1261,8 @@ function QrModal({
             maskClosable={false}
             keyboard={false}
             footer={null}
-            width={520}
+            width={420}
+            centered
             onCancel={
                 status === "succeeded" || status === "loading"
                     ? undefined
@@ -1088,60 +1270,131 @@ function QrModal({
             }
             title={
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <QrCode size={20} color="#059669" />
-                    <span style={{ fontWeight: 600 }}>
-                        Scan to Pay via QR Ph
+                    <div
+                        style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 7,
+                            background: T.primarySoft,
+                            color: T.primary,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <QrCode size={14} />
+                    </div>
+                    <span
+                        style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: T.ink,
+                        }}
+                    >
+                        QR Ph payment
                     </span>
                 </div>
             }
         >
-            <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
-                <Text type="secondary">Amount due</Text>
+            <div style={{ textAlign: "center", padding: "4px 0 8px" }}>
                 <div
                     style={{
-                        fontSize: 32,
-                        fontWeight: 700,
-                        color: "#059669",
-                        marginBottom: 16,
+                        fontSize: 11,
+                        color: T.muted,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.6,
+                        fontWeight: 600,
                     }}
                 >
-                    {new Intl.NumberFormat("en-PH", {
-                        style: "currency",
-                        currency: "PHP",
-                    }).format(amount)}
+                    Amount due
+                </div>
+                <div
+                    style={{
+                        fontSize: 28,
+                        fontWeight: 700,
+                        color: T.ink,
+                        marginTop: 4,
+                        marginBottom: 18,
+                        letterSpacing: -0.5,
+                        fontVariantNumeric: "tabular-nums",
+                    }}
+                >
+                    {formatPeso(amount)}
                 </div>
 
                 {status === "loading" && (
-                    <div style={{ padding: "48px 0" }}>
-                        <Spin size="large" />
-                        <div style={{ marginTop: 16, color: "#6c757d" }}>
+                    <div
+                        style={{
+                            padding: "56px 0 40px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: 16,
+                        }}
+                    >
+                        <div
+                            style={{
+                                position: "relative",
+                                width: 36,
+                                height: 36,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    borderRadius: "50%",
+                                    border: `2.5px solid ${T.line}`,
+                                }}
+                            />
+                            <div
+                                className="qr-modal-spinner"
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    borderRadius: "50%",
+                                    border: "2.5px solid transparent",
+                                    borderTopColor: T.primary,
+                                    borderRightColor: T.primary,
+                                }}
+                            />
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: T.muted,
+                                fontWeight: 500,
+                                letterSpacing: 0.1,
+                            }}
+                        >
                             Generating QR code…
                         </div>
                     </div>
                 )}
 
                 {status === "error" && (
-                    <div style={{ padding: "24px 0" }}>
-                        <AlertTriangle size={48} color="#dc2626" />
+                    <div style={{ padding: "20px 0" }}>
+                        <AlertTriangle size={36} color={T.danger} />
                         <div
                             style={{
                                 marginTop: 12,
-                                color: "#dc2626",
+                                fontSize: 13,
+                                color: T.danger,
                                 fontWeight: 600,
                             }}
                         >
-                            {errorMessage || "Failed to generate QR code"}
+                            {errorMessage || "Failed to generate QR"}
                         </div>
                         <Button
                             type="primary"
                             onClick={onRegenerate}
                             style={{
                                 marginTop: 16,
-                                background: "#059669",
-                                borderColor: "#059669",
+                                background: T.primary,
+                                borderColor: T.primary,
                             }}
                         >
-                            Try Again
+                            Try again
                         </Button>
                     </div>
                 )}
@@ -1152,55 +1405,23 @@ function QrModal({
                             style={{
                                 position: "relative",
                                 display: "inline-block",
-                                padding: 16,
-                                background: "#ffffff",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 12,
-                                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                                padding: 12,
+                                background: T.white,
+                                border: `1px solid ${T.line}`,
+                                borderRadius: T.radiusLg,
                             }}
                         >
                             <img
                                 src={session.qrImageUrl}
-                                alt="QR Ph code"
+                                alt="QR"
                                 style={{
-                                    width: 280,
-                                    height: 280,
+                                    width: 240,
+                                    height: 240,
                                     display: "block",
-                                    opacity: status === "expired" ? 0.3 : 1,
+                                    opacity: status === "expired" ? 0.22 : 1,
                                     transition: "opacity 0.3s",
                                 }}
                             />
-
-                            {status === "waiting" && (
-                                <div
-                                    style={{
-                                        position: "absolute",
-                                        bottom: 12,
-                                        left: "50%",
-                                        transform: "translateX(-50%)",
-                                        background: "rgba(255,255,255,0.95)",
-                                        padding: "6px 12px",
-                                        borderRadius: 999,
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-                                        animation:
-                                            "qrPulse 1.5s ease-in-out infinite",
-                                    }}
-                                >
-                                    <Loader2 size={14} className="qr-spin" />
-                                    <span
-                                        style={{
-                                            fontSize: 12,
-                                            fontWeight: 600,
-                                            color: "#059669",
-                                        }}
-                                    >
-                                        Waiting for payment…
-                                    </span>
-                                </div>
-                            )}
 
                             {status === "expired" && (
                                 <div
@@ -1211,22 +1432,53 @@ function QrModal({
                                         flexDirection: "column",
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        gap: 8,
+                                        gap: 6,
                                     }}
                                 >
-                                    <AlertTriangle size={40} color="#f59e0b" />
+                                    <AlertTriangle size={32} color={T.warn} />
                                     <div
                                         style={{
-                                            fontWeight: 700,
-                                            color: "#b45309",
-                                            fontSize: 16,
+                                            fontWeight: 600,
+                                            color: T.warn,
+                                            fontSize: 13,
                                         }}
                                     >
-                                        QR Expired
+                                        QR expired
                                     </div>
                                 </div>
                             )}
                         </div>
+
+                        {status === "waiting" && (
+                            <div
+                                style={{
+                                    marginTop: 14,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    padding: "4px 10px",
+                                    background: T.lineSoft,
+                                    borderRadius: 999,
+                                }}
+                            >
+                                <Loader2
+                                    size={10}
+                                    color={T.muted}
+                                    className="qr-spin"
+                                />
+                                <span
+                                    style={{
+                                        fontSize: 10,
+                                        fontWeight: 600,
+                                        color: T.muted,
+                                        letterSpacing: 0.3,
+                                        textTransform: "uppercase",
+                                    }}
+                                >
+                                    Waiting for payment
+                                </span>
+                            </div>
+                        )}
 
                         {status === "waiting" && (
                             <>
@@ -1234,20 +1486,21 @@ function QrModal({
                                     <Progress
                                         percent={percent}
                                         showInfo={false}
-                                        strokeColor="#059669"
-                                        trailColor="#e5e7eb"
-                                        strokeWidth={6}
+                                        strokeColor={T.primary}
+                                        trailColor={T.lineSoft}
+                                        strokeWidth={3}
                                     />
                                 </div>
                                 <div
                                     style={{
-                                        marginTop: 8,
-                                        fontSize: 14,
-                                        color: "#374151",
+                                        marginTop: 10,
+                                        fontSize: 12,
+                                        color: T.inkSoft,
+                                        fontVariantNumeric: "tabular-nums",
                                     }}
                                 >
                                     Expires in{" "}
-                                    <strong>
+                                    <strong style={{ color: T.ink }}>
                                         {minutes}:
                                         {String(seconds).padStart(2, "0")}
                                     </strong>
@@ -1255,46 +1508,47 @@ function QrModal({
                                 <div
                                     style={{
                                         marginTop: 4,
-                                        fontSize: 12,
-                                        color: "#6c757d",
+                                        fontSize: 11,
+                                        color: T.faint,
                                     }}
                                 >
-                                    Ask the guest to scan with their bank or
-                                    e-wallet app.
+                                    Guest scans with any bank or e-wallet app
                                 </div>
 
                                 {import.meta.env.DEV && session.testUrl && (
                                     <div
                                         style={{
-                                            marginTop: 12,
-                                            padding: "8px 12px",
-                                            background: "#fffbeb",
-                                            border: "1px dashed #f59e0b",
+                                            marginTop: 14,
+                                            padding: "8px 10px",
+                                            background: T.warnSoft,
+                                            border: `1px dashed ${T.warnBorder}`,
                                             borderRadius: 8,
+                                            textAlign: "left",
                                         }}
                                     >
                                         <div
                                             style={{
-                                                fontSize: 11,
-                                                color: "#b45309",
+                                                fontSize: 10,
+                                                color: T.warn,
+                                                fontWeight: 700,
+                                                letterSpacing: 0.5,
+                                                textTransform: "uppercase",
                                                 marginBottom: 4,
-                                                fontWeight: 600,
                                             }}
                                         >
-                                            SANDBOX TEST TOOL
+                                            Sandbox test tool
                                         </div>
-
                                         <a
                                             href={session.testUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             style={{
-                                                fontSize: 12,
-                                                color: "#b45309",
+                                                fontSize: 11,
+                                                color: T.warn,
                                                 textDecoration: "underline",
                                             }}
                                         >
-                                            Open PayMongo test payment page →
+                                            Open PayMongo test page →
                                         </a>
                                     </div>
                                 )}
@@ -1307,14 +1561,14 @@ function QrModal({
                                     type="primary"
                                     onClick={onRegenerate}
                                     style={{
-                                        background: "#059669",
-                                        borderColor: "#059669",
-                                        height: 44,
-                                        fontWeight: 600,
+                                        background: T.primary,
+                                        borderColor: T.primary,
+                                        height: 38,
+                                        fontWeight: 500,
                                     }}
-                                    icon={<QrCode size={16} />}
+                                    icon={<QrCode size={13} />}
                                 >
-                                    Generate New QR
+                                    Generate new QR
                                 </Button>
                             </div>
                         )}
@@ -1322,19 +1576,25 @@ function QrModal({
                 )}
 
                 {status === "succeeded" && (
-                    <div style={{ padding: "24px 0" }}>
-                        <CheckCircle size={56} color="#059669" />
+                    <div style={{ padding: "20px 0" }}>
+                        <CheckCircle size={44} color={T.primary} />
                         <div
                             style={{
                                 marginTop: 12,
-                                fontSize: 18,
+                                fontSize: 15,
                                 fontWeight: 700,
-                                color: "#059669",
+                                color: T.ink,
                             }}
                         >
-                            Payment Confirmed!
+                            Payment confirmed
                         </div>
-                        <div style={{ marginTop: 4, color: "#6c757d" }}>
+                        <div
+                            style={{
+                                marginTop: 4,
+                                fontSize: 12,
+                                color: T.muted,
+                            }}
+                        >
                             Finalizing check-in…
                         </div>
                     </div>
@@ -1345,36 +1605,42 @@ function QrModal({
                 <div
                     style={{
                         display: "flex",
-                        justifyContent: "flex-end",
-                        gap: 8,
-                        borderTop: "1px solid #e5e7eb",
+                        justifyContent: "center",
+                        borderTop: `1px solid ${T.lineSoft}`,
                         paddingTop: 12,
+                        marginTop: 4,
                     }}
                 >
-                    <Button onClick={onCancel}>
-                        Cancel &amp; Switch Payment
+                    <Button
+                        type="text"
+                        onClick={onCancel}
+                        style={{ color: T.muted, fontSize: 12 }}
+                    >
+                        Cancel & switch payment
                     </Button>
                 </div>
             )}
 
             <style>{`
-                @keyframes qrPulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.6; }
-                }
-                .qr-spin {
-                    animation: qrSpin 1s linear infinite;
-                }
                 @keyframes qrSpin {
                     from { transform: rotate(0deg); }
                     to { transform: rotate(360deg); }
+                }
+                .qr-spin { animation: qrSpin 1s linear infinite; }
+
+                @keyframes qrModalSpin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .qr-modal-spinner {
+                    animation: qrModalSpin 0.7s linear infinite;
                 }
             `}</style>
         </Modal>
     );
 }
 
-// ==================== MAIN WALK-IN COMPONENT ====================
+// ==================== MAIN COMPONENT ====================
 function WalkInContent() {
     const queryClient = useQueryClient();
     const { modal } = App.useApp();
@@ -1385,6 +1651,12 @@ function WalkInContent() {
     >([]);
     const [loading, setLoading] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<"cash" | "qrph">("cash");
+    const [paymentMode, setPaymentMode] = useState<"single" | "split">(
+        "single",
+    );
+
+    const [splitCashAmount, setSplitCashAmount] = useState<number | null>(null);
+    const [splitQrphAmount, setSplitQrphAmount] = useState<number | null>(null);
     const [fetchingRooms, setFetchingRooms] = useState(false);
 
     const [selectedGuest, setSelectedGuest] = useState<WalkInGuest | null>(
@@ -1422,13 +1694,11 @@ function WalkInContent() {
         number | null
     >(null);
 
-    // Receipt modal
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(
         null,
     );
 
-    // QR Ph modal state
     const [qrModalOpen, setQrModalOpen] = useState(false);
     const [qrSession, setQrSession] = useState<QrSession | null>(null);
     const [qrStatus, setQrStatus] = useState<QrStatus>("loading");
@@ -1438,16 +1708,15 @@ function WalkInContent() {
     const [qrAmount, setQrAmount] = useState<number>(0);
     const [qrInFlight, setQrInFlight] = useState<boolean>(false);
 
-    // Refs for timers/polling (avoid stale closures)
+    const [pendingBookingId, setPendingBookingId] = useState<number | null>(
+        null,
+    );
+    const [pendingAmount, setPendingAmount] = useState<number>(0);
+
     const pollTimerRef = useRef<number | null>(null);
     const countdownTimerRef = useRef<number | null>(null);
     const qrSessionRef = useRef<QrSession | null>(null);
-    const secondsLeftRef = useRef<number>(1800);
     const qrStatusRef = useRef<QrStatus>("loading");
-
-    useEffect(() => {
-        secondsLeftRef.current = qrSecondsLeft;
-    }, [qrSecondsLeft]);
 
     useEffect(() => {
         qrStatusRef.current = qrStatus;
@@ -1464,15 +1733,10 @@ function WalkInContent() {
         }
     };
 
-    useEffect(() => {
-        return () => {
-            clearQrTimers();
-        };
-    }, []);
-
+    useEffect(() => () => clearQrTimers(), []);
     useEffect(() => {
         fetchRooms();
-    }, []);
+    }, [selectedRoomsDetails]);
 
     const fetchRooms = async () => {
         try {
@@ -1493,10 +1757,6 @@ function WalkInContent() {
             setFetchingRooms(false);
         }
     };
-
-    useEffect(() => {
-        fetchRooms();
-    }, [selectedRoomsDetails]);
 
     const searchGuests = async (searchText: string) => {
         setSearchingGuests(true);
@@ -1536,16 +1796,38 @@ function WalkInContent() {
     };
 
     const handleSaveNewGuest = async () => {
+        const local = normalizeMobile(newGuestForm.contact_number);
+
         if (!newGuestForm.first_name.trim() || !newGuestForm.last_name.trim()) {
             message.warning("Please enter first name and last name");
             return;
         }
+
+        if (local.length < 10) {
+            message.warning(
+                `Mobile number is too short — ${10 - local.length} more digit${10 - local.length > 1 ? "s" : ""} needed.`,
+            );
+            return;
+        }
+
+        if (local.length > 10) {
+            message.warning(
+                `Mobile number is too long — ${local.length - 10} extra digit${local.length - 10 > 1 ? "s" : ""}.`,
+            );
+            return;
+        }
+
+        if (!isValidMobileLocal(local)) {
+            message.warning("Mobile number must start with 9.");
+            return;
+        }
+
         setSavingGuest(true);
         try {
-            const response = await api.post(
-                "/walk-in-guests/guest",
-                newGuestForm,
-            );
+            const response = await api.post("/walk-in-guests/guest", {
+                ...newGuestForm,
+                contact_number: `0${local}`,
+            });
             setSelectedGuest(response.data);
             setShowGuestModal(false);
             message.success("Guest saved successfully!");
@@ -1555,10 +1837,6 @@ function WalkInContent() {
         } finally {
             setSavingGuest(false);
         }
-    };
-
-    const handleClearGuest = () => {
-        setSelectedGuest(null);
     };
 
     useEffect(() => {
@@ -1594,9 +1872,8 @@ function WalkInContent() {
         rooms,
     ]);
 
-    const getNightsCount = (checkIn: string, checkOut: string) => {
-        return Math.max(1, dayjs(checkOut).diff(dayjs(checkIn), "day"));
-    };
+    const getNightsCount = (checkIn: string, checkOut: string) =>
+        Math.max(1, dayjs(checkOut).diff(dayjs(checkIn), "day"));
 
     const calculateRoomSubtotal = (
         room: Room,
@@ -1610,11 +1887,8 @@ function WalkInContent() {
                   room.room_type?.base_price ||
                   0
                 : room.room_type?.base_price || 0;
-        if (stayType === "short_stay") {
-            return pricePerUnit;
-        } else {
-            return pricePerUnit * getNightsCount(checkIn, checkOut);
-        }
+        if (stayType === "short_stay") return pricePerUnit;
+        return pricePerUnit * getNightsCount(checkIn, checkOut);
     };
 
     const addRoom = async (
@@ -1703,7 +1977,7 @@ function WalkInContent() {
                 ),
             );
             setCurrentRoomForAddOns(null);
-            message.success(`Extras added to room`);
+            message.success("Extras added");
         }
     };
 
@@ -1722,30 +1996,31 @@ function WalkInContent() {
         return roomSubtotal + addOnsTotal;
     };
 
-    const calculateTotal = (): number => {
-        return selectedRoomsDetails.reduce((sum, room) => {
-            return Number(sum) + Number(calculateRoomTotalWithAddOns(room));
-        }, 0);
-    };
+    const calculateTotal = (): number =>
+        selectedRoomsDetails.reduce(
+            (sum, room) => sum + calculateRoomTotalWithAddOns(room),
+            0,
+        );
 
     const getCurrentRoomAddOns = (): SelectedAddOn[] => {
         if (currentRoomForAddOns === null) return [];
-        const room = selectedRoomsDetails.find(
-            (r) => r.id === currentRoomForAddOns,
+        return (
+            selectedRoomsDetails.find((r) => r.id === currentRoomForAddOns)
+                ?.addons || []
         );
-        return room?.addons || [];
     };
 
     const getCurrentRoomNumber = (): string => {
         if (currentRoomForAddOns === null) return "";
-        const room = selectedRoomsDetails.find(
-            (r) => r.id === currentRoomForAddOns,
+        return (
+            selectedRoomsDetails.find((r) => r.id === currentRoomForAddOns)
+                ?.room_number || ""
         );
-        return room?.room_number || "";
     };
 
-    // ---------- QR Ph helpers ----------
+    // ---------- Split payment helpers ----------
 
+    // ---------- QR helpers ----------
     const stopPolling = () => {
         if (pollTimerRef.current) {
             window.clearInterval(pollTimerRef.current);
@@ -1764,8 +2039,6 @@ function WalkInContent() {
         stopCountdown();
         setQrTotalSeconds(seconds);
         setQrSecondsLeft(seconds);
-        secondsLeftRef.current = seconds;
-
         countdownTimerRef.current = window.setInterval(() => {
             setQrSecondsLeft((prev) => {
                 if (prev <= 1) {
@@ -1781,25 +2054,18 @@ function WalkInContent() {
 
     const startPolling = (session: QrSession) => {
         stopPolling();
-
         pollTimerRef.current = window.setInterval(async () => {
-            // Stop if modal was dismissed or already done
             if (qrStatusRef.current !== "waiting") return;
-
             try {
                 const res = await api.get(
                     `/paymongo/qr/status/${session.paymentIntentId}`,
                     { params: { client_key: session.clientKey } },
                 );
-
-                const status = res.data?.status as string;
-
-                if (status === "succeeded") {
+                if (res.data?.status === "succeeded") {
                     stopPolling();
                     stopCountdown();
                     setQrStatus("succeeded");
 
-                    // Confirm on backend -> flips rooms to checked_in & payment to paid
                     const confirmRes = await api.post(
                         `/walk-in-guests/${session.bookingId}/confirm-qr`,
                         { payment_reference: res.data?.payment_id ?? null },
@@ -1810,11 +2076,10 @@ function WalkInContent() {
                     queryClient.invalidateQueries({ queryKey: ["bookings"] });
 
                     message.success({
-                        content: "QR Ph payment confirmed!",
+                        content: "QR Ph payment confirmed",
                         duration: 3,
                     });
 
-                    // Brief delay so the success state is visible
                     setTimeout(() => {
                         setQrModalOpen(false);
                         setQrStatus("loading");
@@ -1822,27 +2087,25 @@ function WalkInContent() {
                         setQrSession(null);
                         qrSessionRef.current = null;
 
-                        // Show receipt modal exactly like Cash
                         const paymentId =
                             confirmRes.data?.payment_id ?? res.data?.payment_id;
-
                         if (paymentId) {
                             setCurrentPaymentId(String(paymentId));
                             setShowReceiptModal(true);
                         }
 
-                        // Reset form
                         setSelectedGuest(null);
                         setSelectedRoomsDetails([]);
                         setSelectedRoomValue(null);
                         setPreviewAmount(0);
+                        setPendingBookingId(null);
+                        setPendingAmount(0);
                         fetchRooms();
-                    }, 900);
-
+                    }, 800);
                     return;
                 }
             } catch (err: any) {
-                console.warn("QR status poll failed", err?.message || err);
+                console.warn("QR poll failed", err?.message || err);
             }
         }, 4000);
     };
@@ -1851,13 +2114,11 @@ function WalkInContent() {
         setQrStatus("loading");
         setQrErrorMessage("");
         setQrAmount(amount);
-
         try {
             const res = await api.post("/paymongo/qr/create", {
                 booking_id: bookingId,
                 amount,
             });
-
             const session: QrSession = {
                 paymentIntentId: res.data.payment_intent_id,
                 clientKey: res.data.client_key,
@@ -1866,11 +2127,9 @@ function WalkInContent() {
                 bookingId,
                 testUrl: res.data.test_url ?? null,
             };
-
             qrSessionRef.current = session;
             setQrSession(session);
             setQrStatus("waiting");
-
             startCountdown(session.expirySeconds);
             startPolling(session);
         } catch (err: any) {
@@ -1885,11 +2144,10 @@ function WalkInContent() {
     const handleQrCancel = () => {
         stopPolling();
         stopCountdown();
-
         modal.confirm({
-            title: "Cancel QR Ph payment?",
+            title: "Cancel QR payment?",
             content:
-                "The booking is reserved but unpaid. You can switch to Cash, edit the booking, or retry QR Ph later.",
+                "The booking is reserved but unpaid. You can retry QR Ph or switch to Cash.",
             okText: "Yes, cancel",
             okButtonProps: { danger: true },
             cancelText: "Keep waiting",
@@ -1899,12 +2157,6 @@ function WalkInContent() {
                 setQrInFlight(false);
                 setQrSession(null);
                 qrSessionRef.current = null;
-
-                // Leave the booking record as-is (pending). Admin can reconcile.
-                setSelectedGuest(null);
-                setSelectedRoomsDetails([]);
-                setSelectedRoomValue(null);
-                setPreviewAmount(0);
                 fetchRooms();
                 queryClient.invalidateQueries({ queryKey: ["dashboard"] });
             },
@@ -1920,7 +2172,6 @@ function WalkInContent() {
     };
 
     // ---------- Submit ----------
-
     const handleSubmit = async () => {
         if (!selectedGuest) {
             message.warning("Please select or add a guest");
@@ -1932,8 +2183,27 @@ function WalkInContent() {
         }
         if (qrInFlight) return;
 
-        setLoading(true);
+        if (paymentMode === "split" && !splitIsValid) {
+            message.warning(
+                "Both Cash and QR Ph amounts must be filled in and must add up to the total amount.",
+            );
+            return;
+        }
 
+        if (
+            paymentMode === "single" &&
+            paymentMethod === "qrph" &&
+            pendingBookingId &&
+            pendingAmount > 0
+        ) {
+            setQrInFlight(true);
+            setQrModalOpen(true);
+            setQrAmount(pendingAmount);
+            await generateQr(pendingBookingId, pendingAmount);
+            return;
+        }
+
+        setLoading(true);
         try {
             const bookingsData = selectedRoomsDetails.map((room) => ({
                 room_id: room.id,
@@ -1952,12 +2222,20 @@ function WalkInContent() {
 
             const totalAmount = calculateTotal();
 
-            const payload = {
+            const payload: Record<string, unknown> = {
                 guest_id: selectedGuest.id,
                 bookings: bookingsData,
                 total_amount: totalAmount,
-                payment_method: paymentMethod,
             };
+
+            if (paymentMode === "split") {
+                payload.payments = [
+                    { payment_method: "cash", amount: splitCashAmount },
+                    { payment_method: "qrph", amount: splitQrphAmount },
+                ];
+            } else {
+                payload.payment_method = paymentMethod;
+            }
 
             const response = await api.post("/walk-in-guests/checkin", payload);
 
@@ -1965,37 +2243,47 @@ function WalkInContent() {
             queryClient.invalidateQueries({ queryKey: ["rooms"] });
             queryClient.invalidateQueries({ queryKey: ["bookings"] });
 
-            if (paymentMethod === "cash") {
-                message.success({
-                    content: `Check-in successful! Guest checked into ${selectedRoomsDetails.length} room(s)`,
-                    duration: 3,
-                    icon: <CheckCircle size={20} />,
-                });
+            const needsQr =
+                (paymentMode === "split" &&
+                    response.data.requires_qr_confirmation) ||
+                (paymentMode === "single" && paymentMethod === "qrph");
 
-                const paymentId = response.data.payment_id;
-                setCurrentPaymentId(paymentId);
+            if (!needsQr) {
+                message.success(
+                    `Checked in to ${selectedRoomsDetails.length} room(s)`,
+                );
+                setCurrentPaymentId(response.data.payment_id);
                 setShowReceiptModal(true);
 
                 setSelectedGuest(null);
                 setSelectedRoomsDetails([]);
                 setSelectedRoomValue(null);
                 setPreviewAmount(0);
+                setPendingBookingId(null);
+                setPendingAmount(0);
+                setPaymentMode("single");
+                setSplitCashAmount(null);
+                setSplitQrphAmount(null);
                 await fetchRooms();
             } else {
-                // QR Ph: booking created as pending; now generate QR
                 const bookingId = response.data.booking_id;
+                const qrAmountToCharge =
+                    paymentMode === "split"
+                        ? Number(response.data.qrph_amount) || 0
+                        : totalAmount;
+
+                setPendingBookingId(bookingId);
+                setPendingAmount(qrAmountToCharge);
                 setQrInFlight(true);
                 setQrModalOpen(true);
-                setQrAmount(totalAmount);
-                await generateQr(bookingId, totalAmount);
+                setQrAmount(qrAmountToCharge);
+                await generateQr(bookingId, qrAmountToCharge);
             }
         } catch (err: any) {
             console.error("Walk-in error:", err);
-
             const status = err.response?.status;
             const errMsg =
                 err.response?.data?.message || "Failed to check in guest";
-
             if (status === 409) {
                 message.error({ content: errMsg, duration: 5 });
                 await fetchRooms();
@@ -2009,23 +2297,7 @@ function WalkInContent() {
         }
     };
 
-    const handleCloseReceiptModal = () => {
-        setShowReceiptModal(false);
-        setCurrentPaymentId(null);
-    };
-
-    const formatCurrency = (amount: number): string => {
-        return new Intl.NumberFormat("en-PH", {
-            style: "currency",
-            currency: "PHP",
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(amount);
-    };
-
-    const formatDate = (date: string) => {
-        return dayjs(date).format("MMM DD, YYYY");
-    };
+    const formatDate = (date: string) => dayjs(date).format("MMM DD");
 
     const roomsByType = rooms.reduce(
         (acc, room) => {
@@ -2038,9 +2310,21 @@ function WalkInContent() {
     );
 
     const totalAmount = calculateTotal();
-    const primaryColor = "#059669";
-    const borderColor = "#e5e7eb";
-    const bgGray = "#f9fafb";
+
+    const splitLegsTotal =
+        (Number(splitCashAmount) || 0) + (Number(splitQrphAmount) || 0);
+    const splitRemaining =
+        Math.round((totalAmount - splitLegsTotal) * 100) / 100;
+    const splitIsValid =
+        (splitCashAmount || 0) > 0 &&
+        (splitQrphAmount || 0) > 0 &&
+        Math.abs(splitRemaining) < 0.01;
+
+    const completeDisabled =
+        selectedRoomsDetails.length === 0 ||
+        !selectedGuest ||
+        qrInFlight ||
+        (paymentMode === "split" && !splitIsValid);
 
     const handleCheckInChange = (date: Dayjs | null) => {
         if (!date) return;
@@ -2069,144 +2353,132 @@ function WalkInContent() {
         setNewRoomCheckOut(date.format("YYYY-MM-DD"));
     };
 
-    const completeDisabled =
-        selectedRoomsDetails.length === 0 || !selectedGuest || qrInFlight;
+    const canAddRoom = !!selectedRoomValue && previewAmount > 0;
+
+    // Live validation for the new-guest form
+    const localMobile = normalizeMobile(newGuestForm.contact_number);
+    const mobileIsValid = isValidMobileLocal(localMobile);
+    const mobileHasBadPrefix = hasInvalidPrefix(localMobile);
+    const guestFormIsValid =
+        newGuestForm.first_name.trim() !== "" &&
+        newGuestForm.last_name.trim() !== "" &&
+        mobileIsValid;
 
     return (
         <div
             style={{
                 minHeight: "100vh",
-                position: "relative",
-                top: "-25px",
-                padding: "24px",
+                background: T.bg,
+                padding: "32px 24px 48px",
             }}
         >
-            <div style={{ maxWidth: 1400, margin: "0 auto" }}>
-                {/* Header */}
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                >
-                    <div style={{ marginBottom: 24 }}>
+            <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+                {/* ── Header ── */}
+                <div style={{ marginBottom: 28 }}>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 11,
+                                background: T.primary,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                boxShadow: "0 2px 8px rgba(15, 118, 110, 0.2)",
+                            }}
+                        >
+                            <Users size={20} color="#fff" />
+                        </div>
+                        <div>
+                            <Title
+                                level={4}
+                                style={{
+                                    margin: 0,
+                                    color: T.ink,
+                                    letterSpacing: -0.3,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                Walk-in Registration
+                            </Title>
+                            <Text style={{ color: T.muted, fontSize: 13 }}>
+                                Register guest and assign rooms
+                            </Text>
+                        </div>
+                    </div>
+                </div>
+
+                <Row gutter={[20, 20]}>
+                    {/* ── Left column ── */}
+                    <Col xs={24} lg={15}>
                         <div
                             style={{
                                 display: "flex",
-                                alignItems: "center",
+                                flexDirection: "column",
                                 gap: 16,
-                                marginBottom: 24,
                             }}
-                        >
-                            <div
-                                style={{
-                                    background: primaryColor,
-                                    padding: 12,
-                                    borderRadius: 12,
-                                    boxShadow:
-                                        "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                                }}
-                            >
-                                <Users size={28} color="white" />
-                            </div>
-                            <div>
-                                <Title
-                                    level={3}
-                                    style={{ margin: 0, color: "#111827" }}
-                                >
-                                    Walk-In Guest Registration
-                                </Title>
-                                <Text type="secondary">
-                                    Register and assign rooms with add-ons
-                                </Text>
-                            </div>
-                        </div>
-                    </div>
-                </motion.div>
-
-                <Row gutter={[24, 24]}>
-                    {/* Main Form */}
-                    <Col xs={24} lg={16}>
-                        <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
                         >
                             <GuestCard
                                 selectedGuest={selectedGuest}
                                 onSelectGuest={handleSelectGuest}
                                 onNewGuest={handleNewGuestClick}
-                                onClearGuest={handleClearGuest}
+                                onClearGuest={() => setSelectedGuest(null)}
                                 searchResults={searchResults}
                                 onSearchGuests={searchGuests}
                                 searchingGuests={searchingGuests}
                             />
 
+                            {/* ── Add Room ── */}
                             {selectedGuest && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
+                                <div
                                     style={{
-                                        background: "#ffffff",
-                                        borderRadius: 12,
-                                        border: `1px solid ${borderColor}`,
+                                        background: T.white,
+                                        border: `1px solid ${T.line}`,
+                                        borderRadius: T.radiusLg,
+                                        boxShadow: shadow.card,
                                         overflow: "hidden",
-                                        marginBottom: 24,
                                     }}
                                 >
                                     <div
                                         style={{
-                                            padding: "16px 20px",
-                                            background: "#f8f9fa",
-                                            borderBottom: addRoomExpanded
-                                                ? `1px solid ${borderColor}`
-                                                : "none",
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
+                                            padding: 20,
                                             cursor: "pointer",
                                         }}
                                         onClick={() =>
                                             setAddRoomExpanded(!addRoomExpanded)
                                         }
                                     >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 12,
-                                            }}
-                                        >
-                                            <Avatar
-                                                icon={<Plus size={20} />}
-                                                style={{
-                                                    background: "#059669",
-                                                    width: 40,
-                                                    height: 40,
-                                                }}
-                                            />
-                                            <div>
-                                                <Text
-                                                    strong
-                                                    style={{
-                                                        fontSize: 16,
-                                                        color: "#111827",
-                                                    }}
-                                                >
-                                                    Add Room
-                                                </Text>
+                                        <SectionHeader
+                                            step="2"
+                                            title="Add room"
+                                            subtitle="Select room and stay details"
+                                            right={
                                                 <div
                                                     style={{
-                                                        fontSize: 12,
-                                                        color: "#6c757d",
+                                                        color: T.faint,
+                                                        display: "flex",
+                                                        alignItems: "center",
                                                     }}
                                                 >
-                                                    Select room and stay details
+                                                    {addRoomExpanded ? (
+                                                        <ChevronDown
+                                                            size={14}
+                                                        />
+                                                    ) : (
+                                                        <ChevronRight
+                                                            size={14}
+                                                        />
+                                                    )}
                                                 </div>
-                                            </div>
-                                        </div>
-                                        {addRoomExpanded ? (
-                                            <ChevronDown size={16} />
-                                        ) : (
-                                            <ChevronRight size={16} />
-                                        )}
+                                            }
+                                        />
                                     </div>
 
                                     <AnimatePresence>
@@ -2221,21 +2493,28 @@ function WalkInContent() {
                                                     opacity: 1,
                                                 }}
                                                 exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.3 }}
+                                                transition={{ duration: 0.2 }}
                                                 style={{ overflow: "hidden" }}
                                             >
-                                                <div style={{ padding: 20 }}>
-                                                    <Row gutter={16}>
-                                                        <Col xs={24} md={8}>
-                                                            <div
-                                                                style={{
-                                                                    marginBottom: 8,
-                                                                    color: "#374151",
-                                                                    fontWeight: 500,
-                                                                }}
-                                                            >
+                                                <div
+                                                    style={{
+                                                        padding: "0 20px 20px",
+                                                        borderTop: `1px solid ${T.lineSoft}`,
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            paddingTop: 18,
+                                                            display: "grid",
+                                                            gridTemplateColumns:
+                                                                "1.4fr 1fr 1fr 1fr",
+                                                            gap: 12,
+                                                        }}
+                                                    >
+                                                        <div>
+                                                            <FieldLabel>
                                                                 Room
-                                                            </div>
+                                                            </FieldLabel>
                                                             <Select
                                                                 size="large"
                                                                 style={{
@@ -2283,8 +2562,8 @@ function WalkInContent() {
                                                                                         {
                                                                                             room.room_number
                                                                                         }{" "}
-                                                                                        -{" "}
-                                                                                        {formatCurrency(
+                                                                                        ·{" "}
+                                                                                        {formatPeso(
                                                                                             room
                                                                                                 .room_type
                                                                                                 ?.base_price ||
@@ -2298,17 +2577,12 @@ function WalkInContent() {
                                                                     ),
                                                                 )}
                                                             </Select>
-                                                        </Col>
-                                                        <Col xs={24} md={5}>
-                                                            <div
-                                                                style={{
-                                                                    marginBottom: 8,
-                                                                    color: "#374151",
-                                                                    fontWeight: 500,
-                                                                }}
-                                                            >
-                                                                Stay Type
-                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <FieldLabel>
+                                                                Stay type
+                                                            </FieldLabel>
                                                             <Select
                                                                 size="large"
                                                                 style={{
@@ -2350,21 +2624,15 @@ function WalkInContent() {
                                                                     Overnight
                                                                 </Select.Option>
                                                                 <Select.Option value="short_stay">
-                                                                    Short Stay
-                                                                    (3hrs)
+                                                                    Short stay
                                                                 </Select.Option>
                                                             </Select>
-                                                        </Col>
-                                                        <Col xs={24} md={5}>
-                                                            <div
-                                                                style={{
-                                                                    marginBottom: 8,
-                                                                    color: "#374151",
-                                                                    fontWeight: 500,
-                                                                }}
-                                                            >
+                                                        </div>
+
+                                                        <div>
+                                                            <FieldLabel>
                                                                 Check-in
-                                                            </div>
+                                                            </FieldLabel>
                                                             <DatePicker
                                                                 size="large"
                                                                 style={{
@@ -2386,17 +2654,12 @@ function WalkInContent() {
                                                                         )
                                                                 }
                                                             />
-                                                        </Col>
-                                                        <Col xs={24} md={6}>
-                                                            <div
-                                                                style={{
-                                                                    marginBottom: 8,
-                                                                    color: "#374151",
-                                                                    fontWeight: 500,
-                                                                }}
-                                                            >
+                                                        </div>
+
+                                                        <div>
+                                                            <FieldLabel>
                                                                 Check-out
-                                                            </div>
+                                                            </FieldLabel>
                                                             <DatePicker
                                                                 size="large"
                                                                 style={{
@@ -2422,65 +2685,55 @@ function WalkInContent() {
                                                                         )
                                                                 }
                                                             />
-                                                        </Col>
-                                                    </Row>
-
-                                                    {selectedRoomValue &&
-                                                        previewAmount > 0 && (
-                                                            <div
-                                                                style={{
-                                                                    marginTop: 16,
-                                                                    padding: 12,
-                                                                    background:
-                                                                        bgGray,
-                                                                    borderRadius: 8,
-                                                                    border: `1px solid ${borderColor}`,
-                                                                }}
-                                                            >
-                                                                <div
-                                                                    style={{
-                                                                        display:
-                                                                            "flex",
-                                                                        justifyContent:
-                                                                            "space-between",
-                                                                    }}
-                                                                >
-                                                                    <Text
-                                                                        strong
-                                                                        style={{
-                                                                            color: "#374151",
-                                                                        }}
-                                                                    >
-                                                                        Preview
-                                                                        Amount:
-                                                                    </Text>
-                                                                    <Text
-                                                                        strong
-                                                                        style={{
-                                                                            color: primaryColor,
-                                                                            fontSize: 18,
-                                                                        }}
-                                                                    >
-                                                                        {formatCurrency(
-                                                                            previewAmount,
-                                                                        )}
-                                                                    </Text>
-                                                                </div>
-                                                            </div>
-                                                        )}
+                                                        </div>
+                                                    </div>
 
                                                     <div
                                                         style={{
-                                                            marginTop: 16,
-                                                            textAlign: "right",
+                                                            marginTop: 14,
+                                                            display: "flex",
+                                                            justifyContent:
+                                                                "space-between",
+                                                            alignItems:
+                                                                "center",
+                                                            gap: 12,
                                                         }}
                                                     >
+                                                        <div
+                                                            style={{
+                                                                fontSize: 12,
+                                                                color: T.muted,
+                                                            }}
+                                                        >
+                                                            {canAddRoom ? (
+                                                                <>
+                                                                    Preview:{" "}
+                                                                    <span
+                                                                        style={{
+                                                                            fontWeight: 600,
+                                                                            color: T.ink,
+                                                                            fontVariantNumeric:
+                                                                                "tabular-nums",
+                                                                        }}
+                                                                    >
+                                                                        {formatPeso(
+                                                                            previewAmount,
+                                                                        )}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                "Select a room to see pricing"
+                                                            )}
+                                                        </div>
                                                         <Button
                                                             type="primary"
                                                             icon={
                                                                 <Plus
-                                                                    size={16}
+                                                                    size={13}
                                                                 />
+                                                            }
+                                                            disabled={
+                                                                !canAddRoom
                                                             }
                                                             onClick={async () => {
                                                                 if (
@@ -2492,39 +2745,48 @@ function WalkInContent() {
                                                                         newRoomCheckIn,
                                                                         newRoomCheckOut,
                                                                     );
-                                                                } else {
-                                                                    message.warning(
-                                                                        "Select a room first",
-                                                                    );
                                                                 }
                                                             }}
                                                             style={{
                                                                 background:
-                                                                    primaryColor,
+                                                                    T.primary,
                                                                 borderColor:
-                                                                    primaryColor,
+                                                                    T.primary,
+                                                                fontWeight: 500,
+                                                                borderRadius: 8,
                                                             }}
                                                         >
-                                                            Add Room
+                                                            Add room
                                                         </Button>
                                                     </div>
                                                 </div>
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
-                                </motion.div>
+                                </div>
                             )}
 
+                            {/* ── Selected Rooms ── */}
                             {selectedRoomsDetails.length > 0 && (
                                 <div>
-                                    <div style={{ marginBottom: 16 }}>
-                                        <Title
-                                            level={5}
-                                            style={{ color: "#374151" }}
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            marginBottom: 10,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: 13,
+                                                fontWeight: 600,
+                                                color: T.ink,
+                                            }}
                                         >
-                                            Selected Rooms (
-                                            {selectedRoomsDetails.length})
-                                        </Title>
+                                            Rooms ({selectedRoomsDetails.length}
+                                            )
+                                        </div>
                                     </div>
                                     <AnimatePresence>
                                         {selectedRoomsDetails.map((room) => (
@@ -2533,7 +2795,7 @@ function WalkInContent() {
                                                 room={room}
                                                 onRemove={removeRoom}
                                                 onAddExtras={openAddOnsForRoom}
-                                                formatCurrency={formatCurrency}
+                                                formatCurrency={formatPeso}
                                                 formatDate={formatDate}
                                                 calculateRoomTotal={
                                                     calculateRoomTotalWithAddOns
@@ -2543,426 +2805,1047 @@ function WalkInContent() {
                                     </AnimatePresence>
                                 </div>
                             )}
-                        </motion.div>
+                        </div>
                     </Col>
 
-                    {/* Summary Sidebar */}
-                    <Col xs={24} lg={8}>
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
+                    {/* ── Right column (Summary) ── */}
+                    <Col xs={24} lg={9}>
+                        <div
+                            style={{
+                                position: "sticky",
+                                top: 24,
+                                background: T.white,
+                                border: `1px solid ${T.line}`,
+                                borderRadius: T.radiusLg,
+                                boxShadow: shadow.card,
+                                overflow: "hidden",
+                            }}
                         >
-                            <Card
-                                style={{
-                                    borderRadius: 12,
-                                    border: `1px solid ${borderColor}`,
-                                    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
-                                    position: "sticky",
-                                    top: 24,
-                                }}
-                            >
-                                <Title
-                                    level={5}
+                            <div style={{ padding: "18px 20px" }}>
+                                <div
                                     style={{
-                                        color: "#374151",
-                                        marginBottom: 16,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
                                     }}
                                 >
-                                    Payment Summary
-                                </Title>
-
-                                {selectedRoomsDetails.length > 0 ? (
-                                    <>
-                                        <div
+                                    <div
+                                        style={{
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                            color: T.ink,
+                                        }}
+                                    >
+                                        Summary
+                                    </div>
+                                    {selectedRoomsDetails.length > 0 && (
+                                        <span
                                             style={{
-                                                maxHeight: 400,
-                                                overflowY: "auto",
-                                                marginBottom: 16,
+                                                fontSize: 11,
+                                                color: T.muted,
+                                                background: T.lineSoft,
+                                                padding: "2px 8px",
+                                                borderRadius: 6,
+                                                fontWeight: 500,
                                             }}
                                         >
-                                            {selectedRoomsDetails.map(
-                                                (room) => {
-                                                    const roomTotal =
-                                                        calculateRoomTotalWithAddOns(
-                                                            room,
-                                                        );
-                                                    return (
-                                                        <div
-                                                            key={room.id}
+                                            {selectedRoomsDetails.length} room
+                                            {selectedRoomsDetails.length > 1
+                                                ? "s"
+                                                : ""}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <Divider
+                                style={{ margin: 0, borderColor: T.lineSoft }}
+                            />
+
+                            {selectedRoomsDetails.length > 0 ? (
+                                <div
+                                    style={{
+                                        maxHeight: 320,
+                                        overflowY: "auto",
+                                        padding: "4px 20px",
+                                    }}
+                                >
+                                    {selectedRoomsDetails.map((room) => {
+                                        const roomTotal =
+                                            calculateRoomTotalWithAddOns(room);
+                                        return (
+                                            <div
+                                                key={room.id}
+                                                style={{
+                                                    padding: "12px 0",
+                                                    borderBottom: `1px solid ${T.lineSoft}`,
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        justifyContent:
+                                                            "space-between",
+                                                        alignItems: "center",
+                                                        marginBottom: 4,
+                                                    }}
+                                                >
+                                                    <span
+                                                        style={{
+                                                            fontSize: 12,
+                                                            fontWeight: 600,
+                                                            color: T.ink,
+                                                        }}
+                                                    >
+                                                        Room {room.room_number}
+                                                    </span>
+                                                    <span
+                                                        style={{
+                                                            fontSize: 13,
+                                                            fontWeight: 600,
+                                                            color: T.ink,
+                                                            fontVariantNumeric:
+                                                                "tabular-nums",
+                                                        }}
+                                                    >
+                                                        {formatPeso(roomTotal)}
+                                                    </span>
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        fontSize: 11,
+                                                        color: T.muted,
+                                                        display: "flex",
+                                                        justifyContent:
+                                                            "space-between",
+                                                    }}
+                                                >
+                                                    <span>
+                                                        {room.stay_type ===
+                                                        "short_stay"
+                                                            ? "Short stay"
+                                                            : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
+                                                    </span>
+                                                    <span
+                                                        style={{
+                                                            fontVariantNumeric:
+                                                                "tabular-nums",
+                                                        }}
+                                                    >
+                                                        {formatPeso(
+                                                            room.subtotal,
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                {room.addons.map((addon) => (
+                                                    <div
+                                                        key={addon.id}
+                                                        style={{
+                                                            fontSize: 11,
+                                                            color: T.muted,
+                                                            display: "flex",
+                                                            justifyContent:
+                                                                "space-between",
+                                                            marginTop: 3,
+                                                        }}
+                                                    >
+                                                        <span>
+                                                            {addon.add_on_name}{" "}
+                                                            × {addon.quantity}
+                                                        </span>
+                                                        <span
                                                             style={{
-                                                                marginBottom: 16,
-                                                                paddingBottom: 12,
-                                                                borderBottom: `1px solid ${borderColor}`,
+                                                                color: T.primary,
+                                                                fontVariantNumeric:
+                                                                    "tabular-nums",
+                                                            }}
+                                                        >
+                                                            +
+                                                            {formatPeso(
+                                                                addon.subtotal,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div style={{ padding: "32px 20px" }}>
+                                    <Empty
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                        description={
+                                            <span
+                                                style={{
+                                                    fontSize: 12,
+                                                    color: T.muted,
+                                                }}
+                                            >
+                                                No rooms selected
+                                            </span>
+                                        }
+                                    />
+                                </div>
+                            )}
+
+                            {/* Payment method */}
+                            {selectedRoomsDetails.length > 0 && (
+                                <>
+                                    <Divider
+                                        style={{
+                                            margin: 0,
+                                            borderColor: T.lineSoft,
+                                        }}
+                                    />
+                                    <div style={{ padding: "16px 20px" }}>
+                                        <div
+                                            style={{
+                                                fontSize: 11,
+                                                fontWeight: 600,
+                                                color: T.faint,
+                                                textTransform: "uppercase",
+                                                letterSpacing: 0.5,
+                                                marginBottom: 8,
+                                            }}
+                                        >
+                                            Payment method
+                                        </div>
+
+                                        {/* Single / Split toggle */}
+                                        <div
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns: "1fr 1fr",
+                                                gap: 6,
+                                                marginBottom: 10,
+                                            }}
+                                        >
+                                            {[
+                                                {
+                                                    value: "single" as const,
+                                                    label: "Single method",
+                                                },
+                                                {
+                                                    value: "split" as const,
+                                                    label: "Split payment",
+                                                },
+                                            ].map((opt) => {
+                                                const active =
+                                                    paymentMode === opt.value;
+                                                return (
+                                                    <button
+                                                        key={opt.value}
+                                                        onClick={() =>
+                                                            setPaymentMode(
+                                                                opt.value,
+                                                            )
+                                                        }
+                                                        style={{
+                                                            padding: "6px 10px",
+                                                            background: active
+                                                                ? T.ink
+                                                                : T.lineSoft,
+                                                            color: active
+                                                                ? T.white
+                                                                : T.muted,
+                                                            border: "none",
+                                                            borderRadius: 7,
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            cursor: "pointer",
+                                                            fontFamily:
+                                                                "inherit",
+                                                            transition:
+                                                                "all 0.15s",
+                                                        }}
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {paymentMode === "single" && (
+                                            <>
+                                                <div
+                                                    style={{
+                                                        display: "grid",
+                                                        gridTemplateColumns:
+                                                            "1fr 1fr",
+                                                        gap: 8,
+                                                    }}
+                                                >
+                                                    {[
+                                                        {
+                                                            value: "cash" as const,
+                                                            label: "Cash",
+                                                            icon: (
+                                                                <CreditCard
+                                                                    size={14}
+                                                                />
+                                                            ),
+                                                        },
+                                                        {
+                                                            value: "qrph" as const,
+                                                            label: "QR Ph",
+                                                            icon: (
+                                                                <QrCode
+                                                                    size={14}
+                                                                />
+                                                            ),
+                                                        },
+                                                    ].map((option) => {
+                                                        const active =
+                                                            paymentMethod ===
+                                                            option.value;
+                                                        return (
+                                                            <button
+                                                                key={
+                                                                    option.value
+                                                                }
+                                                                onClick={() =>
+                                                                    setPaymentMethod(
+                                                                        option.value,
+                                                                    )
+                                                                }
+                                                                style={{
+                                                                    display:
+                                                                        "flex",
+                                                                    alignItems:
+                                                                        "center",
+                                                                    justifyContent:
+                                                                        "center",
+                                                                    gap: 6,
+                                                                    padding:
+                                                                        "10px 12px",
+                                                                    background:
+                                                                        active
+                                                                            ? T.primarySoft
+                                                                            : T.white,
+                                                                    border: `1px solid ${active ? T.primaryBorder : T.line}`,
+                                                                    color: active
+                                                                        ? T.primary
+                                                                        : T.inkSoft,
+                                                                    borderRadius: 8,
+                                                                    fontSize: 12,
+                                                                    fontWeight: 600,
+                                                                    cursor: "pointer",
+                                                                    transition:
+                                                                        "all 0.15s",
+                                                                    fontFamily:
+                                                                        "inherit",
+                                                                }}
+                                                            >
+                                                                {option.icon}
+                                                                {option.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {pendingBookingId &&
+                                                    paymentMethod ===
+                                                        "qrph" && (
+                                                        <div
+                                                            style={{
+                                                                marginTop: 10,
+                                                                padding:
+                                                                    "10px 12px",
+                                                                background:
+                                                                    T.warnSoft,
+                                                                border: `1px solid ${T.warnBorder}`,
+                                                                borderRadius: 8,
+                                                                display: "flex",
+                                                                justifyContent:
+                                                                    "space-between",
+                                                                alignItems:
+                                                                    "center",
+                                                                gap: 8,
                                                             }}
                                                         >
                                                             <div
                                                                 style={{
-                                                                    display:
-                                                                        "flex",
-                                                                    justifyContent:
-                                                                        "space-between",
-                                                                    marginBottom: 8,
+                                                                    fontSize: 11,
+                                                                    color: T.warn,
+                                                                    lineHeight: 1.3,
                                                                 }}
                                                             >
-                                                                <Text
-                                                                    strong
-                                                                    style={{
-                                                                        color: "#111827",
-                                                                    }}
-                                                                >
-                                                                    Room{" "}
+                                                                Unpaid QR
+                                                                booking{" "}
+                                                                <strong>
+                                                                    #
                                                                     {
-                                                                        room.room_number
+                                                                        pendingBookingId
                                                                     }
-                                                                </Text>
-                                                                <Text
-                                                                    strong
-                                                                    style={{
-                                                                        color: primaryColor,
-                                                                    }}
-                                                                >
-                                                                    {formatCurrency(
-                                                                        roomTotal,
-                                                                    )}
-                                                                </Text>
+                                                                </strong>
                                                             </div>
-                                                            <div
+                                                            <Button
+                                                                size="small"
+                                                                onClick={async () => {
+                                                                    if (
+                                                                        !pendingBookingId
+                                                                    )
+                                                                        return;
+                                                                    setQrInFlight(
+                                                                        true,
+                                                                    );
+                                                                    setQrModalOpen(
+                                                                        true,
+                                                                    );
+                                                                    setQrAmount(
+                                                                        pendingAmount,
+                                                                    );
+                                                                    await generateQr(
+                                                                        pendingBookingId,
+                                                                        pendingAmount,
+                                                                    );
+                                                                }}
                                                                 style={{
-                                                                    marginLeft: 16,
+                                                                    background:
+                                                                        T.white,
+                                                                    borderColor:
+                                                                        T.warnBorder,
+                                                                    color: T.warn,
+                                                                    fontSize: 11,
+                                                                    height: 26,
+                                                                    borderRadius: 6,
+                                                                    fontWeight: 600,
                                                                 }}
                                                             >
-                                                                <div
-                                                                    style={{
-                                                                        display:
-                                                                            "flex",
-                                                                        justifyContent:
-                                                                            "space-between",
-                                                                        fontSize: 12,
-                                                                        marginBottom: 4,
-                                                                    }}
-                                                                >
-                                                                    <Text type="secondary">
-                                                                        Room
-                                                                        rate (
-                                                                        {room.stay_type ===
-                                                                        "short_stay"
-                                                                            ? "Short Stay"
-                                                                            : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
-                                                                        )
-                                                                    </Text>
-                                                                    <Text type="secondary">
-                                                                        {formatCurrency(
-                                                                            room.subtotal,
-                                                                        )}
-                                                                    </Text>
-                                                                </div>
-                                                                {room.addons.map(
-                                                                    (addon) => (
-                                                                        <div
-                                                                            key={
-                                                                                addon.id
-                                                                            }
-                                                                            style={{
-                                                                                display:
-                                                                                    "flex",
-                                                                                justifyContent:
-                                                                                    "space-between",
-                                                                                fontSize: 12,
-                                                                                marginTop: 4,
-                                                                            }}
-                                                                        >
-                                                                            <Text type="secondary">
-                                                                                {
-                                                                                    addon.add_on_name
-                                                                                }{" "}
-                                                                                x
-                                                                                {
-                                                                                    addon.quantity
-                                                                                }
-                                                                            </Text>
-                                                                            <Text
-                                                                                type="secondary"
-                                                                                style={{
-                                                                                    color: "#059669",
-                                                                                }}
-                                                                            >
-                                                                                +
-                                                                                {formatCurrency(
-                                                                                    addon.subtotal,
-                                                                                )}
-                                                                            </Text>
-                                                                        </div>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                            <Text
-                                                                type="secondary"
-                                                                style={{
-                                                                    fontSize: 12,
-                                                                    display:
-                                                                        "block",
-                                                                    marginTop: 8,
-                                                                }}
-                                                            >
-                                                                <Calendar
-                                                                    size={12}
-                                                                    style={{
-                                                                        marginRight: 4,
-                                                                    }}
-                                                                />{" "}
-                                                                {formatDate(
-                                                                    room.check_in_date,
-                                                                )}{" "}
-                                                                →{" "}
-                                                                {formatDate(
-                                                                    room.check_out_date,
-                                                                )}
-                                                            </Text>
+                                                                Regenerate
+                                                            </Button>
                                                         </div>
-                                                    );
-                                                },
-                                            )}
-                                        </div>
+                                                    )}
+                                            </>
+                                        )}
 
-                                        <div style={{ marginBottom: 20 }}>
-                                            <div
-                                                style={{
-                                                    marginBottom: 8,
-                                                    fontWeight: 600,
-                                                    color: "#374151",
-                                                }}
-                                            >
-                                                Payment Method
+                                        {paymentMode === "split" && (
+                                            <div>
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        gap: 6,
+                                                        marginBottom: 6,
+                                                        alignItems: "center",
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            width: 64,
+                                                            fontSize: 12,
+                                                            fontWeight: 600,
+                                                            color: T.inkSoft,
+                                                            display: "flex",
+                                                            alignItems:
+                                                                "center",
+                                                            gap: 5,
+                                                        }}
+                                                    >
+                                                        <CreditCard size={12} />
+                                                        Cash
+                                                    </div>
+                                                    <Input
+                                                        size="small"
+                                                        type="number"
+                                                        placeholder="0.00"
+                                                        prefix="₱"
+                                                        value={
+                                                            splitCashAmount ??
+                                                            ""
+                                                        }
+                                                        onChange={(e) =>
+                                                            setSplitCashAmount(
+                                                                e.target
+                                                                    .value ===
+                                                                    ""
+                                                                    ? null
+                                                                    : Number(
+                                                                          e
+                                                                              .target
+                                                                              .value,
+                                                                      ),
+                                                            )
+                                                        }
+                                                        style={{
+                                                            flex: 1,
+                                                            borderRadius: 7,
+                                                        }}
+                                                    />
+                                                </div>
+
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        gap: 6,
+                                                        marginBottom: 8,
+                                                        alignItems: "center",
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            width: 64,
+                                                            fontSize: 12,
+                                                            fontWeight: 600,
+                                                            color: T.inkSoft,
+                                                            display: "flex",
+                                                            alignItems:
+                                                                "center",
+                                                            gap: 5,
+                                                        }}
+                                                    >
+                                                        <QrCode size={12} />
+                                                        QR Ph
+                                                    </div>
+                                                    <Input
+                                                        size="small"
+                                                        type="number"
+                                                        placeholder="0.00"
+                                                        prefix="₱"
+                                                        value={
+                                                            splitQrphAmount ??
+                                                            ""
+                                                        }
+                                                        onChange={(e) =>
+                                                            setSplitQrphAmount(
+                                                                e.target
+                                                                    .value ===
+                                                                    ""
+                                                                    ? null
+                                                                    : Number(
+                                                                          e
+                                                                              .target
+                                                                              .value,
+                                                                      ),
+                                                            )
+                                                        }
+                                                        style={{
+                                                            flex: 1,
+                                                            borderRadius: 7,
+                                                        }}
+                                                    />
+                                                </div>
+
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        justifyContent:
+                                                            "space-between",
+                                                        fontSize: 11,
+                                                        padding: "6px 2px",
+                                                        color:
+                                                            Math.abs(
+                                                                splitRemaining,
+                                                            ) < 0.01
+                                                                ? T.primary
+                                                                : T.warn,
+                                                        fontWeight: 600,
+                                                    }}
+                                                >
+                                                    <span>
+                                                        {Math.abs(
+                                                            splitRemaining,
+                                                        ) < 0.01
+                                                            ? "Fully allocated"
+                                                            : splitRemaining > 0
+                                                              ? "Remaining"
+                                                              : "Over by"}
+                                                    </span>
+                                                    <span>
+                                                        {formatPeso(
+                                                            Math.abs(
+                                                                splitRemaining,
+                                                            ),
+                                                        )}
+                                                    </span>
+                                                </div>
+
+                                                <div
+                                                    style={{
+                                                        marginTop: 8,
+                                                        fontSize: 10,
+                                                        color: T.faint,
+                                                        lineHeight: 1.4,
+                                                    }}
+                                                >
+                                                    Cash is collected now. The
+                                                    guest will scan a QR code
+                                                    for the remaining amount
+                                                    before check-in is
+                                                    finalized.
+                                                </div>
                                             </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
 
-                                            <Select
-                                                size="large"
-                                                value={paymentMethod}
-                                                onChange={(value) =>
-                                                    setPaymentMethod(
-                                                        value as
-                                                            | "cash"
-                                                            | "qrph",
-                                                    )
-                                                }
-                                                style={{ width: "100%" }}
-                                            >
-                                                <Select.Option value="cash">
-                                                    Cash
-                                                </Select.Option>
-                                                <Select.Option value="qrph">
-                                                    QR Ph
-                                                </Select.Option>
-                                            </Select>
-
-                                            <div
+                            {/* Total + Action */}
+                            {selectedRoomsDetails.length > 0 && (
+                                <>
+                                    <Divider
+                                        style={{
+                                            margin: 0,
+                                            borderColor: T.lineSoft,
+                                        }}
+                                    />
+                                    <div style={{ padding: "16px 20px 20px" }}>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                                alignItems: "baseline",
+                                                marginBottom: 14,
+                                            }}
+                                        >
+                                            <span
                                                 style={{
-                                                    marginTop: 8,
                                                     fontSize: 12,
-                                                    color: "#6c757d",
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 6,
+                                                    color: T.muted,
+                                                    fontWeight: 500,
                                                 }}
                                             >
-                                                {paymentMethod === "cash" ? (
-                                                    <>
-                                                        <CreditCard
-                                                            size={14}
-                                                            color="#059669"
-                                                        />
-                                                        Instant — cash collected
-                                                        at the counter.
-                                                    </>
+                                                Total amount
+                                            </span>
+                                            <span
+                                                style={{
+                                                    fontSize: 22,
+                                                    fontWeight: 700,
+                                                    color: T.ink,
+                                                    letterSpacing: -0.4,
+                                                    fontVariantNumeric:
+                                                        "tabular-nums",
+                                                }}
+                                            >
+                                                {formatPeso(totalAmount)}
+                                            </span>
+                                        </div>
+
+                                        <Button
+                                            type="primary"
+                                            size="large"
+                                            block
+                                            icon={
+                                                paymentMode === "single" &&
+                                                paymentMethod === "qrph" ? (
+                                                    <QrCode size={14} />
                                                 ) : (
-                                                    <>
-                                                        <QrCode
-                                                            size={14}
-                                                            color="#059669"
-                                                        />
-                                                        Guest scans a dynamic QR
-                                                        Ph. Check-in finalises
-                                                        automatically once paid.
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <Divider style={{ margin: "12px 0" }} />
-
-                                        <div
+                                                    <ArrowRight size={14} />
+                                                )
+                                            }
+                                            onClick={handleSubmit}
+                                            loading={loading}
+                                            disabled={completeDisabled}
                                             style={{
-                                                textAlign: "right",
-                                                marginBottom: 20,
+                                                background: T.primary,
+                                                borderColor: T.primary,
+                                                height: 44,
+                                                fontSize: 13,
+                                                fontWeight: 600,
+                                                borderRadius: 9,
+                                                letterSpacing: 0.1,
                                             }}
                                         >
-                                            <Text type="secondary">
-                                                Total Amount
-                                            </Text>
+                                            {paymentMode === "single" &&
+                                            paymentMethod === "qrph"
+                                                ? pendingBookingId
+                                                    ? "Retry QR payment"
+                                                    : "Generate QR"
+                                                : "Complete check-in"}
+                                        </Button>
+
+                                        {!selectedGuest && (
                                             <div
                                                 style={{
-                                                    fontSize: 36,
-                                                    fontWeight: "bold",
-                                                    color: primaryColor,
-                                                    marginTop: 4,
+                                                    marginTop: 10,
+                                                    textAlign: "center",
+                                                    fontSize: 11,
+                                                    color: T.warn,
                                                 }}
                                             >
-                                                {formatCurrency(totalAmount)}
+                                                Select a guest to continue
                                             </div>
-                                            <div
-                                                style={{
-                                                    marginTop: 12,
-                                                    display: "flex",
-                                                    gap: 8,
-                                                    justifyContent: "flex-end",
-                                                }}
-                                            >
-                                                <Badge
-                                                    count={`${selectedRoomsDetails.filter((r) => r.stay_type === "short_stay").length} Short Stay`}
-                                                    style={{
-                                                        backgroundColor:
-                                                            "#f59e0b",
-                                                    }}
-                                                />
-                                                <Badge
-                                                    count={`${selectedRoomsDetails.filter((r) => r.stay_type === "overnight").length} Overnight`}
-                                                    style={{
-                                                        backgroundColor:
-                                                            "#3b82f6",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <Empty description="No rooms selected" />
-                                )}
-
-                                <Button
-                                    type="primary"
-                                    size="large"
-                                    block
-                                    icon={
-                                        paymentMethod === "qrph" ? (
-                                            <QrCode size={16} />
-                                        ) : (
-                                            <CreditCard size={16} />
-                                        )
-                                    }
-                                    onClick={handleSubmit}
-                                    loading={loading}
-                                    disabled={completeDisabled}
-                                    style={{
-                                        background: primaryColor,
-                                        borderColor: primaryColor,
-                                        height: 52,
-                                        fontSize: 16,
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    {paymentMethod === "qrph"
-                                        ? `Generate QR & Check-in (${formatCurrency(totalAmount)})`
-                                        : `Complete Check-in (${formatCurrency(totalAmount)})`}
-                                </Button>
-
-                                {!selectedGuest &&
-                                    selectedRoomsDetails.length > 0 && (
-                                        <div
-                                            style={{
-                                                marginTop: 12,
-                                                textAlign: "center",
-                                            }}
-                                        >
-                                            <Text type="danger">
-                                                Please select a guest first
-                                            </Text>
-                                        </div>
-                                    )}
-                            </Card>
-                        </motion.div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </Col>
                 </Row>
             </div>
 
-            {/* New Guest Modal */}
+            {/* ── New Guest Modal ── */}
             <Modal
-                title="Add New Guest"
                 open={showGuestModal}
                 onCancel={() => setShowGuestModal(false)}
-                onOk={handleSaveNewGuest}
-                confirmLoading={savingGuest}
+                footer={null}
+                centered
+                width={540}
+                destroyOnHidden
+                styles={
+                    {
+                        content: {
+                            padding: 0,
+                            overflow: "hidden",
+                            borderRadius: 16,
+                        },
+                        body: {
+                            padding: 0,
+                        },
+                    } as any
+                }
             >
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 16,
-                    }}
-                >
-                    <Input
-                        placeholder="First Name *"
-                        value={newGuestForm.first_name}
-                        onChange={(e) =>
-                            setNewGuestForm({
-                                ...newGuestForm,
-                                first_name: e.target.value,
-                            })
-                        }
-                        prefix={<User size={16} />}
-                        size="large"
-                    />
-                    <Input
-                        placeholder="Middle Name"
-                        value={newGuestForm.middle_name}
-                        onChange={(e) =>
-                            setNewGuestForm({
-                                ...newGuestForm,
-                                middle_name: e.target.value,
-                            })
-                        }
-                        prefix={<User size={16} />}
-                        size="large"
-                    />
-                    <Input
-                        placeholder="Last Name *"
-                        value={newGuestForm.last_name}
-                        onChange={(e) =>
-                            setNewGuestForm({
-                                ...newGuestForm,
-                                last_name: e.target.value,
-                            })
-                        }
-                        prefix={<User size={16} />}
-                        size="large"
-                    />
-                    <Input
-                        placeholder="Contact Number"
-                        value={newGuestForm.contact_number}
-                        onChange={(e) =>
-                            setNewGuestForm({
-                                ...newGuestForm,
-                                contact_number: e.target.value,
-                            })
-                        }
-                        prefix={<Phone size={16} />}
-                        size="large"
-                    />
-                    <Input
-                        placeholder="Address"
-                        value={newGuestForm.address}
-                        onChange={(e) =>
-                            setNewGuestForm({
-                                ...newGuestForm,
-                                address: e.target.value,
-                            })
-                        }
-                        prefix={<MapPin size={16} />}
-                        size="large"
-                    />
+                <div>
+                    {/* Modal header */}
+                    <div
+                        style={{
+                            padding: "20px 24px 16px",
+                            borderBottom: `1px solid ${T.lineSoft}`,
+                            background: T.white,
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 10,
+                                    background: T.primarySoft,
+                                    border: `1px solid ${T.primaryBorder}`,
+                                    color: T.primary,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <UserPlus size={19} />
+                            </div>
+
+                            <div style={{ minWidth: 0 }}>
+                                <div
+                                    style={{
+                                        fontSize: 17,
+                                        fontWeight: 700,
+                                        color: T.ink,
+                                        lineHeight: 1.25,
+                                    }}
+                                >
+                                    Add new guest
+                                </div>
+                                <div
+                                    style={{
+                                        marginTop: 3,
+                                        fontSize: 12,
+                                        color: T.muted,
+                                    }}
+                                >
+                                    Enter the guest's information to continue.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Modal body */}
+                    <div
+                        style={{
+                            padding: "20px 24px 8px",
+                            background: T.white,
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr 1fr",
+                                gap: "16px 12px",
+                            }}
+                        >
+                            <div>
+                                <FieldLabel>
+                                    First name{" "}
+                                    <span style={{ color: T.danger }}>*</span>
+                                </FieldLabel>
+                                <Input
+                                    size="large"
+                                    placeholder="e.g. Juan"
+                                    prefix={
+                                        <User
+                                            size={15}
+                                            style={{ color: T.faint }}
+                                        />
+                                    }
+                                    value={newGuestForm.first_name}
+                                    onChange={(e) =>
+                                        setNewGuestForm({
+                                            ...newGuestForm,
+                                            first_name: e.target.value,
+                                        })
+                                    }
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 9,
+                                    }}
+                                />
+                            </div>
+
+                            <div>
+                                <FieldLabel>Middle name</FieldLabel>
+                                <Input
+                                    size="large"
+                                    placeholder="Optional"
+                                    value={newGuestForm.middle_name}
+                                    onChange={(e) =>
+                                        setNewGuestForm({
+                                            ...newGuestForm,
+                                            middle_name: e.target.value,
+                                        })
+                                    }
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 9,
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ gridColumn: "1 / -1" }}>
+                                <FieldLabel>
+                                    Last name{" "}
+                                    <span style={{ color: T.danger }}>*</span>
+                                </FieldLabel>
+                                <Input
+                                    size="large"
+                                    placeholder="e.g. Dela Cruz"
+                                    prefix={
+                                        <User
+                                            size={15}
+                                            style={{ color: T.faint }}
+                                        />
+                                    }
+                                    value={newGuestForm.last_name}
+                                    onChange={(e) =>
+                                        setNewGuestForm({
+                                            ...newGuestForm,
+                                            last_name: e.target.value,
+                                        })
+                                    }
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 9,
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ gridColumn: "1 / -1" }}>
+                                <FieldLabel>
+                                    Philippine mobile number{" "}
+                                    <span style={{ color: T.danger }}>*</span>
+                                </FieldLabel>
+
+                                <Input
+                                    size="large"
+                                    prefix={
+                                        <Phone
+                                            size={15}
+                                            style={{ color: T.faint }}
+                                        />
+                                    }
+                                    addonBefore={
+                                        <span
+                                            style={{
+                                                color: T.inkSoft,
+                                                fontWeight: 600,
+                                                fontSize: 13,
+                                            }}
+                                        >
+                                            +63
+                                        </span>
+                                    }
+                                    placeholder="9171234567"
+                                    value={localMobile}
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    status={
+                                        localMobile.length > 0 && !mobileIsValid
+                                            ? "error"
+                                            : undefined
+                                    }
+                                    onChange={(e) => {
+                                        const next = normalizeMobile(
+                                            e.target.value,
+                                        );
+                                        setNewGuestForm({
+                                            ...newGuestForm,
+                                            contact_number: next
+                                                ? `0${next}`
+                                                : "",
+                                        });
+                                    }}
+                                    style={{
+                                        height: 44,
+                                        borderRadius: 9,
+                                    }}
+                                />
+
+                                {localMobile.length === 0 ? (
+                                    <div
+                                        style={{
+                                            marginTop: 6,
+                                            fontSize: 11,
+                                            color: T.muted,
+                                        }}
+                                    >
+                                        Enter 10 digits after +63. Example:{" "}
+                                        <span
+                                            style={{
+                                                fontWeight: 600,
+                                                color: T.inkSoft,
+                                            }}
+                                        >
+                                            +63 9171234567
+                                        </span>
+                                    </div>
+                                ) : localMobile.length < 10 ? (
+                                    <div
+                                        style={{
+                                            marginTop: 6,
+                                            fontSize: 11,
+                                            color: T.danger,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                        }}
+                                    >
+                                        <AlertTriangle size={11} />
+                                        Number is too short —{" "}
+                                        {10 - localMobile.length} more digit
+                                        {10 - localMobile.length > 1
+                                            ? "s"
+                                            : ""}{" "}
+                                        needed.
+                                    </div>
+                                ) : localMobile.length > 10 ? (
+                                    <div
+                                        style={{
+                                            marginTop: 6,
+                                            fontSize: 11,
+                                            color: T.danger,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                        }}
+                                    >
+                                        <AlertTriangle size={11} />
+                                        Number is too long —{" "}
+                                        {localMobile.length - 10} extra digit
+                                        {localMobile.length - 10 > 1 ? "s" : ""}
+                                        .
+                                    </div>
+                                ) : !mobileIsValid ? (
+                                    <div
+                                        style={{
+                                            marginTop: 6,
+                                            fontSize: 11,
+                                            color: T.danger,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                        }}
+                                    >
+                                        <AlertTriangle size={11} />
+                                        Mobile number must start with 9.
+                                    </div>
+                                ) : (
+                                    <div
+                                        style={{
+                                            marginTop: 6,
+                                            fontSize: 11,
+                                            color: T.primary,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                        }}
+                                    >
+                                        <CheckCircle size={11} />
+                                        Valid mobile number
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ gridColumn: "1 / -1" }}>
+                                <FieldLabel>Address</FieldLabel>
+                                <Input.TextArea
+                                    placeholder="Enter complete address"
+                                    value={newGuestForm.address}
+                                    onChange={(e) =>
+                                        setNewGuestForm({
+                                            ...newGuestForm,
+                                            address: e.target.value,
+                                        })
+                                    }
+                                    autoSize={{ minRows: 3, maxRows: 4 }}
+                                    style={{
+                                        borderRadius: 9,
+                                        resize: "none",
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Modal footer */}
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            gap: 10,
+                            padding: "16px 24px 20px",
+                            background: T.white,
+                            borderTop: `1px solid ${T.lineSoft}`,
+                        }}
+                    >
+                        <Button
+                            size="large"
+                            onClick={() => setShowGuestModal(false)}
+                            disabled={savingGuest}
+                            style={{
+                                minWidth: 100,
+                                height: 42,
+                                borderRadius: 9,
+                                borderColor: T.line,
+                                color: T.inkSoft,
+                                fontWeight: 500,
+                            }}
+                        >
+                            Cancel
+                        </Button>
+
+                        <Button
+                            type="primary"
+                            size="large"
+                            loading={savingGuest}
+                            onClick={handleSaveNewGuest}
+                            disabled={!guestFormIsValid || savingGuest}
+                            style={{
+                                minWidth: 130,
+                                height: 42,
+                                borderRadius: 9,
+                                background: T.primary,
+                                borderColor: T.primary,
+                                fontWeight: 600,
+                            }}
+                        >
+                            Save guest
+                        </Button>
+                    </div>
                 </div>
             </Modal>
 
-            {/* Add-Ons Modal */}
             <AddOnsModal
                 visible={showAddOnsModal}
                 onClose={() => {
@@ -2974,7 +3857,6 @@ function WalkInContent() {
                 roomNumber={getCurrentRoomNumber()}
             />
 
-            {/* QR Ph Modal */}
             <QrModal
                 open={qrModalOpen}
                 status={qrStatus}
@@ -2987,17 +3869,19 @@ function WalkInContent() {
                 onRegenerate={handleQrRegenerate}
             />
 
-            {/* Receipt Modal */}
             <ReceiptModal
                 isOpen={showReceiptModal}
-                onClose={handleCloseReceiptModal}
+                onClose={() => {
+                    setShowReceiptModal(false);
+                    setCurrentPaymentId(null);
+                }}
                 paymentId={currentPaymentId}
             />
         </div>
     );
 }
 
-// ==================== EXPORT WITH APP WRAPPER ====================
+// ==================== EXPORT ====================
 export default function WalkIn() {
     return (
         <App>

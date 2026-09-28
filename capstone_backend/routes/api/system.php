@@ -38,6 +38,9 @@ Route::prefix('reports')->controller(ReportController::class)->group(function ()
     // ── Guest reviews ──
     Route::get('/reviews', 'reviews');
 
+    // ── Dashboard summary (for Reports module) ──
+    Route::get('/dashboard', 'dashboardSummary');
+
     // ── Occupancy ──
     Route::get('/occupancy', 'occupancy');
 

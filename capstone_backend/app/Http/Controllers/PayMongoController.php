@@ -354,32 +354,54 @@ class PayMongoController extends Controller
         $totalPaid = BookingPayment::where('booking_id', $booking->id)->sum('amount');
         $newTotal  = $totalPaid + $amount;
 
-        // Generate Official Receipt Number
-        $lastPayment = BookingPayment::whereNotNull('receipt_number')
+        // The booking already has a "pending" payment row created when the
+        // booking was first made (online booking or walk-in QR check-in).
+        // Update THAT row instead of inserting a new one — otherwise the
+        // original pending row is orphaned and keeps showing as "PENDING"
+        // in the UI even though PayMongo already confirmed payment.
+        $payment = BookingPayment::where('booking_id', $booking->id)
+            ->where('payment_status', 'pending')
             ->latest('id')
             ->first();
 
-        $nextNumber = 1;
+        if ($payment) {
+            $payment->update([
+                'shift_id'        => $payment->shift_id ?? $shift?->id,
+                'amount'          => $amount,
+                'payment_method'  => $paymentMethod,
+                'payment_status'  => 'paid',
+                'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : $payment->gcash_reference,
+                'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : $payment->bank_reference,
+                'payment_date'    => now(),
+            ]);
+        } else {
+            // Fallback: no pending row found (shouldn't normally happen).
+            $lastPayment = BookingPayment::whereNotNull('receipt_number')
+                ->latest('id')
+                ->first();
 
-        if ($lastPayment && $lastPayment->receipt_number) {
-            $nextNumber = ((int) substr($lastPayment->receipt_number, -6)) + 1;
+            $nextNumber = 1;
+
+            if ($lastPayment && $lastPayment->receipt_number) {
+                $nextNumber = ((int) substr($lastPayment->receipt_number, -6)) + 1;
+            }
+
+            $receiptNumber = 'OR-' . date('Y') . '-' .
+                str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+
+            $payment = BookingPayment::create([
+                'booking_id'      => $booking->id,
+                'shift_id'        => $shift?->id,
+                'receipt_number'  => $receiptNumber,
+                'amount'          => $amount,
+                'payment_method'  => $paymentMethod,
+                'payment_status'  => 'paid',
+                'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : null,
+                'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : null,
+                'received_by'     => null,
+                'payment_date'    => now(),
+            ]);
         }
-
-        $receiptNumber = 'OR-' . date('Y') . '-' .
-            str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
-
-        $payment = BookingPayment::create([
-            'booking_id'      => $booking->id,
-            'shift_id'        => $shift?->id,
-            'receipt_number'  => $receiptNumber,
-            'amount'          => $amount,
-            'payment_method'  => $paymentMethod,
-            'payment_status'  => 'paid',
-            'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : null,
-            'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : null,
-            'received_by'     => null,
-            'payment_date'    => now(),
-        ]);
 
         // ---------------------------------------------------------------------
         // WALK-IN QR Ph AUTO-CONFIRM

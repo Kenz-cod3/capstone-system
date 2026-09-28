@@ -48,10 +48,10 @@ class DashboardController extends Controller
         $available   = $roomCounts['available']   ?? 0;
         $reserved    = $roomCounts['reserved']    ?? 0;
         $maintenance = $roomCounts['maintenance'] ?? 0;
-        $cleaning    = $roomCounts['cleaning']    ?? 0;
-        $dirty       = $roomCounts['dirty']       ?? 0;
+        $ongoing    = $roomCounts['ongoing']    ?? 0;
+        $preparing       = $roomCounts['preparing']       ?? 0;
 
-        $totalActiveRooms = $occupied + $available + $cleaning + $dirty;
+        $totalActiveRooms = $occupied + $available + $ongoing + $preparing;
         $currentOccupancyRate = $totalActiveRooms > 0
             ? round(($occupied / $totalActiveRooms) * 100, 2)
             : 0;
@@ -284,8 +284,8 @@ class DashboardController extends Controller
                 ['name' => 'Reserved',    'value' => $reserved,    'color' => '#fbbf24'],
                 ['name' => 'Occupied',    'value' => $occupied,    'color' => '#3b82f6'],
                 ['name' => 'Maintenance', 'value' => $maintenance, 'color' => '#ef4444'],
-                ['name' => 'Dirty',       'value' => $dirty,       'color' => '#8b5cf6'],
-                ['name' => 'Cleaning',    'value' => $cleaning,    'color' => '#f59e0b'],
+                ['name' => 'Preparing',       'value' => $preparing,       'color' => '#8b5cf6'],
+                ['name' => 'Ongoing',    'value' => $ongoing,    'color' => '#f59e0b'],
             ],
         ]);
     }
@@ -342,6 +342,31 @@ class DashboardController extends Controller
     }
 
     /**
+     * Daily occupancy for an arbitrary date range (custom range picker)
+     */
+    public function occupancyRange(Request $request)
+    {
+        $request->validate([
+            'from' => 'required|date',
+            'to'   => 'required|date|after_or_equal:from',
+        ]);
+
+        $from = Carbon::parse($request->from)->startOfDay();
+        $to   = Carbon::parse($request->to)->startOfDay();
+
+        $out = [];
+        foreach ($this->occupancyByDate($from, $to) as $date => $occ) {
+            $out[] = [
+                'day'       => Carbon::parse($date)->format('M d, Y'),
+                'occupancy' => $occ,
+                'fullDate'  => $date,
+            ];
+        }
+
+        return response()->json(['occupancyRangeTrend' => $out]);
+    }
+
+    /**
      * Get full dashboard with charts and trends (slower endpoint)
      */
     public function index()
@@ -374,10 +399,10 @@ class DashboardController extends Controller
         $occupied    = $roomCounts['occupied']    ?? 0;
         $available   = $roomCounts['available']   ?? 0;
         $maintenance = $roomCounts['maintenance'] ?? 0;
-        $cleaning    = $roomCounts['cleaning']    ?? 0;
-        $dirty       = $roomCounts['dirty']       ?? 0;
+        $ongoing    = $roomCounts['ongoing']    ?? 0;
+        $preparing       = $roomCounts['preparing']       ?? 0;
 
-        $totalActiveRooms = $occupied + $available + $cleaning + $dirty;
+        $totalActiveRooms = $occupied + $available + $ongoing + $preparing;
         $currentOccupancyRate = $totalActiveRooms > 0
             ? round(($occupied / $totalActiveRooms) * 100, 2)
             : 0;
@@ -557,7 +582,7 @@ class DashboardController extends Controller
                 $booking->bookedRooms->first()?->status ?? 'pending';
         });
 
-        // OCCUPANCY TREND - FIXED to use booked_rooms status
+        /* OLD OCCUPANCY COMPUTATION (disabled)
         $allBookings = Booking::whereNull('deleted_at')
             ->with(['bookedRooms' => function ($q) {
                 $q->with('room:id,status,deleted_at');
@@ -620,6 +645,15 @@ class DashboardController extends Controller
 
             return round(min((count($occupiedRoomIds) / $totalRoomsCount) * 100, 100), 2);
         };
+
+               */
+
+        // OCCUPANCY TREND - accurate per-day computation
+        $occByDate = $this->occupancyByDate(
+            Carbon::today()->startOfYear(),
+            Carbon::today()->endOfYear()
+        );
+        $getOccupancyForDate = fn($dateString) => $occByDate[$dateString] ?? 0;
 
         // LAST 7 DAYS
         $trend = [];
@@ -858,8 +892,8 @@ class DashboardController extends Controller
                 ['name' => 'Available',   'value' => $available,   'color' => '#2e7d64'],
                 ['name' => 'Occupied',    'value' => $occupied,    'color' => '#3b82f6'],
                 ['name' => 'Maintenance', 'value' => $maintenance, 'color' => '#ef4444'],
-                ['name' => 'Dirty',       'value' => $dirty,       'color' => '#8b5cf6'],
-                ['name' => 'Cleaning',    'value' => $cleaning,    'color' => '#f59e0b'],
+                ['name' => 'Preparing',       'value' => $preparing,       'color' => '#8b5cf6'],
+                ['name' => 'Ongoing',    'value' => $ongoing,    'color' => '#f59e0b'],
             ],
             'trend'          => $trend,
             'thirtyDayTrend' => $thirtyDayTrend,
@@ -869,5 +903,80 @@ class DashboardController extends Controller
             'yearlyTrend'    => $yearlyTrend,
             'lastYearTrend'  => $lastYearTrend,
         ]);
+    }
+
+    /**
+     * Occupancy % per day (Y-m-d => percent), based on planned stay dates.
+     */
+    private function occupancyByDate(Carbon $from, Carbon $to): array
+    {
+        $from  = $from->copy()->startOfDay();
+        $to    = $to->copy()->startOfDay();
+        $today = Carbon::today();
+
+        // Count only rooms that existed on each day
+        $allRooms = Room::withTrashed()
+            ->get(['id', 'status', 'created_at', 'deleted_at']);
+
+        $roomsOnDate = function (string $dateKey) use ($allRooms) {
+            $day = Carbon::parse($dateKey)->endOfDay();
+
+            return $allRooms->filter(function ($room) use ($day) {
+                if ($room->created_at && $room->created_at->gt($day)) {
+                    return false; // wala pa ang room noon
+                }
+                if ($room->deleted_at && $room->deleted_at->lte($day)) {
+                    return false; // tinanggal na
+                }
+                return $room->status !== 'maintenance';
+            })->count();
+        };
+
+        $rows = \App\Models\BookedRoom::whereNull('archived_at')
+            ->whereNull('deleted_at')
+            ->whereIn('status', ['checked_in', 'checked_out'])
+            ->whereDate('check_in_date', '<=', $to->toDateString())
+            ->get(['room_id', 'status', 'stay_type', 'check_in_date', 'check_out_date']);
+
+        $occupied = [];
+
+        foreach ($rows as $br) {
+            $start = Carbon::parse($br->check_in_date)->startOfDay();
+
+            if ($br->stay_type === 'short_stay') {
+                $end = $start->copy()->addDay();
+            } elseif ($br->status === 'checked_out') {
+                $end = Carbon::parse($br->check_out_date)->startOfDay();
+            } else {
+                $planned = Carbon::parse($br->check_out_date)->startOfDay();
+                $end = $planned->gt($today) ? $planned : $today->copy()->addDay();
+            }
+
+            if ($end->lte($start)) {
+                $end = $start->copy()->addDay();
+            }
+
+            $cursor = $start->copy();
+            if ($cursor->lt($from)) $cursor = $from->copy();
+            $last = $end->copy()->subDay();
+            if ($last->gt($to)) $last = $to->copy();
+
+            while ($cursor->lte($last)) {
+                $occupied[$cursor->toDateString()][$br->room_id] = true;
+                $cursor->addDay();
+            }
+        }
+
+        $result = [];
+        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
+            $key   = $d->toDateString();
+            $count = isset($occupied[$key]) ? count($occupied[$key]) : 0;
+            $totalRooms = $roomsOnDate($key);
+            $result[$key] = $totalRooms > 0
+                ? round(min(($count / $totalRooms) * 100, 100), 2)
+                : 0;
+        }
+
+        return $result;
     }
 }

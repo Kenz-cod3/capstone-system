@@ -101,12 +101,13 @@ class UserController extends Controller
             'last_name'  => 'sometimes|string|max:255',
             'email'      => 'sometimes|email|unique:users,email,' . $id,
             'password'   => 'nullable|min:8|confirmed',
-            'role'       => 'sometimes|in:admin,staff,guest',
+            'role'       => 'sometimes|in:admin,staff,cashier,housekeeper,guest',
 
             'contact_number' => [
                 'nullable',
                 'regex:/^09\d{9}$/'
             ],
+            'address' => 'nullable|string|max:500',
 
             'profile_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ], [

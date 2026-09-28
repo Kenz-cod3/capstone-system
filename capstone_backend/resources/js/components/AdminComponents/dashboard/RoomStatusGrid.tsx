@@ -184,9 +184,9 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                 return "bg-blue-100 text-blue-700";
             case "maintenance":
                 return "bg-red-100 text-red-700";
-            case "cleaning":
+            case "ongoing":
                 return "bg-yellow-100 text-yellow-700";
-            case "dirty":
+            case "preparing":
                 return "bg-purple-100 text-purple-700";
             default:
                 return "bg-gray-100 text-gray-600";
@@ -231,7 +231,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                     subtle: "text-red-600",
                     heading: "text-red-700",
                 };
-            case "cleaning":
+            case "ongoing":
                 return {
                     bg: "bg-white",
                     ring: "border border-yellow-200",
@@ -240,7 +240,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                     subtle: "text-yellow-600",
                     heading: "text-yellow-700",
                 };
-            case "dirty":
+            case "preparing":
                 return {
                     bg: "bg-white",
                     ring: "border border-purple-200",
@@ -395,11 +395,11 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                        Cleaning
+                        Ongoing
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                        Dirty
+                        Preparing
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-red-500 rounded-full"></span>

@@ -96,6 +96,7 @@ interface RoomStatusItem {
 interface OccupancyTrendItem {
     day: string;
     occupancy: number;
+    fullDate?: string;
 }
 
 interface DashboardData {
@@ -104,6 +105,9 @@ interface DashboardData {
     occupancy: number;
     roomStatus: RoomStatusItem[];
     trend: OccupancyTrendItem[];
+    thirtyDayTrend?: OccupancyTrendItem[];
+    thisMonthTrend?: OccupancyTrendItem[];
+    thisYearTrend?: OccupancyTrendItem[];
 
     financialTrend: {
         name: string;
@@ -710,7 +714,18 @@ export default function Dashboard() {
     const occupancy = statsData?.occupancy ?? 0;
     const roomStatus = statsData?.roomStatus ?? [];
 
-    const occupancyTrend = dashboardData?.trend ?? [];
+    // Merge all ranges into one list, keyed by fullDate (later entries win)
+    const occupancyTrend = React.useMemo(() => {
+        const map = new Map<string, OccupancyTrendItem>();
+        [
+            ...(dashboardData?.thisMonthTrend ?? []),
+            ...(dashboardData?.thirtyDayTrend ?? []),
+            ...(dashboardData?.trend ?? []),
+        ].forEach((item) => {
+            if (item.fullDate) map.set(item.fullDate, item);
+        });
+        return Array.from(map.values());
+    }, [dashboardData]);
 
     const navigateTo = (path: string) => {
         navigate(path);
@@ -809,7 +824,10 @@ export default function Dashboard() {
 
                     {/* 5. OCCUPANCY TREND CHART */}
                     <motion.div variants={itemVariants} className="mt-8">
-                        <OccupancyTrendChart data={occupancyTrend} />
+                        <OccupancyTrendChart
+                            data={occupancyTrend}
+                            yearData={dashboardData?.thisYearTrend ?? []}
+                        />
                     </motion.div>
                 </motion.div>
             )}

@@ -81,7 +81,8 @@ class Booking extends Model
     public function histories()
     {
         return $this->hasMany(BookingHistory::class)
-            ->orderByDesc('changed_at');
+            ->orderBy('changed_at')
+            ->orderBy('id');
     }
 
     // REVIEW

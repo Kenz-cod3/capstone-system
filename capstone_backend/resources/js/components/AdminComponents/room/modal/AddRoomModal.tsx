@@ -1,21 +1,17 @@
 import { useEffect, useState, useRef } from "react";
-import {
-    updateRoom,
-    uploadRoomImage,
-    deleteRoomImage,
-} from "@/services/roomService";
+import { createRoom, uploadRoomImage } from "@/services/roomService";
 import { getRoomTypesCached } from "@/services/roomTypeService";
-import { X, Upload, AlertCircle, CheckCircle, Trash2 } from "lucide-react";
+import { X, Upload, AlertCircle, CheckCircle } from "lucide-react";
 import api from "@/services/api";
 
-export default function EditRoomModal({ room, onClose, refresh }: any) {
+export default function AddRoomModal({ onClose, refresh }: any) {
     const [roomTypes, setRoomTypes] = useState<any[]>([]);
     const [amenities, setAmenities] = useState<any[]>([]);
     const [file, setFile] = useState<File | null>(null);
+    const [preview, setPreview] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [isDragging, setIsDragging] = useState(false);
-    const [preview, setPreview] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [panoramaFile, setPanoramaFile] = useState<File | null>(null);
@@ -32,27 +28,16 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
 
     useEffect(() => {
         getRoomTypesCached().then(setRoomTypes);
-        api.get("/amenities").then((res) => setAmenities(res.data.data));
+
+        api.get("/amenities").then((res) => {
+            console.log("Amenities Response:", res.data);
+
+            setAmenities(res.data.data);
+        });
     }, []);
 
+    // Cleanup preview URLs on unmount
     useEffect(() => {
-        if (room) {
-            setForm({
-                room_number: room.room_number || "",
-                room_type_id: room.room_type_id?.toString() || "",
-                status: room.status || "available",
-                amenities: room.amenities?.map((a: any) => a.id) ?? [],
-            });
-
-            if (room.image_url) {
-                setPreview(room.image_url);
-            }
-
-            if (room.panorama_url) {
-                setPanoramaPreview(room.panorama_url);
-            }
-        }
-
         return () => {
             if (preview && preview.startsWith("blob:")) {
                 URL.revokeObjectURL(preview);
@@ -61,7 +46,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 URL.revokeObjectURL(panoramaPreview);
             }
         };
-    }, [room]);
+    }, [preview, panoramaPreview]);
 
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
@@ -81,6 +66,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     };
 
     const validateAndSetFile = (file: File, isPanorama: boolean = false) => {
+        // Validate file type
         const validTypes = ["image/jpeg", "image/png", "image/jpg"];
         if (!validTypes.includes(file.type)) {
             setErrors({
@@ -91,6 +77,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
             return false;
         }
 
+        // Validate file size (5MB for panorama, 2MB for regular images)
         const maxSize = isPanorama ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
         if (file.size > maxSize) {
             setErrors({
@@ -137,6 +124,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         handleFileSelect(selected, isPanorama);
     };
 
+    // Drag and drop handlers for regular image
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -165,6 +153,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
     };
 
+    // Drag and drop handlers for panorama image
     const handlePanoramaDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -193,99 +182,49 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
         }
     };
 
-    const removeImage = async () => {
-        try {
-            const normalImage = room.images?.find(
-                (img: any) => img.image_type === "normal",
-            );
-
-            if (normalImage) {
-                await deleteRoomImage(normalImage.id);
-            }
-
-            setFile(null);
-
-            if (preview && preview.startsWith("blob:")) {
-                URL.revokeObjectURL(preview);
-            }
-
-            setPreview(null);
-
-            if (fileInputRef.current) {
-                fileInputRef.current.value = "";
-            }
-
-            refresh();
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    const removePanoramaImage = async () => {
-        try {
-            const panoramaImage = room.images?.find(
-                (img: any) => img.image_type === "360",
-            );
-
-            if (panoramaImage) {
-                await deleteRoomImage(panoramaImage.id);
-            }
-
-            setPanoramaFile(null);
-
-            if (panoramaPreview && panoramaPreview.startsWith("blob:")) {
-                URL.revokeObjectURL(panoramaPreview);
-            }
-
-            setPanoramaPreview(null);
-
-            if (panoramaInputRef.current) {
-                panoramaInputRef.current.value = "";
-            }
-
-            refresh();
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
     const handleSubmit = async (e: any) => {
         e.preventDefault();
 
-        if (!validateForm()) return;
+        if (!validateForm()) {
+            return;
+        }
 
         setLoading(true);
 
         try {
-            await updateRoom(room.id, {
-                room_number: form.room_number,
-                room_type_id: form.room_type_id
-                    ? Number(form.room_type_id)
-                    : null,
-                status: form.status,
+            // First create the room
+            const res = await createRoom({
+                ...form,
+                room_type_id: Number(form.room_type_id),
                 amenities: form.amenities,
             });
 
+            const roomId = res.data.data.id;
+
+            // Upload regular image if exists
             if (file) {
                 const fd = new FormData();
-                fd.append("room_id", room.id.toString());
+                fd.append("room_id", roomId.toString());
                 fd.append("image", file);
                 fd.append("image_type", "normal");
+
                 await uploadRoomImage(fd);
             }
 
+            // Upload 360° panorama image if exists
             if (panoramaFile) {
                 const fd360 = new FormData();
-                fd360.append("room_id", room.id.toString());
+                fd360.append("room_id", roomId.toString());
                 fd360.append("image", panoramaFile);
                 fd360.append("image_type", "360");
+
                 await uploadRoomImage(fd360);
             }
 
             refresh();
             onClose();
         } catch (err: any) {
-            console.error(err.response?.data);
+            console.error(err);
 
             if (err.response?.data?.errors) {
                 const backendErrors = err.response.data.errors;
@@ -301,7 +240,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 setErrors({
                     submit:
                         err.response?.data?.message ||
-                        "Failed to update room. Please try again.",
+                        "Failed to add room. Please try again.",
                 });
             }
         } finally {
@@ -312,29 +251,27 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
     const getStatusColor = (status: string) => {
         switch (status.toLowerCase()) {
             case "available":
-                return "bg-green-50 text-green-700 border-green-300 ring-green-400 hover:bg-green-100";
+                return "bg-green-50 text-green-700 border-green-300 hover:bg-green-100 ring-green-500";
 
             case "reserved":
-                return "bg-yellow-50 text-yellow-700 border-yellow-300 ring-yellow-400 hover:bg-yellow-100";
+                return "bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100 ring-yellow-500";
 
             case "occupied":
-                return "bg-blue-50 text-blue-700 border-blue-300 ring-blue-400 hover:bg-blue-100";
+                return "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 ring-blue-500";
 
             case "maintenance":
-                return "bg-red-50 text-red-700 border-red-300 ring-red-400 hover:bg-red-100";
+                return "bg-red-50 text-red-700 border-red-300 hover:bg-red-100 ring-red-500";
 
-            case "dirty":
-                return "bg-purple-50 text-purple-700 border-purple-300 ring-purple-400 hover:bg-purple-100";
+            case "preparing":
+                return "bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100 ring-purple-500";
 
-            case "cleaning":
-                return "bg-amber-50 text-amber-700 border-amber-300 ring-amber-400 hover:bg-amber-100";
+            case "ongoing":
+                return "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 ring-amber-500";
 
             default:
-                return "bg-gray-50 text-gray-700 border-gray-300 ring-gray-400 hover:bg-gray-100";
+                return "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 ring-gray-400";
         }
     };
-
-    if (!room) return null;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -343,10 +280,10 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                     <div>
                         <h2 className="text-xl font-semibold text-gray-900">
-                            Edit Room
+                            Add New Room
                         </h2>
                         <p className="text-sm text-gray-500 mt-1">
-                            Update room #{room.room_number}
+                            Fill in the details below
                         </p>
                     </div>
                     <button
@@ -436,6 +373,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Amenities
                             </label>
+
                             <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
                                 {amenities.map((amenity) => (
                                     <label
@@ -469,6 +407,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                                 }
                                             }}
                                         />
+
                                         <span>{amenity.name}</span>
                                     </label>
                                 ))}
@@ -486,8 +425,8 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                     "reserved",
                                     "occupied",
                                     "maintenance",
-                                    "dirty",
-                                    "cleaning",
+                                    "preparing",
+                                    "ongoing",
                                 ].map((status) => (
                                     <button
                                         key={status}
@@ -502,7 +441,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                             status,
                                         )} ${
                                             form.status === status
-                                                ? "ring-2 ring-offset-1 shadow-md scale-105"
+                                                ? "ring-2 ring-offset-1 scale-105 shadow-md"
                                                 : "opacity-80 hover:opacity-100"
                                         }`}
                                     >
@@ -539,12 +478,12 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                 {loading ? (
                                     <>
                                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        Updating...
+                                        Adding...
                                     </>
                                 ) : (
                                     <>
                                         <CheckCircle className="w-4 h-4" />
-                                        Update Room
+                                        Add Room
                                     </>
                                 )}
                             </button>
@@ -553,7 +492,7 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
 
                     {/* RIGHT COLUMN: images */}
                     <div className="flex flex-col gap-5 overflow-y-auto pl-1">
-                        {/* Room Image */}
+                        {/* Room Image with Drag & Drop */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Room Image{" "}
@@ -590,31 +529,24 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                             alt="Room preview"
                                             className="w-full h-48 object-cover rounded-lg"
                                         />
-                                        <div className="flex gap-2 justify-center">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    removeImage();
-                                                }}
-                                                className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                                {file
-                                                    ? "Remove new image"
-                                                    : "Remove current image"}
-                                            </button>
-                                            {!file &&
-                                                preview &&
-                                                !preview.startsWith(
-                                                    "blob:",
-                                                ) && (
-                                                    <span className="text-xs text-gray-400">
-                                                        Upload new image to
-                                                        replace
-                                                    </span>
-                                                )}
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setFile(null);
+                                                if (preview)
+                                                    URL.revokeObjectURL(
+                                                        preview,
+                                                    );
+                                                setPreview(null);
+                                                if (fileInputRef.current)
+                                                    fileInputRef.current.value =
+                                                        "";
+                                            }}
+                                            className="text-sm text-red-500 hover:text-red-700"
+                                        >
+                                            Remove image
+                                        </button>
                                     </div>
                                 ) : (
                                     <div>
@@ -638,15 +570,9 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                     {errors.image}
                                 </p>
                             )}
-                            {!preview && !errors.image && (
-                                <p className="mt-1 text-xs text-gray-400">
-                                    No image uploaded. Upload one to add a photo
-                                    of the room.
-                                </p>
-                            )}
                         </div>
 
-                        {/* 360° Panorama Image */}
+                        {/* 360° Panorama Image with Drag & Drop */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 360° Panorama Image{" "}
@@ -690,31 +616,24 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                                 360°
                                             </div>
                                         </div>
-                                        <div className="flex gap-2 justify-center">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    removePanoramaImage();
-                                                }}
-                                                className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                                {panoramaFile
-                                                    ? "Remove new 360° image"
-                                                    : "Remove current 360° image"}
-                                            </button>
-                                            {!panoramaFile &&
-                                                panoramaPreview &&
-                                                !panoramaPreview.startsWith(
-                                                    "blob:",
-                                                ) && (
-                                                    <span className="text-xs text-gray-400">
-                                                        Upload new 360° image to
-                                                        replace
-                                                    </span>
-                                                )}
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setPanoramaFile(null);
+                                                if (panoramaPreview)
+                                                    URL.revokeObjectURL(
+                                                        panoramaPreview,
+                                                    );
+                                                setPanoramaPreview(null);
+                                                if (panoramaInputRef.current)
+                                                    panoramaInputRef.current.value =
+                                                        "";
+                                            }}
+                                            className="text-sm text-red-500 hover:text-red-700"
+                                        >
+                                            Remove 360° image
+                                        </button>
                                     </div>
                                 ) : (
                                     <div>
@@ -742,12 +661,6 @@ export default function EditRoomModal({ room, onClose, refresh }: any) {
                                 <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
                                     <AlertCircle className="w-4 h-4" />
                                     {errors.panorama}
-                                </p>
-                            )}
-                            {!panoramaPreview && !errors.panorama && (
-                                <p className="mt-1 text-xs text-gray-400">
-                                    Optional: Add a 360° panorama view of the
-                                    room
                                 </p>
                             )}
                         </div>

@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/services/api";
 import { message, Modal, Input, Typography, Button, Alert } from "antd";
 import { Spin } from "antd";
+import { WarningOutlined } from "@ant-design/icons";
 import BookingDetails, {
     type BookingData,
     type RoomDetail,
@@ -61,6 +62,17 @@ const formatDateTime = (datetime: string): string => {
 const formatTime = (datetime: string): string => {
     if (!datetime) return "-";
     return new Date(datetime).toLocaleTimeString("en-PH", {
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+};
+
+const formatStandardTime = (time: string): string => {
+    if (!time) return "-";
+    const [hours = 0, minutes = 0] = time.split(":").map(Number);
+    const d = new Date();
+    d.setHours(hours, minutes, 0, 0);
+    return d.toLocaleTimeString("en-PH", {
         hour: "2-digit",
         minute: "2-digit",
     });
@@ -156,10 +168,13 @@ const mapBookingToBookingData = (booking: any): BookingData => {
             rate_plan:
                 br.stay_type === "short_stay" ? "Short Stay" : "Overnight",
             rate: Number(br.price_at_time_of_booking ?? br.subtotal ?? 0),
+            subtotal: Number(br.subtotal ?? 0),
             nights: 1,
             guests: `${booking.user ? 2 : 1} Adults`,
             dates: `${formatDate(br.check_in_date)} - ${formatDate(br.check_out_date)}`,
             expected_checkout_at: effectiveExpectedCheckout,
+            check_in_time: br.check_in_time || null,
+            check_out_time: br.check_out_time || null,
             status: (br.status || "pending").replace(/_/g, " ").toUpperCase(),
             image_url: br.room?.image_url || undefined,
             original_price: br.room?.room_type?.base_price || undefined,
@@ -199,14 +214,14 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         createdRole = booking.created_by.role || "";
     }
 
+    const bookingCreatedRaw =
+        booking.created_at || booking.check_in_date || new Date().toISOString();
+
     timeline.push({
         title: "Booking Created",
         description: "Booking request submitted",
-        time: formatDateTime(
-            booking.created_at ||
-                booking.check_in_date ||
-                new Date().toISOString(),
-        ),
+        time: formatDateTime(bookingCreatedRaw),
+        raw_time: bookingCreatedRaw,
         by: createdBy,
         by_role: createdRole,
         status: "completed",
@@ -280,9 +295,19 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         else if (oldStatus === "pending" && newStatus === "confirmed") {
             title = "Booking Confirmed";
             description = `${oldFormatted} → ${newFormatted}`;
-        } else if (oldStatus === "confirmed" && newStatus === "checked_in") {
+        } else if (
+            (oldStatus === "confirmed" || oldStatus === "pending") &&
+            newStatus === "checked_in"
+        ) {
             title = "Guest Checked In";
             description = `${oldFormatted} → ${newFormatted}`;
+
+            if (h.change_note && h.change_note.includes("Early Check-in")) {
+                const match = h.change_note.match(/\(([^)]+)\)/);
+                if (match) {
+                    description += ` • ${match[1]}`;
+                }
+            }
         } else if (oldStatus === "checked_in" && newStatus === "checked_out") {
             title = "Guest Checked Out";
 
@@ -316,12 +341,14 @@ const mapBookingToBookingData = (booking: any): BookingData => {
 
         // Only add if title is not empty
         if (title) {
+            const rawTime =
+                h.changed_at || h.created_at || new Date().toISOString();
+
             timeline.push({
                 title: title,
                 description: description,
-                time: formatDateTime(
-                    h.changed_at || h.created_at || new Date().toISOString(),
-                ),
+                time: formatDateTime(rawTime),
+                raw_time: rawTime,
                 by: userName,
                 by_role: userRole,
                 status: newStatus === "checked_out" ? "completed" : "pending",
@@ -337,9 +364,13 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         }
     });
 
-    // Sort by time (oldest first)
+    // Sort by time (oldest first), using the raw ISO timestamp
+    // (not the formatted display string, which drops seconds
+    // and causes same-minute entries to sort unpredictably)
     timeline.sort(
-        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+        (a, b) =>
+            new Date(a.raw_time ?? a.time).getTime() -
+            new Date(b.raw_time ?? b.time).getTime(),
     );
 
     // Build staff attribution
@@ -645,13 +676,15 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         stay_type:
             booking.stay_type === "short_stay" ? "Short Stay" : "Overnight",
         check_in_date: formatDate(booking.check_in_date),
-        check_in_time: firstRoom?.check_in_time
-            ? formatTime(firstRoom.check_in_time)
+        check_in_time: firstRoom?.room?.room_type?.standard_checkin_time
+            ? `Expected: ${formatStandardTime(firstRoom.room.room_type.standard_checkin_time)}`
             : "-",
         check_out_date: formatDate(booking.check_out_date),
-        check_out_time: firstRoom?.check_out_time
-            ? formatTime(firstRoom.check_out_time)
-            : "-",
+        check_out_time: firstRoom?.expected_checkout_at
+            ? `Expected: ${formatTime(firstRoom.expected_checkout_at)}`
+            : firstRoom?.room?.room_type?.overnight_checkout_time
+              ? `Expected: ${formatStandardTime(firstRoom.room.room_type.overnight_checkout_time)}`
+              : "-",
         total_rooms: bookedRooms.length || 1,
         adults: booking.user ? 2 : 1,
         children: 0,
@@ -666,11 +699,16 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         paid_on: firstPayment?.payment_date
             ? formatDateTime(firstPayment.payment_date)
             : undefined,
+        // When refunded, show the PayMongo refund reference (stored on the
+        // refunded payment row) instead of the original payment's reference.
         payment_reference:
+            refundedPayment?.gcash_reference ||
+            refundedPayment?.bank_reference ||
             firstPayment?.gcash_reference ||
             firstPayment?.bank_reference ||
             undefined,
-        receipt_number: firstPayment?.receipt_number || undefined,
+        receipt_number:
+            (refundedPayment ?? firstPayment)?.receipt_number || undefined,
         notes:
             booking.notes || "No special requests or notes for this booking.",
         timeline,
@@ -951,7 +989,7 @@ export default function BookingDetailsPageWrapper() {
         baseAction: string,
         bookedRoomId: number | undefined,
         reason?: string,
-        extra?: { amount?: number },
+        extra?: { amount?: number; manualRefundConfirmed?: boolean },
     ) => {
         switch (baseAction) {
             case "confirm":
@@ -1010,6 +1048,8 @@ export default function BookingDetailsPageWrapper() {
                 await api.post("/booking-payments/refund", {
                     booking_id: id,
                     booked_room_id: bookedRoomId,
+                    manual_refund_confirmed:
+                        extra?.manualRefundConfirmed ?? false,
                 });
                 message.success("Room refunded successfully");
                 break;
@@ -1197,6 +1237,70 @@ export default function BookingDetailsPageWrapper() {
             }
 
             if (baseAction === "refund") {
+                const doRefund = (manualRefundConfirmed = false) => {
+                    performAction("refund", bookedRoomId, undefined, {
+                        manualRefundConfirmed,
+                    }).catch((err: any) => {
+                        if (
+                            err?.response?.data
+                                ?.requires_manual_refund_confirmation
+                        ) {
+                            Modal.confirm({
+                                title: "Manual Refund Confirmation Required",
+                                icon: (
+                                    <WarningOutlined
+                                        style={{ color: "#faad14" }}
+                                    />
+                                ),
+                                width: 480,
+                                centered: true,
+                                content: (
+                                    <div style={{ fontSize: 12 }}>
+                                        <p style={{ marginBottom: 10 }}>
+                                            QR Ph payments cannot be refunded
+                                            automatically through the system.
+                                            Please complete the following steps
+                                            before proceeding:
+                                        </p>
+                                        <ol
+                                            style={{
+                                                paddingLeft: 18,
+                                                marginBottom: 10,
+                                            }}
+                                        >
+                                            <li>
+                                                Process the refund manually to
+                                                the guest (e.g., bank transfer
+                                                or cash).
+                                            </li>
+                                            <li>
+                                                Confirm below only after the
+                                                refund has been completed.
+                                            </li>
+                                        </ol>
+                                        <Text type="danger" strong>
+                                            This action will mark the payment as
+                                            refunded in the system. Please
+                                            ensure the guest has already
+                                            received the refund before
+                                            proceeding.
+                                        </Text>
+                                    </div>
+                                ),
+                                okText: "Confirm Manual Refund",
+                                okButtonProps: { danger: true },
+                                cancelText: "Cancel",
+                                onOk: () => doRefund(true),
+                            });
+                            return;
+                        }
+
+                        message.error(
+                            err?.response?.data?.message || "Refund failed.",
+                        );
+                    });
+                };
+
                 Modal.confirm({
                     title: "Refund Room",
                     content:
@@ -1205,7 +1309,7 @@ export default function BookingDetailsPageWrapper() {
                     okButtonProps: { danger: true },
                     cancelText: "Cancel",
                     centered: true,
-                    onOk: () => performAction("refund", bookedRoomId),
+                    onOk: () => doRefund(),
                 });
                 return;
             }
@@ -1336,9 +1440,9 @@ export default function BookingDetailsPageWrapper() {
                 Number(id),
                 requiresReason,
             );
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            message.error("Action failed");
+            message.error(err?.response?.data?.message || "Action failed");
         }
     };
 

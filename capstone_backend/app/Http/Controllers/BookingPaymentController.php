@@ -14,6 +14,8 @@ use App\Services\MailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class BookingPaymentController extends Controller
 {
@@ -25,13 +27,19 @@ class BookingPaymentController extends Controller
 
             $query = BookingPayment::with([
                 'booking:id,booking_reference',
-                'receiver:id,first_name,last_name'
+                'receiver:id,first_name,last_name,role'
             ])
                 ->where('payment_status', 'paid');
 
             // Staff can only see their own collections
             if (Auth::user()->role === 'staff') {
                 $query->where('received_by', Auth::id());
+            } else {
+                // Admin view: exclude payments received by other admins —
+                // only staff-collected cash should show here
+                $query->whereHas('receiver', function ($q) {
+                    $q->where('role', 'staff');
+                });
             }
 
             $payments = $query
@@ -200,6 +208,7 @@ class BookingPaymentController extends Controller
         $validated = $request->validate([
             'booking_id' => 'required|exists:bookings,id',
             'booked_room_id' => 'required|exists:booked_rooms,id',
+            'manual_refund_confirmed' => 'nullable|boolean',
         ]);
 
         $booking = Booking::with([
@@ -235,6 +244,94 @@ class BookingPaymentController extends Controller
             $latestPayment = $booking->payments()
                 ->latest('id')
                 ->first();
+
+            // ---------------------------------------------------------------
+            // Actually call PayMongo's Refunds API for non-cash payments.
+            // Without this, the DB/UI shows "refunded" but PayMongo never
+            // processes the refund and the guest's money is never returned.
+            // ---------------------------------------------------------------
+            $paymongoRefundId = null;
+
+            if ($latestPayment && $latestPayment->payment_method !== 'cash') {
+
+                // There is no refund API for QRPH payments (the provider's
+                // Refunds endpoint rejects them with "Refunds are not
+                // allowed for payments with source type qrph."). These must
+                // be refunded manually by the staff (e.g. bank transfer to
+                // the guest), so we block the automatic attempt here and
+                // ask staff to confirm once they've done that manually.
+                if ($latestPayment->payment_method === 'qrph') {
+
+                    if (! ($validated['manual_refund_confirmed'] ?? false)) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'message' => 'QR Ph payments cannot be refunded automatically. Please process this refund manually (e.g. bank transfer to the guest), then confirm below once you have paid the guest.',
+                            'requires_manual_refund_confirmation' => true,
+                        ], 422);
+                    }
+
+                    // Staff already sent the money to the guest manually.
+                    // There is no refund API for QRPH, so we just record
+                    // it as refunded in our own system below.
+                    Log::info('QR Ph refund recorded as manually processed', [
+                        'booking_id' => $booking->id,
+                        'payment_id' => $latestPayment->id,
+                        'confirmed_by' => Auth::id(),
+                    ]);
+                } else {
+                    // The payment reference was stored on create/webhook:
+                    // gcash -> gcash_reference, bank -> bank_reference
+                    $paymongoPaymentId = $latestPayment->payment_method === 'gcash'
+                        ? $latestPayment->gcash_reference
+                        : $latestPayment->bank_reference;
+
+                    if (! $paymongoPaymentId) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'message' => 'Cannot refund: no payment reference found for this payment.',
+                        ], 422);
+                    }
+
+                    $refundAmountCentavos = (int) round($refundAmount * 100);
+
+                    $refundResponse = Http::withBasicAuth(
+                        config('services.paymongo.secret_key'),
+                        ''
+                    )->post(
+                        'https://api.paymongo.com/v1/refunds',
+                        [
+                            'data' => [
+                                'attributes' => [
+                                    'amount' => $refundAmountCentavos,
+                                    'payment_id' => $paymongoPaymentId,
+                                    'reason' => 'requested_by_customer',
+                                    'notes' => "Refund for booking {$booking->booking_reference}",
+                                ],
+                            ],
+                        ]
+                    );
+
+                    Log::info('PayMongo Refund Response', [
+                        'booking_id' => $booking->id,
+                        'payment_id' => $paymongoPaymentId,
+                        'status' => $refundResponse->status(),
+                        'body' => $refundResponse->json(),
+                    ]);
+
+                    if ($refundResponse->failed()) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'message' => 'Refund failed.',
+                            'error' => $refundResponse->json(),
+                        ], $refundResponse->status());
+                    }
+
+                    $paymongoRefundId = $refundResponse->json('data.id');
+                }
+            }
 
             // Generate Receipt Number
             $lastPayment = BookingPayment::whereNotNull('receipt_number')

@@ -33,8 +33,8 @@ class Room extends Model
     const STATUS_RESERVED = 'reserved';
     const STATUS_OCCUPIED = 'occupied';
     const STATUS_MAINTENANCE = 'maintenance';
-    const STATUS_DIRTY = 'dirty';
-    const STATUS_CLEANING = 'cleaning';
+    const STATUS_PREPARING = 'preparing';
+    const STATUS_ONGOING = 'ongoing';
     const STATUS_CLEAN = 'clean';
 
     /*

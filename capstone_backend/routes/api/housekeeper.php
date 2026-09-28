@@ -33,6 +33,12 @@ Route::prefix('housekeeper')->group(function () {
         'history'
     ]);
 
+    // SAVE EXPO PUSH TOKEN
+    Route::post('/push-token', [
+        HousekeeperController::class,
+        'savePushToken'
+    ]);
+
     /*
     |--------------------------------------------------------------------------
     | ROOM INCIDENTS
@@ -47,7 +53,7 @@ Route::prefix('housekeeper')->group(function () {
 
     // GET SINGLE INCIDENT
     Route::get('/incidents/{id}', [
-       RoomIncidentController::class,
+        RoomIncidentController::class,
         'show'
     ]);
 

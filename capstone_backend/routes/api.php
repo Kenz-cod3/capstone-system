@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
     Route::get('/dashboard/financial-range', [DashboardController::class, 'financialRange']);
+    Route::get('/dashboard/occupancy-range', [DashboardController::class, 'occupancyRange']);
 
     Route::get('/reservation-monitor', [ReservationMonitorController::class, 'index']);
 });

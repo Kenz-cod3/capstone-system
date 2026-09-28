@@ -64,16 +64,14 @@ export default function CashManagement() {
             const response = await api.get("/shift/current");
             const shiftData = response.data?.data || response.data;
 
-            if (shiftData?.id) {
+            // Laging 200 na ang backend ngayon; gamitin ang has_active_shift flag
+            if (shiftData?.has_active_shift) {
                 setCurrentShift(shiftData);
             } else {
                 setCurrentShift(null);
             }
         } catch (error: any) {
-            if (
-                error?.response?.status !== 403 &&
-                error?.response?.status !== 404
-            ) {
+            if (error?.response?.status !== 403) {
                 console.error(error);
             }
             setCurrentShift(null);
@@ -182,10 +180,10 @@ export default function CashManagement() {
         <div className="min-h-screen font-['DM_Sans',sans-serif]">
             {/* ─── HEADER SECTION ─────────────────────────────────────────────── */}
             <div className="mb-5">
-                <h1 className="text-[26px] font-bold text-gray-900 mb-1">
+                <h1 className="text-[19px] font-bold text-gray-900 mb-1">
                     Cash Collection
                 </h1>
-                <p className="text-[12px] text-stone-500">
+                <p className="text-[11px] text-stone-500">
                     Monitor cashier shifts and cash accountability
                 </p>
             </div>
@@ -195,14 +193,14 @@ export default function CashManagement() {
                 {/* TOTAL INCOME CARD */}
                 <Col xs={24} sm={12} lg={8}>
                     <div className="bg-[#fffdf7] rounded-xl border border-amber-100 px-5 py-4">
-                        <div className="text-[11px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
+                        <div className="text-[10px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
                             <WalletOutlined className="text-emerald-600" />
                             <span>Total Income</span>
                         </div>
-                        <div className="text-[30px] font-bold text-emerald-700">
+                        <div className="text-[22px] font-bold text-emerald-700">
                             ₱{totalIncome.toLocaleString()}
                         </div>
-                        <div className="text-xs text-stone-500 mt-1">
+                        <div className="text-[11px] text-stone-500 mt-1">
                             {payments.length} transaction(s)
                         </div>
                     </div>
@@ -211,14 +209,14 @@ export default function CashManagement() {
                 {/* ACTIVE STAFF CARD */}
                 <Col xs={24} sm={12} lg={8}>
                     <div className="bg-[#fffdf7] rounded-xl border border-amber-100 px-5 py-4">
-                        <div className="text-[11px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
+                        <div className="text-[10px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
                             <UserOutlined className="text-blue-600" />
                             <span>Active Staff</span>
                         </div>
-                        <div className="text-[30px] font-bold text-gray-900">
+                        <div className="text-[22px] font-bold text-gray-900">
                             {uniqueStaffCount}
                         </div>
-                        <div className="text-xs text-stone-500 mt-1">
+                        <div className="text-[11px] text-stone-500 mt-1">
                             Staff with collections
                         </div>
                     </div>
@@ -227,11 +225,11 @@ export default function CashManagement() {
                 {/* EXPECTED CASH CARD */}
                 <Col xs={24} sm={12} lg={8}>
                     <div className="bg-[#fffdf7] rounded-xl border border-amber-100 px-5 py-4">
-                        <div className="text-[11px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
+                        <div className="text-[10px] font-semibold text-stone-500 uppercase flex items-center gap-2 mb-2">
                             <WalletOutlined className="text-emerald-600" />
                             <span>Expected Cash</span>
                         </div>
-                        <div className="text-[30px] font-bold text-emerald-700">
+                        <div className="text-[22px] font-bold text-emerald-700">
                             ₱
                             {Number(
                                 userRole === "admin"
@@ -244,7 +242,7 @@ export default function CashManagement() {
                                     : currentShift?.expected_cash || 0,
                             ).toLocaleString()}
                         </div>
-                        <div className="text-xs text-stone-500 mt-1">
+                        <div className="text-[11px] text-stone-500 mt-1">
                             {userRole === "admin"
                                 ? `${activeShifts.length} active shift(s)`
                                 : currentShift?.id
@@ -255,102 +253,116 @@ export default function CashManagement() {
                 </Col>
             </Row>
 
-            {/* ─── STAFF COLLECTION SUMMARY SECTION ───────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-stone-200 shadow-sm mb-5 overflow-hidden">
-                <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-gray-900">
-                        Staff Collection Summary
-                    </h2>
-                    <span className="bg-emerald-600 text-white text-[10px] px-2 py-1 rounded-full font-semibold">
-                        {staffSummary.length} staff
-                    </span>
-                </div>
-
-                <div className="p-5">
-                    <Spin spinning={loading}>
-                        <div className="space-y-2">
-                            {staffSummary.map((staff) => (
-                                <div
-                                    key={staff.staff}
-                                    className="flex justify-between items-center bg-stone-50 border border-stone-100 rounded-xl px-4 py-3"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-                                            <UserOutlined className="text-emerald-600 text-sm" />
-                                        </div>
-                                        <div>
-                                            <div className="font-semibold text-gray-900 text-sm">
-                                                {staff.staff}
-                                            </div>
-                                            <div className="text-xs text-stone-500">
-                                                {staff.transactions}{" "}
-                                                transaction(s)
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="font-bold text-emerald-600 text-lg">
-                                        ₱{staff.total_cash.toLocaleString()}
-                                    </div>
-                                </div>
-                            ))}
+            {/* ─── STAFF COLLECTION SUMMARY + SHIFT MONITORING (SIDE BY SIDE) ─── */}
+            <Row gutter={[16, 16]} className="mb-5">
+                {/* STAFF COLLECTION SUMMARY SECTION */}
+                <Col xs={24} lg={12}>
+                    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden h-full">
+                        <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                            <h2 className="text-[13px] font-semibold text-gray-900">
+                                Staff Collection Summary
+                            </h2>
+                            <span className="bg-emerald-600 text-white text-[9px] px-2 py-1 rounded-full font-semibold">
+                                {staffSummary.length} staff
+                            </span>
                         </div>
-                    </Spin>
-                </div>
-            </div>
 
-            {/* ─── ACTIVE SHIFT MONITORING SECTION ────────────────────────────── */}
-            {activeShifts.length > 0 && (
-                <div className="bg-white rounded-2xl border border-stone-200 shadow-sm mb-5 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
-                        <h2 className="text-sm font-semibold text-gray-900">
-                            Staff Shift Monitoring
-                        </h2>
-                        <span className="bg-indigo-600 text-white text-[10px] px-2 py-1 rounded-full font-semibold">
-                            {activeShifts.length} active
-                        </span>
+                        <div className="p-5">
+                            <Spin spinning={loading}>
+                                <div className="space-y-2">
+                                    {staffSummary.map((staff) => (
+                                        <div
+                                            key={staff.staff}
+                                            className="flex justify-between items-center bg-stone-50 border border-stone-100 rounded-xl px-4 py-3"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                                                    <UserOutlined className="text-emerald-600 text-xs" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-semibold text-gray-900 text-[13px]">
+                                                        {staff.staff}
+                                                    </div>
+                                                    <div className="text-[11px] text-stone-500">
+                                                        {staff.transactions}{" "}
+                                                        transaction(s)
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="font-bold text-emerald-600 text-[15px]">
+                                                ₱
+                                                {staff.total_cash.toLocaleString()}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Spin>
+                        </div>
                     </div>
+                </Col>
 
-                    <div className="p-5 space-y-2">
-                        {activeShifts.map((shift) => (
-                            <div
-                                key={shift.id}
-                                className="flex justify-between items-center bg-stone-50 border border-stone-100 rounded-xl px-4 py-3"
-                            >
-                                <div>
-                                    <div className="font-semibold text-gray-900 text-sm">
-                                        {shift.staff_name}
-                                    </div>
-                                    <div className="text-xs text-stone-500 mt-1">
-                                        Opened:{" "}
-                                        {dayjs(shift.opened_at).format(
-                                            "MMM DD, YYYY hh:mm A",
-                                        )}
-                                    </div>
+                {/* ACTIVE SHIFT MONITORING SECTION (ALWAYS VISIBLE) */}
+                <Col xs={24} lg={12}>
+                    <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden h-full">
+                        <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                            <h2 className="text-[13px] font-semibold text-gray-900">
+                                Staff Shift Monitoring
+                            </h2>
+                            <span className="bg-indigo-600 text-white text-[9px] px-2 py-1 rounded-full font-semibold">
+                                {activeShifts.length} active
+                            </span>
+                        </div>
+
+                        <div className="p-5 space-y-2">
+                            {activeShifts.length === 0 ? (
+                                <div className="text-[11px] text-stone-400 text-center py-6">
+                                    Walang kasalukuyang active shift
                                 </div>
-                                <div className="text-right">
-                                    <div className="font-bold text-emerald-600 text-lg">
-                                        ₱
-                                        {Number(
-                                            shift.expected_cash || 0,
-                                        ).toLocaleString()}
+                            ) : (
+                                activeShifts.map((shift) => (
+                                    <div
+                                        key={shift.id}
+                                        className="flex justify-between items-center bg-stone-50 border border-stone-100 rounded-xl px-4 py-3"
+                                    >
+                                        <div>
+                                            <div className="font-semibold text-gray-900 text-[13px]">
+                                                {shift.staff_name}
+                                            </div>
+                                            <div className="text-[11px] text-stone-500 mt-1">
+                                                Opened:{" "}
+                                                {dayjs(
+                                                    shift.opened_at,
+                                                ).format(
+                                                    "MMM DD, YYYY hh:mm A",
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-bold text-emerald-600 text-[15px]">
+                                                ₱
+                                                {Number(
+                                                    shift.expected_cash || 0,
+                                                ).toLocaleString()}
+                                            </div>
+                                            <div className="text-[11px] text-stone-500">
+                                                ACTIVE SHIFT
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-stone-500">
-                                        ACTIVE SHIFT
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                                ))
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                </Col>
+            </Row>
 
             {/* ─── SHIFT RECORDS SECTION WITH PAGINATION ──────────────────────── */}
             <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-gray-900">
+                    <h2 className="text-[13px] font-semibold text-gray-900">
                         Staff Shift Records
                     </h2>
-                    <span className="bg-blue-600 text-white text-[10px] px-2 py-1 rounded-full font-semibold">
+                    <span className="bg-blue-600 text-white text-[9px] px-2 py-1 rounded-full font-semibold">
                         {totalShifts} records
                     </span>
                 </div>
@@ -359,28 +371,28 @@ export default function CashManagement() {
                     <table className="w-full">
                         <thead className="bg-stone-50 border-b border-stone-100">
                             <tr>
-                                <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-left px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Staff
                                 </th>
-                                <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-left px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Shift No.
                                 </th>
-                                <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-left px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Opened
                                 </th>
-                                <th className="text-left px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-left px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Closed
                                 </th>
-                                <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-right px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Starting Cash
                                 </th>
-                                <th className="tPext-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
-                                    Payments Handle
+                                <th className="text-right px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
+                                    Payments Handled
                                 </th>
-                                <th className="text-right px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-right px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Expected Cash
                                 </th>
-                                <th className="text-center px-5 py-3 text-[11px] font-semibold text-stone-500 uppercase">
+                                <th className="text-center px-5 py-3 text-[10px] font-semibold text-stone-500 uppercase">
                                     Status
                                 </th>
                             </tr>
@@ -391,37 +403,37 @@ export default function CashManagement() {
                                     key={shift.id}
                                     className="border-b border-stone-100 hover:bg-stone-50"
                                 >
-                                    <td className="px-5 py-4 text-sm font-medium text-gray-900">
+                                    <td className="px-5 py-4 text-[13px] font-medium text-gray-900">
                                         {shift.staff_name}
                                     </td>
-                                    <td className="px-5 py-4 text-sm text-stone-600">
+                                    <td className="px-5 py-4 text-[13px] text-stone-600">
                                         {shift.shift_number}
                                     </td>
-                                    <td className="px-5 py-4 text-sm text-stone-600">
+                                    <td className="px-5 py-4 text-[13px] text-stone-600">
                                         {dayjs(shift.opened_at).format(
                                             "MMM DD, YYYY hh:mm A",
                                         )}
                                     </td>
-                                    <td className="px-5 py-4 text-sm text-stone-600">
+                                    <td className="px-5 py-4 text-[13px] text-stone-600">
                                         {shift.closed_at
                                             ? dayjs(shift.closed_at).format(
                                                   "MMM DD, YYYY hh:mm A",
                                               )
                                             : "-"}
                                     </td>
-                                    <td className="px-5 py-4 text-right font-bold text-emerald-600">
+                                    <td className="px-5 py-4 text-right text-[13px] font-bold text-emerald-600">
                                         ₱
                                         {Number(
                                             shift.starting_cash || 0,
                                         ).toLocaleString()}
                                     </td>
-                                    <td className="px-5 py-4 text-right font-semibold text-blue-600">
+                                    <td className="px-5 py-4 text-right text-[13px] font-semibold text-blue-600">
                                         ₱
                                         {Number(
                                             shift.payments_handled || 0,
                                         ).toLocaleString()}
                                     </td>
-                                    <td className="px-5 py-4 text-right font-bold text-emerald-600">
+                                    <td className="px-5 py-4 text-right text-[13px] font-bold text-emerald-600">
                                         ₱
                                         {Number(
                                             shift.expected_cash || 0,
@@ -429,11 +441,11 @@ export default function CashManagement() {
                                     </td>
                                     <td className="px-5 py-4 text-center">
                                         {shift.closed_at ? (
-                                            <span className="bg-stone-200 text-stone-700 text-xs px-3 py-1 rounded-full">
+                                            <span className="bg-stone-200 text-stone-700 text-[11px] px-3 py-1 rounded-full">
                                                 Closed
                                             </span>
                                         ) : (
-                                            <span className="bg-emerald-100 text-emerald-700 text-xs px-3 py-1 rounded-full">
+                                            <span className="bg-emerald-100 text-emerald-700 text-[11px] px-3 py-1 rounded-full">
                                                 Active
                                             </span>
                                         )}

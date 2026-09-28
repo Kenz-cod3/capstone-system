@@ -20,6 +20,7 @@ import {
     CopyOutlined,
     FilterOutlined,
     HistoryOutlined,
+    WarningOutlined,
 } from "@ant-design/icons";
 import {
     Table,
@@ -392,6 +393,7 @@ export default function Bookings() {
     const [filterPaymentStatus, setFilterPaymentStatus] =
         useState<string>("all");
     const [filterPopoverOpen, setFilterPopoverOpen] = useState<boolean>(false);
+    const [groupMode, setGroupMode] = useState<"room" | "booking">("room");
 
     const bookingId = location.state?.bookingId;
 
@@ -618,6 +620,46 @@ export default function Bookings() {
             checkout_status: bookedRoom.checkout_status,
         } as BookingRow;
     });
+
+    // Group tableData by booking when in "booking" mode.
+    // Rows that share the same booking_reference get merged into one row,
+    // with the individual rooms kept in `_groupedRooms` for the expand panel.
+    const groupedTableData = useMemo(() => {
+        if (groupMode === "room") return tableData;
+
+        const groups = new Map<string, BookingRow[]>();
+        tableData.forEach((row) => {
+            const key = row.booking_reference || `single-${row.id}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(row);
+        });
+
+        return Array.from(groups.values())
+            .filter((rows) => rows.length > 0)
+            .map((rows) => {
+                const first = rows[0]!;
+                const combinedSubtotal = rows.reduce(
+                    (sum, r) => sum + Number(r.subtotal ?? 0),
+                    0,
+                );
+
+                return {
+                    ...first,
+                    room: {
+                        ...first.room,
+                        room_number:
+                            rows.length > 1
+                                ? `${rows.length} rooms`
+                                : first.room?.room_number,
+                    } as Room,
+                    subtotal: combinedSubtotal,
+                    booking_add_ons: rows.flatMap(
+                        (r) => r.booking_add_ons ?? [],
+                    ),
+                    _groupedRooms: rows,
+                } as BookingRow & { _groupedRooms: BookingRow[] };
+            });
+    }, [tableData, groupMode]);
 
     // Calculate statistics
     const stats = useMemo(() => {
@@ -1338,34 +1380,75 @@ export default function Bookings() {
         }
     };
 
+    const submitRefund = async (
+        record: BookingRow,
+        manualRefundConfirmed = false,
+    ) => {
+        try {
+            await api.post("/booking-payments/refund", {
+                booking_id: record.id,
+                booked_room_id: record.booked_room_id,
+                manual_refund_confirmed: manualRefundConfirmed,
+            });
+
+            message.success("Room refunded successfully");
+            queryClient.invalidateQueries({ queryKey: ["booked-rooms"] });
+        } catch (error: any) {
+            if (error?.response?.data?.requires_manual_refund_confirmation) {
+                Modal.confirm({
+                    title: "Manual Refund Confirmation Required",
+                    icon: <WarningOutlined style={{ color: "#faad14" }} />,
+                    width: 480,
+                    centered: true,
+                    content: (
+                        <div style={{ fontSize: 12 }}>
+                            <p style={{ marginBottom: 10 }}>
+                                QR Ph payments cannot be refunded automatically
+                                through the system. Please complete the
+                                following steps before proceeding:
+                            </p>
+                            <ol style={{ paddingLeft: 18, marginBottom: 10 }}>
+                                <li>
+                                    Process the refund manually to the guest
+                                    (e.g., bank transfer or cash).
+                                </li>
+                                <li>
+                                    Confirm below only after the refund has been
+                                    completed.
+                                </li>
+                            </ol>
+                            <Text type="danger" strong>
+                                This action will mark the payment as refunded in
+                                the system. Please ensure the guest has already
+                                received the refund before proceeding.
+                            </Text>
+                        </div>
+                    ),
+                    okText: "Confirm Manual Refund",
+                    okButtonProps: { danger: true },
+                    cancelText: "Cancel",
+                    onOk: () => submitRefund(record, true),
+                });
+                return;
+            }
+
+            console.error(error);
+            message.error(
+                error?.response?.data?.message || "Failed to refund room",
+            );
+        }
+    };
+
     const handleRefund = async (record: BookingRow) => {
         Modal.confirm({
             title: "Refund Room",
             content:
                 "Are you sure you want to refund this room? This action cannot be undone.",
             okText: "Refund",
-            okButtonProps: {
-                danger: true,
-            },
+            okButtonProps: { danger: true },
             cancelText: "Cancel",
             centered: true,
-            onOk: async () => {
-                try {
-                    await api.post("/booking-payments/refund", {
-                        booking_id: record.id,
-                        booked_room_id: record.booked_room_id,
-                    });
-
-                    message.success("Room refunded successfully");
-
-                    queryClient.invalidateQueries({
-                        queryKey: ["booked-rooms"],
-                    });
-                } catch (error) {
-                    console.error(error);
-                    message.error("Failed to refund room");
-                }
-            },
+            onOk: () => submitRefund(record),
         });
     };
 
@@ -1564,6 +1647,17 @@ export default function Bookings() {
         });
     };
 
+    const formatStandardTime = (time: string): string => {
+        if (!time) return "-";
+        const [hours = 0, minutes = 0] = time.split(":").map(Number);
+        const d = new Date();
+        d.setHours(hours, minutes, 0, 0);
+        return d.toLocaleTimeString("en-PH", {
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    };
+
     const getStatusColor = (status: string): string => {
         const colors: Record<string, string> = {
             pending: "orange",
@@ -1607,14 +1701,43 @@ export default function Bookings() {
     };
 
     const copyToClipboard = (text: string) => {
-        navigator.clipboard
-            .writeText(text)
-            .then(() => {
-                message.success("Copied to clipboard!");
-            })
-            .catch(() => {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard
+                .writeText(text)
+                .then(() => {
+                    message.success("Booking reference copied to clipboard");
+                })
+                .catch(() => {
+                    fallbackCopyToClipboard(text);
+                });
+        } else {
+            fallbackCopyToClipboard(text);
+        }
+    };
+
+    // Fallback for browsers/contexts where navigator.clipboard is
+    // unavailable (e.g. non-HTTPS), using a hidden textarea + execCommand.
+    const fallbackCopyToClipboard = (text: string) => {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const successful = document.execCommand("copy");
+            document.body.removeChild(textArea);
+
+            if (successful) {
+                message.success("Booking reference copied to clipboard");
+            } else {
                 message.error("Failed to copy");
-            });
+            }
+        } catch {
+            message.error("Failed to copy");
+        }
     };
 
     const getActionMenu = (record: BookingRow, type: string): MenuProps => {
@@ -1622,11 +1745,15 @@ export default function Bookings() {
 
         if (type === "active") {
             if (record.status === "pending") {
+                const isPaid = record.payments?.[0]?.payment_status === "paid";
+
                 items.push(
                     {
                         key: "confirm",
-                        label: "Confirm",
+                        label: isPaid ? "Confirm" : "Confirm (payment pending)",
+                        disabled: !isPaid,
                         onClick: () =>
+                            isPaid &&
                             handleUpdateStatus(
                                 record.booked_room_id,
                                 "confirmed",
@@ -1668,7 +1795,34 @@ export default function Bookings() {
                 );
             }
 
-            if (record.status === "checked_in") {
+            const groupedRooms = (record as any)._groupedRooms as
+                | BookingRow[]
+                | undefined;
+            const isGroupedMultiRoom =
+                groupMode === "booking" && (groupedRooms?.length ?? 0) > 1;
+
+            if (isGroupedMultiRoom) {
+                // When grouped by booking with multiple rooms, checkout
+                // must target a specific room, so show a submenu listing
+                // only the rooms that are currently checked in.
+                const checkedInRooms = groupedRooms!.filter(
+                    (r) => r.status === "checked_in",
+                );
+
+                if (checkedInRooms.length > 0) {
+                    items.push({
+                        key: "checkout-group",
+                        label: "Check Out",
+                        children: checkedInRooms.map((r) => ({
+                            key: `checkout-${r.booked_room_id}`,
+                            label: `Room ${
+                                r.room?.room_number ?? r.booked_room_id
+                            }`,
+                            onClick: () => handleCheckoutAction(r),
+                        })),
+                    });
+                }
+            } else if (record.status === "checked_in") {
                 items.push(
                     {
                         key: "checkout",
@@ -1800,9 +1954,11 @@ export default function Bookings() {
                             />
                         }
                         onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             copyToClipboard(record.booking_reference);
                         }}
+                        onMouseDown={(e) => e.stopPropagation()}
                         style={{ padding: "2px 4px", height: "auto" }}
                     />
                 </div>
@@ -1897,7 +2053,7 @@ export default function Bookings() {
                 </span>
             ),
             key: "room",
-            width: "12%",
+            width: "8%",
             render: (_: any, record: BookingRow) => (
                 <div>
                     <Text strong style={{ fontSize: "12px", color: "#0f172a" }}>
@@ -1925,7 +2081,7 @@ export default function Bookings() {
                 </span>
             ),
             key: "status",
-            width: "10%",
+            width: "13%",
             render: (_: any, record: BookingRow) => {
                 const statusMap: Record<
                     string,
@@ -1991,8 +2147,8 @@ export default function Bookings() {
                             display: "inline-flex",
                             alignItems: "center",
                             gap: 4,
-                            padding: "3px 10px",
-                            borderRadius: "16px",
+                            padding: "6px 10px",
+                            borderRadius: "4px",
                             backgroundColor: status.bg,
                             color: status.color,
                             fontSize: "8.5px",
@@ -2062,20 +2218,42 @@ export default function Bookings() {
                 </span>
             ),
             key: "check_in",
-            width: "12%",
-            render: (_: any, record: BookingRow) => (
-                <div>
-                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
-                        {formatDate(record.check_in_date)}
-                    </Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                        {record.check_in_time
-                            ? formatTime(record.check_in_time)
-                            : "-"}
-                    </Text>
-                </div>
-            ),
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const isConfirmedOrBeyond = record.status !== "pending";
+                return (
+                    <div>
+                        <Text
+                            type="secondary"
+                            style={{
+                                fontSize: "8px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                                display: "block",
+                                marginBottom: 2,
+                            }}
+                        >
+                            {isConfirmedOrBeyond
+                                ? "Check In"
+                                : "Expected Check In"}
+                        </Text>
+                        <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                            {record.check_in_time
+                                ? formatDate(record.check_in_time)
+                                : formatDate(record.check_in_date)}
+                        </Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            {record.check_in_time
+                                ? formatTime(record.check_in_time)
+                                : formatStandardTime(
+                                      record.room?.room_type
+                                          ?.standard_checkin_time ?? "14:00",
+                                  )}
+                        </Text>
+                    </div>
+                );
+            },
         },
         {
             title: (
@@ -2092,20 +2270,39 @@ export default function Bookings() {
                 </span>
             ),
             key: "check_out",
-            width: "12%",
-            render: (_: any, record: BookingRow) => (
-                <div>
-                    <Text style={{ fontSize: "11px", color: "#0f172a" }}>
-                        {formatDate(record.check_out_date)}
-                    </Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: "8.5px" }}>
-                        {record.check_out_time
-                            ? formatTime(record.check_out_time)
-                            : "-"}
-                    </Text>
-                </div>
-            ),
+            width: "10%",
+            render: (_: any, record: BookingRow) => {
+                const isConfirmedOrBeyond = record.status !== "pending";
+                return (
+                    <div>
+                        <Text
+                            type="secondary"
+                            style={{
+                                fontSize: "8px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                                display: "block",
+                                marginBottom: 2,
+                            }}
+                        >
+                            {isConfirmedOrBeyond
+                                ? "Check Out"
+                                : "Expected Check Out"}
+                        </Text>
+                        <Text style={{ fontSize: "11px", color: "#0f172a" }}>
+                            {record.check_out_time
+                                ? formatDate(record.check_out_time)
+                                : formatDate(record.check_out_date)}
+                        </Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: "8.5px" }}>
+                            {record.check_out_time
+                                ? formatTime(record.check_out_time)
+                                : formatStandardTime("12:00")}
+                        </Text>
+                    </div>
+                );
+            },
         },
         {
             title: (
@@ -2167,7 +2364,7 @@ export default function Bookings() {
                 </span>
             ),
             key: "amount",
-            width: "10%",
+            width: "8%",
             render: (_: any, record: BookingRow) => {
                 const addOnTotal =
                     record.booking_add_ons?.reduce(
@@ -2268,13 +2465,53 @@ export default function Bookings() {
         <Table<BookingRow>
             className="premium-table"
             columns={columns}
-            dataSource={tableData}
-            rowKey={(record) => record.booked_room_id}
+            dataSource={groupMode === "booking" ? groupedTableData : tableData}
+            rowKey={(record) =>
+                groupMode === "booking"
+                    ? record.booking_reference || record.booked_room_id
+                    : record.booked_room_id
+            }
             loading={bookingQuery.isLoading}
             size="middle"
             bordered={false}
             pagination={false}
             onRow={rowProps}
+            expandable={
+                groupMode === "booking"
+                    ? {
+                          rowExpandable: (record: any) =>
+                              (record._groupedRooms?.length ?? 0) > 1,
+                          expandedRowRender: (record: any) => (
+                              <div style={{ padding: "4px 0" }}>
+                                  {record._groupedRooms.map((r: BookingRow) => (
+                                      <div
+                                          key={r.booked_room_id}
+                                          style={{
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              fontSize: 11,
+                                              padding: "4px 8px",
+                                          }}
+                                      >
+                                          <span>
+                                              Room {r.room?.room_number} (
+                                              {r.room?.room_type?.type_name})
+                                          </span>
+                                          <span>
+                                              ₱
+                                              {Number(
+                                                  r.subtotal,
+                                              ).toLocaleString(undefined, {
+                                                  minimumFractionDigits: 2,
+                                              })}
+                                          </span>
+                                      </div>
+                                  ))}
+                              </div>
+                          ),
+                      }
+                    : undefined
+            }
         />
     );
 
@@ -3072,6 +3309,50 @@ export default function Bookings() {
                     className="search-filter-wrapper"
                     style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
+                    <div
+                        style={{
+                            display: "flex",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 8,
+                            overflow: "hidden",
+                            height: 38,
+                        }}
+                    >
+                        <button
+                            onClick={() => setGroupMode("room")}
+                            style={{
+                                border: "none",
+                                padding: "0 12px",
+                                fontSize: 11,
+                                cursor: "pointer",
+                                background:
+                                    groupMode === "room" ? MINT_GREEN : "white",
+                                color:
+                                    groupMode === "room" ? "white" : "#64748b",
+                            }}
+                        >
+                            By Room
+                        </button>
+                        <button
+                            onClick={() => setGroupMode("booking")}
+                            style={{
+                                border: "none",
+                                padding: "0 12px",
+                                fontSize: 11,
+                                cursor: "pointer",
+                                background:
+                                    groupMode === "booking"
+                                        ? MINT_GREEN
+                                        : "white",
+                                color:
+                                    groupMode === "booking"
+                                        ? "white"
+                                        : "#64748b",
+                            }}
+                        >
+                            By Booking
+                        </button>
+                    </div>
                     <Input
                         placeholder="Search by name, ID, or type..."
                         allowClear
