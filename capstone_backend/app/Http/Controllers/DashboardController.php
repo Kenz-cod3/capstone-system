@@ -92,15 +92,19 @@ class DashboardController extends Controller
             $payments->whereYear('payment_date', $currentYear);
         }
 
-        $totalPaid = (clone $payments)
+        $totalRevenue = (clone $payments)
             ->where('payment_status', 'paid')
             ->sum('amount');
 
-        $totalRefunded = (clone $payments)
-            ->where('payment_status', 'refunded')
-            ->sum('amount');
+        // $totalPaid = (clone $payments)
+        //     ->where('payment_status', 'paid')
+        //     ->sum('amount');
 
-        $totalRevenue = $totalPaid - $totalRefunded;
+        // $totalRefunded = (clone $payments)
+        //     ->where('payment_status', 'refunded')
+        //     ->sum('amount');
+
+        // $totalRevenue = $totalPaid - $totalRefunded;
         // $totalRevenueQuery = Booking::whereNull('deleted_at')
         //     ->whereYear('created_at', $currentYear)
         //     ->whereHas('bookedRooms', function ($q) {
@@ -134,15 +138,20 @@ class DashboardController extends Controller
         //     })
         //     ->sum('total_price');
 
-        $thisWeekPaid = BookingPayment::where('payment_status', 'paid')
+
+        $thisWeekRevenue = BookingPayment::where('payment_status', 'paid')
             ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
             ->sum('amount');
 
-        $thisWeekRefunded = BookingPayment::where('payment_status', 'refunded')
-            ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
-            ->sum('amount');
+        // $thisWeekPaid = BookingPayment::where('payment_status', 'paid')
+        //     ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+        //     ->sum('amount');
 
-        $thisWeekRevenue = $thisWeekPaid - $thisWeekRefunded;
+        // $thisWeekRefunded = BookingPayment::where('payment_status', 'refunded')
+        //     ->whereBetween('payment_date', [$startOfThisWeek, $endOfThisWeek])
+        //     ->sum('amount');
+
+        // $thisWeekRevenue = $thisWeekPaid - $thisWeekRefunded;
 
         // $lastWeekRevenue = Booking::whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])
         //     ->whereHas('bookedRooms', function ($q) {
@@ -427,15 +436,19 @@ class DashboardController extends Controller
             $payments->whereYear('payment_date', $currentYear);
         }
 
-        $totalPaid = (clone $payments)
+        $totalRevenue = (clone $payments)
             ->where('payment_status', 'paid')
             ->sum('amount');
 
-        $totalRefunded = (clone $payments)
-            ->where('payment_status', 'refunded')
-            ->sum('amount');
+        // $totalPaid = (clone $payments)
+        //     ->where('payment_status', 'paid')
+        //     ->sum('amount');
 
-        $totalRevenue = $totalPaid - $totalRefunded;
+        // $totalRefunded = (clone $payments)
+        //     ->where('payment_status', 'refunded')
+        //     ->sum('amount');
+
+        // $totalRevenue = $totalPaid - $totalRefunded;
         // $totalRevenueQuery = Booking::whereNull('deleted_at')
         //     ->whereYear('created_at', $currentYear)
         //     ->whereHas('bookedRooms', function ($q) {
@@ -490,41 +503,48 @@ class DashboardController extends Controller
 
         $lastWeekRevenue = $lastWeekPaid - $lastWeekRefunded;
 
-        if ($isStaff) {
-            // $todayRevenue = Booking::whereDate('updated_at', $today)
-            //     ->whereHas('bookedRooms', function ($q) {
-            //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            //     })
-            //     ->sum('total_price');
-            $todayPaid = BookingPayment::where('payment_status', 'paid')
-                ->whereDate('payment_date', $today)
-                ->sum('amount');
+        // if ($isStaff) {
+        //     // $todayRevenue = Booking::whereDate('updated_at', $today)
+        //     //     ->whereHas('bookedRooms', function ($q) {
+        //     //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     //     })
+        //     //     ->sum('total_price');
+        //     $todayPaid = BookingPayment::where('payment_status', 'paid')
+        //         ->whereDate('payment_date', $today)
+        //         ->sum('amount');
 
-            $todayRefunded = BookingPayment::where('payment_status', 'refunded')
-                ->whereDate('payment_date', $today)
-                ->sum('amount');
+        //     $todayRefunded = BookingPayment::where('payment_status', 'refunded')
+        //         ->whereDate('payment_date', $today)
+        //         ->sum('amount');
 
-            $todayRevenue = $todayPaid - $todayRefunded;
+        //     $todayRevenue = $todayPaid - $todayRefunded;
 
-            // $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
-            //     ->whereHas('bookedRooms', function ($q) {
-            //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
-            //     })
-            //     ->sum('total_price');
-            $yesterdayPaid = BookingPayment::where('payment_status', 'paid')
-                ->whereDate('payment_date', $yesterday)
-                ->sum('amount');
+        //     // $yesterdayRevenue = Booking::whereDate('created_at', $yesterday)
+        //     //     ->whereHas('bookedRooms', function ($q) {
+        //     //         $q->whereIn('status', ['confirmed', 'checked_in', 'checked_out']);
+        //     //     })
+        //     //     ->sum('total_price');
+        //     $yesterdayPaid = BookingPayment::where('payment_status', 'paid')
+        //         ->whereDate('payment_date', $yesterday)
+        //         ->sum('amount');
 
-            $yesterdayRefunded = BookingPayment::where('payment_status', 'refunded')
-                ->whereDate('payment_date', $yesterday)
-                ->sum('amount');
+        //     $yesterdayRefunded = BookingPayment::where('payment_status', 'refunded')
+        //         ->whereDate('payment_date', $yesterday)
+        //         ->sum('amount');
 
-            $yesterdayRevenue = $yesterdayPaid - $yesterdayRefunded;
+        //     $yesterdayRevenue = $yesterdayPaid - $yesterdayRefunded;
 
-            $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
-        } else {
-            $revenueChange = $lastWeekRevenue > 0 ? min((($thisWeekRevenue - $lastWeekRevenue) / $lastWeekRevenue) * 100, 100) : ($thisWeekRevenue > 0 ? 100 : 0);
-        }
+        //     $revenueChange = $yesterdayRevenue > 0 ? min((($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue) * 100, 100) : ($todayRevenue > 0 ? 100 : 0);
+        // } else {
+        //     $revenueChange = $lastWeekRevenue > 0 ? min((($thisWeekRevenue - $lastWeekRevenue) / $lastWeekRevenue) * 100, 100) : ($thisWeekRevenue > 0 ? 100 : 0);
+        // }
+
+        $revenueChange = $lastWeekRevenue > 0
+            ? min(
+                (($thisWeekRevenue - $lastWeekRevenue) / $lastWeekRevenue) * 100,
+                100
+            )
+            : ($thisWeekRevenue > 0 ? 100 : 0);
 
         $thisWeekExpenses = CashTransaction::where('type', 'pay_out')->whereBetween('created_at', [$startOfThisWeek, $endOfThisWeek])->sum('amount');
         $lastWeekExpenses = CashTransaction::where('type', 'pay_out')->whereBetween('created_at', [$startOfLastWeek, $endOfLastWeek])->sum('amount');
@@ -541,13 +561,20 @@ class DashboardController extends Controller
         $thisWeekProfit = $thisWeekRevenue - $thisWeekExpenses;
         $lastWeekProfit = $lastWeekRevenue - $lastWeekExpenses;
 
-        if ($isStaff) {
-            $todayProfit     = $todayRevenue - $todayExpenses;
-            $yesterdayProfit = $yesterdayRevenue - $yesterdayExpenses;
-            $profitChange    = $yesterdayProfit != 0 ? min((($todayProfit - $yesterdayProfit) / abs($yesterdayProfit)) * 100, 100) : ($todayProfit > 0 ? 100 : 0);
-        } else {
-            $profitChange = $lastWeekProfit != 0 ? min((($thisWeekProfit - $lastWeekProfit) / abs($lastWeekProfit)) * 100, 100) : ($thisWeekProfit > 0 ? 100 : 0);
-        }
+        $profitChange = $lastWeekProfit != 0
+            ? min(
+                (($thisWeekProfit - $lastWeekProfit) / abs($lastWeekProfit)) * 100,
+                100
+            )
+            : ($thisWeekProfit > 0 ? 100 : 0);
+
+        // if ($isStaff) {
+        //     $todayProfit     = $todayRevenue - $todayExpenses;
+        //     $yesterdayProfit = $yesterdayRevenue - $yesterdayExpenses;
+        //     $profitChange    = $yesterdayProfit != 0 ? min((($todayProfit - $yesterdayProfit) / abs($yesterdayProfit)) * 100, 100) : ($todayProfit > 0 ? 100 : 0);
+        // } else {
+        //     $profitChange = $lastWeekProfit != 0 ? min((($thisWeekProfit - $lastWeekProfit) / abs($lastWeekProfit)) * 100, 100) : ($thisWeekProfit > 0 ? 100 : 0);
+        // }
 
         // RECENT BOOKINGS
         $recentBookings = Booking::with([

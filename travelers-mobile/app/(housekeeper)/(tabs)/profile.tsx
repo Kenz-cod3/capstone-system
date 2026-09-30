@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import {
   View,
@@ -12,6 +12,7 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 
 import { useAuthStore } from "@/store/authStore";
@@ -37,6 +38,7 @@ function ChangePasswordModal({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const reset = () => {
     setCurrentPassword("");
@@ -44,8 +46,24 @@ function ChangePasswordModal({
     setConfirmPassword("");
   };
 
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () => {
+      setKeyboardVisible(true);
+    });
+
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const handleClose = () => {
     reset();
+    setKeyboardVisible(false);
     onClose();
   };
 
@@ -99,8 +117,9 @@ function ChangePasswordModal({
         style={{
           flex: 1,
           backgroundColor: "rgba(0,0,0,0.45)",
-          justifyContent: "center",
+          justifyContent: keyboardVisible ? "flex-start" : "center",
           paddingHorizontal: 24,
+          paddingTop: keyboardVisible ? 135 : 0,
         }}
       >
         <View
@@ -108,205 +127,225 @@ function ChangePasswordModal({
             backgroundColor: "#FFFDF7",
             borderRadius: 22,
             padding: 22,
+            maxHeight: keyboardVisible ? 500 : 520,
           }}
         >
-          {/* HEADER */}
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 18,
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+            contentContainerStyle={{
+              paddingBottom: 10,
             }}
           >
+            {/* HEADER */}
+
             <View
-              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 18,
+              }}
             >
               <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: "#EAF8F2",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 12,
-                }}
+                style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
               >
-                <Ionicons name="lock-closed-outline" size={20} color="#14966E" />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
+                <View
                   style={{
-                    fontSize: 17,
-                    fontWeight: "800",
-                    color: "#0F172A",
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: "#EAF8F2",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: 12,
                   }}
                 >
-                  Change Password
-                </Text>
-                <Text style={{ fontSize: 10, color: "#7B8794", marginTop: 2 }}>
-                  Update your account password
-                </Text>
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={20}
+                    color="#14966E"
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      fontWeight: "800",
+                      color: "#0F172A",
+                    }}
+                  >
+                    Change Password
+                  </Text>
+                  <Text
+                    style={{ fontSize: 10, color: "#7B8794", marginTop: 2 }}
+                  >
+                    Update your account password
+                  </Text>
+                </View>
               </View>
+
+              <TouchableOpacity
+                onPress={handleClose}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: "#EEEAE0",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 18, color: "#59655F" }}>×</Text>
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              onPress={handleClose}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 17,
-                backgroundColor: "#EEEAE0",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text style={{ fontSize: 18, color: "#59655F" }}>×</Text>
-            </TouchableOpacity>
-          </View>
+            {/* CURRENT PASSWORD */}
 
-          {/* CURRENT PASSWORD */}
-
-          <View style={{ marginBottom: 14 }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                color: "#26352F",
-                marginBottom: 6,
-              }}
-            >
-              Current Password
-            </Text>
-            <TextInput
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              secureTextEntry
-              placeholder="Enter current password"
-              placeholderTextColor="#A0A7A2"
-              style={{
-                backgroundColor: "#F5F1E6",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#E8E4D8",
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                fontSize: 13,
-                color: "#17251F",
-              }}
-            />
-          </View>
-
-          {/* NEW PASSWORD */}
-
-          <View style={{ marginBottom: 14 }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                color: "#26352F",
-                marginBottom: 6,
-              }}
-            >
-              New Password
-            </Text>
-            <TextInput
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              placeholder="At least 8 characters"
-              placeholderTextColor="#A0A7A2"
-              style={{
-                backgroundColor: "#F5F1E6",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#E8E4D8",
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                fontSize: 13,
-                color: "#17251F",
-              }}
-            />
-          </View>
-
-          {/* CONFIRM PASSWORD */}
-
-          <View style={{ marginBottom: 22 }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                color: "#26352F",
-                marginBottom: 6,
-              }}
-            >
-              Confirm New Password
-            </Text>
-            <TextInput
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              placeholder="Re-enter new password"
-              placeholderTextColor="#A0A7A2"
-              style={{
-                backgroundColor: "#F5F1E6",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#E8E4D8",
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                fontSize: 13,
-                color: "#17251F",
-              }}
-            />
-          </View>
-
-          {/* BUTTONS */}
-
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity
-              onPress={handleClose}
-              disabled={saving}
-              style={{
-                flex: 1,
-                backgroundColor: "#EEEAE0",
-                paddingVertical: 13,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
+            <View style={{ marginBottom: 14 }}>
               <Text
-                style={{ color: "#59655F", fontSize: 12, fontWeight: "700" }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: "#26352F",
+                  marginBottom: 6,
+                }}
               >
-                Cancel
+                Current Password
               </Text>
-            </TouchableOpacity>
+              <TextInput
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                secureTextEntry
+                placeholder="Enter current password"
+                placeholderTextColor="#A0A7A2"
+                style={{
+                  backgroundColor: "#F5F1E6",
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: "#E8E4D8",
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  fontSize: 13,
+                  color: "#17251F",
+                }}
+              />
+            </View>
 
-            <TouchableOpacity
-              onPress={handleSave}
-              disabled={saving}
-              style={{
-                flex: 1,
-                backgroundColor: "#0B3D2E",
-                paddingVertical: 13,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
+            {/* NEW PASSWORD */}
+
+            <View style={{ marginBottom: 14 }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: "#26352F",
+                  marginBottom: 6,
+                }}
+              >
+                New Password
+              </Text>
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+                placeholder="At least 8 characters"
+                placeholderTextColor="#A0A7A2"
+                style={{
+                  backgroundColor: "#F5F1E6",
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: "#E8E4D8",
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  fontSize: 13,
+                  color: "#17251F",
+                }}
+              />
+            </View>
+
+            {/* CONFIRM PASSWORD */}
+
+            <View style={{ marginBottom: 22 }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: "#26352F",
+                  marginBottom: 6,
+                }}
+              >
+                Confirm New Password
+              </Text>
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                placeholder="Re-enter new password"
+                placeholderTextColor="#A0A7A2"
+                style={{
+                  backgroundColor: "#F5F1E6",
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: "#E8E4D8",
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  fontSize: 13,
+                  color: "#17251F",
+                }}
+              />
+            </View>
+
+            {/* BUTTONS */}
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={handleClose}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#EEEAE0",
+                  paddingVertical: 13,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+              >
                 <Text
-                  style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "800" }}
+                  style={{ color: "#59655F", fontSize: 12, fontWeight: "700" }}
                 >
-                  Save
+                  Cancel
                 </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSave}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0B3D2E",
+                  paddingVertical: 13,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: 12,
+                      fontWeight: "800",
+                    }}
+                  >
+                    Save
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -390,8 +429,8 @@ export default function Profile() {
   ======================================================= */
 
   const displayName =
-    user?.name ||
     `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
+    user?.name ||
     "User";
 
   const userEmail = user?.email || "No Email";
@@ -710,6 +749,10 @@ export default function Profile() {
                 fontSize: 20,
                 fontWeight: "800",
                 letterSpacing: -0.4,
+                textAlign: "center",
+                alignSelf: "center",
+                width: "100%",
+                flexWrap: "wrap",
               }}
             >
               {displayName}
@@ -855,12 +898,13 @@ export default function Profile() {
                 </Text>
 
                 <Text
-                  numberOfLines={1}
                   style={{
                     fontSize: 11,
                     color: "#26352F",
                     fontWeight: "600",
                     marginTop: 3,
+                    flexShrink: 1,
+                    lineHeight: 16,
                   }}
                 >
                   {userEmail}
@@ -960,12 +1004,13 @@ export default function Profile() {
                 </Text>
 
                 <Text
-                  numberOfLines={2}
                   style={{
                     fontSize: 11,
                     color: "#26352F",
                     fontWeight: "600",
                     marginTop: 3,
+                    flexShrink: 1,
+                    lineHeight: 16,
                   }}
                 >
                   {userAddress}
@@ -1085,115 +1130,6 @@ export default function Profile() {
               icon={
                 <Ionicons
                   name="lock-closed-outline"
-                  size={16}
-                  color="#53615B"
-                />
-              }
-            />
-
-            <MenuItem
-              title="Notifications"
-              subtitle="Manage your alerts"
-              icon={
-                <Ionicons
-                  name="notifications-outline"
-                  size={16}
-                  color="#53615B"
-                />
-              }
-            />
-
-            <MenuItem
-              title="Privacy & Security"
-              subtitle="Control your data"
-              last
-              icon={
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color="#53615B"
-                />
-              }
-            />
-          </View>
-
-          {/* =================================================
-              SUPPORT & HELP
-          ================================================= */}
-
-          <View
-            style={{
-              backgroundColor: "#FFFDF7",
-              borderRadius: 18,
-              paddingHorizontal: 15,
-              paddingTop: 13,
-              paddingBottom: 5,
-              marginBottom: 10,
-              borderWidth: 1,
-              borderColor: "#E8E4D8",
-              shadowColor: "#0B3D2E",
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              shadowOffset: {
-                width: 0,
-                height: 3,
-              },
-              elevation: 2,
-            }}
-          >
-            {/* TITLE */}
-
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginBottom: 2,
-              }}
-            >
-              <View
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: "#EAF8F2",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 10,
-                }}
-              >
-                <Ionicons name="help-outline" size={18} color="#14966E" />
-              </View>
-
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: "800",
-                  color: "#17251F",
-                }}
-              >
-                Support & Help
-              </Text>
-            </View>
-
-            <MenuItem
-              title="Contact Support"
-              subtitle="Get help from our team"
-              icon={
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={16}
-                  color="#53615B"
-                />
-              }
-            />
-
-            <MenuItem
-              title="Terms & Conditions"
-              subtitle="Read our policies"
-              last
-              icon={
-                <Ionicons
-                  name="document-text-outline"
                   size={16}
                   color="#53615B"
                 />

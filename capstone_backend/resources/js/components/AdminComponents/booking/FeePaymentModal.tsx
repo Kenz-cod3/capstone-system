@@ -8,46 +8,38 @@ import {
 import { Modal, InputNumber, Input, Avatar } from "antd";
 import {
     HomeOutlined,
-    TagOutlined,
     ScanOutlined,
-    CheckCircleOutlined,
     CheckCircleFilled,
     LoadingOutlined,
     ReloadOutlined,
 } from "@ant-design/icons";
 import api from "@/services/api";
 
-/**
- * ⚠️ Match these two with your routes/api.php
- * (PayMongoController@createQrPayment and PayMongoController@checkQrStatus)
- */
 const QR_CREATE_URL = "/paymongo/qr/create";
 const QR_STATUS_URL = (paymentIntentId: string) =>
-    `/paymongo/qr/status/${paymentIntentId}`;
+    `/paymongo/qr/fee-status/${paymentIntentId}`;
 
-/** PayMongo QRPH is created with expiry_seconds = 1800 (30 min) */
 const QR_LIFETIME_MS = 1800 * 1000 - 15 * 1000;
 const QR_POLL_MS = 3000;
 
-const MINT_GREEN = "#10b981";
-const MINT_GREEN_STRONG = "#059669";
-const MINT_GREEN_HOVER = "#047857";
-const MINT_GREEN_BG = "#ecfdf5";
-const MINT_GREEN_LIGHT = "#d1fae5";
-const MINT_GREEN_DARK = "#047857";
-const SLATE_BORDER = "#e8edf2";
-const SLATE_INPUT_BORDER = "#e2e8f0";
-const SLATE_MUTED = "#64748b";
-const SLATE_DARK = "#0f172a";
+const GREEN = "#059669";
+const GREEN_HOVER = "#047857";
+const GREEN_BG = "#f0fdf4";
+const GREEN_LIGHT = "#dcfce7";
+const BORDER = "#e5e7eb";
+const BORDER_FOCUS = "#10b981";
+const MUTED = "#6b7280";
+const DARK = "#111827";
+const PLACEHOLDER = "#9ca3af";
 
 export type FeeType = "early_checkin" | "late_checkout" | "extension";
 export type PaymentMethod = "cash" | "qrph";
 
 export interface FeePaymentPayload {
     payment_method: PaymentMethod;
-    reference?: string; // QRPH reference number
-    amount_tendered?: number; // cash only
-    reason?: string; // admin override reason
+    reference?: string;
+    amount_tendered?: number;
+    reason?: string;
 }
 
 export interface FeePaymentRequest {
@@ -59,33 +51,29 @@ export interface FeePaymentRequest {
     note?: string;
     okText?: string;
     showReason?: boolean;
-
-    // ---- extra details used by the receipt (FeeReceiptModal) ----
     roomType?: string;
     stayType?: "overnight" | "short_stay";
     bookingReference?: string;
     checkInDate?: string;
     checkOutDate?: string;
-
-    /** Called after the user confirms. Throw to keep the modal open. */
     onSubmit: (payload: FeePaymentPayload) => Promise<void>;
 }
 
-/** Records the fee using your existing POST /booking-payments endpoint. */
-export const recordFeePayment = (
+export const recordFeePayment = async (
     bookingId: number,
     amount: number,
     p: FeePaymentPayload,
-) =>
-    api.post("/booking-payments", {
+) => {
+    if (p.payment_method === "qrph") return;
+    return api.post("/booking-payments", {
         booking_id: bookingId,
         amount,
-        payment_method: p.payment_method,
+        payment_method: "cash",
         payment_status: "paid",
         gcash_reference: null,
-        // QRPH references go in bank_reference (same as the PayMongo webhook)
-        bank_reference: p.payment_method === "qrph" ? p.reference : null,
+        bank_reference: null,
     });
+};
 
 const FEE_META: Record<
     FeeType,
@@ -125,8 +113,7 @@ const formatCountdown = (totalSeconds: number) => {
     return `${m}:${String(s).padStart(2, "0")}`;
 };
 
-/** Banknote icon (antd has no matching "cash" glyph). Inherits currentColor. */
-const CashIcon = ({ size = 30 }: { size?: number }) => (
+const CashIcon = ({ size = 18 }: { size?: number }) => (
     <svg
         width={size}
         height={size}
@@ -140,7 +127,6 @@ const CashIcon = ({ size = 30 }: { size?: number }) => (
     >
         <rect x="2" y="6" width="20" height="12" rx="2" />
         <circle cx="12" cy="12" r="2.6" />
-        <path d="M6 9.5v.01M18 14.5v.01" />
     </svg>
 );
 
@@ -172,12 +158,9 @@ function MethodOption({
                 <span className="fee-option-title">{title}</span>
                 <span className="fee-option-sub">{subtitle}</span>
             </span>
-            <span className="fee-option-radio" aria-hidden="true" />
         </button>
     );
 }
-
-/* ---------- QRPH session ---------- */
 
 interface QrSession {
     paymentIntentId: string;
@@ -185,7 +168,6 @@ interface QrSession {
     imageUrl: string;
     testUrl?: string;
     expiresAt: number;
-    /** Real PayMongo payment id (pay_...) once paid; falls back to the intent id */
     paymentReference?: string;
 }
 
@@ -203,7 +185,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
     const [reason, setReason] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
-    // QRPH state
     const [manualRef, setManualRef] = useState(false);
     const [qr, setQr] = useState<QrSession | null>(null);
     const [qrPhase, setQrPhase] = useState<QrPhase>("idle");
@@ -216,7 +197,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
     const amount = request?.amount ?? 0;
     const usingQr = method === "qrph" && !manualRef;
 
-    // Reset everything whenever a new request is opened
     useEffect(() => {
         if (request) {
             setMethod("cash");
@@ -231,7 +211,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         }
     }, [request]);
 
-    // Creates a dynamic QRPH through your Laravel backend (PayMongo)
     const generateQr = useCallback(async () => {
         if (!request) return;
 
@@ -248,7 +227,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                 fee_type: request.feeType,
             });
 
-            if (token !== genToken.current) return; // outdated request
+            if (token !== genToken.current) return;
 
             setQr({
                 paymentIntentId: data.payment_intent_id,
@@ -268,17 +247,14 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         }
     }, [request]);
 
-    // Generate the QR as soon as the cashier picks QRPH
     useEffect(() => {
         if (!request || method !== "qrph") return;
         generateQr();
         return () => {
-            genToken.current++; // cancel any in-flight request
+            genToken.current++;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [method, request]);
 
-    // Poll the payment status while the QR is waiting to be paid
     useEffect(() => {
         if (!qr || qrPhase !== "ready") return;
 
@@ -293,25 +269,23 @@ export default function FeePaymentModal({ request, onClose }: Props) {
             try {
                 const { data } = await api.get(
                     QR_STATUS_URL(qr.paymentIntentId),
-                    { params: { client_key: qr.clientKey } },
                 );
 
                 if (stopped) return;
 
-                if (data?.status === "succeeded") {
+                if (data?.paid === true) {
                     setQr((prev) =>
                         prev
                             ? {
                                   ...prev,
-                                  paymentReference:
-                                      data.payment_id ?? prev.paymentIntentId,
+                                  paymentReference: prev.paymentIntentId,
                               }
                             : prev,
                     );
                     setQrPhase("paid");
                 }
             } catch {
-                // network hiccup: keep polling
+                // keep polling
             }
         };
 
@@ -322,7 +296,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         };
     }, [qr, qrPhase]);
 
-    // Countdown shown under the QR
     useEffect(() => {
         if (!qr || qrPhase !== "ready") return;
 
@@ -370,14 +343,11 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         }
     }
 
-    // As soon as PayMongo says "succeeded", record the payment automatically.
-    // If recording fails, the cashier can press the confirm button to retry.
     useEffect(() => {
         if (qrPhase === "paid" && !autoSubmitted.current) {
             autoSubmitted.current = true;
             handleOk();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [qrPhase]);
 
     if (!request) return null;
@@ -417,7 +387,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         }
     };
 
-    // Don't let the cashier close the window if the guest already paid but it isn't recorded yet
     const handleClose = () => {
         if (qrPhase === "paid" && !submitting) {
             Modal.confirm({
@@ -444,7 +413,8 @@ export default function FeePaymentModal({ request, onClose }: Props) {
 
     const waitingForQr = usingQr && qrPhase !== "paid";
     const confirmBusy =
-        submitting || (waitingForQr && qrPhase === "loading") ||
+        submitting ||
+        (waitingForQr && qrPhase === "loading") ||
         (waitingForQr && qrPhase === "ready");
 
     const confirmLabel = waitingForQr
@@ -458,7 +428,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
             title={null}
             open
             centered
-            width={520}
+            width={460}
             maskClosable={false}
             onCancel={handleClose}
             footer={null}
@@ -466,222 +436,217 @@ export default function FeePaymentModal({ request, onClose }: Props) {
         >
             <style>
                 {`
-                    /* The Bookings page sets .ant-modal-content globally with !important,
-                       so these selectors are scoped and use !important too. */
                     .fee-payment-modal .ant-modal-content {
-                        border-radius: 16px !important;
-                        padding: 28px !important;
+                        border-radius: 12px !important;
+                        padding: 24px !important;
                     }
                     .fee-payment-modal .ant-modal-close {
-                        top: 24px;
-                        right: 24px;
+                        top: 20px;
+                        right: 20px;
+                        color: ${MUTED};
+                    }
+                    .fee-payment-modal .ant-modal-close:hover {
+                        color: ${DARK};
                     }
 
+                    /* Header */
                     .fee-header {
                         display: flex;
                         align-items: center;
-                        gap: 14px;
-                        padding-right: 36px;
-                        padding-bottom: 18px;
-                        border-bottom: 1px solid ${SLATE_BORDER};
+                        gap: 12px;
+                        padding-right: 28px;
+                        margin-bottom: 20px;
                     }
                     .fee-name {
-                        font-size: 18px;
-                        font-weight: 700;
-                        color: ${SLATE_DARK};
-                        line-height: 1.25;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: ${DARK};
+                        line-height: 1.3;
                     }
                     .fee-room {
                         display: flex;
                         align-items: center;
-                        gap: 6px;
+                        gap: 4px;
                         margin-top: 2px;
-                        font-size: 13px;
-                        color: ${SLATE_MUTED};
+                        font-size: 12px;
+                        color: ${MUTED};
                     }
+
+                    /* Titles */
                     .fee-title {
-                        margin: 18px 0 4px;
-                        font-size: 20px;
-                        font-weight: 700;
-                        color: ${SLATE_DARK};
-                        line-height: 1.3;
+                        margin: 0 0 4px;
+                        font-size: 17px;
+                        font-weight: 600;
+                        color: ${DARK};
+                        line-height: 1.35;
                     }
                     .fee-subtitle {
-                        margin-bottom: 16px;
+                        margin: 0 0 20px;
                         font-size: 13px;
-                        color: ${SLATE_MUTED};
+                        color: ${MUTED};
                         line-height: 1.5;
                     }
 
+                    /* Amount Card */
                     .fee-amount-card {
                         display: flex;
                         align-items: center;
-                        gap: 14px;
-                        margin-bottom: 22px;
-                        padding: 14px 18px;
-                        border-radius: 12px;
-                        background: ${MINT_GREEN_BG};
-                        border: 1px solid ${MINT_GREEN_LIGHT};
-                    }
-                    .fee-amount-icon {
-                        font-size: 22px;
-                        color: ${MINT_GREEN_STRONG};
-                        display: flex;
+                        justify-content: space-between;
+                        gap: 12px;
+                        margin-bottom: 20px;
+                        padding: 14px 16px;
+                        border-radius: 8px;
+                        background: ${GREEN_BG};
+                        border: 1px solid ${GREEN_LIGHT};
                     }
                     .fee-amount-info { flex: 1; min-width: 0; }
                     .fee-amount-label {
-                        font-size: 15px;
-                        font-weight: 600;
-                        color: ${SLATE_DARK};
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: ${DARK};
                     }
                     .fee-amount-desc {
-                        margin-top: 1px;
+                        margin-top: 2px;
                         font-size: 12px;
-                        color: ${SLATE_MUTED};
+                        color: ${MUTED};
                     }
                     .fee-amount-value {
-                        font-size: 26px;
-                        font-weight: 700;
-                        color: ${MINT_GREEN_DARK};
+                        font-size: 18px;
+                        font-weight: 600;
+                        color: ${GREEN};
                         white-space: nowrap;
                     }
 
+                    /* Section Labels */
                     .fee-section-label {
-                        margin-bottom: 10px;
-                        font-size: 15px;
-                        font-weight: 600;
-                        color: ${SLATE_DARK};
+                        margin-bottom: 8px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: ${DARK};
                     }
 
+                    /* Method Options */
                     .fee-options {
                         display: grid;
                         grid-template-columns: 1fr 1fr;
-                        gap: 12px;
+                        gap: 10px;
                         margin-bottom: 20px;
                     }
                     .fee-option {
                         position: relative;
                         display: flex;
                         align-items: center;
-                        gap: 12px;
-                        padding: 16px 14px;
+                        gap: 10px;
+                        padding: 12px 14px;
                         text-align: left;
                         font-family: inherit;
                         background: #fff;
-                        border: 1px solid ${SLATE_INPUT_BORDER};
-                        border-radius: 12px;
+                        border: 1px solid ${BORDER};
+                        border-radius: 8px;
                         cursor: pointer;
-                        transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+                        transition: border-color 0.15s ease, background 0.15s ease;
                     }
-                    .fee-option:hover { border-color: ${MINT_GREEN}; }
-                    .fee-option:focus-visible {
-                        outline: 2px solid ${MINT_GREEN};
-                        outline-offset: 2px;
+                    .fee-option:hover {
+                        border-color: ${BORDER_FOCUS};
                     }
                     .fee-option.selected {
-                        border-color: ${MINT_GREEN};
-                        background: ${MINT_GREEN_BG};
-                        box-shadow: 0 0 0 1px ${MINT_GREEN};
+                        border-color: ${BORDER_FOCUS};
+                        background: ${GREEN_BG};
                     }
                     .fee-option-icon {
                         display: flex;
-                        flex-shrink: 0;
                         align-items: center;
                         justify-content: center;
-                        width: 36px;
-                        font-size: 30px;
-                        color: #334155;
-                        transition: color 0.15s ease;
+                        flex-shrink: 0;
+                        width: 20px;
+                        font-size: 18px;
+                        color: ${MUTED};
                     }
-                    .fee-option.selected .fee-option-icon { color: ${MINT_GREEN_STRONG}; }
+                    .fee-option.selected .fee-option-icon {
+                        color: ${GREEN};
+                    }
                     .fee-option-text {
                         display: flex;
                         flex-direction: column;
                         min-width: 0;
                     }
                     .fee-option-title {
-                        font-size: 15px;
-                        font-weight: 600;
-                        color: ${SLATE_DARK};
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: ${DARK};
                     }
                     .fee-option-sub {
                         margin-top: 1px;
-                        font-size: 12px;
-                        color: ${SLATE_MUTED};
-                    }
-                    .fee-option-radio {
-                        position: absolute;
-                        top: 10px;
-                        right: 10px;
-                        width: 20px;
-                        height: 20px;
-                        border-radius: 50%;
-                        border: 1.5px solid #cbd5e1;
-                        background: #fff;
-                        transition: all 0.15s ease;
-                    }
-                    .fee-option.selected .fee-option-radio {
-                        border-color: ${MINT_GREEN_STRONG};
-                        background: ${MINT_GREEN_STRONG};
-                        box-shadow: inset 0 0 0 3.5px #fff;
+                        font-size: 11px;
+                        color: ${MUTED};
                     }
 
-                    .fee-field { margin-bottom: 12px; }
+                    /* Inputs */
+                    .fee-field { margin-bottom: 16px; }
 
-                    /* Amount received: peso addon + input */
                     .fee-amount-input { width: 100%; }
                     .fee-amount-input .ant-input-number-group-addon {
-                        width: 52px;
+                        width: 40px;
                         padding: 0;
                         text-align: center;
-                        font-size: 15px;
-                        font-weight: 600;
-                        color: #334155;
-                        background: #f1f5f9;
-                        border-color: ${SLATE_INPUT_BORDER};
-                        border-radius: 10px 0 0 10px;
+                        font-size: 13px;
+                        color: ${MUTED};
+                        background: #f9fafb;
+                        border-color: ${BORDER};
+                        border-radius: 8px 0 0 8px;
                     }
                     .fee-amount-input .ant-input-number {
-                        border-color: ${SLATE_INPUT_BORDER};
-                        border-radius: 0 10px 10px 0;
+                        border-color: ${BORDER};
+                        border-radius: 0 8px 8px 0;
                     }
                     .fee-amount-input .ant-input-number-input {
-                        height: 44px;
-                        font-size: 15px;
+                        height: 38px;
+                        font-size: 14px;
                     }
                     .fee-amount-input .ant-input-number:focus-within {
-                        border-color: ${MINT_GREEN};
-                        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+                        border-color: ${BORDER_FOCUS};
+                        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
                     }
 
-                    .fee-input.ant-input,
-                    .fee-input .ant-input {
-                        border-radius: 10px;
-                        font-size: 15px;
-                        border-color: ${SLATE_INPUT_BORDER};
+                    .fee-input.ant-input {
+                        height: 38px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        border-color: ${BORDER};
                     }
-                    .fee-input.ant-input { height: 46px; }
                     .fee-input.ant-input:hover,
                     .fee-input.ant-input:focus {
-                        border-color: ${MINT_GREEN};
-                        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+                        border-color: ${BORDER_FOCUS};
+                        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
                     }
                     .fee-textarea.ant-input {
-                        border-radius: 10px;
+                        border-radius: 8px;
                         font-size: 13px;
+                        border-color: ${BORDER};
+                        resize: none;
+                    }
+                    .fee-textarea.ant-input:hover,
+                    .fee-textarea.ant-input:focus {
+                        border-color: ${BORDER_FOCUS};
+                        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
                     }
 
+                    /* Change */
                     .fee-change {
                         display: flex;
                         align-items: center;
                         justify-content: space-between;
-                        margin-top: 10px;
-                        padding: 12px 16px;
-                        border-radius: 10px;
-                        background: ${MINT_GREEN_BG};
-                        font-size: 15px;
-                        font-weight: 700;
-                        color: ${MINT_GREEN_DARK};
+                        margin-top: 8px;
+                        padding: 10px 14px;
+                        border-radius: 8px;
+                        background: #f9fafb;
+                        border: 1px solid ${BORDER};
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: ${DARK};
+                    }
+                    .fee-change span:last-child {
+                        color: ${GREEN};
                     }
                     .fee-error {
                         display: block;
@@ -690,24 +655,24 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         color: #dc2626;
                     }
 
-                    /* ---- QRPH ---- */
+                    /* QRPH */
                     .fee-qr {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
                         gap: 12px;
-                        padding: 18px 16px;
-                        border: 1px dashed ${SLATE_INPUT_BORDER};
-                        border-radius: 12px;
-                        background: #fff;
+                        padding: 16px;
+                        border: 1px solid ${BORDER};
+                        border-radius: 8px;
+                        background: #fafafa;
                     }
                     .fee-qr-box {
                         position: relative;
-                        width: 220px;
-                        height: 220px;
-                        padding: 8px;
-                        border: 1px solid ${SLATE_BORDER};
-                        border-radius: 12px;
+                        width: 180px;
+                        height: 180px;
+                        padding: 6px;
+                        border: 1px solid ${BORDER};
+                        border-radius: 8px;
                         background: #fff;
                         box-sizing: border-box;
                     }
@@ -718,7 +683,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         object-fit: contain;
                         transition: opacity 0.2s ease;
                     }
-                    .fee-qr-box.paid .fee-qr-img { opacity: 0.12; }
+                    .fee-qr-box.paid .fee-qr-img { opacity: 0.1; }
                     .fee-qr-paid {
                         position: absolute;
                         inset: 0;
@@ -727,100 +692,103 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         align-items: center;
                         justify-content: center;
                         gap: 6px;
-                        font-size: 15px;
-                        font-weight: 700;
-                        color: ${MINT_GREEN_STRONG};
+                        font-size: 13px;
+                        font-weight: 500;
+                        color: ${GREEN};
                     }
-                    .fee-qr-paid .anticon { font-size: 44px; }
+                    .fee-qr-paid .anticon { font-size: 32px; }
                     .fee-qr-placeholder {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
                         justify-content: center;
                         gap: 10px;
-                        width: 220px;
-                        min-height: 220px;
+                        width: 180px;
+                        min-height: 180px;
                         text-align: center;
-                        font-size: 13px;
+                        font-size: 12px;
                         line-height: 1.5;
-                        color: ${SLATE_MUTED};
+                        color: ${MUTED};
                     }
                     .fee-qr-placeholder .anticon {
-                        font-size: 28px;
-                        color: ${MINT_GREEN_STRONG};
+                        font-size: 24px;
+                        color: ${GREEN};
                     }
                     .fee-qr-placeholder.is-error { color: #dc2626; }
+                    .fee-qr-placeholder.is-error .anticon { color: #dc2626; }
+
                     .fee-qr-status {
-                        font-size: 13px;
-                        color: ${SLATE_MUTED};
+                        font-size: 12px;
+                        color: ${MUTED};
                         text-align: center;
+                        line-height: 1.5;
                     }
-                    .fee-qr-status strong { color: ${SLATE_DARK}; }
-                    .fee-qr-links {
-                        display: flex;
-                        flex-wrap: wrap;
-                        justify-content: center;
-                        gap: 6px 16px;
-                    }
+                    .fee-qr-status strong { color: ${DARK}; }
+
                     .fee-link {
                         padding: 0;
                         font-family: inherit;
                         font-size: 12px;
-                        color: ${MINT_GREEN_STRONG};
+                        color: ${GREEN};
                         background: none;
                         border: none;
                         text-decoration: underline;
                         cursor: pointer;
                     }
-                    .fee-link:hover { color: ${MINT_GREEN_HOVER}; }
+                    .fee-link:hover { color: ${GREEN_HOVER}; }
 
+                    /* Footer */
                     .fee-footer {
                         display: flex;
                         justify-content: flex-end;
-                        gap: 12px;
-                        margin-top: 22px;
+                        gap: 10px;
+                        margin-top: 24px;
                     }
                     .fee-btn {
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        gap: 8px;
-                        height: 46px;
-                        padding: 0 24px;
+                        gap: 6px;
+                        height: 38px;
+                        padding: 0 16px;
                         font-family: inherit;
-                        font-size: 15px;
-                        font-weight: 600;
-                        border-radius: 10px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        border-radius: 8px;
                         cursor: pointer;
                         transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-                    }
-                    .fee-btn:focus-visible {
-                        outline: 2px solid ${MINT_GREEN};
-                        outline-offset: 2px;
+                        border: 1px solid transparent;
                     }
                     .fee-btn-small {
-                        height: 36px;
-                        padding: 0 14px;
-                        font-size: 13px;
+                        height: 32px;
+                        padding: 0 12px;
+                        font-size: 12px;
+                        border-radius: 6px;
                     }
                     .fee-btn-cancel {
-                        color: #334155;
+                        color: ${DARK};
                         background: #fff;
-                        border: 1px solid ${SLATE_INPUT_BORDER};
+                        border-color: ${BORDER};
                     }
-                    .fee-btn-cancel:hover:not(:disabled) { border-color: ${MINT_GREEN}; color: ${MINT_GREEN_STRONG}; }
+                    .fee-btn-cancel:hover:not(:disabled) {
+                        border-color: ${BORDER_FOCUS};
+                        color: ${GREEN};
+                    }
                     .fee-btn-confirm {
                         color: #fff;
-                        background: ${MINT_GREEN_STRONG};
-                        border: 1px solid ${MINT_GREEN_STRONG};
+                        background: ${GREEN};
+                        border-color: ${GREEN};
                     }
                     .fee-btn-confirm:hover:not(:disabled) {
-                        background: ${MINT_GREEN_HOVER};
-                        border-color: ${MINT_GREEN_HOVER};
+                        background: ${GREEN_HOVER};
+                        border-color: ${GREEN_HOVER};
                     }
-                    .fee-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+                    .fee-btn:disabled {
+                        cursor: not-allowed;
+                        opacity: 0.5;
+                    }
 
-                    @media (max-width: 520px) {
+                    @media (max-width: 480px) {
                         .fee-options { grid-template-columns: 1fr; }
                         .fee-footer { flex-direction: column-reverse; }
                         .fee-btn { width: 100%; }
@@ -829,15 +797,14 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                 `}
             </style>
 
-            {/* Guest header */}
             <div className="fee-header">
                 <Avatar
-                    size={48}
+                    size={36}
                     style={{
-                        backgroundColor: MINT_GREEN_LIGHT,
-                        color: MINT_GREEN_STRONG,
-                        fontWeight: 700,
-                        fontSize: 17,
+                        backgroundColor: GREEN_LIGHT,
+                        color: GREEN,
+                        fontWeight: 600,
+                        fontSize: 13,
                         flexShrink: 0,
                     }}
                 >
@@ -848,7 +815,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         {request.guestName || "Guest"}
                     </div>
                     <div className="fee-room">
-                        <HomeOutlined />
+                        <HomeOutlined style={{ fontSize: 11 }} />
                         Room {request.roomNumber ?? "-"}
                     </div>
                 </div>
@@ -857,11 +824,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
             <div className="fee-title">{meta.title}</div>
             <div className="fee-subtitle">{meta.subtitle}</div>
 
-            {/* Fee due */}
             <div className="fee-amount-card">
-                <span className="fee-amount-icon">
-                    <TagOutlined />
-                </span>
                 <div className="fee-amount-info">
                     <div className="fee-amount-label">{meta.label}</div>
                     <div className="fee-amount-desc">{description}</div>
@@ -869,7 +832,6 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                 <div className="fee-amount-value">{peso(amount)}</div>
             </div>
 
-            {/* Payment method */}
             <div className="fee-section-label" id="fee-method-label">
                 Payment Method
             </div>
@@ -883,14 +845,14 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                     onSelect={() => selectMethod("cash")}
                     icon={<CashIcon />}
                     title="Cash"
-                    subtitle="Pay with physical cash"
+                    subtitle="Physical cash"
                 />
                 <MethodOption
                     selected={method === "qrph"}
                     onSelect={() => selectMethod("qrph")}
                     icon={<ScanOutlined />}
                     title="QRPH"
-                    subtitle="Scan and pay via QRPH"
+                    subtitle="Scan to pay"
                 />
             </div>
 
@@ -930,7 +892,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
                         onPressEnter={handleOk}
-                        placeholder="Enter reference number from the guest's receipt"
+                        placeholder="Enter reference number"
                     />
                     <div style={{ marginTop: 8 }}>
                         <button
@@ -986,7 +948,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                                     ) : submitting ? (
                                         "Recording payment..."
                                     ) : (
-                                        "Payment received. Press the button below to record it."
+                                        "Payment received. Press confirm to record."
                                     )}
                                 </div>
                             </>
@@ -1012,26 +974,15 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                             </div>
                         )}
 
-                        {qrPhase !== "paid" && (
-                            <div className="fee-qr-links">
-                                {qr?.testUrl && qrPhase === "ready" && (
-                                    <a
-                                        className="fee-link"
-                                        href={qr.testUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        Open sandbox payment page
-                                    </a>
-                                )}
-                                <button
-                                    type="button"
-                                    className="fee-link"
-                                    onClick={() => setManualRef(true)}
-                                >
-                                    Enter reference manually
-                                </button>
-                            </div>
+                        {qrPhase !== "paid" && qr?.testUrl && qrPhase === "ready" && (
+                            <a
+                                className="fee-link"
+                                href={qr.testUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                Open sandbox payment page
+                            </a>
                         )}
                     </div>
                 </div>
@@ -1041,9 +992,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                 <div className="fee-field" style={{ marginTop: 16 }}>
                     <div className="fee-section-label">
                         Reason for override{" "}
-                        <span
-                            style={{ fontWeight: 400, color: SLATE_MUTED }}
-                        >
+                        <span style={{ fontWeight: 400, color: MUTED }}>
                             (optional)
                         </span>
                     </div>
@@ -1052,12 +1001,11 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         rows={2}
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
-                        placeholder="Enter reason for this override action..."
+                        placeholder="Enter reason..."
                     />
                 </div>
             )}
 
-            {/* Footer */}
             <div className="fee-footer">
                 <button
                     type="button"
@@ -1073,7 +1021,7 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                     onClick={handleOk}
                     disabled={!isValid || submitting}
                 >
-                    {confirmBusy ? <LoadingOutlined /> : <CheckCircleOutlined />}
+                    {confirmBusy && <LoadingOutlined />}
                     {confirmLabel}
                 </button>
             </div>

@@ -326,7 +326,7 @@ class BookingController extends Controller
                 },
             ],
 
-            'payment_method' => 'required|in:gcash,bank',
+            'payment_method' => 'required|in:gcash,bank,qrph',
 
             'gcash_reference' => 'nullable|string',
 
@@ -513,9 +513,14 @@ class BookingController extends Controller
 
         $guestNotification = Notification::create([
             'user_id' => Auth::id(),
+            'booking_id' => $booking->id,
+
             'title' => 'Booking Submitted',
-            'message' => 'Your booking ' . $booking->booking_reference .
+
+            'message' => 'Your booking ' .
+                $booking->booking_reference .
                 ' has been submitted and is waiting for staff confirmation.',
+
             'is_read' => false,
         ]);
 
@@ -657,6 +662,7 @@ class BookingController extends Controller
                 $notification = Notification::create([
                     'user_id' => $user->id,
                     'title' => 'Booking Confirmed',
+                    'booking_id' => $booking->id,
                     'message' => $staffName . ' confirmed booking ' . $booking->booking_reference . '.',
                     'is_read' => false,
                 ]);
@@ -668,6 +674,7 @@ class BookingController extends Controller
                 $notification = Notification::create([
                     'user_id' => $booking->user_id,
                     'title' => 'Booking Confirmed',
+                    'booking_id' => $booking->id,
                     'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
                     'is_read' => false
                 ]);
@@ -675,6 +682,18 @@ class BookingController extends Controller
                 broadcast(new NotificationCreated($notification));
             }
         } elseif ($newStatus === 'checked_in') {
+
+            $hasPendingQr = $booking->booking_type === 'walk_in'
+                && $booking->payments()
+                ->where('payment_method', 'qrph')
+                ->where('payment_status', 'pending')
+                ->exists();
+
+            if ($hasPendingQr) {
+                return response()->json([
+                    'message' => 'QR Ph payment is still pending. Wait for confirmation or switch to cash.'
+                ], 409);
+            }
 
             $occupiedRooms = [];
 
@@ -737,7 +756,8 @@ class BookingController extends Controller
 
             NotificationService::notifyAdmins(
                 $type . ' Check-in',
-                $type . ' booking ' . $booking->booking_reference . ' checked in'
+                $type . ' booking ' . $booking->booking_reference . ' checked in',
+                $booking->id
             );
 
             if ($booking->user_id) {
@@ -781,7 +801,8 @@ class BookingController extends Controller
 
             NotificationService::notifyAdmins(
                 $type . ' Check-out',
-                $type . ' booking ' . $booking->booking_reference . ' checked out'
+                $type . ' booking ' . $booking->booking_reference . ' checked out',
+                $booking->id
             );
 
             if ($booking->user_id) {
@@ -821,7 +842,8 @@ class BookingController extends Controller
 
             NotificationService::notifyAdmins(
                 $type . ' Booking Cancelled',
-                $type . ' booking ' . $booking->booking_reference . ' has been cancelled'
+                $type . ' booking ' . $booking->booking_reference . ' has been cancelled',
+                $booking->id
             );
 
             if ($booking->user_id) {

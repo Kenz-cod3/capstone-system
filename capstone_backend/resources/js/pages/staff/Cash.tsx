@@ -12,7 +12,9 @@ import {
     Modal,
     Input,
 } from "antd";
+import { AlertTriangle } from "lucide-react";
 import api from "@/services/api";
+import { useShift } from "@/components/StaffComponents/ShiftContext";
 
 const { Option } = Select;
 
@@ -508,6 +510,7 @@ const styles = `
 
 export default function StaffCash() {
     const [form] = Form.useForm();
+    const { viewOnly, openShiftModal } = useShift();
     const [amount, setAmount] = useState<number | null>(null);
     const [type, setType] = useState<string>("pay_out");
     const [category, setCategory] = useState<string>("");
@@ -579,17 +582,14 @@ export default function StaffCash() {
         type === "pay_out" &&
         selectedCategory?.name?.toLowerCase() === "cash advance";
 
-    console.log({
-        type,
-        category,
-        selectedCategory,
-        isCashAdvance,
-    });
-
     // Categories available for pay_out (exclude "deposit")
     const payOutCategories = categories.filter((c) => c.name !== "deposit");
 
     const handleSubmit = async () => {
+        if (viewOnly) {
+            message.warning("View only mode: please open a shift first.");
+            return;
+        }
         if (!amount || amount <= 0) {
             message.warning("Please enter a valid amount");
             return;
@@ -630,6 +630,10 @@ export default function StaffCash() {
     };
 
     const handleDelete = async (id: number) => {
+        if (viewOnly) {
+            message.warning("View only mode: please open a shift first.");
+            return;
+        }
         setDeletingId(id);
         try {
             await api.delete(`/cash/${id}`);
@@ -645,6 +649,10 @@ export default function StaffCash() {
     };
 
     const handleEdit = (record: any) => {
+        if (viewOnly) {
+            message.warning("View only mode: please open a shift first.");
+            return;
+        }
         setEditingId(record.id);
         setType(record.type);
         setCategory(record.category_id);
@@ -779,6 +787,91 @@ export default function StaffCash() {
             ),
         },
     ];
+
+    // ── View only: show ONLY the card (same as Walk-in) ──
+    // Keep this AFTER all hooks so the hook order never changes.
+    if (viewOnly) {
+        return (
+            <div
+                style={{
+                    minHeight: "calc(100vh - 140px)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                }}
+            >
+                <div
+                    style={{
+                        width: 340,
+                        maxWidth: "100%",
+                        minHeight: 340,
+                        padding: 28,
+                        background: "#ffffff",
+                        border: "1px solid #fcd34d",
+                        borderRadius: 14,
+                        boxShadow: "0 4px 12px rgba(15, 23, 42, 0.06)",
+                        textAlign: "center",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontFamily: "'DM Sans', sans-serif",
+                    }}
+                >
+                    <div
+                        style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: 16,
+                            background: "#fffbeb",
+                            border: "1px solid #fcd34d",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginBottom: 16,
+                        }}
+                    >
+                        <AlertTriangle size={26} color="#b45309" />
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 17,
+                            fontWeight: 700,
+                            color: "#0f172a",
+                        }}
+                    >
+                        View only mode
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 13,
+                            color: "#64748b",
+                            marginTop: 8,
+                            lineHeight: 1.5,
+                        }}
+                    >
+                        You don't have an open shift. Open a shift to record
+                        and manage cash transactions.
+                    </div>
+                    <Button
+                        type="primary"
+                        onClick={openShiftModal}
+                        style={{
+                            marginTop: 22,
+                            background: "#0f766e",
+                            borderColor: "#0f766e",
+                            height: 40,
+                            fontWeight: 600,
+                            borderRadius: 9,
+                            minWidth: 140,
+                        }}
+                    >
+                        Open Shift
+                    </Button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>

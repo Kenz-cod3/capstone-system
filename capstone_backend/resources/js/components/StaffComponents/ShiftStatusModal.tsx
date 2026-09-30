@@ -12,13 +12,21 @@ interface Shift {
 
 interface PreviousShift {
     shift_number: string;
+    staff_name: string;
     closed_at: string;
     closed_cash: number;
+}
+
+interface ActiveShift {
+    shift_number: string;
+    staff_name: string;
+    opened_at: string;
 }
 
 interface ShiftStatusModalProps {
     open: boolean;
     onClose: () => void;
+    onLogout?: () => void;
     onShiftChange?: (shift: Shift | null) => void;
 }
 
@@ -29,6 +37,7 @@ interface ApiError {
             message?: string;
             starting_cash?: number;
             previous_shift?: PreviousShift | null;
+            active_shift?: ActiveShift | null;
         };
     };
 }
@@ -36,12 +45,15 @@ interface ApiError {
 export default function ShiftStatusModal({
     open,
     onClose,
+    onLogout,
     onShiftChange,
 }: ShiftStatusModalProps) {
     const [shift, setShift] = useState<Shift | null>(null);
-    const [previousShift, setPreviousShift] =
-        useState<PreviousShift | null>(null);
+    const [previousShift, setPreviousShift] = useState<PreviousShift | null>(
+        null,
+    );
 
+    const [activeShift, setActiveShift] = useState<ActiveShift | null>(null);
     const [loading, setLoading] = useState(false);
     const [startingCash, setStartingCash] = useState("");
     const [processing, setProcessing] = useState(false);
@@ -52,22 +64,20 @@ export default function ShiftStatusModal({
             setLoading(true);
 
             const response = await api.get("/shift/current");
+            const data = response.data;
 
-            setShift(response.data);
-            setPreviousShift(null);
-        } catch (error) {
-            const apiError = error as ApiError;
-
-            if (apiError.response?.status === 404) {
-                setShift(null);
-
-                const data = apiError.response?.data;
-
-                setPreviousShift(data?.previous_shift ?? null);
-                setStartingCash("");
+            if (data?.has_shift) {
+                setShift(data);
+                setPreviousShift(null);
+                setActiveShift(null);
             } else {
-                console.error("Failed to fetch shift:", error);
+                setShift(null);
+                setPreviousShift(data?.previous_shift ?? null);
+                setActiveShift(data?.active_shift ?? null);
+                setStartingCash("");
             }
+        } catch (error) {
+            console.error("Failed to fetch shift:", error);
         } finally {
             setLoading(false);
         }
@@ -85,9 +95,7 @@ export default function ShiftStatusModal({
             setProcessing(true);
 
             const response = await api.post("/shift/open", {
-                starting_cash: Number(
-                    previousShift?.closed_cash ?? 0
-                ),
+                starting_cash: Number(previousShift?.closed_cash ?? 0),
             });
 
             const newShift: Shift = response.data.data;
@@ -100,10 +108,12 @@ export default function ShiftStatusModal({
         } catch (error) {
             const apiError = error as ApiError;
 
-            alert(
-                apiError.response?.data?.message ||
-                    "Failed to open shift."
-            );
+            if (apiError.response?.status === 409) {
+                setActiveShift(apiError.response.data?.active_shift ?? null);
+                return;
+            }
+
+            alert(apiError.response?.data?.message || "Failed to open shift.");
         } finally {
             setProcessing(false);
         }
@@ -161,7 +171,7 @@ export default function ShiftStatusModal({
                                 <span className="font-semibold text-green-600">
                                     ₱
                                     {Number(
-                                        shift.starting_cash || 0
+                                        shift.starting_cash || 0,
                                     ).toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
@@ -178,7 +188,7 @@ export default function ShiftStatusModal({
                                 <span className="font-semibold text-green-600">
                                     ₱
                                     {Number(
-                                        shift.expected_cash || 0
+                                        shift.expected_cash || 0,
                                     ).toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
@@ -210,6 +220,73 @@ export default function ShiftStatusModal({
                             </button>
                         </div>
                     </>
+                ) : activeShift ? (
+                    <>
+                        <div className="mb-5">
+                            <div className="mb-2 flex items-center gap-2">
+                                <div className="h-3 w-3 rounded-full bg-red-500" />
+                                <h2 className="text-lg font-semibold text-gray-900">
+                                    Shift Already Open
+                                </h2>
+                            </div>
+                            <p className="text-sm leading-6 text-gray-500">
+                                Another staff member currently has an open
+                                shift. You cannot open a new shift until it is
+                                closed.
+                            </p>
+                        </div>
+
+                        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                            <div className="flex justify-between gap-4">
+                                <span className="text-sm text-gray-500">
+                                    Staff
+                                </span>
+                                <span className="text-sm font-semibold text-gray-900">
+                                    {activeShift.staff_name}
+                                </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-sm text-gray-500">
+                                    Shift Number
+                                </span>
+                                <span className="text-sm font-semibold text-gray-900">
+                                    {activeShift.shift_number}
+                                </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-sm text-gray-500">
+                                    Opened
+                                </span>
+                                <span className="text-sm text-gray-700">
+                                    {new Date(
+                                        activeShift.opened_at,
+                                    ).toLocaleString()}
+                                </span>
+                            </div>
+                        </div>
+
+                        <p className="mt-3 text-xs text-gray-500">
+                            View only mode: you can view bookings, but you
+                            cannot accept payments or check in guests.
+                        </p>
+
+                        <div className="mt-5 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                            >
+                                View Only
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onLogout}
+                                className="flex-1 rounded-xl bg-red-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-600"
+                            >
+                                Logout
+                            </button>
+                        </div>
+                    </>
                 ) : (
                     <>
                         {/* Header */}
@@ -230,9 +307,8 @@ export default function ShiftStatusModal({
                         {/* Warning */}
                         <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
                             <p className="text-sm leading-6 text-yellow-800">
-                                Without an open shift, you can view
-                                bookings, but you cannot confirm
-                                bookings.
+                                Without an open shift, you can view bookings,
+                                but you cannot confirm bookings.
                             </p>
                         </div>
 
@@ -244,6 +320,17 @@ export default function ShiftStatusModal({
 
                             {previousShift ? (
                                 <div className="space-y-3">
+                                    {/* Staff Name */}
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-sm text-gray-500">
+                                            Staff
+                                        </span>
+
+                                        <span className="text-right text-sm font-semibold text-gray-900">
+                                            {previousShift.staff_name}
+                                        </span>
+                                    </div>
+
                                     {/* Shift Number */}
                                     <div className="flex justify-between gap-4">
                                         <span className="text-sm text-gray-500">
@@ -251,9 +338,7 @@ export default function ShiftStatusModal({
                                         </span>
 
                                         <span className="text-right text-sm font-semibold text-gray-900">
-                                            {
-                                                previousShift.shift_number
-                                            }
+                                            {previousShift.shift_number}
                                         </span>
                                     </div>
 
@@ -265,7 +350,7 @@ export default function ShiftStatusModal({
 
                                         <span className="text-right text-sm font-medium text-gray-700">
                                             {new Date(
-                                                previousShift.closed_at
+                                                previousShift.closed_at,
                                             ).toLocaleString()}
                                         </span>
                                     </div>
@@ -279,15 +364,11 @@ export default function ShiftStatusModal({
                                         <span className="text-sm font-bold text-green-600">
                                             ₱
                                             {Number(
-                                                previousShift.closed_cash ||
-                                                    0
-                                            ).toLocaleString(
-                                                undefined,
-                                                {
-                                                    minimumFractionDigits: 2,
-                                                    maximumFractionDigits: 2,
-                                                }
-                                            )}
+                                                previousShift.closed_cash || 0,
+                                            ).toLocaleString(undefined, {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                            })}
                                         </span>
                                     </div>
                                 </div>
@@ -317,9 +398,7 @@ export default function ShiftStatusModal({
                                 disabled={processing}
                                 className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {processing
-                                    ? "Opening..."
-                                    : "Open Shift"}
+                                {processing ? "Opening..." : "Open Shift"}
                             </button>
                         </div>
                     </>

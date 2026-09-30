@@ -490,7 +490,8 @@ class AuthController extends Controller
     {
         $request->validate([
             'email'    => 'required',
-            'password' => 'required'
+            'password' => 'required',
+            'remember' => 'sometimes|boolean',
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -500,7 +501,7 @@ class AuthController extends Controller
                 'message' => 'Invalid email or password'
             ], 401);
         }
-        
+
         if ($user->role === 'guest' && !$user->is_verified) {
             $verification = EmailVerification::where('user_id', $user->id)->first();
             $otpActive = $verification && now()->lessThan($verification->expires_at);
@@ -530,7 +531,10 @@ class AuthController extends Controller
         $user->last_login = now();
         $user->save();
 
-        $token = $user->createToken('admin')->plainTextToken;
+        $remember  = $request->boolean('remember');
+        $expiresAt = $remember ? now()->addDays(7) : now()->addHours(8);
+
+        $token = $user->createToken('admin', ['*'], $expiresAt)->plainTextToken;
 
         return response()->json([
             'user' => $user,

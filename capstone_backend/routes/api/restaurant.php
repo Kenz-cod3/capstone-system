@@ -7,7 +7,6 @@ use App\Http\Controllers\{
     OrderController,
     OrderItemController,
     OrderPaymentController,
-    OrderInvoiceController,
     OrderQrController
 };
 

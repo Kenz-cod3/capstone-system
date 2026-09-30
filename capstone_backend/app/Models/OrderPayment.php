@@ -10,13 +10,24 @@ class OrderPayment extends Model
         'order_id',
         'amount',
         'payment_method',
+        'payment_status', 
         'gcash_reference',
         'payment_date',
         'change_amount',
-        'user_id'
+        'user_id',
+    ];
+
+    protected $casts = [
+        'amount'        => 'decimal:2',
+        'change_amount' => 'decimal:2',
+        'payment_date'  => 'datetime',
     ];
 
     public $timestamps = false;
+
+    // -----------------------------------------------------------------------
+    // Relationships
+    // -----------------------------------------------------------------------
 
     public function order()
     {
@@ -26,5 +37,29 @@ class OrderPayment extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    // -----------------------------------------------------------------------
+    // Scopes
+    // -----------------------------------------------------------------------
+
+    public function scopePaid($query)
+    {
+        return $query->where('payment_status', 'paid');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('payment_status', 'pending');
+    }
+
+    public function scopeFailed($query)
+    {
+        return $query->where('payment_status', 'failed');
+    }
+
+    public function scopeRefunded($query)
+    {
+        return $query->where('payment_status', 'refunded');
     }
 }

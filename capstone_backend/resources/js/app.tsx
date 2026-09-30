@@ -27,6 +27,7 @@ import GuestDetails from "./components/AdminComponents/users/[id]";
 
 import Rooms from "./pages/admin/management/Rooms";
 import Expenses from "./pages/admin/management/Expenses";
+import PaymentLogs from "./pages/admin/management/PaymentLogs";
 import CashManagement from "./pages/admin/management/CashManagement";
 import AddOnsPage from "@/components/AdminComponents/room/AddOnsPage";
 import PanoramaViewer from "./components/AdminComponents/PanoramaViewer";
@@ -35,10 +36,14 @@ import WalkInGuest from "./pages/admin/management/WalkInGuests";
 import Staff from "./pages/admin/management/Staff";
 import HouseKeeper from "./pages/admin/management/HouseKeeper";
 import Reports from "./pages/admin/analytics/Reports";
+
 import AdminMenu from "./pages/admin/restaurant/Menu";
 import AdminOrders from "./pages/admin/restaurant/OrdersReport";
+import OrdersTransactionReport from "./pages/admin/restaurant/OrdersTransactionReport";
+
 import ChatPage from "./pages/admin/messages/[userId]";
 import Message from "./pages/admin/main/Message";
+
 // STAFF
 import StaffLayout from "./layouts/StaffLayout";
 import BookingStaff from "./pages/admin/management/BookingManagement";
@@ -48,6 +53,8 @@ import Transaction from "./pages/staff/Transaction";
 import BookingExtend from "./pages/staff/BookingExtend";
 import StaffDashboard from "./pages/staff/StaffDashboard";
 import Cash from "./pages/staff/Cash";
+import HandledSummary from "./pages/staff/Handledsummary";
+
 // CASHIER
 import CashierLayout from "./layouts/CashierLayout";
 import RestaurantDashboard from "./pages/cashier/RestaurantDashboard";
@@ -193,6 +200,10 @@ export default function App() {
                             <Route path="/rooms" element={<Rooms />} />
                             <Route path="/expenses" element={<Expenses />} />
                             <Route
+                                path="/payment-logs"
+                                element={<PaymentLogs />}
+                            />
+                            <Route
                                 path="/cash-management"
                                 element={<CashManagement />}
                             />
@@ -215,6 +226,10 @@ export default function App() {
                             <Route
                                 path="/admin/orders"
                                 element={<AdminOrders />}
+                            />
+                            <Route
+                                path="/admin/orders-transaction-report"
+                                element={<OrdersTransactionReport />}
                             />
                             <Route path="/messages" element={<Message />} />
                             <Route
@@ -264,6 +279,10 @@ export default function App() {
                                 element={<BookingExtend />}
                             />
                             <Route path="/cash" element={<Cash />} />
+                            <Route
+                                path="/handled-summary"
+                                element={<HandledSummary />}
+                            />
 
                             <Route
                                 path="*"

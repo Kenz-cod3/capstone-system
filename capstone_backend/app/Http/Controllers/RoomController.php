@@ -28,6 +28,9 @@ class RoomController extends Controller
         $checkOut = $request->check_out_date;
         $stayType = $request->stay_type;
 
+        // admin view = real room status (preparing, ongoing, reserved...)
+        $isAdminView = $request->query('view') === 'admin';
+
         $today = now()->startOfDay();
 
         $rooms = Room::with([
@@ -47,10 +50,13 @@ class RoomController extends Controller
             ->when($checkIn && $checkOut, function ($q) use ($checkIn, $checkOut, $stayType) {
 
                 $out = $stayType === 'short_stay'
-                    ? \Carbon\Carbon::parse($checkIn)->addDay()->toDateString()
+                    ? \Carbon\Carbon::parse($checkIn)
+                    ->addDay()
+                    ->toDateString()
                     : $checkOut;
 
                 $q->whereDoesntHave('bookedRooms', function ($br) use ($checkIn, $out) {
+
                     $br->whereNull('archived_at')
                         ->whereNull('deleted_at')
                         ->whereIn('status', [
@@ -64,7 +70,7 @@ class RoomController extends Controller
                             WHEN stay_type = 'short_stay'
                             THEN DATE_ADD(check_in_date, INTERVAL 1 DAY)
                             ELSE check_out_date
-                         END > ?",
+                        END > ?",
                             [$checkIn]
                         );
                 });
@@ -73,23 +79,36 @@ class RoomController extends Controller
             ->get();
 
         return response()->json(
-            $rooms->map(function ($room) use ($today) {
+            $rooms->map(function ($room) use ($today, $isAdminView) {
 
-                // PALITAN NG
+                // ============================================
                 // NORMAL IMAGE
+                // ============================================
+
                 $normalImage = $room->images
                     ->where('image_type', 'normal')
                     ->sortBy('id')
                     ->first();
+
+                // ============================================
+                // 360 IMAGE
+                // ============================================
 
                 $panoramaImage = $room->images
                     ->where('image_type', '360')
                     ->sortByDesc('created_at')
                     ->first();
 
+                // ============================================
+                // FIND BOOKING ACTIVE TODAY
+                // ============================================
+
                 /*
-             * Determine if the reservation is ACTIVE TODAY.
-             * A future reservation must not make the room RESERVED today.
+             * A future booking does NOT affect the
+             * physical room status on the guest dashboard.
+             *
+             * Only bookings whose date range covers TODAY
+             * are considered current.
              */
                 $currentBooking = $room->bookedRooms
                     ->filter(function ($booking) use ($today) {
@@ -98,6 +117,23 @@ class RoomController extends Controller
                             $booking->check_in_date
                         )->startOfDay();
 
+                        /*
+                     * CHECKED-IN GUEST
+                     *
+                     * Once actually checked in, the room
+                     * remains occupied until checkout.
+                     */
+                        if ($booking->status === 'checked_in') {
+                            return $today->gte($in);
+                        }
+
+                        /*
+                     * PENDING / CONFIRMED
+                     *
+                     * These only represent a reservation.
+                     * They do NOT mean the guest is occupying
+                     * the room yet.
+                     */
                         $out = $booking->stay_type === 'short_stay'
                             ? $in->copy()->addDay()
                             : \Carbon\Carbon::parse(
@@ -106,37 +142,90 @@ class RoomController extends Controller
 
                         return $today->gte($in) && $today->lt($out);
                     })
+                    ->sortBy(function ($booking) {
+
+                        /*
+                     * checked_in gets priority over
+                     * pending/confirmed.
+                     */
+                        return $booking->status === 'checked_in'
+                            ? 0
+                            : 1;
+                    })
                     ->sortBy('check_in_date')
                     ->first();
 
-                /*
-             * If the database says RESERVED but the reservation
-             * is only in the future, show AVAILABLE on dashboard.
-             */
-                $displayStatus = $room->status;
+                // ============================================
+                // GUEST DASHBOARD ROOM STATUS
+                // ============================================
 
-                if (
-                    $room->status === 'reserved' &&
-                    !$currentBooking
+                /*
+             * IMPORTANT:
+             *
+             * Room status and booking status are separate.
+             *
+             * pending   = Available
+             * confirmed = Available
+             * checked_in = Occupied
+             *
+             * The calendar handles reservation dates.
+             */
+
+                $displayStatus = 'available';
+
+                /*
+             * Physical maintenance always takes priority.
+             */
+                if ($room->status === 'maintenance') {
+
+                    $displayStatus = 'maintenance';
+                }
+
+                /*
+             * ONLY an actual checked-in guest
+             * makes the room occupied.
+             */ elseif (
+                    $currentBooking &&
+                    $currentBooking->status === 'checked_in'
                 ) {
+
+                    $displayStatus = 'occupied';
+                }
+
+                /*
+             * Everything else is available from
+             * the guest's perspective.
+             *
+             * This includes:
+             * - reserved
+             * - pending
+             * - confirmed
+             * - dirty
+             * - cleaning
+             * - preparing
+             * - stale occupied
+             *
+             * Future booking conflicts are handled
+             * by the calendar / availability check.
+             */ else {
+
                     $displayStatus = 'available';
                 }
 
-                /*
-             * If there is a booking covering today, keep RESERVED.
-             */
-                if (
-                    $currentBooking &&
-                    $currentBooking->status !== 'checked_in' &&
-                    $room->status === 'reserved'
-                ) {
-                    $displayStatus = 'reserved';
-                }
+                // ============================================
+                // RETURN ROOM DATA
+                // ============================================
 
                 return [
                     'id'          => $room->id,
                     'room_number' => $room->room_number,
-                    'status'      => $displayStatus,
+
+                    /*
+                 * This is the status shown by the
+                 * Guest Mobile Dashboard.
+                 */
+                    'status'      => $isAdminView ? $room->status : $displayStatus,
+
                     'is_deleted'  => $room->deleted_at !== null,
                     'updated_at'  => $room->updated_at,
 

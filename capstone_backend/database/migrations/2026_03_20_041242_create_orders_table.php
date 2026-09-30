@@ -21,7 +21,15 @@ return new class extends Migration
                 ->nullOnDelete();
             $table->date('order_date');
             $table->decimal('total_amount', 10, 2);
-            $table->string('order_status');
+
+            // Ginawang enum at nullable para consistent at flexible
+            $table->enum('order_status', [
+                'pending',
+                'preparing',
+                'served',
+                'paid',
+                'cancelled',
+            ])->nullable()->default('pending');
 
             $table->timestamps();
         });

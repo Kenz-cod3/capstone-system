@@ -49,6 +49,65 @@ import "@/services/echo";
 import logo from "../../images/logo1.png";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
+import ShiftContext from "@/components/StaffComponents/ShiftContext";
+
+function NotificationGuestAvatar({
+    src,
+    name,
+    loading,
+}: {
+    src?: string | null;
+    name?: string | null;
+    loading?: boolean;
+}) {
+    const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+        src ? "loading" : "error",
+    );
+    const imgRef = useRef<HTMLImageElement | null>(null);
+
+    useEffect(() => {
+        if (!src) {
+            setStatus("error");
+            return;
+        }
+        if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+            setStatus("loaded");
+        } else {
+            setStatus("loading");
+        }
+    }, [src]);
+
+    // Naglo-load pa ang booking data
+    if (loading) {
+        return <div className="avatar-skeleton h-8 w-8 shrink-0" />;
+    }
+
+    // Walang image (walk-in) o nag-error: letter
+    if (!src || status === "error") {
+        return (
+            <div className="h-8 w-8 shrink-0 rounded-full bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center uppercase">
+                {name?.[0] || "G"}
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative h-8 w-8 shrink-0">
+            {status === "loading" && (
+                <div className="avatar-skeleton h-8 w-8" />
+            )}
+            <img
+                ref={imgRef}
+                src={src}
+                alt=""
+                onLoad={() => setStatus("loaded")}
+                onError={() => setStatus("error")}
+                className="h-8 w-8 rounded-full object-cover"
+                style={{ display: status === "loaded" ? "block" : "none" }}
+            />
+        </div>
+    );
+}
 
 const StaffLayout = ({
     children,
@@ -101,12 +160,24 @@ const StaffLayout = ({
     const isClickingNotif = useRef(false);
     const notifButtonRef = useRef<HTMLButtonElement | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement | null>(null);
+    const ignoreOutsideClick = useRef(false);
+    const bookingCache = useRef<
+        Record<string, { guestName: string | null; bookingInfo: any }>
+    >({});
     const timeMapRef = useRef<{ [key: number]: string }>({});
     const [notificationsLoading, setNotificationsLoading] = useState(false);
     const [offset, setOffset] = useState(0);
     const [selectedNotification, setSelectedNotification] = useState<any>(null);
     const [guestName, setGuestName] = useState<string | null>(null);
     const [guestNameLoading, setGuestNameLoading] = useState(false);
+    const [bookingInfo, setBookingInfo] = useState<{
+        reference: string | null;
+        rooms: string | null;
+        roomTypes: string | null;
+        actor: string | null;
+        guestAvatar: string | null;
+        guestType: "online" | "walk_in" | null;
+    } | null>(null);
 
     const user = JSON.parse(localStorage.getItem("user") || "null");
     const location = useLocation();
@@ -121,6 +192,7 @@ const StaffLayout = ({
         "/transactions": "Transaction",
         "/walk-in-guests": "Walk-in Guests",
         "/cash": "Cash",
+        "/handled-summary": "Handled Summary",
         "/extend-stay": "Extend Booking",
     };
 
@@ -192,6 +264,14 @@ const StaffLayout = ({
             return breadcrumbs;
         }
 
+        if (pathname === "/handled-summary") {
+            breadcrumbs.push({
+                name: "Handled Summary",
+                path: "/handled-summary",
+            });
+            return breadcrumbs;
+        }
+
         if (pathname === "/extend-stay") {
             breadcrumbs.push({ name: "Extend Booking", path: "/extend-stay" });
             return breadcrumbs;
@@ -230,39 +310,37 @@ const StaffLayout = ({
         }
     }, []);
 
-    useEffect(() => {
-        if (!user?.id) return;
-        if (user.role?.toLowerCase() !== "staff") return;
-
-        const shiftPromptShown = sessionStorage.getItem("shiftPromptShown");
-
-        if (!shiftPromptShown) {
-            console.log("Checking shift status...");
-
-            setIsShiftModalOpen(true);
-
-            sessionStorage.setItem("shiftPromptShown", "true");
-        }
-    }, [user?.id]);
-
-    // Current shift number shown in the header (staff only)
     const [shiftNumber, setShiftNumber] = useState<string | null>(null);
+    const [hasShift, setHasShift] = useState<boolean | null>(null);
 
-    const fetchShiftNumber = useCallback(async () => {
+    const isStaff = user?.role?.toLowerCase() === "staff";
+    const viewOnly = isStaff && hasShift === false;
+
+    const refreshShift = useCallback(async () => {
         if (!user?.id || user.role?.toLowerCase() !== "staff") return;
 
         try {
             const res = await api.get("/shift/current");
-            setShiftNumber(res.data?.shift_number ?? null);
-        } catch {
-            // 404 = no active shift
+            const has = !!res.data?.has_shift;
+
+            setHasShift(has);
+            setShiftNumber(has ? res.data.shift_number : null);
+
+            return has;
+        } catch (err) {
+            console.error("Failed to check shift:", err);
+            setHasShift(false);
             setShiftNumber(null);
+            return false;
         }
     }, [user?.id]);
 
+    // On load: check shift, show modal if there's none
     useEffect(() => {
-        fetchShiftNumber();
-    }, [fetchShiftNumber]);
+        refreshShift().then((has) => {
+            if (has === false) setIsShiftModalOpen(true);
+        });
+    }, [refreshShift]);
 
     // const handleLogout = async () => {
     //     NProgress.start();
@@ -553,6 +631,18 @@ const StaffLayout = ({
         }
     };
 
+    const playNotificationSound = () => {
+        const audio = new Audio("/sounds/notification.mp3");
+        audio.volume = 0.7;
+        audio.play().catch((err) => console.error("Sound blocked:", err));
+    };
+
+    const playMessageSound = () => {
+        const audio = new Audio("/sounds/notification.mp3");
+        audio.volume = 0.7;
+        audio.play().catch((err) => console.error("Sound blocked:", err));
+    };
+
     const refreshData = () => {
         fetchMessages();
         fetchNotifications();
@@ -565,13 +655,13 @@ const StaffLayout = ({
         fetchNotifications();
     }, [user?.id]);
 
-    if (!user) {
-        return null;
-    }
-
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
+            // Habang nakabukas ang notification Dialog, huwag isara ang dropdown
+            if (selectedNotification || ignoreOutsideClick.current) return;
+
             const target = e.target as Node;
+
             const insideChatDropdown =
                 chatDropdownRef.current?.contains(target);
             const insideChatBox = chatBoxRef.current?.contains(target);
@@ -580,21 +670,18 @@ const StaffLayout = ({
                 notifDropdownRef.current?.contains(target);
             const insideNotifButton = notifButtonRef.current?.contains(target);
 
-            if (
-                !insideChatDropdown &&
-                !insideChatBox &&
-                !insideChatButton &&
-                !insideNotifDropdown &&
-                !insideNotifButton
-            ) {
+            if (!insideChatDropdown && !insideChatBox && !insideChatButton) {
                 setIsChatOpen(false);
+            }
+
+            if (!insideNotifDropdown && !insideNotifButton) {
                 setIsNotifOpen(false);
             }
         };
         window.addEventListener("mousedown", handleClickOutside);
         return () =>
             window.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    }, [selectedNotification]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -625,11 +712,31 @@ const StaffLayout = ({
                 });
 
                 setUnreadCount((prev) => prev + 1);
+                playNotificationSound();
             },
         );
 
         return () => {
             window.Echo.leave(`notifications.${user.id}`);
+        };
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        console.log("📩 STAFF LISTENING CHAT:", `chat.${user.id}`);
+
+        window.Echo.channel(`chat.${user.id}`).listen(
+            ".MessageSent",
+            (e: any) => {
+                console.log("📩 STAFF REALTIME MESSAGE:", e);
+                fetchMessages();
+                playMessageSound();
+            },
+        );
+
+        return () => {
+            window.Echo.leaveChannel(`chat.${user.id}`);
         };
     }, [user?.id]);
 
@@ -665,6 +772,12 @@ const StaffLayout = ({
                     description: "Cash Management",
                     href: "/cash",
                     icon: BanknoteArrowDown,
+                },
+                {
+                    name: "Handled Summary",
+                    description: "My Bookings & Payments",
+                    href: "/handled-summary",
+                    icon: BookUser,
                 },
             ],
         },
@@ -706,6 +819,7 @@ const StaffLayout = ({
     useEffect(() => {
         if (!selectedNotification) {
             setGuestName(null);
+            setBookingInfo(null);
             return;
         }
 
@@ -713,23 +827,115 @@ const StaffLayout = ({
             selectedNotification.message,
         );
 
-        if (!bookingReference) {
+        const bookingId = selectedNotification.booking_id;
+
+        if (!bookingId && !bookingReference) {
             setGuestName(null);
+            setBookingInfo(null);
+            return;
+        }
+
+        const cached = bookingCache.current[String(selectedNotification.id)];
+        if (cached) {
+            setGuestName(cached.guestName);
+            setBookingInfo(cached.bookingInfo);
+            setGuestNameLoading(false);
             return;
         }
 
         setGuestNameLoading(true);
-        api.get(`/bookings/reference/${bookingReference}`)
-            .then((res) => {
-                setGuestName(res.data?.guest_name ?? null);
-            })
+
+        // Priority: booking_id (bago). Fallback: BOOK-XXXX sa message (luma).
+        const request = bookingId
+            ? api.get(`/bookings/${bookingId}`).then((res) => {
+                  const b = res.data;
+                  const person =
+                      b?.booking_type === "walk_in"
+                          ? (b?.walk_in_guest ?? null)
+                          : (b?.user ?? null);
+                  const name = person
+                      ? `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim()
+                      : null;
+                  const bookedRooms = b?.booked_rooms ?? [];
+
+                  const rooms = bookedRooms
+                      .map((br: any) => br.room?.room_number)
+                      .filter(Boolean)
+                      .join(", ");
+
+                  const roomTypes = Array.from(
+                      new Set(
+                          bookedRooms
+                              .map(
+                                  (br: any) =>
+                                      br.room?.room_type?.name ??
+                                      br.room?.room_type?.type_name ??
+                                      br.room?.room_type?.room_type_name ??
+                                      br.room?.room_type?.title,
+                              )
+                              .filter(Boolean),
+                      ),
+                  ).join(", ");
+
+                  // Sino ang gumawa ng action (galing sa booking history)
+                  const statusByTitle: Record<string, string> = {
+                      "Checked-out": "checked_out",
+                      "Guest Checked In": "checked_in",
+                      "Booking Cancelled": "cancelled",
+                      "Booking Confirmed": "confirmed",
+                  };
+                  const targetStatus =
+                      statusByTitle[selectedNotification.title];
+                  const matches = (b?.histories ?? []).filter(
+                      (h: any) =>
+                          !targetStatus || h.new_status === targetStatus,
+                  );
+                  const lastChange = matches[matches.length - 1];
+                  const actor = lastChange?.user
+                      ? `${lastChange.user.first_name ?? ""} ${lastChange.user.last_name ?? ""}`.trim()
+                      : null;
+
+                  setGuestName(name || null);
+                  setBookingInfo({
+                      reference: b?.booking_reference ?? null,
+                      rooms: rooms || null,
+                      roomTypes: roomTypes || null,
+                      actor: actor || null,
+                      guestAvatar:
+                          b?.booking_type === "walk_in"
+                              ? null
+                              : (b?.user?.avatar_url ?? null),
+                      guestType:
+                          b?.booking_type === "walk_in" ? "walk_in" : "online",
+                  });
+              })
+            : api.get(`/bookings/reference/${bookingReference}`).then((res) => {
+                  setGuestName(res.data?.guest_name ?? null);
+                  setBookingInfo(null);
+              });
+
+        request
             .catch(() => {
                 setGuestName(null);
+                setBookingInfo(null);
             })
             .finally(() => {
                 setGuestNameLoading(false);
             });
     }, [selectedNotification]);
+
+    useEffect(() => {
+        if (
+            selectedNotification &&
+            !guestNameLoading &&
+            (guestName || bookingInfo)
+        ) {
+            bookingCache.current[String(selectedNotification.id)] = {
+                guestName,
+                bookingInfo,
+            };
+        }
+    }, [guestNameLoading, guestName, bookingInfo]);
 
     const timeAgo = (dateString: string) => {
         const now = new Date();
@@ -939,9 +1145,9 @@ const StaffLayout = ({
                                     <div
                                         key={n.id}
                                         onClick={() => {
-                                            markNotificationAsRead(n.id);
+                                            if (!n.is_read)
+                                                markNotificationAsRead(n.id);
                                             setSelectedNotification(n);
-                                            setIsNotifOpen(false);
                                         }}
                                         className={`px-4 py-3 cursor-pointer hover:bg-gray-50 transition rounded-lg mb-1 select-none ${!n.is_read ? "bg-blue-50" : ""}`}
                                     >
@@ -998,13 +1204,26 @@ const StaffLayout = ({
         );
     };
 
+    if (!user) {
+        return null;
+    }
+
     const fallback = `https://ui-avatars.com/api/?name=${user?.first_name}+${user?.last_name}&background=10b981&color=fff`;
 
     const breadcrumbs = getBreadcrumbs();
 
     return (
-        <>
-            <style>{`
+        <ShiftContext.Provider
+            value={{
+                hasShift,
+                viewOnly,
+                shiftNumber,
+                refreshShift,
+                openShiftModal: () => setIsShiftModalOpen(true),
+            }}
+        >
+            <>
+                <style>{`
                 .scrollbar-mint::-webkit-scrollbar {
                     width: 6px;
                     height: 6px;
@@ -1049,6 +1268,16 @@ const StaffLayout = ({
                 .scrollbar-hide::-webkit-scrollbar {
                     display: none;
                 }
+                .avatar-skeleton {
+                    border-radius: 9999px;
+                    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+                    background-size: 200% 100%;
+                    animation: avatarShimmer 1.2s ease-in-out infinite;
+                }
+                @keyframes avatarShimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                }
                 .select-none {
                     user-select: none;
                     -webkit-user-select: none;
@@ -1090,89 +1319,94 @@ const StaffLayout = ({
                 }
             `}</style>
 
-            <div className="min-h-screen bg-gray-50">
-                {isMobileMenuOpen && (
-                    <div
-                        className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-                        onClick={() => setIsMobileMenuOpen(false)}
-                    />
-                )}
+                <div className="min-h-screen bg-gray-50">
+                    {isMobileMenuOpen && (
+                        <div
+                            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                        />
+                    )}
 
-                <aside
-                    className={`fixed top-0 left-0 h-full bg-gradient-to-b from-emerald-900 to-emerald-950 text-white transition-[width] duration-300 ease-in-out z-50 flex flex-col
+                    <aside
+                        className={`fixed top-0 left-0 h-full bg-gradient-to-b from-emerald-900 to-emerald-950 text-white transition-[width] duration-300 ease-in-out z-50 flex flex-col
                         ${isSidebarOpen ? "w-56" : "w-16"} 
                         ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
-                >
-                    <div className="h-20 flex items-center px-3 shrink-0 border-b border-emerald-800/50">
-                        <div
-                            onClick={() => handleNavigation("/dashboard")}
-                            className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none"
-                        >
+                    >
+                        <div className="h-20 flex items-center px-3 shrink-0 border-b border-emerald-800/50">
                             <div
-                                className={`h-10 w-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
+                                onClick={() => handleNavigation("/dashboard")}
+                                className="flex items-center cursor-pointer hover:opacity-80 transition-opacity select-none"
                             >
-                                <img
-                                    src={logo}
-                                    alt="Traveler's Inn Logo"
-                                    className="h-full w-auto object-contain scale-125"
-                                    onError={(e) => {
-                                        e.currentTarget.style.display = "none";
-                                        const parent =
-                                            e.currentTarget.parentElement;
-                                        if (parent) {
-                                            const fallbackIcon =
-                                                document.createElement("div");
-                                            fallbackIcon.className =
-                                                "h-7 w-7 text-emerald-600 flex items-center justify-center";
-                                            fallbackIcon.innerHTML =
-                                                '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>';
-                                            parent.appendChild(fallbackIcon);
-                                        }
-                                    }}
-                                />
-                            </div>
-                            <div
-                                className={`sidebar-label flex flex-col ${isSidebarOpen ? "sidebar-label-open" : "sidebar-label-closed"}`}
-                            >
-                                <span className="font-bold text-sm tracking-tight leading-tight">
-                                    Lynn Ennia's
-                                </span>
-                                <span className="text-[8px] text-emerald-300/80 tracking-wide">
-                                    Traveler's Inn
-                                </span>
+                                <div
+                                    className={`h-10 w-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
+                                >
+                                    <img
+                                        src={logo}
+                                        alt="Traveler's Inn Logo"
+                                        className="h-full w-auto object-contain scale-125"
+                                        onError={(e) => {
+                                            e.currentTarget.style.display =
+                                                "none";
+                                            const parent =
+                                                e.currentTarget.parentElement;
+                                            if (parent) {
+                                                const fallbackIcon =
+                                                    document.createElement(
+                                                        "div",
+                                                    );
+                                                fallbackIcon.className =
+                                                    "h-7 w-7 text-emerald-600 flex items-center justify-center";
+                                                fallbackIcon.innerHTML =
+                                                    '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>';
+                                                parent.appendChild(
+                                                    fallbackIcon,
+                                                );
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div
+                                    className={`sidebar-label flex flex-col ${isSidebarOpen ? "sidebar-label-open" : "sidebar-label-closed"}`}
+                                >
+                                    <span className="font-bold text-sm tracking-tight leading-tight">
+                                        Lyn Enia's
+                                    </span>
+                                    <span className="text-[8px] text-emerald-300/80 tracking-wide">
+                                        Traveler's Inn
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <nav
-                        className={`flex-1 py-6 px-3 overflow-y-auto ${isSidebarOpen ? "sidebar-scrollbar" : "scrollbar-hide"}`}
-                    >
-                        <div className="space-y-6">
-                            {navigationGroups.map((group) => (
-                                <div key={group.label}>
-                                    <p
-                                        className={`sidebar-label text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2 select-none ${
-                                            isSidebarOpen
-                                                ? "sidebar-label-open"
-                                                : "sidebar-label-closed h-0 mb-0"
-                                        }`}
-                                    >
-                                        {group.label}
-                                    </p>
-                                    <div className="space-y-1">
-                                        {group.items.map((item) => {
-                                            const isActive = isActiveRoute(
-                                                item.href,
-                                            );
-                                            return (
-                                                <div
-                                                    key={item.name}
-                                                    onClick={() =>
-                                                        handleNavigation(
-                                                            item.href,
-                                                        )
-                                                    }
-                                                    className={`
+                        <nav
+                            className={`flex-1 py-6 px-3 overflow-y-auto ${isSidebarOpen ? "sidebar-scrollbar" : "scrollbar-hide"}`}
+                        >
+                            <div className="space-y-6">
+                                {navigationGroups.map((group) => (
+                                    <div key={group.label}>
+                                        <p
+                                            className={`sidebar-label text-[9px] font-semibold tracking-wider text-emerald-400/70 uppercase px-3 mb-2 select-none ${
+                                                isSidebarOpen
+                                                    ? "sidebar-label-open"
+                                                    : "sidebar-label-closed h-0 mb-0"
+                                            }`}
+                                        >
+                                            {group.label}
+                                        </p>
+                                        <div className="space-y-1">
+                                            {group.items.map((item) => {
+                                                const isActive = isActiveRoute(
+                                                    item.href,
+                                                );
+                                                return (
+                                                    <div
+                                                        key={item.name}
+                                                        onClick={() =>
+                                                            handleNavigation(
+                                                                item.href,
+                                                            )
+                                                        }
+                                                        className={`
                                                         flex items-center px-3 py-2 rounded-lg transition-colors duration-300 ease-in-out group cursor-pointer select-none
                                                         ${
                                                             isActive
@@ -1180,419 +1414,599 @@ const StaffLayout = ({
                                                                 : "text-emerald-100 hover:bg-emerald-800/50 hover:text-white"
                                                         }
                                                     `}
-                                                    title={
-                                                        !isSidebarOpen
-                                                            ? item.name
-                                                            : undefined
-                                                    }
-                                                >
-                                                    <item.icon
-                                                        className={`h-5 w-5 shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
-                                                    />
-                                                    <div
-                                                        className={`sidebar-label flex flex-col flex-1 min-w-0 ${
-                                                            isSidebarOpen
-                                                                ? "sidebar-label-open"
-                                                                : "sidebar-label-closed"
-                                                        }`}
+                                                        title={
+                                                            !isSidebarOpen
+                                                                ? item.name
+                                                                : undefined
+                                                        }
                                                     >
-                                                        <span className="text-xs font-medium truncate">
-                                                            {item.name}
-                                                        </span>
-                                                        <span className="text-[8px] text-emerald-300/70 truncate">
-                                                            {item.description}
-                                                        </span>
+                                                        <item.icon
+                                                            className={`h-5 w-5 shrink-0 transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "mr-3" : "mr-0"}`}
+                                                        />
+                                                        <div
+                                                            className={`sidebar-label flex flex-col flex-1 min-w-0 ${
+                                                                isSidebarOpen
+                                                                    ? "sidebar-label-open"
+                                                                    : "sidebar-label-closed"
+                                                            }`}
+                                                        >
+                                                            <span className="text-xs font-medium truncate">
+                                                                {item.name}
+                                                            </span>
+                                                            <span className="text-[8px] text-emerald-300/70 truncate">
+                                                                {
+                                                                    item.description
+                                                                }
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </nav>
+                                ))}
+                            </div>
+                        </nav>
 
-                    <div className="border-t border-emerald-800/50 py-2 px-2 shrink-0 mt-auto">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <button
-                                    className="
+                        <div className="border-t border-emerald-800/50 py-2 px-2 shrink-0 mt-auto">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button
+                                        className="
                                         w-full flex items-center justify-center p-2 rounded-lg hover:bg-emerald-800/50 transition-colors group
                                         focus:outline-none focus:ring-0 cursor-pointer select-none
                                     "
-                                >
-                                    <div
-                                        className={`rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center shrink-0 transition-all duration-300 ease-in-out h-10 w-10 ${
-                                            isSidebarOpen ? "mr-3" : "mx-auto"
-                                        }`}
                                     >
-                                        {user?.profile_image ? (
-                                            <img
-                                                src={
-                                                    getImageUrl(
-                                                        user?.profile_image,
-                                                    ) || fallback
+                                        <div
+                                            className={`rounded-xl overflow-hidden border border-emerald-400 flex items-center justify-center shrink-0 transition-all duration-300 ease-in-out h-10 w-10 ${
+                                                isSidebarOpen
+                                                    ? "mr-3"
+                                                    : "mx-auto"
+                                            }`}
+                                        >
+                                            {user?.profile_image ? (
+                                                <img
+                                                    src={
+                                                        getImageUrl(
+                                                            user?.profile_image,
+                                                        ) || fallback
+                                                    }
+                                                    className="w-full h-full object-cover block"
+                                                    style={{
+                                                        objectPosition:
+                                                            "center 20%",
+                                                        transform: "scale(1.1)",
+                                                    }}
+                                                    onError={(e) => {
+                                                        e.currentTarget.src =
+                                                            fallback;
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-sm font-bold">
+                                                    {user?.first_name?.[0] ||
+                                                        "U"}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div
+                                            className={`sidebar-label flex-1 text-left ${
+                                                isSidebarOpen
+                                                    ? "sidebar-label-open"
+                                                    : "sidebar-label-closed"
+                                            }`}
+                                        >
+                                            <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none select-none">
+                                                {getDisplayName()}
+                                            </p>
+                                            <p className="text-[8px] text-emerald-400/80 truncate select-none">
+                                                {user.email}
+                                            </p>
+                                        </div>
+
+                                        <div
+                                            className={`sidebar-label flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors select-none ${
+                                                isSidebarOpen
+                                                    ? "sidebar-label-open"
+                                                    : "sidebar-label-closed"
+                                            }`}
+                                        >
+                                            <ChevronUp className="h-4 w-3 -mb-1" />
+                                            <ChevronDown className="h-4 w-3 -mt-1" />
+                                        </div>
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                    align="end"
+                                    side="top"
+                                    className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px] outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0"
+                                >
+                                    <DropdownMenuItem
+                                        asChild
+                                        className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
+                                    >
+                                        <div
+                                            onClick={() =>
+                                                setIsSettingsOpen(true)
+                                            }
+                                            className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50 select-none"
+                                        >
+                                            <Settings className="h-4 w-4 text-emerald-400" />
+                                            <span>Settings</span>
+                                        </div>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={handleLogout}
+                                        className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white select-none"
+                                    >
+                                        <LogOut className="mr-2 h-4 w-4 text-red-400" />
+                                        <span className="text-red-400">
+                                            Logout
+                                        </span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </aside>
+
+                    <main
+                        className={`transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "lg:ml-56" : "lg:ml-16"} flex flex-col h-screen overflow-hidden`}
+                    >
+                        <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
+                            <div className="px-6 py-3 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-md hover:bg-gray-100"
+                                        onClick={toggleSidebar}
+                                    >
+                                        <PanelLeft
+                                            className={`h-4 w-4 text-gray-500 transition-transform duration-300 ease-in-out ${
+                                                isSidebarOpen
+                                                    ? "rotate-0"
+                                                    : "rotate-180"
+                                            }`}
+                                        />
+                                    </Button>
+                                    <div className="w-px h-5 bg-gray-300"></div>
+                                    {/* Breadcrumb */}
+                                    <div className="flex items-center">
+                                        {breadcrumbs.map((crumb, index) => (
+                                            <React.Fragment key={index}>
+                                                {index > 0 && (
+                                                    <ChevronRight className="breadcrumb-separator h-3 w-3" />
+                                                )}
+                                                {index ===
+                                                breadcrumbs.length - 1 ? (
+                                                    <span className="breadcrumb-current">
+                                                        {crumb.name}
+                                                    </span>
+                                                ) : (
+                                                    <span
+                                                        className="breadcrumb-link"
+                                                        onClick={() =>
+                                                            handleNavigation(
+                                                                crumb.path,
+                                                            )
+                                                        }
+                                                    >
+                                                        {crumb.name}
+                                                    </span>
+                                                )}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    {shiftNumber && (
+                                        <div
+                                            className="hidden sm:flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 select-none"
+                                            title="Current shift"
+                                        >
+                                            <span className="relative flex h-2 w-2">
+                                                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                                                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                            </span>
+                                            <span className="text-[10px] font-medium text-emerald-700 tracking-wide">
+                                                {shiftNumber}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {viewOnly && (
+                                        <button
+                                            onClick={() =>
+                                                setIsShiftModalOpen(true)
+                                            }
+                                            className="hidden sm:flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-full bg-yellow-50 border border-yellow-200 select-none hover:bg-yellow-100 transition-colors"
+                                            title="Click to open a shift"
+                                        >
+                                            <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                                            <span className="text-[10px] font-medium text-yellow-700 tracking-wide">
+                                                View Only · Open Shift
+                                            </span>
+                                        </button>
+                                    )}
+                                    <div className="relative">
+                                        <button
+                                            ref={chatButtonRef}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsNotifOpen(false);
+                                                setIsChatOpen((prev) => !prev);
+                                            }}
+                                            className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
+                                        >
+                                            <MessageCircle className="h-4 w-4 text-gray-600" />
+                                            {unreadMessages > 0 && (
+                                                <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
+                                                    {unreadMessages > 9
+                                                        ? "9+"
+                                                        : unreadMessages}
+                                                </span>
+                                            )}
+                                        </button>
+                                        {isChatOpen && (
+                                            <div
+                                                ref={chatDropdownRef}
+                                                className="absolute right-0 mt-2 z-50"
+                                                onClick={(e) =>
+                                                    e.stopPropagation()
                                                 }
-                                                className="w-full h-full object-cover block"
-                                                style={{
-                                                    objectPosition:
-                                                        "center 20%",
-                                                    transform: "scale(1.1)",
-                                                }}
-                                                onError={(e) => {
-                                                    e.currentTarget.src =
-                                                        fallback;
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center bg-emerald-500 text-white text-sm font-bold">
-                                                {user?.first_name?.[0] || "U"}
+                                            >
+                                                {MessageDropdownContent()}
                                             </div>
                                         )}
                                     </div>
 
-                                    <div
-                                        className={`sidebar-label flex-1 text-left ${
-                                            isSidebarOpen
-                                                ? "sidebar-label-open"
-                                                : "sidebar-label-closed"
-                                        }`}
-                                    >
-                                        <p className="text-[10px] relative top-2 font-semibold text-white/90 truncate leading-none select-none">
-                                            {getDisplayName()}
-                                        </p>
-                                        <p className="text-[8px] text-emerald-400/80 truncate select-none">
-                                            {user.email}
-                                        </p>
-                                    </div>
-
-                                    <div
-                                        className={`sidebar-label flex flex-col items-center justify-center leading-none text-emerald-400 group-hover:text-white transition-colors select-none ${
-                                            isSidebarOpen
-                                                ? "sidebar-label-open"
-                                                : "sidebar-label-closed"
-                                        }`}
-                                    >
-                                        <ChevronUp className="h-4 w-3 -mb-1" />
-                                        <ChevronDown className="h-4 w-3 -mt-1" />
-                                    </div>
-                                </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                                align="end"
-                                side="top"
-                                className="mb-2 bg-gradient-to-b from-emerald-900 to-emerald-950 border border-emerald-800 shadow-lg rounded-lg min-w-[200px] outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:ring-0"
-                            >
-                                <DropdownMenuItem
-                                    asChild
-                                    className="text-emerald-200 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-emerald-800/50 data-[highlighted]:text-white"
-                                >
-                                    <div
-                                        onClick={() => setIsSettingsOpen(true)}
-                                        className="flex items-center gap-2 px-3 py-2 text-emerald-100 cursor-pointer hover:bg-emerald-800/50 select-none"
-                                    >
-                                        <Settings className="h-4 w-4 text-emerald-400" />
-                                        <span>Settings</span>
-                                    </div>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={handleLogout}
-                                    className="text-red-400 focus:bg-transparent focus:outline-none focus:ring-0 data-[highlighted]:bg-red-900/30 data-[highlighted]:text-white select-none"
-                                >
-                                    <LogOut className="mr-2 h-4 w-4 text-red-400" />
-                                    <span className="text-red-400">Logout</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                </aside>
-
-                <main
-                    className={`transition-[margin] duration-300 ease-in-out ${isSidebarOpen ? "lg:ml-56" : "lg:ml-16"} flex flex-col h-screen overflow-hidden`}
-                >
-                    <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-gray-200 flex-shrink-0">
-                        <div className="px-6 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-md hover:bg-gray-100"
-                                    onClick={toggleSidebar}
-                                >
-                                    <PanelLeft
-                                        className={`h-4 w-4 text-gray-500 transition-transform duration-300 ease-in-out ${
-                                            isSidebarOpen
-                                                ? "rotate-0"
-                                                : "rotate-180"
-                                        }`}
-                                    />
-                                </Button>
-                                <div className="w-px h-5 bg-gray-300"></div>
-                                {/* Breadcrumb */}
-                                <div className="flex items-center">
-                                    {breadcrumbs.map((crumb, index) => (
-                                        <React.Fragment key={index}>
-                                            {index > 0 && (
-                                                <ChevronRight className="breadcrumb-separator h-3 w-3" />
-                                            )}
-                                            {index ===
-                                            breadcrumbs.length - 1 ? (
-                                                <span className="breadcrumb-current">
-                                                    {crumb.name}
-                                                </span>
-                                            ) : (
-                                                <span
-                                                    className="breadcrumb-link"
-                                                    onClick={() =>
-                                                        handleNavigation(
-                                                            crumb.path,
-                                                        )
+                                    <div className="relative">
+                                        <button
+                                            ref={notifButtonRef}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsChatOpen(false);
+                                                setIsNotifOpen((prev) => {
+                                                    const next = !prev;
+                                                    if (next) {
+                                                        setOffset(0);
+                                                        setExpanded(false);
                                                     }
-                                                >
-                                                    {crumb.name}
+                                                    return next;
+                                                });
+                                            }}
+                                            className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
+                                        >
+                                            <Bell className="h-4 w-4 text-gray-600" />
+                                            {unreadCount > 0 && (
+                                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
+                                                    {unreadCount > 99
+                                                        ? "99+"
+                                                        : unreadCount}
                                                 </span>
                                             )}
-                                        </React.Fragment>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                                {shiftNumber && (
-                                    <div
-                                        className="hidden sm:flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 select-none"
-                                        title="Current shift"
-                                    >
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                        </span>
-                                        <span className="text-[10px] font-medium text-emerald-700 tracking-wide">
-                                            {shiftNumber}
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="relative">
-                                    <button
-                                        ref={chatButtonRef}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setIsNotifOpen(false);
-                                            setIsChatOpen((prev) => !prev);
-                                        }}
-                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
-                                    >
-                                        <MessageCircle className="h-4 w-4 text-gray-600" />
-                                        {unreadMessages > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
-                                                {unreadMessages > 9
-                                                    ? "9+"
-                                                    : unreadMessages}
-                                            </span>
-                                        )}
-                                    </button>
-                                    {isChatOpen && (
-                                        <div
-                                            ref={chatDropdownRef}
-                                            className="absolute right-0 mt-2 z-50"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <MessageDropdownContent />
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="relative">
-                                    <button
-                                        ref={notifButtonRef}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setIsChatOpen(false);
-                                            setIsNotifOpen((prev) => {
-                                                const next = !prev;
-                                                if (next) {
-                                                    setOffset(0);
-                                                    setExpanded(false);
+                                        </button>
+                                        {isNotifOpen && (
+                                            <div
+                                                ref={notifDropdownRef}
+                                                className="absolute right-0 mt-2 z-50"
+                                                onClick={(e) =>
+                                                    e.stopPropagation()
                                                 }
-                                                return next;
-                                            });
-                                        }}
-                                        className="relative p-2 rounded-md hover:bg-gray-100 transition-colors select-none"
-                                    >
-                                        <Bell className="h-4 w-4 text-gray-600" />
-                                        {unreadCount > 0 && (
-                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-medium px-1.5 rounded-full select-none">
-                                                {unreadCount > 99
-                                                    ? "99+"
-                                                    : unreadCount}
-                                            </span>
+                                            >
+                                                {NotificationDropdownContent()}
+                                            </div>
                                         )}
-                                    </button>
-                                    {isNotifOpen && (
-                                        <div
-                                            ref={notifDropdownRef}
-                                            className="absolute right-0 mt-2 z-50"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <NotificationDropdownContent />
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </header>
+                        </header>
 
-                    {/* Scrollable content */}
-                    <div
-                        className={`flex-1 bg-gray-50 ${
-                            location.pathname === "/reservation-monitor"
-                                ? "overflow-hidden"
-                                : "overflow-y-auto scrollbar-mint"
-                        }`}
-                    >
+                        {/* Scrollable content */}
                         <div
-                            className={
+                            className={`flex-1 bg-gray-50 ${
                                 location.pathname === "/reservation-monitor"
-                                    ? "h-full"
-                                    : "px-4 sm:px-6 py-4 sm:py-6"
-                            }
+                                    ? "overflow-hidden"
+                                    : "overflow-y-auto scrollbar-mint"
+                            }`}
                         >
-                            <Outlet />
-                        </div>
-                    </div>
-                </main>
-            </div>
-
-            {activeChatUser && (
-                <div ref={chatBoxRef}>
-                    <ChatBox
-                        userId={activeChatUser.id}
-                        userName={activeChatUser.name}
-                        onClose={() => setActiveChatUser(null)}
-                        onMessageSent={(msg) => {
-                            setMessages((prev) => {
-                                const exists = prev.find(
-                                    (m) => m.user.id === activeChatUser.id,
-                                );
-                                if (exists) {
-                                    return prev.map((m) =>
-                                        m.user.id === activeChatUser.id
-                                            ? {
-                                                  ...m,
-                                                  last_message: msg,
-                                                  last_sender_id: user.id,
-                                                  unread: 0,
-                                              }
-                                            : m,
-                                    );
+                            <div
+                                className={
+                                    location.pathname === "/reservation-monitor"
+                                        ? "h-full"
+                                        : "px-4 sm:px-6 py-4 sm:py-6"
                                 }
-                                return [
-                                    {
-                                        user: {
-                                            id: activeChatUser.id,
-                                            first_name: activeChatUser.name,
+                            >
+                                <Outlet />
+                            </div>
+                        </div>
+                    </main>
+                </div>
+
+                {activeChatUser && (
+                    <div ref={chatBoxRef}>
+                        <ChatBox
+                            userId={activeChatUser.id}
+                            userName={activeChatUser.name}
+                            onClose={() => setActiveChatUser(null)}
+                            onMessageSent={(msg) => {
+                                setMessages((prev) => {
+                                    const exists = prev.find(
+                                        (m) => m.user.id === activeChatUser.id,
+                                    );
+                                    if (exists) {
+                                        return prev.map((m) =>
+                                            m.user.id === activeChatUser.id
+                                                ? {
+                                                      ...m,
+                                                      last_message: msg,
+                                                      last_sender_id: user.id,
+                                                      unread: 0,
+                                                  }
+                                                : m,
+                                        );
+                                    }
+                                    return [
+                                        {
+                                            user: {
+                                                id: activeChatUser.id,
+                                                first_name: activeChatUser.name,
+                                            },
+                                            last_message: msg,
+                                            last_sender_id: user.id,
+                                            unread: 0,
                                         },
-                                        last_message: msg,
-                                        last_sender_id: user.id,
-                                        unread: 0,
-                                    },
-                                    ...prev,
-                                ];
-                            });
+                                        ...prev,
+                                    ];
+                                });
+                            }}
+                        />
+                    </div>
+                )}
+
+                {isSettingsOpen && (
+                    <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+                )}
+
+                {isShiftModalOpen && (
+                    <ShiftStatusModal
+                        open={isShiftModalOpen}
+                        onClose={() => {
+                            setIsShiftModalOpen(false);
+                            refreshShift();
+                        }}
+                        onShiftChange={(s) => {
+                            setHasShift(!!s);
+                            setShiftNumber(s?.shift_number ?? null);
+                        }}
+                        onLogout={() => {
+                            setIsShiftModalOpen(false);
+                            handleLogout();
                         }}
                     />
-                </div>
-            )}
+                )}
 
-            {isSettingsOpen && (
-                <SettingsModal onClose={() => setIsSettingsOpen(false)} />
-            )}
-
-            {isShiftModalOpen && (
-                <ShiftStatusModal
-                    open={isShiftModalOpen}
-                    onClose={() => {
-                        setIsShiftModalOpen(false);
-                        fetchShiftNumber();
-                    }}
+                <CloseShiftModal
+                    open={isCloseShiftModalOpen}
+                    shift={currentShift}
+                    onClose={() => setIsCloseShiftModalOpen(false)}
+                    onLogout={handleCloseShiftAndLogout}
                 />
-            )}
 
-            <CloseShiftModal
-                open={isCloseShiftModalOpen}
-                shift={currentShift}
-                onClose={() => setIsCloseShiftModalOpen(false)}
-                onLogout={handleCloseShiftAndLogout}
-            />
-
-            <Dialog
-                open={!!selectedNotification}
-                onOpenChange={(open) => !open && setSelectedNotification(null)}
-            >
-                <DialogContent className="sm:max-w-md bg-white border border-gray-100 shadow-lg ring-0 outline-none focus:outline-none focus:ring-0 focus-visible:ring-0">
-                    <DialogHeader>
-                        <DialogTitle className="text-gray-900">
-                            {selectedNotification?.title}
-                        </DialogTitle>
-                        <DialogDescription className="text-gray-500">
-                            {selectedNotification?.message}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    {selectedNotification &&
-                        (() => {
-                            const { room, bookingReference } =
-                                parseNotificationDetails(
-                                    selectedNotification.message,
-                                );
-
-                            if (!room && !bookingReference) return null;
-
-                            return (
-                                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-2">
-                                    {(guestName || guestNameLoading) && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Guest
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {guestNameLoading
-                                                    ? "Loading..."
-                                                    : guestName}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {room && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Room
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {room}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {bookingReference && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Booking Ref
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {bookingReference}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-
-                    <p className="text-xs text-gray-400">
+                <Dialog
+                    open={!!selectedNotification}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            ignoreOutsideClick.current = true;
+                            setSelectedNotification(null);
+                            setTimeout(() => {
+                                ignoreOutsideClick.current = false;
+                            }, 300);
+                        }
+                    }}
+                >
+                    <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-white border border-gray-100 shadow-xl ring-0 outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 gap-0">
                         {selectedNotification &&
-                            timeAgo(selectedNotification.created_at)}
-                    </p>
-                </DialogContent>
-            </Dialog>
-        </>
+                            (() => {
+                                const { room, bookingReference } =
+                                    parseNotificationDetails(
+                                        selectedNotification.message,
+                                    );
+
+                                const toneByTitle: Record<
+                                    string,
+                                    {
+                                        icon: any;
+                                        bg: string;
+                                        text: string;
+                                        actor: string;
+                                    }
+                                > = {
+                                    "Checked-out": {
+                                        icon: LogOut,
+                                        bg: "bg-blue-50",
+                                        text: "text-blue-600",
+                                        actor: "Checked out by",
+                                    },
+                                    "Guest Checked In": {
+                                        icon: Key,
+                                        bg: "bg-emerald-50",
+                                        text: "text-emerald-600",
+                                        actor: "Checked in by",
+                                    },
+                                    "Booking Cancelled": {
+                                        icon: Clock,
+                                        bg: "bg-red-50",
+                                        text: "text-red-600",
+                                        actor: "Cancelled by",
+                                    },
+                                    "Booking Confirmed": {
+                                        icon: CalendarDays,
+                                        bg: "bg-emerald-50",
+                                        text: "text-emerald-600",
+                                        actor: "Confirmed by",
+                                    },
+                                };
+
+                                const tone = toneByTitle[
+                                    selectedNotification.title
+                                ] || {
+                                    icon: Bell,
+                                    bg: "bg-gray-100",
+                                    text: "text-gray-600",
+                                    actor: "Handled by",
+                                };
+                                const ToneIcon = tone.icon;
+
+                                const created = new Date(
+                                    selectedNotification.created_at,
+                                );
+                                const formattedDate = isNaN(created.getTime())
+                                    ? null
+                                    : created.toLocaleString("en-PH", {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                          hour: "numeric",
+                                          minute: "2-digit",
+                                          hour12: true,
+                                      });
+
+                                const ref =
+                                    bookingInfo?.reference || bookingReference;
+                                const roomValue = bookingInfo?.rooms || room;
+
+                                const details = [
+                                    { label: "Room", value: roomValue },
+                                    {
+                                        label: "Type",
+                                        value: bookingInfo?.roomTypes,
+                                    },
+                                    {
+                                        label: tone.actor,
+                                        value: bookingInfo?.actor,
+                                    },
+                                ].filter((d) => d.value);
+
+                                return (
+                                    <>
+                                        {/* Header */}
+                                        <div className="px-5 pt-5 pb-3 pr-12">
+                                            <div className="min-w-0">
+                                                <DialogHeader className="space-y-0.5 text-left">
+                                                    <DialogTitle className="text-base font-semibold text-gray-900">
+                                                        {
+                                                            selectedNotification.title
+                                                        }
+                                                    </DialogTitle>
+                                                    <DialogDescription className="text-xs text-gray-500 leading-snug">
+                                                        {
+                                                            selectedNotification.message
+                                                        }
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                            </div>
+                                        </div>
+
+                                        {/* Guest + Ref */}
+                                        {(guestName ||
+                                            guestNameLoading ||
+                                            ref) && (
+                                            <div className="mx-5 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <NotificationGuestAvatar
+                                                        src={
+                                                            bookingInfo?.guestAvatar
+                                                        }
+                                                        name={guestName}
+                                                        loading={
+                                                            guestNameLoading
+                                                        }
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-1.5 h-4">
+                                                            <span className="text-[10px] uppercase tracking-wide text-gray-400 leading-4">
+                                                                Guest
+                                                            </span>
+                                                            {bookingInfo?.guestType && (
+                                                                <span
+                                                                    className={`inline-flex items-center justify-center h-4 rounded px-1.5 text-[9px] font-semibold leading-4 ${
+                                                                        bookingInfo.guestType ===
+                                                                        "walk_in"
+                                                                            ? "bg-emerald-50 text-emerald-600"
+                                                                            : "bg-blue-50 text-blue-600"
+                                                                    }`}
+                                                                >
+                                                                    {bookingInfo.guestType ===
+                                                                    "walk_in"
+                                                                        ? "Walk-in"
+                                                                        : "Online"}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm font-medium text-gray-900 truncate capitalize">
+                                                            {guestNameLoading
+                                                                ? "Loading..."
+                                                                : guestName ||
+                                                                  "—"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {ref && (
+                                                    <span className="shrink-0 rounded-md bg-white border border-gray-200 px-2 py-1 text-[11px] font-mono text-gray-600">
+                                                        {ref}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Details */}
+                                        {details.length > 0 && (
+                                            <div
+                                                className={`mx-5 mt-3 grid gap-2 ${
+                                                    details.length === 1
+                                                        ? "grid-cols-1"
+                                                        : details.length === 2
+                                                          ? "grid-cols-2"
+                                                          : "grid-cols-3"
+                                                }`}
+                                            >
+                                                {details.map((d) => (
+                                                    <div
+                                                        key={d.label}
+                                                        className="rounded-lg border border-gray-100 px-3 py-2"
+                                                    >
+                                                        <p className="text-[10px] uppercase tracking-wide text-gray-400 leading-none">
+                                                            {d.label}
+                                                        </p>
+                                                        <p className="mt-1 text-sm font-medium text-gray-800 truncate">
+                                                            {d.value}
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Footer */}
+                                        <div className="mt-4 flex items-center justify-between border-t border-gray-100 bg-gray-50/60 px-5 py-2.5 text-[11px] text-gray-400">
+                                            <span className="flex items-center gap-1.5">
+                                                <Clock className="h-3 w-3" />
+                                                {formattedDate}
+                                            </span>
+                                            <span>
+                                                {timeAgo(
+                                                    selectedNotification.created_at,
+                                                )}
+                                            </span>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                    </DialogContent>
+                </Dialog>
+            </>
+        </ShiftContext.Provider>
     );
 };
 

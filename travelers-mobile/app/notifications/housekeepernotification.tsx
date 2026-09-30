@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,12 @@ import {
 import { useRouter } from "expo-router";
 import api from "@/services/api";
 import { useAuthStore } from "@/store/authStore";
-import { ArrowLeft, CheckCircle2 } from "lucide-react-native";
+import { ArrowLeft, CheckCircle2, Trash2 } from "lucide-react-native";
+import {
+  Swipeable,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+import { Animated } from "react-native";
 
 /* =========================================================
    TYPES
@@ -104,6 +109,13 @@ export default function HousekeeperNotification() {
   const [selectedNotification, setSelectedNotification] =
     useState<NotificationItem | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [openedSwipeableId, setOpenedSwipeableId] = useState<number | null>(
+    null,
+  );
+
+  const swipeableRefs = useRef<{ [key: string]: Swipeable | null }>({});
 
   /* =======================================================
      FETCH ROOMS THAT NEED CLEANING
@@ -208,6 +220,30 @@ export default function HousekeeperNotification() {
   const markUnread = async (notification: NotificationItem) => {
     console.log("Mark as unread will be connected to the database next.");
   };
+
+  const deleteNotification = async (id: number) => {
+    try {
+      setDeletingId(id);
+
+      if (swipeableRefs.current[id]) {
+        swipeableRefs.current[id]?.close();
+      }
+
+      await api.delete(`/notifications/${id}`);
+
+      const newNotifications = notifications.filter((item) => item.id !== id);
+
+      setNotifications(newNotifications);
+      setOpenedSwipeableId(null);
+    } catch (error: any) {
+      console.log(
+        "DELETE NOTIFICATION ERROR:",
+        error?.response?.data || error?.message || error,
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
   /* =======================================================
      MODAL
   ======================================================= */
@@ -253,6 +289,60 @@ export default function HousekeeperNotification() {
     ? notifications
     : notifications.slice(0, 8);
 
+  const renderRightActions = (progress: any, dragX: any, id: number) => {
+    const isDeleting = deletingId === id;
+
+    const translateX = dragX.interpolate({
+      inputRange: [-80, 0],
+      outputRange: [0, 80],
+      extrapolate: "clamp",
+    });
+
+    return (
+      <Animated.View
+        style={{
+          width: 80,
+          height: 85,
+          backgroundColor: "#DC2626",
+          justifyContent: "center",
+          alignItems: "center",
+          transform: [{ translateX }],
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => deleteNotification(id)}
+          disabled={isDeleting}
+          activeOpacity={0.8}
+          style={{
+            flex: 1,
+            width: "100%",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {isDeleting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Trash2 size={22} color="#FFFFFF" strokeWidth={2.5} />
+
+              <Text
+                style={{
+                  color: "#FFFFFF",
+                  fontSize: 11,
+                  marginTop: 4,
+                  fontWeight: "700",
+                }}
+              >
+                Delete
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
   /* =======================================================
      RENDER ITEM
   ======================================================= */
@@ -264,123 +354,151 @@ export default function HousekeeperNotification() {
       item.message.match(/Room\s+(.+?)\s+is ready/)?.[1] ?? "Unknown";
 
     return (
-      <View
-        style={{
-          backgroundColor: unread ? "#ECFBF4" : "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#EEF2F0",
+      <Swipeable
+        ref={(ref) => {
+          if (ref) {
+            swipeableRefs.current[item.id] = ref;
+          }
         }}
-      >
-        {unread && (
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 4,
-              backgroundColor: "#14966E",
-            }}
-          />
-        )}
+        renderRightActions={(progress, dragX) =>
+          renderRightActions(progress, dragX, item.id)
+        }
+        friction={2}
+        rightThreshold={40}
+        overshootRight={false}
+        overshootFriction={10}
+        onSwipeableWillOpen={() => {
+          Object.keys(swipeableRefs.current).forEach((key) => {
+            const id = parseInt(key);
 
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => openDetails(item)}
+            if (id !== item.id) {
+              swipeableRefs.current[key]?.close();
+            }
+          });
+        }}
+        onSwipeableOpen={() => setOpenedSwipeableId(item.id)}
+        onSwipeableClose={() => setOpenedSwipeableId(null)}
+        enableTrackpadTwoFingerGesture
+      >
+        <View
           style={{
-            paddingHorizontal: 20,
-            paddingVertical: 16,
-            flexDirection: "row",
-            alignItems: "center",
+            backgroundColor: unread ? "#ECFBF4" : "#FFFFFF",
+            borderBottomWidth: 1,
+            borderBottomColor: "#EEF2F0",
+            opacity: deletingId === item.id ? 0.4 : 1,
           }}
         >
-          <View
+          {unread && (
+            <View
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 4,
+                backgroundColor: "#14966E",
+              }}
+            />
+          )}
+
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => openDetails(item)}
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: 21,
-              backgroundColor: unread ? "#DDF7EB" : "#F1F5F9",
+              paddingHorizontal: 20,
+              paddingVertical: 16,
+              flexDirection: "row",
               alignItems: "center",
-              justifyContent: "center",
-              marginRight: 12,
             }}
           >
             <View
               style={{
-                width: 9,
-                height: 9,
-                borderRadius: 5,
-                backgroundColor: unread ? "#14966E" : "#94A3B8",
+                width: 42,
+                height: 42,
+                borderRadius: 21,
+                backgroundColor: unread ? "#DDF7EB" : "#F1F5F9",
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 12,
               }}
-            />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text
+            >
+              <View
                 style={{
-                  fontSize: 14,
-                  fontWeight: unread ? "900" : "800",
-                  color: "#0F172A",
+                  width: 9,
+                  height: 9,
+                  borderRadius: 5,
+                  backgroundColor: unread ? "#14966E" : "#94A3B8",
+                }}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
                 }}
               >
-                New Cleaning Task
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: unread ? "900" : "800",
+                    color: "#0F172A",
+                  }}
+                >
+                  New Cleaning Task
+                </Text>
+
+                {unread && (
+                  <View
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 4,
+                      backgroundColor: "#14966E",
+                      marginLeft: 7,
+                    }}
+                  />
+                )}
+              </View>
+
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "700",
+                  color: "#26332E",
+                  marginTop: 3,
+                }}
+              >
+                Room {roomNumber}
               </Text>
 
-              {unread && (
-                <View
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: 4,
-                    backgroundColor: "#14966E",
-                    marginLeft: 7,
-                  }}
-                />
-              )}
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: "#7B8794",
+                  marginTop: 3,
+                }}
+              >
+                {item.message}
+              </Text>
             </View>
 
             <Text
               style={{
-                fontSize: 13,
-                fontWeight: "700",
-                color: "#26332E",
-                marginTop: 3,
+                fontSize: 9,
+                fontWeight: "800",
+                color: "#89928D",
+                marginLeft: 8,
+                minWidth: 25,
+                textAlign: "right",
               }}
             >
-              Room {roomNumber}
+              {timeAgo(item.created_at)}
             </Text>
-
-            <Text style={{ fontSize: 10, color: "#7B8794", marginTop: 3 }}>
-              {item.message}
-            </Text>
-          </View>
-
-          <Text
-            style={{
-              fontSize: 9,
-              fontWeight: "800",
-              color: "#89928D",
-              marginLeft: 8,
-              minWidth: 25,
-              textAlign: "right",
-            }}
-          >
-            {timeAgo(item.created_at)}
-          </Text>
-        </TouchableOpacity>
-
-        {!unread && (
-          <Pressable
-            onPress={() => markUnread(item)}
-            style={{ paddingHorizontal: 20, paddingBottom: 10 }}
-          >
-            <Text style={{ fontSize: 10, fontWeight: "700", color: "#14966E" }}>
-              Mark as unread
-            </Text>
-          </Pressable>
-        )}
-      </View>
+          </TouchableOpacity>
+        </View>
+      </Swipeable>
     );
   };
 

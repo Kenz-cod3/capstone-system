@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Keyboard,
   TouchableWithoutFeedback,
+  Platform,
 } from "react-native";
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -55,11 +56,45 @@ export default function Chat() {
 
   const [inputHeight, setInputHeight] = useState(45);
 
+  // Keyboard state
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
   const flatListRef = useRef<FlatList>(null);
 
   const inputRef = useRef<TextInput>(null);
 
-  // FETCH
+  // =====================================================
+  // KEYBOARD LISTENERS
+  // =====================================================
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setKeyboardVisible(true);
+      },
+    );
+
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        setKeyboardHeight(0);
+        setKeyboardVisible(false);
+      },
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // =====================================================
+  // FETCH MESSAGES
+  // =====================================================
+
   const fetchMessages = async () => {
     try {
       const res = await api.get(
@@ -83,7 +118,10 @@ export default function Chat() {
     }
   };
 
-  // SEND
+  // =====================================================
+  // SEND MESSAGE
+  // =====================================================
+
   const sendMessage = async () => {
     if (!text.trim()) return;
 
@@ -115,7 +153,9 @@ export default function Chat() {
     try {
       const res = await api.post("/messages", {
         sender_id: user.id,
+
         content: messageToSend,
+
         targets: [
           {
             target_id: Number(otherUserId),
@@ -124,6 +164,7 @@ export default function Chat() {
       });
 
       const messageData = res.data.data;
+
       const realTarget = messageData.targets[0];
 
       setMessages((prev) =>
@@ -131,12 +172,16 @@ export default function Chat() {
           m.id === tempId
             ? {
                 ...m,
+
                 id: realTarget.id,
+
                 is_read: realTarget.is_read,
+
                 message: {
                   message: messageData.message,
                   sender_id: messageData.sender_id,
                 },
+
                 status: "sent",
               }
             : m,
@@ -159,7 +204,10 @@ export default function Chat() {
     }
   };
 
-  // INITIAL LOAD ONLY
+  // =====================================================
+  // INITIAL LOAD
+  // =====================================================
+
   useFocusEffect(
     useCallback(() => {
       const load = async () => {
@@ -172,7 +220,10 @@ export default function Chat() {
     }, [otherUserId]),
   );
 
+  // =====================================================
   // REALTIME
+  // =====================================================
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -192,8 +243,11 @@ export default function Chat() {
 
         const incoming = {
           id: raw.id,
+
           is_read: raw.is_read,
+
           status: "sent" as const,
+
           message: raw.message,
         };
 
@@ -218,23 +272,50 @@ export default function Chat() {
     };
   }, []);
 
+  // =====================================================
   // AUTO SCROLL
+  // =====================================================
+
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       flatListRef.current?.scrollToEnd({
         animated: true,
       });
     }, 100);
+
+    return () => clearTimeout(timer);
   }, [messages]);
+
+  // Scroll to bottom when keyboard opens
+  useEffect(() => {
+    if (keyboardVisible) {
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+
+      return () => clearTimeout(timer);
+    }
+  }, [keyboardVisible]);
+
+  // =====================================================
+  // DISMISS KEYBOARD
+  // =====================================================
 
   const dismissKeyboard = () => {
     Keyboard.dismiss();
   };
 
+  // =====================================================
+  // RENDER
+  // =====================================================
+
   return (
-    <TouchableWithoutFeedback onPress={dismissKeyboard}>
+    <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
       <View className="flex-1 bg-[#faf8f3]">
-        {/* HEADER */}
+        {/* =====================================================
+            HEADER
+        ===================================================== */}
+
         <View>
           <LinearGradient
             colors={["#0d2e1f", "#1a4a35", "#0d2e1f"]}
@@ -250,12 +331,22 @@ export default function Chat() {
             }}
           >
             {/* Decorative circle */}
+
             <View
               className="absolute rounded-full border border-white/5"
-              style={{ width: 160, height: 160, top: -60, right: -40 }}
+              style={{
+                width: 160,
+                height: 160,
+                top: -60,
+                right: -40,
+              }}
             />
 
+            {/* Header content */}
+
             <View className="flex-row items-center">
+              {/* BACK */}
+
               <TouchableOpacity
                 onPress={() => {
                   if (router.canGoBack()) {
@@ -267,26 +358,34 @@ export default function Chat() {
                 <Ionicons name="chevron-back" size={20} color="#c9a96e" />
               </TouchableOpacity>
 
-              {/* Monogram avatar */}
+              {/* MONOGRAM */}
+
               <View className="w-10 h-10 rounded-full bg-[#c9a96e]/20 border border-[#c9a96e]/40 justify-center items-center ml-3">
                 <Text
                   className="text-[#c9a96e] text-sm font-bold"
-                  style={{ fontFamily: "Georgia" }}
+                  style={{
+                    fontFamily: "Georgia",
+                  }}
                 >
                   {(name || "A").charAt(0).toUpperCase()}
                 </Text>
               </View>
 
+              {/* USER NAME */}
+
               <View className="ml-3">
                 <Text
                   className="text-white text-lg"
-                  style={{ fontFamily: "Georgia" }}
+                  style={{
+                    fontFamily: "Georgia",
+                  }}
                 >
                   {name || "Agent"}
                 </Text>
 
                 <View className="flex-row items-center gap-1.5 mt-0.5">
                   <View className="w-1.5 h-1.5 rounded-full bg-[#c9a96e]" />
+
                   <Text className="text-white/50 text-[11px] tracking-widest uppercase">
                     Online
                   </Text>
@@ -296,105 +395,175 @@ export default function Chat() {
           </LinearGradient>
         </View>
 
-        {/* CHAT LIST */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={{
-            padding: 20,
-            paddingBottom: 90,
-          }}
-          showsVerticalScrollIndicator={false}
-          onLayout={() => {
-            flatListRef.current?.scrollToEnd({
-              animated: false,
-            });
-          }}
-          renderItem={({ item, index }) => {
-            const isMe = item.message.sender_id === user.id;
+        {/* =====================================================
+            CHAT CONTENT
+        ===================================================== */}
 
-            const isLast = index === messages.length - 1;
+        <View className="flex-1">
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id.toString()}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={{
+              padding: 20,
+              paddingBottom: 20,
 
-            return (
-              <View className={`mb-3 ${isMe ? "items-end" : "items-start"}`}>
-                {/* MESSAGE BUBBLE */}
-                {isMe ? (
-                  <LinearGradient
-                    colors={["#1a4a35", "#0d2e1f"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{
-                      borderRadius: 22,
-                      borderBottomRightRadius: 4,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      maxWidth: "80%",
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.1,
-                      shadowRadius: 4,
-                      elevation: 2,
-                    }}
-                  >
-                    <Text className="text-white text-[15px]">
-                      {item.message.message}
-                    </Text>
-                  </LinearGradient>
-                ) : (
-                  <View
-                    className="px-4 py-3 rounded-[22px] max-w-[80%] bg-white border border-[#1a4a35]/10"
-                    style={{
-                      borderBottomLeftRadius: 4,
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 1 },
-                      shadowOpacity: 0.04,
-                      shadowRadius: 3,
-                      elevation: 1,
-                    }}
-                  >
-                    <Text className="text-[#1a4a35] text-[15px]">
-                      {item.message.message}
-                    </Text>
-                  </View>
-                )}
+              flexGrow: messages.length === 0 ? 1 : 0,
+            }}
+            showsVerticalScrollIndicator={false}
+            onLayout={() => {
+              flatListRef.current?.scrollToEnd({
+                animated: false,
+              });
+            }}
+            onContentSizeChange={() => {
+              flatListRef.current?.scrollToEnd({
+                animated: true,
+              });
+            }}
+            renderItem={({ item, index }) => {
+              const isMe = item.message.sender_id === user.id;
 
-                {/* STATUS */}
-                {isMe && isLast && (
-                  <View className="flex-row items-center mt-1.5 mr-1 gap-1">
-                    {item.status === "sent" && item.is_read && (
-                      <View className="w-1 h-1 rounded-full bg-[#c9a96e]" />
-                    )}
-                    <Text
-                      className={`text-[11px] tracking-wide ${
-                        item.status === "failed"
-                          ? "text-red-500"
-                          : "text-[#1a4a35]/40"
-                      }`}
+              const isLast = index === messages.length - 1;
+
+              return (
+                <View className={`mb-3 ${isMe ? "items-end" : "items-start"}`}>
+                  {/* =================================================
+                      MESSAGE BUBBLE
+                  ================================================= */}
+
+                  {isMe ? (
+                    <LinearGradient
+                      colors={["#1a4a35", "#0d2e1f"]}
+                      start={{
+                        x: 0,
+                        y: 0,
+                      }}
+                      end={{
+                        x: 1,
+                        y: 1,
+                      }}
+                      style={{
+                        borderRadius: 22,
+                        borderBottomRightRadius: 4,
+
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+
+                        maxWidth: "80%",
+
+                        shadowColor: "#000",
+
+                        shadowOffset: {
+                          width: 0,
+                          height: 2,
+                        },
+
+                        shadowOpacity: 0.1,
+
+                        shadowRadius: 4,
+
+                        elevation: 2,
+                      }}
                     >
-                      {item.status === "sending" && "Sending..."}
+                      <Text className="text-white text-[15px]">
+                        {item.message.message}
+                      </Text>
+                    </LinearGradient>
+                  ) : (
+                    <View
+                      className="px-4 py-3 rounded-[22px] max-w-[80%] bg-white border border-[#1a4a35]/10"
+                      style={{
+                        borderBottomLeftRadius: 4,
 
-                      {item.status === "failed" && "Failed to send"}
+                        shadowColor: "#000",
 
-                      {item.status === "sent" &&
-                        (item.is_read ? "Seen" : "Sent")}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          }}
-        />
+                        shadowOffset: {
+                          width: 0,
+                          height: 1,
+                        },
 
-        {/* INPUT */}
+                        shadowOpacity: 0.04,
+
+                        shadowRadius: 3,
+
+                        elevation: 1,
+                      }}
+                    >
+                      <Text className="text-[#1a4a35] text-[15px]">
+                        {item.message.message}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* =================================================
+                      STATUS
+                  ================================================= */}
+
+                  {isMe && isLast && (
+                    <View className="flex-row items-center mt-1.5 mr-1 gap-1">
+                      {item.status === "sent" && item.is_read && (
+                        <View className="w-1 h-1 rounded-full bg-[#c9a96e]" />
+                      )}
+
+                      <Text
+                        className={`text-[11px] tracking-wide ${
+                          item.status === "failed"
+                            ? "text-red-500"
+                            : "text-[#1a4a35]/40"
+                        }`}
+                      >
+                        {item.status === "sending" && "Sending..."}
+
+                        {item.status === "failed" && "Failed to send"}
+
+                        {item.status === "sent" &&
+                          (item.is_read ? "Seen" : "Sent")}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            }}
+          />
+        </View>
+
+        {/* =====================================================
+            MESSAGE INPUT  (manual keyboard offset via marginBottom)
+        ===================================================== */}
+
         <View
-          className="px-4 py-3 bg-white border-t border-[#1a4a35]/10"
+          className="bg-white border-t border-[#1a4a35]/10"
           style={{
-            paddingBottom: insets.bottom + 5,
+            paddingHorizontal: 16,
+            paddingTop: 10,
+
+            // Push the input up by the exact keyboard height when visible.
+            // iOS already reserves the safe-area bottom inset, so subtract it
+            // to avoid a gap above the keyboard.
+            marginBottom: keyboardVisible
+              ? Platform.OS === "ios"
+                ? Math.max(keyboardHeight - insets.bottom, 0)
+                : keyboardHeight
+              : 0,
+
+            // Bottom padding:
+            //  - keyboard open  → small fixed 8
+            //  - keyboard closed → respect home indicator on iOS
+            paddingBottom: keyboardVisible
+              ? 8
+              : Platform.OS === "ios"
+                ? Math.max(insets.bottom, 8)
+                : 8,
           }}
         >
           <View className="flex-row items-end">
-            {/* AUTO HEIGHT INPUT */}
+            {/* =================================================
+                TEXT INPUT
+            ================================================= */}
+
             <TextInput
               ref={inputRef}
               value={text}
@@ -406,38 +575,57 @@ export default function Chat() {
               onContentSizeChange={(e) => {
                 const height = e.nativeEvent.contentSize.height;
 
-                if (height < 140) {
-                  setInputHeight(Math.max(45, height));
-                }
+                setInputHeight(Math.min(140, Math.max(45, height)));
               }}
               style={{
                 height: inputHeight,
+                minHeight: 45,
                 maxHeight: 140,
                 textAlignVertical: "top",
+                paddingTop: 12,
+                paddingBottom: 10,
+                marginBottom: 15,
+                includeFontPadding: true,
               }}
-              className="flex-1 bg-[#faf8f3] rounded-3xl px-4 py-3 mr-2 text-[15px] text-[#1a4a35] border border-[#1a4a35]/10"
+              className="flex-1 bg-[#faf8f3] rounded-3xl px-4 mr-2 text-[15px] text-[#1a4a35] border border-[#1a4a35]/10"
             />
 
-            {/* SEND */}
+            {/* =================================================
+                SEND BUTTON
+            ================================================= */}
+
             <TouchableOpacity
               onPress={sendMessage}
               disabled={!text.trim()}
               activeOpacity={0.85}
               style={{
                 height: 45,
+
                 width: 45,
+
                 borderRadius: 22.5,
+
                 overflow: "hidden",
+
+                marginBottom: 15,
               }}
             >
               {text.trim() ? (
                 <LinearGradient
                   colors={["#1a4a35", "#0d2e1f"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                  start={{
+                    x: 0,
+                    y: 0,
+                  }}
+                  end={{
+                    x: 1,
+                    y: 1,
+                  }}
                   style={{
                     flex: 1,
+
                     justifyContent: "center",
+
                     alignItems: "center",
                   }}
                 >

@@ -981,7 +981,7 @@ export default function Dashboard() {
 
                 {/* GOLD START/END ACCENT */}
 
-                {completionRate > 0 && (
+                {completionRate > 0 && completionRate < 100 && (
                   <Circle
                     cx="38"
                     cy="38"

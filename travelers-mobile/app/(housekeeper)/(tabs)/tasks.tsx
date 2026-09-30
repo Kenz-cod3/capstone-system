@@ -106,12 +106,12 @@ export default function Tasks() {
 
             const normalImages = Array.isArray(room.images)
               ? room.images
-                .filter(
-                  (img: any) =>
-                    img.image_type === "normal" || !img.image_type,
-                )
-                .map((img: any) => img.url || img.image_url)
-                .filter(Boolean)
+                  .filter(
+                    (img: any) =>
+                      img.image_type === "normal" || !img.image_type,
+                  )
+                  .map((img: any) => img.url || img.image_url)
+                  .filter(Boolean)
               : [];
 
             const roomImages =
@@ -219,23 +219,23 @@ export default function Tasks() {
     key: FilterKey;
     label: string;
   }[] = [
-      {
-        key: "all",
-        label: "All",
-      },
-      {
-        key: "preparing",
-        label: "Need Clean",
-      },
-      {
-        key: "ongoing",
-        label: "Start Cleaning",
-      },
-      {
-        key: "maintenance",
-        label: "Maintenance",
-      },
-    ];
+    {
+      key: "all",
+      label: "All",
+    },
+    {
+      key: "preparing",
+      label: "Need Clean",
+    },
+    {
+      key: "ongoing",
+      label: "Start Cleaning",
+    },
+    {
+      key: "maintenance",
+      label: "Maintenance",
+    },
+  ];
 
   // =========================================================
   // SEARCH + FILTER
@@ -507,9 +507,7 @@ export default function Tasks() {
       <View
         style={{
           width: "100%",
-          height: cardHeight,
           minHeight: cardHeight,
-          maxHeight: cardHeight,
 
           marginBottom: 11,
 
@@ -520,7 +518,7 @@ export default function Tasks() {
           borderWidth: 1,
           borderColor: "#E8E4D8",
 
-          overflow: "hidden",
+          overflow: "visible",
 
           shadowColor: "#0B3D2E",
           shadowOpacity: 0.06,
@@ -648,18 +646,15 @@ export default function Tasks() {
           <View
             style={{
               flex: 1,
-              height: cardHeight,
               paddingHorizontal: 20,
               paddingVertical: 15,
-              paddingBottom: -1,
               justifyContent: "flex-start",
-              overflow: "hidden",
+              overflow: "visible",
             }}
           >
             {/* ROOM NUMBER */}
 
             <Text
-              numberOfLines={1}
               style={{
                 fontFamily: "Georgia",
                 fontSize: 17,
@@ -676,7 +671,6 @@ export default function Tasks() {
             {/* ROOM TYPE */}
 
             <Text
-              numberOfLines={1}
               style={{
                 fontSize: 10,
                 color: "#7E8984",
@@ -763,11 +757,13 @@ export default function Tasks() {
 
             {/* STATUS */}
 
+            {/* STATUS */}
+
             <View
               style={{
                 flexDirection: "row",
-                alignItems: "center",
-
+                alignItems: "flex-start",
+                width: "100%",
                 marginBottom: 7,
               }}
             >
@@ -778,10 +774,14 @@ export default function Tasks() {
               />
 
               <Text
+                ellipsizeMode="clip"
                 style={{
+                  flex: 1,
+                  minWidth: 0,
                   fontSize: 9,
                   color: "#7E8984",
                   marginLeft: 6,
+                  lineHeight: 13,
                 }}
               >
                 {statusText}

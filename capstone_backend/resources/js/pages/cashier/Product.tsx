@@ -12,7 +12,7 @@
  *   import "antd/dist/reset.css";
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
     useMutation,
     useQuery,
@@ -131,11 +131,35 @@ export default function Product() {
             return res.data;
         },
         placeholderData: keepPreviousData,
+        // Auto-poll every 5 seconds para makuha ang latest status
+        refetchInterval: 5000,
+        refetchIntervalInBackground: false,
     });
 
     const orders: any[] = data?.data ?? [];
     const lastPage: number = data?.last_page ?? 1;
     const totalOrdersOnServer: number = data?.total ?? 0;
+
+    // -----------------------------------------------------------------------
+    // Auto-poll para sa pending orders
+    //
+    // Kapag may nakita tayong pending/preparing/served orders,
+    // mag-re-refresh tayo para makuha ang updated status from webhook.
+    // -----------------------------------------------------------------------
+    useEffect(() => {
+        const hasPendingOrders = orders.some((o: any) =>
+            ["pending", "preparing", "served"].includes(o.order_status),
+        );
+
+        if (!hasPendingOrders) return;
+
+        // Manual refresh every 5 seconds kung may pending orders
+        const timer = setInterval(() => {
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+        }, 5000);
+
+        return () => clearInterval(timer);
+    }, [orders, queryClient]);
 
     // -----------------------------------------------------------------------
     // Status mutation

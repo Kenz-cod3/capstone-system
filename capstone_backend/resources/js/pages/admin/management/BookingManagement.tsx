@@ -100,7 +100,7 @@ interface Room {
 interface BookingPayment {
     id: number;
     amount: number;
-    payment_method: "cash" | "gcash" | "bank";
+    payment_method: "cash" | "gcash" | "bank" | "qrph";
     payment_status: "pending" | "paid" | "refunded" | "failed";
     gcash_reference?: string;
     bank_reference?: string;
@@ -161,6 +161,7 @@ interface BookedRoom {
         deleted_at?: string | null;
         user?: {
             id: number;
+            avatar_url?: string | null;
             first_name?: string;
             last_name?: string;
             email?: string;
@@ -204,6 +205,7 @@ interface BookedRoom {
     deleted_at?: string | null;
     user?: {
         id: number;
+        avatar_url?: string | null;
         first_name?: string;
         last_name?: string;
         email?: string;
@@ -258,6 +260,7 @@ interface History {
 
 interface User {
     id: number;
+    avatar_url?: string | null;
     first_name?: string;
     middle_name?: string;
     last_name?: string;
@@ -352,6 +355,84 @@ interface PaginatedResponse {
     total: number;
     from: number | null;
     to: number | null;
+}
+
+function GuestAvatar({
+    src,
+    initials,
+    size = 28,
+}: {
+    src?: string;
+    initials: string;
+    size?: number;
+}) {
+    const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+        src ? "loading" : "error",
+    );
+    const imgRef = useRef<HTMLImageElement>(null);
+
+    useEffect(() => {
+        if (!src) {
+            setStatus("error");
+            return;
+        }
+        // Kung cached na ang image, loaded na agad
+        if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+            setStatus("loaded");
+        } else {
+            setStatus("loading");
+        }
+    }, [src]);
+
+    // Walang image (walk-in) o nag-error: initials lang
+    if (!src || status === "error") {
+        return (
+            <Avatar
+                style={{
+                    backgroundColor: MINT_GREEN_LIGHT,
+                    color: MINT_GREEN,
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                }}
+                size={size}
+            >
+                {initials || "G"}
+            </Avatar>
+        );
+    }
+
+    return (
+        <div
+            style={{
+                position: "relative",
+                width: size,
+                height: size,
+                flexShrink: 0,
+            }}
+        >
+            {status === "loading" && (
+                <div
+                    className="avatar-skeleton"
+                    style={{ width: size, height: size }}
+                />
+            )}
+            <img
+                ref={imgRef}
+                src={src}
+                alt=""
+                onLoad={() => setStatus("loaded")}
+                onError={() => setStatus("error")}
+                style={{
+                    width: size,
+                    height: size,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    display: status === "loaded" ? "block" : "none",
+                }}
+            />
+        </div>
+    );
 }
 
 export default function Bookings() {
@@ -1912,19 +1993,23 @@ export default function Bookings() {
                 });
             }
 
-            items.push({
-                key: "trash",
-                label: "Move to Trash",
-                danger: true,
-                onClick: () => handleDeleteAction(record),
-            });
+            if (userRole?.toLowerCase() === "admin") {
+                items.push({
+                    key: "trash",
+                    label: "Move to Trash",
+                    danger: true,
+                    onClick: () => handleDeleteAction(record),
+                });
+            }
         } else if (type === "history") {
-            items.push({
-                key: "trash",
-                label: "Move to Trash",
-                danger: true,
-                onClick: () => handleDeleteAction(record),
-            });
+            if (userRole?.toLowerCase() === "admin") {
+                items.push({
+                    key: "trash",
+                    label: "Move to Trash",
+                    danger: true,
+                    onClick: () => handleDeleteAction(record),
+                });
+            }
         } else if (type === "trash") {
             items.push(
                 {
@@ -2049,6 +2134,7 @@ export default function Bookings() {
                     .toUpperCase()
                     .slice(0, 2);
                 let phone: string | undefined;
+                const avatarUrl = record.user?.avatar_url || undefined;
 
                 if (record.user) {
                     phone = record.user.contact_number;
@@ -2064,18 +2150,11 @@ export default function Bookings() {
                             gap: 8,
                         }}
                     >
-                        <Avatar
-                            style={{
-                                backgroundColor: MINT_GREEN_LIGHT,
-                                color: MINT_GREEN,
-                                fontSize: "10px",
-                                fontWeight: 600,
-                                flexShrink: 0,
-                            }}
+                        <GuestAvatar
+                            src={avatarUrl}
+                            initials={initials}
                             size={28}
-                        >
-                            {initials || "G"}
-                        </Avatar>
+                        />
                         <div>
                             <Text
                                 strong
@@ -2370,7 +2449,10 @@ export default function Bookings() {
             key: "payment",
             width: "8%",
             render: (_: any, record: BookingRow) => {
-                const payment = record.payments?.[0];
+                const payment =
+                    record.payments?.find((p) => p.payment_status === "paid") ??
+                    record.payments?.[0];
+
                 const status = payment?.payment_status ?? "pending";
                 const color = status === "paid" ? "green" : "orange";
                 const icon =
@@ -3013,7 +3095,6 @@ export default function Bookings() {
             style={{
                 padding: "0 0 24px 0",
                 background: "#f8fafc",
-                minHeight: "100vh",
             }}
         >
             <style>
@@ -3248,6 +3329,17 @@ export default function Bookings() {
                             color: ${MINT_GREEN};
                         }
                         
+                        .avatar-skeleton {
+                            border-radius: 50%;
+                            background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+                            background-size: 200% 100%;
+                            animation: avatarShimmer 1.2s ease-in-out infinite;
+                        }
+                        @keyframes avatarShimmer {
+                            0% { background-position: 200% 0; }
+                            100% { background-position: -200% 0; }
+                        }
+
                         @media (max-width: 768px) {
                             .ant-table { font-size: 10px; }
                             .ant-table-thead > tr > th { font-size: 9px !important; }

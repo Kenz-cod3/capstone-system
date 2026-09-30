@@ -18,6 +18,10 @@ Route::prefix('notifications')->group(function () {
     // single notification
     Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
 });
+Route::put('/notifications/{id}/unread', [
+    NotificationController::class,
+    'markAsUnread'
+]);
 
 // use Illuminate\Support\Facades\Route;
 // use App\Http\Controllers\NotificationController;

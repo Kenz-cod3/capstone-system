@@ -91,11 +91,11 @@ class BookingPaymentController extends Controller
             'bank_reference' =>  'nullable|string',
         ]);
 
-        // Automatically set payment status
+        // Cash lang ang puwedeng agad paid. Gcash/bank/qrph: webhook lang ang mag-paid.
         if ($validated['payment_method'] === 'cash') {
             $validated['payment_status'] = 'paid';
         } else {
-            $validated['payment_status'] = $validated['payment_status'] ?? 'pending';
+            $validated['payment_status'] = 'pending';
         }
 
         $booking = Booking::findOrFail(
@@ -542,6 +542,18 @@ class BookingPaymentController extends Controller
             'gcash_reference' => 'nullable|string',
             'bank_reference' =>  'nullable|string',
         ]);
+
+        $finalMethod = $validated['payment_method'] ?? $payment->payment_method;
+
+        if (
+            ($validated['payment_status'] ?? null) === 'paid'
+            && $finalMethod !== 'cash'
+            && $payment->payment_status !== 'paid'
+        ) {
+            return response()->json([
+                'message' => 'Non-cash payments can only be confirmed by the payment provider.'
+            ], 403);
+        }
 
         $payment->update($validated);
 

@@ -11,5 +11,7 @@ Route::prefix('paymongo')->group(function () {
     // NEW — Dynamic QR Ph (Payment Intent), renders inside our own page
     Route::post('/qr/create', [PayMongoController::class, 'createQrPayment']);
     Route::get('/qr/status/{paymentIntentId}', [PayMongoController::class, 'checkQrStatus']);
+    Route::get('/qr/fee-status/{paymentIntentId}', [PayMongoController::class, 'feeStatus']);
 
+    Route::get('/payment-logs', [PayMongoController::class, 'logs']);
 });

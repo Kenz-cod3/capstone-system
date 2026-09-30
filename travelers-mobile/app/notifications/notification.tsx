@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   StatusBar,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { useEffect, useState, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +26,8 @@ import { useCallback } from "react";
 
 type NotificationType = {
   id: number;
+  user_id?: number;
+  booking_id?: number;
   title: string;
   message: string;
   is_read?: boolean;
@@ -41,7 +45,13 @@ export default function Notification() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [openedSwipeableId, setOpenedSwipeableId] = useState<number | null>(null);
+  const [openedSwipeableId, setOpenedSwipeableId] = useState<number | null>(
+    null,
+  );
+  const [selectedNotification, setSelectedNotification] =
+    useState<NotificationType | null>(null);
+
+  const [showNotificationDetails, setShowNotificationDetails] = useState(false);
   const isProcessingRead = useRef(false);
 
   const { user, isLoaded } = useAuthStore();
@@ -54,7 +64,7 @@ export default function Notification() {
       if (user) {
         fetchNotifications(true);
       }
-    }, [user])
+    }, [user]),
   );
 
   const fetchNotifications = async (showLoader = false) => {
@@ -99,7 +109,7 @@ export default function Notification() {
         sectionTitle = "Yesterday";
       } else {
         const daysAgo = Math.floor(
-          (today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+          (today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24),
         );
         if (daysAgo < 7) {
           sectionTitle = `${daysAgo} days ago`;
@@ -153,9 +163,7 @@ export default function Notification() {
       await api.put(`/notifications/${id}/read`);
 
       const updatedData = data.map((item) =>
-        item.id === id
-          ? { ...item, is_read: true }
-          : item
+        item.id === id ? { ...item, is_read: true } : item,
       );
 
       setData(updatedData);
@@ -164,6 +172,43 @@ export default function Notification() {
       console.log(error);
     } finally {
       isProcessingRead.current = false;
+    }
+  };
+
+  const markAsUnread = async (id: number) => {
+    try {
+      await api.put(`/notifications/${id}/unread`);
+
+      const updatedData = data.map((item) =>
+        item.id === id ? { ...item, is_read: false } : item,
+      );
+
+      setData(updatedData);
+      groupNotificationsByDate(updatedData);
+
+      setSelectedNotification((current) =>
+        current && current.id === id ? { ...current, is_read: false } : current,
+      );
+    } catch (error) {
+      console.log("MARK AS UNREAD ERROR:", error);
+    }
+  };
+  
+  const openNotificationDetails = async (item: NotificationType) => {
+    // Close any opened swipe action first
+    if (swipeableRefs.current[item.id]) {
+      swipeableRefs.current[item.id]?.close();
+    }
+
+    setOpenedSwipeableId(null);
+
+    // Show notification details FIRST
+    setSelectedNotification(item);
+    setShowNotificationDetails(true);
+
+    // Mark as read
+    if (!item.is_read) {
+      await markAsRead(item.id);
     }
   };
 
@@ -236,7 +281,14 @@ export default function Notification() {
           ) : (
             <>
               <Ionicons name="trash-outline" size={22} color="#fff" />
-              <Text style={{ color: "#fff", fontSize: 11, marginTop: 4, letterSpacing: 1 }}>
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 11,
+                  marginTop: 4,
+                  letterSpacing: 1,
+                }}
+              >
                 Delete
               </Text>
             </>
@@ -264,19 +316,41 @@ export default function Notification() {
   // ── LOADING ──
   if (!isLoaded || loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#faf8f3" }}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#faf8f3",
+        }}
+      >
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle="light-content"
+        />
         <View
           style={{
-            width: 64, height: 64, borderRadius: 32,
-            borderWidth: 1, borderColor: "rgba(26,74,53,0.2)",
-            justifyContent: "center", alignItems: "center", marginBottom: 20,
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            borderWidth: 1,
+            borderColor: "rgba(26,74,53,0.2)",
+            justifyContent: "center",
+            alignItems: "center",
+            marginBottom: 20,
           }}
         >
           <ActivityIndicator size="large" color="#1a4a35" />
         </View>
         <Text
-          style={{ color: "#1a4a35", fontSize: 14, letterSpacing: 3, textTransform: "uppercase", fontFamily: "Georgia" }}
+          style={{
+            color: "#1a4a35",
+            fontSize: 14,
+            letterSpacing: 3,
+            textTransform: "uppercase",
+            fontFamily: "Georgia",
+          }}
         >
           Loading
         </Text>
@@ -288,7 +362,11 @@ export default function Notification() {
   if (data.length === 0) {
     return (
       <View style={{ flex: 1, backgroundColor: "#faf8f3" }}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle="light-content"
+        />
 
         <LinearGradient
           colors={["#0d2e1f", "#1a4a35"]}
@@ -301,48 +379,115 @@ export default function Notification() {
           }}
         >
           {/* Decorative circles */}
-          <View style={{ position: "absolute", width: 240, height: 240, top: -60, right: -60, borderRadius: 120, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }} />
-          <View style={{ position: "absolute", width: 140, height: 140, top: -10, right: -10, borderRadius: 70, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }} />
+          <View
+            style={{
+              position: "absolute",
+              width: 240,
+              height: 240,
+              top: -60,
+              right: -60,
+              borderRadius: 120,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.05)",
+            }}
+          />
+          <View
+            style={{
+              position: "absolute",
+              width: 140,
+              height: 140,
+              top: -10,
+              right: -10,
+              borderRadius: 70,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.05)",
+            }}
+          />
 
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity
               onPress={() => router.back()}
               style={{
-                width: 40, height: 40, borderRadius: 20,
+                width: 40,
+                height: 40,
+                borderRadius: 20,
                 backgroundColor: "rgba(0,0,0,0.2)",
-                borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-                justifyContent: "center", alignItems: "center",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.15)",
+                justifyContent: "center",
+                alignItems: "center",
               }}
               activeOpacity={0.8}
             >
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </TouchableOpacity>
             <View style={{ marginLeft: 16 }}>
-              <Text style={{ color: "#c9a96e", fontSize: 10, letterSpacing: 4, textTransform: "uppercase", marginBottom: 2 }}>
+              <Text
+                style={{
+                  color: "#c9a96e",
+                  fontSize: 10,
+                  letterSpacing: 4,
+                  textTransform: "uppercase",
+                  marginBottom: 2,
+                }}
+              >
                 Lyn Enia's Inn
               </Text>
-              <Text style={{ color: "#fff", fontSize: 28, fontFamily: "Georgia" }}>
+              <Text
+                style={{ color: "#fff", fontSize: 28, fontFamily: "Georgia" }}
+              >
                 Notifications
               </Text>
             </View>
           </View>
         </LinearGradient>
 
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }}>
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            paddingHorizontal: 32,
+          }}
+        >
           <View
             style={{
-              width: 80, height: 80, borderRadius: 40,
+              width: 80,
+              height: 80,
+              borderRadius: 40,
               backgroundColor: "rgba(26,74,53,0.06)",
-              borderWidth: 1, borderColor: "rgba(26,74,53,0.1)",
-              justifyContent: "center", alignItems: "center", marginBottom: 20,
+              borderWidth: 1,
+              borderColor: "rgba(26,74,53,0.1)",
+              justifyContent: "center",
+              alignItems: "center",
+              marginBottom: 20,
             }}
           >
-            <Ionicons name="notifications-off-outline" size={32} color="#1a4a35" style={{ opacity: 0.4 }} />
+            <Ionicons
+              name="notifications-off-outline"
+              size={32}
+              color="#1a4a35"
+              style={{ opacity: 0.4 }}
+            />
           </View>
-          <Text style={{ color: "#1a4a35", fontSize: 18, fontFamily: "Georgia", marginBottom: 8 }}>
+          <Text
+            style={{
+              color: "#1a4a35",
+              fontSize: 18,
+              fontFamily: "Georgia",
+              marginBottom: 8,
+            }}
+          >
             No notifications yet
           </Text>
-          <Text style={{ color: "rgba(26,74,53,0.4)", fontSize: 13, textAlign: "center", lineHeight: 20 }}>
+          <Text
+            style={{
+              color: "rgba(26,74,53,0.4)",
+              fontSize: 13,
+              textAlign: "center",
+              lineHeight: 20,
+            }}
+          >
             You're all caught up!
           </Text>
         </View>
@@ -353,7 +498,11 @@ export default function Notification() {
   // ── MAIN ──
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#faf8f3" }}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
       {/* ── HEADER ── */}
       <LinearGradient
@@ -367,29 +516,71 @@ export default function Notification() {
         }}
       >
         {/* Decorative circles */}
-        <View style={{ position: "absolute", width: 240, height: 240, top: -60, right: -60, borderRadius: 120, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }} />
-        <View style={{ position: "absolute", width: 140, height: 140, top: -10, right: -10, borderRadius: 70, borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }} />
+        <View
+          style={{
+            position: "absolute",
+            width: 240,
+            height: 240,
+            top: -60,
+            right: -60,
+            borderRadius: 120,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.05)",
+          }}
+        />
+        <View
+          style={{
+            position: "absolute",
+            width: 140,
+            height: 140,
+            top: -10,
+            right: -10,
+            borderRadius: 70,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.05)",
+          }}
+        />
 
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           {/* Back + title */}
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <TouchableOpacity
               onPress={() => router.back()}
               style={{
-                width: 40, height: 40, borderRadius: 20,
+                width: 40,
+                height: 40,
+                borderRadius: 20,
                 backgroundColor: "rgba(0,0,0,0.2)",
-                borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-                justifyContent: "center", alignItems: "center",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.15)",
+                justifyContent: "center",
+                alignItems: "center",
               }}
               activeOpacity={0.8}
             >
               <Ionicons name="chevron-back" size={22} color="#fff" />
             </TouchableOpacity>
             <View style={{ marginLeft: 16 }}>
-              <Text style={{ color: "#c9a96e", fontSize: 10, letterSpacing: 4, textTransform: "uppercase", marginBottom: 2 }}>
+              <Text
+                style={{
+                  color: "#c9a96e",
+                  fontSize: 10,
+                  letterSpacing: 4,
+                  textTransform: "uppercase",
+                  marginBottom: 2,
+                }}
+              >
                 Lyn Enia's Inn
               </Text>
-              <Text style={{ color: "#fff", fontSize: 28, fontFamily: "Georgia" }}>
+              <Text
+                style={{ color: "#fff", fontSize: 28, fontFamily: "Georgia" }}
+              >
                 Notifications
               </Text>
             </View>
@@ -409,12 +600,22 @@ export default function Notification() {
               }}
               style={{
                 backgroundColor: "rgba(201,169,110,0.15)",
-                borderWidth: 1, borderColor: "rgba(201,169,110,0.3)",
-                paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+                borderWidth: 1,
+                borderColor: "rgba(201,169,110,0.3)",
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 999,
               }}
               activeOpacity={0.8}
             >
-              <Text style={{ color: "#c9a96e", fontSize: 11, letterSpacing: 1, textTransform: "uppercase" }}>
+              <Text
+                style={{
+                  color: "#c9a96e",
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
                 Mark all read
               </Text>
             </TouchableOpacity>
@@ -480,16 +681,14 @@ export default function Notification() {
                 <TouchableOpacity
                   delayPressIn={100}
                   activeOpacity={0.7}
-                  onPress={() => {
-                    if (item.is_read) return;
-
-                    markAsRead(item.id);
-                  }}
+                  onPress={() => openNotificationDetails(item)}
                   style={{
                     height: 85,
                     paddingVertical: 12,
                     paddingHorizontal: 20,
-                    backgroundColor: item.is_read ? "#faf8f3" : "rgba(26,74,53,0.04)",
+                    backgroundColor: item.is_read
+                      ? "#faf8f3"
+                      : "rgba(26,74,53,0.04)",
                     borderBottomWidth: 1,
                     borderBottomColor: "rgba(26,74,53,0.06)",
                     opacity: deletingId === item.id ? 0.4 : 1,
@@ -500,7 +699,9 @@ export default function Notification() {
                   {/* Icon */}
                   <View
                     style={{
-                      width: 40, height: 40, borderRadius: 20,
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
                       backgroundColor: item.is_read
                         ? "rgba(26,74,53,0.06)"
                         : "rgba(201,169,110,0.12)",
@@ -514,7 +715,9 @@ export default function Notification() {
                     }}
                   >
                     <Ionicons
-                      name={item.is_read ? "notifications-outline" : "notifications"}
+                      name={
+                        item.is_read ? "notifications-outline" : "notifications"
+                      }
                       size={18}
                       color={item.is_read ? "rgba(26,74,53,0.35)" : "#c9a96e"}
                     />
@@ -522,14 +725,23 @@ export default function Notification() {
 
                   {/* Text */}
                   <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 3,
+                      }}
+                    >
                       <Text
                         numberOfLines={1}
                         style={{
                           flex: 1,
                           fontSize: 14,
                           fontFamily: "Georgia",
-                          color: item.is_read ? "rgba(26,74,53,0.5)" : "#1a4a35",
+                          color: item.is_read
+                            ? "rgba(26,74,53,0.5)"
+                            : "#1a4a35",
                         }}
                       >
                         {item.title}
@@ -538,7 +750,9 @@ export default function Notification() {
                       {!item.is_read && (
                         <View
                           style={{
-                            width: 7, height: 7, borderRadius: 4,
+                            width: 7,
+                            height: 7,
+                            borderRadius: 4,
                             backgroundColor: "#c9a96e",
                             marginLeft: 8,
                           }}
@@ -550,7 +764,9 @@ export default function Notification() {
                       numberOfLines={1}
                       style={{
                         fontSize: 12,
-                        color: item.is_read ? "rgba(26,74,53,0.35)" : "rgba(26,74,53,0.6)",
+                        color: item.is_read
+                          ? "rgba(26,74,53,0.35)"
+                          : "rgba(26,74,53,0.6)",
                         lineHeight: 18,
                       }}
                     >
@@ -558,9 +774,26 @@ export default function Notification() {
                     </Text>
 
                     {item.created_at && (
-                      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 3 }}>
-                        <Ionicons name="time-outline" size={11} color="rgba(26,74,53,0.3)" />
-                        <Text style={{ fontSize: 11, color: "rgba(26,74,53,0.3)", marginLeft: 3, letterSpacing: 0.5 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          marginTop: 3,
+                        }}
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={11}
+                          color="rgba(26,74,53,0.3)"
+                        />
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: "rgba(26,74,53,0.3)",
+                            marginLeft: 3,
+                            letterSpacing: 0.5,
+                          }}
+                        >
                           {getTimeAgo(item.created_at)}
                         </Text>
                       </View>
@@ -572,6 +805,276 @@ export default function Notification() {
           </View>
         )}
       />
+      {/* =====================================================
+    NOTIFICATION DETAILS MODAL
+===================================================== */}
+
+      <Modal
+        visible={showNotificationDetails}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowNotificationDetails(false);
+          setSelectedNotification(null);
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#faf8f3",
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              maxHeight: "75%",
+              paddingBottom: insets.bottom + 20,
+            }}
+          >
+            {/* HANDLE */}
+            <View
+              style={{
+                width: 42,
+                height: 5,
+                borderRadius: 3,
+                backgroundColor: "rgba(26,74,53,0.15)",
+                alignSelf: "center",
+                marginTop: 10,
+                marginBottom: 8,
+              }}
+            />
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{
+                paddingHorizontal: 24,
+                paddingTop: 12,
+              }}
+            >
+              {/* HEADER */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginBottom: 22,
+                }}
+              >
+                <View
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 26,
+                    backgroundColor: "rgba(201,169,110,0.14)",
+                    borderWidth: 1,
+                    borderColor: "rgba(201,169,110,0.3)",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginRight: 14,
+                  }}
+                >
+                  <Ionicons name="notifications" size={23} color="#c9a96e" />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 20,
+                      color: "#1a4a35",
+                      fontFamily: "Georgia",
+                    }}
+                  >
+                    {selectedNotification?.title}
+                  </Text>
+
+                  {selectedNotification?.created_at && (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: "rgba(26,74,53,0.4)",
+                        marginTop: 4,
+                      }}
+                    >
+                      {getTimeAgo(selectedNotification.created_at)}
+                    </Text>
+                  )}
+                </View>
+
+                {/* CLOSE */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowNotificationDetails(false);
+                    setSelectedNotification(null);
+                  }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: "rgba(26,74,53,0.06)",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons name="close" size={20} color="#1a4a35" />
+                </TouchableOpacity>
+              </View>
+
+              {/* DETAILS */}
+              <View
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 20,
+                  padding: 18,
+                  borderWidth: 1,
+                  borderColor: "rgba(26,74,53,0.08)",
+                  marginBottom: 18,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: 2,
+                    textTransform: "uppercase",
+                    color: "rgba(26,74,53,0.4)",
+                    marginBottom: 10,
+                  }}
+                >
+                  Notification Details
+                </Text>
+
+                <Text
+                  style={{
+                    fontSize: 15,
+                    lineHeight: 23,
+                    color: "rgba(26,74,53,0.75)",
+                  }}
+                >
+                  {selectedNotification?.message}
+                </Text>
+              </View>
+
+              {/* BOOKING REFERENCE */}
+              {selectedNotification?.booking_id && (
+                <View
+                  style={{
+                    backgroundColor: "rgba(26,74,53,0.05)",
+                    borderRadius: 16,
+                    padding: 16,
+                    marginBottom: 20,
+                    flexDirection: "row",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={20} color="#1a4a35" />
+
+                  <View style={{ marginLeft: 12 }}>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                        color: "rgba(26,74,53,0.4)",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Booking
+                    </Text>
+
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        color: "#1a4a35",
+                        fontFamily: "Georgia",
+                        marginTop: 3,
+                      }}
+                    >
+                      Booking #{selectedNotification.booking_id}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* VIEW BOOKING */}
+              {selectedNotification?.booking_id && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    const bookingId = selectedNotification.booking_id;
+
+                    setShowNotificationDetails(false);
+                    setSelectedNotification(null);
+
+                    if (bookingId) {
+                      router.push({
+                        pathname: "/bookings",
+                        params: {
+                          booking_id: String(bookingId),
+                        },
+                      });
+                    }
+                  }}
+                  style={{
+                    backgroundColor: "#1a4a35",
+                    height: 52,
+                    borderRadius: 18,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    flexDirection: "row",
+                    marginBottom: 10,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 13,
+                      fontWeight: "600",
+                      letterSpacing: 1,
+                    }}
+                  >
+                    VIEW BOOKING
+                  </Text>
+
+                  <Ionicons
+                    name="arrow-forward"
+                    size={17}
+                    color="#c9a96e"
+                    style={{ marginLeft: 8 }}
+                  />
+                </TouchableOpacity>
+              )}
+
+              {/* CLOSE */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setShowNotificationDetails(false);
+                  setSelectedNotification(null);
+                }}
+                style={{
+                  height: 48,
+                  borderRadius: 18,
+                  borderWidth: 1,
+                  borderColor: "rgba(26,74,53,0.12)",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#1a4a35",
+                    fontSize: 13,
+                    letterSpacing: 1,
+                    fontWeight: "500",
+                  }}
+                >
+                  CLOSE
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </GestureHandlerRootView>
   );
 }

@@ -1,4 +1,3 @@
-// src/pages/WalkIn.tsx
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,6 +45,7 @@ import type { Dayjs } from "dayjs";
 import api from "@/services/api";
 import { motion, AnimatePresence } from "framer-motion";
 import ReceiptModal from "./ReceiptModal";
+import { useShift } from "@/components/StaffComponents/ShiftContext";
 
 const { Title, Text } = Typography;
 
@@ -190,6 +190,7 @@ interface QrSession {
     qrImageUrl: string;
     expirySeconds: number;
     bookingId: number;
+    paymentId?: number | null;
     testUrl?: string | null;
 }
 
@@ -273,6 +274,7 @@ interface GuestCardProps {
     selectedGuest: WalkInGuest | null;
     onSelectGuest: (guest: WalkInGuest) => void;
     onNewGuest: () => void;
+    disableNew?: boolean;
     onClearGuest: () => void;
     searchResults: WalkInGuest[];
     onSearchGuests: (searchText: string) => void;
@@ -286,6 +288,7 @@ function GuestCard({
     onClearGuest,
     searchResults,
     onSearchGuests,
+    disableNew,
 }: GuestCardProps) {
     if (selectedGuest) {
         return (
@@ -505,6 +508,7 @@ function GuestCard({
                         size="large"
                         icon={<UserPlus size={15} />}
                         onClick={onNewGuest}
+                        disabled={disableNew}
                         style={{
                             borderRadius: T.radius,
                             borderColor: T.line,
@@ -1644,6 +1648,7 @@ function QrModal({
 function WalkInContent() {
     const queryClient = useQueryClient();
     const { modal } = App.useApp();
+    const { viewOnly, openShiftModal } = useShift();
 
     const [rooms, setRooms] = useState<Room[]>([]);
     const [selectedRoomsDetails, setSelectedRoomsDetails] = useState<
@@ -1715,6 +1720,11 @@ function WalkInContent() {
         null,
     );
     const [pendingAmount, setPendingAmount] = useState<number>(0);
+    const [pendingQrPaymentId, setPendingQrPaymentId] = useState<number | null>(
+        null,
+    );
+    // false right after "Back to payment options" so nothing is pre-selected
+    const [paymentChosen, setPaymentChosen] = useState<boolean>(true);
 
     const pollTimerRef = useRef<number | null>(null);
     const countdownTimerRef = useRef<number | null>(null);
@@ -1800,6 +1810,10 @@ function WalkInContent() {
     };
 
     const handleSaveNewGuest = async () => {
+        if (viewOnly) {
+            message.warning("View only mode: please open a shift first.");
+            return;
+        }
         const local = normalizeMobile(newGuestForm.contact_number);
 
         if (!newGuestForm.first_name.trim() || !newGuestForm.last_name.trim()) {
@@ -2061,19 +2075,21 @@ function WalkInContent() {
         pollTimerRef.current = window.setInterval(async () => {
             if (qrStatusRef.current !== "waiting") return;
             try {
+                // Database lang ang tinatanong. Ang PayMongo webhook lang ang nagmamarka ng paid.
                 const res = await api.get(
-                    `/paymongo/qr/status/${session.paymentIntentId}`,
-                    { params: { client_key: session.clientKey } },
+                    `/walk-in-guests/${session.bookingId}/payment-status`,
                 );
-                if (res.data?.status === "succeeded") {
+                if (res.data?.payment_status === "failed") {
+                    stopPolling();
+                    stopCountdown();
+                    return;
+                }
+                if (res.data?.paid === true) {
                     stopPolling();
                     stopCountdown();
                     setQrStatus("succeeded");
 
-                    const confirmRes = await api.post(
-                        `/walk-in-guests/${session.bookingId}/confirm-qr`,
-                        { payment_reference: res.data?.payment_id ?? null },
-                    );
+                    const confirmRes = res;
 
                     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
                     queryClient.invalidateQueries({ queryKey: ["rooms"] });
@@ -2117,6 +2133,8 @@ function WalkInContent() {
                         setPreviewAmount(0);
                         setPendingBookingId(null);
                         setPendingAmount(0);
+                        setPendingQrPaymentId(null);
+                        setPaymentChosen(true);
                         fetchRooms();
                     }, 800);
                     return;
@@ -2127,7 +2145,11 @@ function WalkInContent() {
         }, 4000);
     };
 
-    const generateQr = async (bookingId: number, amount: number) => {
+    const generateQr = async (
+        bookingId: number,
+        amount: number,
+        paymentId?: number | null,
+    ) => {
         setQrStatus("loading");
         setQrErrorMessage("");
         setQrAmount(amount);
@@ -2135,6 +2157,7 @@ function WalkInContent() {
             const res = await api.post("/paymongo/qr/create", {
                 booking_id: bookingId,
                 amount,
+                payment_id: paymentId ?? undefined,
             });
             const session: QrSession = {
                 paymentIntentId: res.data.payment_intent_id,
@@ -2142,6 +2165,7 @@ function WalkInContent() {
                 qrImageUrl: res.data.qr_image_url,
                 expirySeconds: res.data.expiry_seconds || 1800,
                 bookingId,
+                paymentId: paymentId ?? null,
                 testUrl: res.data.test_url ?? null,
             };
             qrSessionRef.current = session;
@@ -2157,25 +2181,66 @@ function WalkInContent() {
             );
         }
     };
-
     const handleQrCancel = () => {
-        stopPolling();
-        stopCountdown();
         modal.confirm({
-            title: "Cancel QR payment?",
+            title: "Back to payment options?",
             content:
-                "The booking is reserved but unpaid. You can retry QR Ph or switch to Cash.",
-            okText: "Yes, cancel",
+                "Cancel this QR payment and return to the payment options?",
+            okText: "Yes, go back",
             okButtonProps: { danger: true },
             cancelText: "Keep waiting",
-            onOk: () => {
+            onOk: async () => {
+                stopPolling();
+                stopCountdown();
+
+                const paymentId =
+                    qrSessionRef.current?.paymentId ?? pendingQrPaymentId;
+
+                try {
+                    if (paymentId) {
+                        await api.post(
+                            `/walk-in-guests/payments/${paymentId}/cancel-qr`,
+                        );
+                    }
+                } catch (err: any) {
+                    if (err?.response?.status === 409) {
+                        // Already paid/changed: resume checking instead of going back.
+                        message.warning(
+                            err.response?.data?.message ||
+                                "This QR payment can no longer be cancelled.",
+                        );
+                        if (qrSessionRef.current) {
+                            startPolling(qrSessionRef.current);
+                        }
+                        return;
+                    }
+                    console.error("cancel-qr failed", err?.response);
+                    message.error(
+                        `Cancel failed (${err?.response?.status ?? "no response"}): ` +
+                            (err?.response?.data?.message ||
+                                err?.message ||
+                                "Try again."),
+                    );
+                    if (qrSessionRef.current) {
+                        startPolling(qrSessionRef.current);
+                    }
+                    return;
+                }
+
                 setQrModalOpen(false);
                 setQrStatus("loading");
                 setQrInFlight(false);
                 setQrSession(null);
                 qrSessionRef.current = null;
-                fetchRooms();
+
+                // Keep pendingBookingId, pendingAmount, pendingQrPaymentId
+                // and pendingPaymentIdsRef so the payment can continue.
+                if (paymentId) setPendingQrPaymentId(paymentId);
+                setPaymentMode("single");
+                setPaymentChosen(false); // staff must pick manually
+
                 queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+                message.info("QR cancelled. Please choose a payment method.");
             },
         });
     };
@@ -2185,11 +2250,15 @@ function WalkInContent() {
         if (!current) return;
         stopPolling();
         stopCountdown();
-        await generateQr(current.bookingId, qrAmount);
+        await generateQr(current.bookingId, qrAmount, current.paymentId);
     };
 
     // ---------- Submit ----------
     const handleSubmit = async () => {
+        if (viewOnly) {
+            message.warning("View only mode: please open a shift first.");
+            return;
+        }
         if (!selectedGuest) {
             message.warning("Please select or add a guest");
             return;
@@ -2199,6 +2268,106 @@ function WalkInContent() {
             return;
         }
         if (qrInFlight) return;
+
+        // Reusing an existing QR payment row -> pay it in Cash (no new booking/payment)
+        // Cancelled QR -> staff chose Split: cash now + new QR for the rest
+        if (paymentMode === "split" && pendingBookingId && pendingQrPaymentId) {
+            setLoading(true);
+            try {
+                const res = await api.post(
+                    `/walk-in-guests/payments/${pendingQrPaymentId}/resplit`,
+                    {
+                        cash_amount: splitCashAmount,
+                        qrph_amount: splitQrphAmount,
+                    },
+                );
+
+                const newQrAmount = Number(res.data.qrph_amount) || 0;
+                const newQrPaymentId = res.data.qr_payment_id;
+
+                pendingPaymentIdsRef.current = res.data.payment_ids ?? [];
+                setPendingAmount(newQrAmount);
+                setPendingQrPaymentId(newQrPaymentId);
+                setPaymentMode("single");
+                setPaymentMethod("qrph");
+                setPaymentChosen(true);
+                setSplitCashAmount(null);
+                setSplitQrphAmount(null);
+
+                message.success("Cash collected. Generating QR for the rest.");
+
+                setQrInFlight(true);
+                setQrModalOpen(true);
+                setQrAmount(newQrAmount);
+                await generateQr(pendingBookingId, newQrAmount, newQrPaymentId);
+            } catch (err: any) {
+                message.error(
+                    err?.response?.data?.message || "Failed to split payment",
+                );
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        if (
+            paymentMode === "single" &&
+            paymentMethod === "qrph" &&
+            pendingBookingId &&
+            pendingAmount > 0
+        ) {
+            if (!paymentChosen) {
+                message.warning("Please choose Cash or QR Ph");
+                return;
+            }
+            setLoading(true);
+            try {
+                const res = await api.post(
+                    `/walk-in-guests/payments/${pendingQrPaymentId}/change-to-cash`,
+                );
+
+                queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+                queryClient.invalidateQueries({ queryKey: ["rooms"] });
+                queryClient.invalidateQueries({ queryKey: ["bookings"] });
+
+                message.success("Payment received in Cash. Guest checked in.");
+
+                const legIds: (string | number)[] = res.data?.payment_ids
+                    ?.length
+                    ? res.data.payment_ids
+                    : pendingPaymentIdsRef.current;
+                if (legIds.length > 1) {
+                    setCurrentPaymentIds(legIds);
+                    setCurrentPaymentId(null);
+                } else {
+                    setCurrentPaymentIds([]);
+                    setCurrentPaymentId(String(res.data.payment_id));
+                }
+                setShowReceiptModal(true);
+
+                pendingPaymentIdsRef.current = [];
+                setSelectedGuest(null);
+                setSelectedRoomsDetails([]);
+                setSelectedRoomValue(null);
+                setPreviewAmount(0);
+                setPendingBookingId(null);
+                setPendingAmount(0);
+                setPendingQrPaymentId(null);
+                setPaymentChosen(true);
+                setPaymentMode("single");
+                setSplitCashAmount(null);
+                setSplitQrphAmount(null);
+                await fetchRooms();
+            } catch (err: any) {
+                message.error(
+                    err?.response?.data?.message ||
+                        "Failed to change payment to Cash",
+                );
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
 
         if (paymentMode === "split" && !splitIsValid) {
             message.warning(
@@ -2216,7 +2385,11 @@ function WalkInContent() {
             setQrInFlight(true);
             setQrModalOpen(true);
             setQrAmount(pendingAmount);
-            await generateQr(pendingBookingId, pendingAmount);
+            await generateQr(
+                pendingBookingId,
+                pendingAmount,
+                pendingQrPaymentId,
+            );
             return;
         }
 
@@ -2278,6 +2451,8 @@ function WalkInContent() {
                 setPreviewAmount(0);
                 setPendingBookingId(null);
                 setPendingAmount(0);
+                setPendingQrPaymentId(null);
+                setPaymentChosen(true);
                 setPaymentMode("single");
                 setSplitCashAmount(null);
                 setSplitQrphAmount(null);
@@ -2291,12 +2466,16 @@ function WalkInContent() {
                         ? Number(response.data.qrph_amount) || 0
                         : totalAmount;
 
+                const qrPaymentId = response.data.qr_payment_id ?? null;
+
                 setPendingBookingId(bookingId);
                 setPendingAmount(qrAmountToCharge);
+                setPendingQrPaymentId(qrPaymentId);
+                setPaymentChosen(true);
                 setQrInFlight(true);
                 setQrModalOpen(true);
                 setQrAmount(qrAmountToCharge);
-                await generateQr(bookingId, qrAmountToCharge);
+                await generateQr(bookingId, qrAmountToCharge, qrPaymentId);
             }
         } catch (err: any) {
             console.error("Walk-in error:", err);
@@ -2332,17 +2511,21 @@ function WalkInContent() {
 
     const splitLegsTotal =
         (Number(splitCashAmount) || 0) + (Number(splitQrphAmount) || 0);
+    // After a cancelled QR, only the unpaid leftover can be split.
+    const splitTarget = pendingQrPaymentId ? pendingAmount : totalAmount;
     const splitRemaining =
-        Math.round((totalAmount - splitLegsTotal) * 100) / 100;
+        Math.round((splitTarget - splitLegsTotal) * 100) / 100;
     const splitIsValid =
         (splitCashAmount || 0) > 0 &&
         (splitQrphAmount || 0) > 0 &&
         Math.abs(splitRemaining) < 0.01;
 
     const completeDisabled =
+        viewOnly ||
         selectedRoomsDetails.length === 0 ||
         !selectedGuest ||
         qrInFlight ||
+        (!!pendingQrPaymentId && !paymentChosen) ||
         (paymentMode === "split" && !splitIsValid);
 
     const handleCheckInChange = (date: Dayjs | null) => {
@@ -2386,425 +2569,579 @@ function WalkInContent() {
     return (
         <div
             style={{
-                minHeight: "100vh",
                 background: T.bg,
-                padding: "32px 24px 48px",
+                padding: viewOnly ? 0 : "8px 0 24px",
             }}
         >
             <div style={{ maxWidth: 1280, margin: "0 auto" }}>
                 {/* ── Header ── */}
-                <div
-                    style={{
-                        marginBottom: 28,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 16,
-                    }}
-                >
+                {!viewOnly && (
                     <div
                         style={{
+                            marginBottom: 28,
                             display: "flex",
                             alignItems: "center",
-                            gap: 12,
+                            justifyContent: "space-between",
+                            gap: 16,
                         }}
                     >
                         <div
                             style={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: 11,
-                                background: T.primary,
                                 display: "flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                boxShadow: "0 2px 8px rgba(15, 118, 110, 0.2)",
+                                gap: 12,
                             }}
                         >
-                            <Users size={20} color="#fff" />
-                        </div>
-
-                        <div>
-                            <Title
-                                level={4}
+                            <div
                                 style={{
-                                    margin: 0,
-                                    color: T.ink,
-                                    letterSpacing: -0.3,
-                                    fontWeight: 600,
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 11,
+                                    background: T.primary,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    boxShadow:
+                                        "0 2px 8px rgba(15, 118, 110, 0.2)",
                                 }}
                             >
-                                Walk-in Registration
-                            </Title>
+                                <Users size={20} color="#fff" />
+                            </div>
 
-                            <Text style={{ color: T.muted, fontSize: 13 }}>
-                                Register guest and assign rooms
-                            </Text>
-                        </div>
-                    </div>
-
-                </div>
-
-                <Row gutter={[20, 20]}>
-                    {/* ── Left column ── */}
-                    <Col xs={24} lg={15}>
-                        <div
-                            style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 16,
-                            }}
-                        >
-                            <GuestCard
-                                selectedGuest={selectedGuest}
-                                onSelectGuest={handleSelectGuest}
-                                onNewGuest={handleNewGuestClick}
-                                onClearGuest={() => setSelectedGuest(null)}
-                                searchResults={searchResults}
-                                onSearchGuests={searchGuests}
-                                searchingGuests={searchingGuests}
-                            />
-
-                            {/* ── Add Room ── */}
-                            {selectedGuest && (
-                                <div
+                            <div>
+                                <Title
+                                    level={4}
                                     style={{
-                                        background: T.white,
-                                        border: `1px solid ${T.line}`,
-                                        borderRadius: T.radiusLg,
-                                        boxShadow: shadow.card,
-                                        overflow: "hidden",
+                                        margin: 0,
+                                        color: T.ink,
+                                        letterSpacing: -0.3,
+                                        fontWeight: 600,
                                     }}
                                 >
+                                    Walk-in Registration
+                                </Title>
+
+                                <Text style={{ color: T.muted, fontSize: 13 }}>
+                                    Register guest and assign rooms
+                                </Text>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {viewOnly && (
+                    <div
+                        style={{
+                            minHeight: "calc(100vh - 140px)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: 340,
+                                maxWidth: "100%",
+                                minHeight: 340,
+                                padding: 28,
+                                background: T.white,
+                                border: `1px solid ${T.warnBorder}`,
+                                borderRadius: T.radiusLg,
+                                boxShadow: shadow.raised,
+                                textAlign: "center",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: 56,
+                                    height: 56,
+                                    borderRadius: 16,
+                                    background: T.warnSoft,
+                                    border: `1px solid ${T.warnBorder}`,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginBottom: 16,
+                                }}
+                            >
+                                <AlertTriangle size={26} color={T.warn} />
+                            </div>
+                            <div
+                                style={{
+                                    fontSize: 17,
+                                    fontWeight: 700,
+                                    color: T.ink,
+                                }}
+                            >
+                                View only mode
+                            </div>
+                            <div
+                                style={{
+                                    fontSize: 13,
+                                    color: T.muted,
+                                    marginTop: 8,
+                                    lineHeight: 1.5,
+                                }}
+                            >
+                                You don't have an open shift. Open a shift to
+                                register guests and check them in.
+                            </div>
+                            <Button
+                                type="primary"
+                                onClick={openShiftModal}
+                                style={{
+                                    marginTop: 22,
+                                    background: T.primary,
+                                    borderColor: T.primary,
+                                    height: 40,
+                                    fontWeight: 600,
+                                    borderRadius: 9,
+                                    minWidth: 140,
+                                }}
+                            >
+                                Open Shift
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                {!viewOnly && (
+                    <Row gutter={[20, 20]}>
+                        {/* ── Left column ── */}
+                        <Col xs={24} lg={15}>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 16,
+                                }}
+                            >
+                                <GuestCard
+                                    selectedGuest={selectedGuest}
+                                    onSelectGuest={handleSelectGuest}
+                                    onNewGuest={handleNewGuestClick}
+                                    disableNew={viewOnly}
+                                    onClearGuest={() => setSelectedGuest(null)}
+                                    searchResults={searchResults}
+                                    onSearchGuests={searchGuests}
+                                    searchingGuests={searchingGuests}
+                                />
+
+                                {/* ── Add Room ── */}
+                                {selectedGuest && (
                                     <div
                                         style={{
-                                            padding: 20,
-                                            cursor: "pointer",
+                                            background: T.white,
+                                            border: `1px solid ${T.line}`,
+                                            borderRadius: T.radiusLg,
+                                            boxShadow: shadow.card,
+                                            overflow: "hidden",
                                         }}
-                                        onClick={() =>
-                                            setAddRoomExpanded(!addRoomExpanded)
-                                        }
                                     >
-                                        <SectionHeader
-                                            step="2"
-                                            title="Add room"
-                                            subtitle="Select room and stay details"
-                                            right={
-                                                <div
-                                                    style={{
-                                                        color: T.faint,
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                    }}
-                                                >
-                                                    {addRoomExpanded ? (
-                                                        <ChevronDown
-                                                            size={14}
-                                                        />
-                                                    ) : (
-                                                        <ChevronRight
-                                                            size={14}
-                                                        />
-                                                    )}
-                                                </div>
+                                        <div
+                                            style={{
+                                                padding: 20,
+                                                cursor: "pointer",
+                                            }}
+                                            onClick={() =>
+                                                setAddRoomExpanded(
+                                                    !addRoomExpanded,
+                                                )
                                             }
-                                        />
-                                    </div>
-
-                                    <AnimatePresence>
-                                        {addRoomExpanded && (
-                                            <motion.div
-                                                initial={{
-                                                    height: 0,
-                                                    opacity: 0,
-                                                }}
-                                                animate={{
-                                                    height: "auto",
-                                                    opacity: 1,
-                                                }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.2 }}
-                                                style={{ overflow: "hidden" }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        padding: "0 20px 20px",
-                                                        borderTop: `1px solid ${T.lineSoft}`,
-                                                    }}
-                                                >
+                                        >
+                                            <SectionHeader
+                                                step="2"
+                                                title="Add room"
+                                                subtitle="Select room and stay details"
+                                                right={
                                                     <div
                                                         style={{
-                                                            paddingTop: 18,
-                                                            display: "grid",
-                                                            gridTemplateColumns:
-                                                                "1.4fr 1fr 1fr 1fr",
-                                                            gap: 12,
-                                                        }}
-                                                    >
-                                                        <div>
-                                                            <FieldLabel>
-                                                                Room
-                                                            </FieldLabel>
-                                                            <Select
-                                                                size="large"
-                                                                style={{
-                                                                    width: "100%",
-                                                                }}
-                                                                placeholder="Select room"
-                                                                value={
-                                                                    selectedRoomValue
-                                                                }
-                                                                onChange={
-                                                                    setSelectedRoomValue
-                                                                }
-                                                                loading={
-                                                                    fetchingRooms
-                                                                }
-                                                            >
-                                                                {Object.entries(
-                                                                    roomsByType,
-                                                                ).map(
-                                                                    ([
-                                                                        typeName,
-                                                                        typeRooms,
-                                                                    ]) => (
-                                                                        <Select.OptGroup
-                                                                            key={
-                                                                                typeName
-                                                                            }
-                                                                            label={
-                                                                                typeName
-                                                                            }
-                                                                        >
-                                                                            {typeRooms.map(
-                                                                                (
-                                                                                    room,
-                                                                                ) => (
-                                                                                    <Select.Option
-                                                                                        key={
-                                                                                            room.id
-                                                                                        }
-                                                                                        value={
-                                                                                            room.id
-                                                                                        }
-                                                                                    >
-                                                                                        Room{" "}
-                                                                                        {
-                                                                                            room.room_number
-                                                                                        }{" "}
-                                                                                        ·{" "}
-                                                                                        {formatPeso(
-                                                                                            room
-                                                                                                .room_type
-                                                                                                ?.base_price ||
-                                                                                                0,
-                                                                                        )}
-                                                                                        /night
-                                                                                    </Select.Option>
-                                                                                ),
-                                                                            )}
-                                                                        </Select.OptGroup>
-                                                                    ),
-                                                                )}
-                                                            </Select>
-                                                        </div>
-
-                                                        <div>
-                                                            <FieldLabel>
-                                                                Stay type
-                                                            </FieldLabel>
-                                                            <Select
-                                                                size="large"
-                                                                style={{
-                                                                    width: "100%",
-                                                                }}
-                                                                value={
-                                                                    newRoomStayType
-                                                                }
-                                                                onChange={(
-                                                                    value,
-                                                                ) => {
-                                                                    setNewRoomStayType(
-                                                                        value,
-                                                                    );
-                                                                    if (
-                                                                        value ===
-                                                                        "short_stay"
-                                                                    ) {
-                                                                        setNewRoomCheckOut(
-                                                                            newRoomCheckIn,
-                                                                        );
-                                                                    } else {
-                                                                        setNewRoomCheckOut(
-                                                                            dayjs(
-                                                                                newRoomCheckIn,
-                                                                            )
-                                                                                .add(
-                                                                                    1,
-                                                                                    "day",
-                                                                                )
-                                                                                .format(
-                                                                                    "YYYY-MM-DD",
-                                                                                ),
-                                                                        );
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <Select.Option value="overnight">
-                                                                    Overnight
-                                                                </Select.Option>
-                                                                <Select.Option value="short_stay">
-                                                                    Short stay
-                                                                </Select.Option>
-                                                            </Select>
-                                                        </div>
-
-                                                        <div>
-                                                            <FieldLabel>
-                                                                Check-in
-                                                            </FieldLabel>
-                                                            <DatePicker
-                                                                size="large"
-                                                                style={{
-                                                                    width: "100%",
-                                                                }}
-                                                                value={dayjs(
-                                                                    newRoomCheckIn,
-                                                                )}
-                                                                onChange={
-                                                                    handleCheckInChange
-                                                                }
-                                                                disabledDate={(
-                                                                    current,
-                                                                ) =>
-                                                                    current &&
-                                                                    current <
-                                                                        dayjs().startOf(
-                                                                            "day",
-                                                                        )
-                                                                }
-                                                            />
-                                                        </div>
-
-                                                        <div>
-                                                            <FieldLabel>
-                                                                Check-out
-                                                            </FieldLabel>
-                                                            <DatePicker
-                                                                size="large"
-                                                                style={{
-                                                                    width: "100%",
-                                                                }}
-                                                                value={dayjs(
-                                                                    newRoomCheckOut,
-                                                                )}
-                                                                onChange={
-                                                                    handleCheckOutChange
-                                                                }
-                                                                disabled={
-                                                                    newRoomStayType ===
-                                                                    "short_stay"
-                                                                }
-                                                                disabledDate={(
-                                                                    current,
-                                                                ) =>
-                                                                    current &&
-                                                                    current <=
-                                                                        dayjs(
-                                                                            newRoomCheckIn,
-                                                                        )
-                                                                }
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <div
-                                                        style={{
-                                                            marginTop: 14,
+                                                            color: T.faint,
                                                             display: "flex",
-                                                            justifyContent:
-                                                                "space-between",
                                                             alignItems:
                                                                 "center",
-                                                            gap: 12,
+                                                        }}
+                                                    >
+                                                        {addRoomExpanded ? (
+                                                            <ChevronDown
+                                                                size={14}
+                                                            />
+                                                        ) : (
+                                                            <ChevronRight
+                                                                size={14}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                }
+                                            />
+                                        </div>
+
+                                        <AnimatePresence>
+                                            {addRoomExpanded && (
+                                                <motion.div
+                                                    initial={{
+                                                        height: 0,
+                                                        opacity: 0,
+                                                    }}
+                                                    animate={{
+                                                        height: "auto",
+                                                        opacity: 1,
+                                                    }}
+                                                    exit={{
+                                                        height: 0,
+                                                        opacity: 0,
+                                                    }}
+                                                    transition={{
+                                                        duration: 0.2,
+                                                    }}
+                                                    style={{
+                                                        overflow: "hidden",
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            padding:
+                                                                "0 20px 20px",
+                                                            borderTop: `1px solid ${T.lineSoft}`,
                                                         }}
                                                     >
                                                         <div
                                                             style={{
-                                                                fontSize: 12,
-                                                                color: T.muted,
+                                                                paddingTop: 18,
+                                                                display: "grid",
+                                                                gridTemplateColumns:
+                                                                    "1.4fr 1fr 1fr 1fr",
+                                                                gap: 12,
                                                             }}
                                                         >
-                                                            {canAddRoom ? (
-                                                                <>
-                                                                    Preview:{" "}
-                                                                    <span
-                                                                        style={{
-                                                                            fontWeight: 600,
-                                                                            color: T.ink,
-                                                                            fontVariantNumeric:
-                                                                                "tabular-nums",
-                                                                        }}
-                                                                    >
-                                                                        {formatPeso(
-                                                                            previewAmount,
-                                                                        )}
-                                                                    </span>
-                                                                </>
-                                                            ) : (
-                                                                "Select a room to see pricing"
-                                                            )}
-                                                        </div>
-                                                        <Button
-                                                            type="primary"
-                                                            icon={
-                                                                <Plus
-                                                                    size={13}
-                                                                />
-                                                            }
-                                                            disabled={
-                                                                !canAddRoom
-                                                            }
-                                                            onClick={async () => {
-                                                                if (
-                                                                    selectedRoomValue
-                                                                ) {
-                                                                    await addRoom(
-                                                                        selectedRoomValue,
-                                                                        newRoomStayType,
-                                                                        newRoomCheckIn,
-                                                                        newRoomCheckOut,
-                                                                    );
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                background:
-                                                                    T.primary,
-                                                                borderColor:
-                                                                    T.primary,
-                                                                fontWeight: 500,
-                                                                borderRadius: 8,
-                                                            }}
-                                                        >
-                                                            Add room
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            )}
+                                                            <div>
+                                                                <FieldLabel>
+                                                                    Room
+                                                                </FieldLabel>
+                                                                <Select
+                                                                    size="large"
+                                                                    style={{
+                                                                        width: "100%",
+                                                                    }}
+                                                                    placeholder="Select room"
+                                                                    value={
+                                                                        selectedRoomValue
+                                                                    }
+                                                                    onChange={
+                                                                        setSelectedRoomValue
+                                                                    }
+                                                                    loading={
+                                                                        fetchingRooms
+                                                                    }
+                                                                >
+                                                                    {Object.entries(
+                                                                        roomsByType,
+                                                                    ).map(
+                                                                        ([
+                                                                            typeName,
+                                                                            typeRooms,
+                                                                        ]) => (
+                                                                            <Select.OptGroup
+                                                                                key={
+                                                                                    typeName
+                                                                                }
+                                                                                label={
+                                                                                    typeName
+                                                                                }
+                                                                            >
+                                                                                {typeRooms.map(
+                                                                                    (
+                                                                                        room,
+                                                                                    ) => (
+                                                                                        <Select.Option
+                                                                                            key={
+                                                                                                room.id
+                                                                                            }
+                                                                                            value={
+                                                                                                room.id
+                                                                                            }
+                                                                                        >
+                                                                                            Room{" "}
+                                                                                            {
+                                                                                                room.room_number
+                                                                                            }{" "}
+                                                                                            ·{" "}
+                                                                                            {formatPeso(
+                                                                                                room
+                                                                                                    .room_type
+                                                                                                    ?.base_price ||
+                                                                                                    0,
+                                                                                            )}
+                                                                                            /night
+                                                                                        </Select.Option>
+                                                                                    ),
+                                                                                )}
+                                                                            </Select.OptGroup>
+                                                                        ),
+                                                                    )}
+                                                                </Select>
+                                                            </div>
 
-                            {/* ── Selected Rooms ── */}
-                            {selectedRoomsDetails.length > 0 && (
-                                <div>
+                                                            <div>
+                                                                <FieldLabel>
+                                                                    Stay type
+                                                                </FieldLabel>
+                                                                <Select
+                                                                    size="large"
+                                                                    style={{
+                                                                        width: "100%",
+                                                                    }}
+                                                                    value={
+                                                                        newRoomStayType
+                                                                    }
+                                                                    onChange={(
+                                                                        value,
+                                                                    ) => {
+                                                                        setNewRoomStayType(
+                                                                            value,
+                                                                        );
+                                                                        if (
+                                                                            value ===
+                                                                            "short_stay"
+                                                                        ) {
+                                                                            setNewRoomCheckOut(
+                                                                                newRoomCheckIn,
+                                                                            );
+                                                                        } else {
+                                                                            setNewRoomCheckOut(
+                                                                                dayjs(
+                                                                                    newRoomCheckIn,
+                                                                                )
+                                                                                    .add(
+                                                                                        1,
+                                                                                        "day",
+                                                                                    )
+                                                                                    .format(
+                                                                                        "YYYY-MM-DD",
+                                                                                    ),
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <Select.Option value="overnight">
+                                                                        Overnight
+                                                                    </Select.Option>
+                                                                    <Select.Option value="short_stay">
+                                                                        Short
+                                                                        stay
+                                                                    </Select.Option>
+                                                                </Select>
+                                                            </div>
+
+                                                            <div>
+                                                                <FieldLabel>
+                                                                    Check-in
+                                                                </FieldLabel>
+                                                                <DatePicker
+                                                                    size="large"
+                                                                    style={{
+                                                                        width: "100%",
+                                                                    }}
+                                                                    value={dayjs(
+                                                                        newRoomCheckIn,
+                                                                    )}
+                                                                    onChange={
+                                                                        handleCheckInChange
+                                                                    }
+                                                                    disabledDate={(
+                                                                        current,
+                                                                    ) =>
+                                                                        current &&
+                                                                        current <
+                                                                            dayjs().startOf(
+                                                                                "day",
+                                                                            )
+                                                                    }
+                                                                />
+                                                            </div>
+
+                                                            <div>
+                                                                <FieldLabel>
+                                                                    Check-out
+                                                                </FieldLabel>
+                                                                <DatePicker
+                                                                    size="large"
+                                                                    style={{
+                                                                        width: "100%",
+                                                                    }}
+                                                                    value={dayjs(
+                                                                        newRoomCheckOut,
+                                                                    )}
+                                                                    onChange={
+                                                                        handleCheckOutChange
+                                                                    }
+                                                                    disabled={
+                                                                        newRoomStayType ===
+                                                                        "short_stay"
+                                                                    }
+                                                                    disabledDate={(
+                                                                        current,
+                                                                    ) =>
+                                                                        current &&
+                                                                        current <=
+                                                                            dayjs(
+                                                                                newRoomCheckIn,
+                                                                            )
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div
+                                                            style={{
+                                                                marginTop: 14,
+                                                                display: "flex",
+                                                                justifyContent:
+                                                                    "space-between",
+                                                                alignItems:
+                                                                    "center",
+                                                                gap: 12,
+                                                            }}
+                                                        >
+                                                            <div
+                                                                style={{
+                                                                    fontSize: 12,
+                                                                    color: T.muted,
+                                                                }}
+                                                            >
+                                                                {canAddRoom ? (
+                                                                    <>
+                                                                        Preview:{" "}
+                                                                        <span
+                                                                            style={{
+                                                                                fontWeight: 600,
+                                                                                color: T.ink,
+                                                                                fontVariantNumeric:
+                                                                                    "tabular-nums",
+                                                                            }}
+                                                                        >
+                                                                            {formatPeso(
+                                                                                previewAmount,
+                                                                            )}
+                                                                        </span>
+                                                                    </>
+                                                                ) : (
+                                                                    "Select a room to see pricing"
+                                                                )}
+                                                            </div>
+                                                            <Button
+                                                                type="primary"
+                                                                icon={
+                                                                    <Plus
+                                                                        size={
+                                                                            13
+                                                                        }
+                                                                    />
+                                                                }
+                                                                disabled={
+                                                                    !canAddRoom
+                                                                }
+                                                                onClick={async () => {
+                                                                    if (
+                                                                        selectedRoomValue
+                                                                    ) {
+                                                                        await addRoom(
+                                                                            selectedRoomValue,
+                                                                            newRoomStayType,
+                                                                            newRoomCheckIn,
+                                                                            newRoomCheckOut,
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    background:
+                                                                        T.primary,
+                                                                    borderColor:
+                                                                        T.primary,
+                                                                    fontWeight: 500,
+                                                                    borderRadius: 8,
+                                                                }}
+                                                            >
+                                                                Add room
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
+
+                                {/* ── Selected Rooms ── */}
+                                {selectedRoomsDetails.length > 0 && (
+                                    <div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                marginBottom: 10,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    fontSize: 13,
+                                                    fontWeight: 600,
+                                                    color: T.ink,
+                                                }}
+                                            >
+                                                Rooms (
+                                                {selectedRoomsDetails.length})
+                                            </div>
+                                        </div>
+                                        <AnimatePresence>
+                                            {selectedRoomsDetails.map(
+                                                (room) => (
+                                                    <RoomCard
+                                                        key={room.id}
+                                                        room={room}
+                                                        onRemove={removeRoom}
+                                                        onAddExtras={
+                                                            openAddOnsForRoom
+                                                        }
+                                                        formatCurrency={
+                                                            formatPeso
+                                                        }
+                                                        formatDate={formatDate}
+                                                        calculateRoomTotal={
+                                                            calculateRoomTotalWithAddOns
+                                                        }
+                                                    />
+                                                ),
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
+                            </div>
+                        </Col>
+
+                        {/* ── Right column (Summary) ── */}
+                        <Col xs={24} lg={9}>
+                            <div
+                                style={{
+                                    position: "sticky",
+                                    top: 24,
+                                    background: T.white,
+                                    border: `1px solid ${T.line}`,
+                                    borderRadius: T.radiusLg,
+                                    boxShadow: shadow.card,
+                                    overflow: "hidden",
+                                }}
+                            >
+                                <div style={{ padding: "18px 20px" }}>
                                     <div
                                         style={{
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "space-between",
-                                            marginBottom: 10,
                                         }}
                                     >
                                         <div
@@ -2814,694 +3151,740 @@ function WalkInContent() {
                                                 color: T.ink,
                                             }}
                                         >
-                                            Rooms ({selectedRoomsDetails.length}
-                                            )
+                                            Summary
                                         </div>
-                                    </div>
-                                    <AnimatePresence>
-                                        {selectedRoomsDetails.map((room) => (
-                                            <RoomCard
-                                                key={room.id}
-                                                room={room}
-                                                onRemove={removeRoom}
-                                                onAddExtras={openAddOnsForRoom}
-                                                formatCurrency={formatPeso}
-                                                formatDate={formatDate}
-                                                calculateRoomTotal={
-                                                    calculateRoomTotalWithAddOns
-                                                }
-                                            />
-                                        ))}
-                                    </AnimatePresence>
-                                </div>
-                            )}
-                        </div>
-                    </Col>
-
-                    {/* ── Right column (Summary) ── */}
-                    <Col xs={24} lg={9}>
-                        <div
-                            style={{
-                                position: "sticky",
-                                top: 24,
-                                background: T.white,
-                                border: `1px solid ${T.line}`,
-                                borderRadius: T.radiusLg,
-                                boxShadow: shadow.card,
-                                overflow: "hidden",
-                            }}
-                        >
-                            <div style={{ padding: "18px 20px" }}>
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                    }}
-                                >
-                                    <div
-                                        style={{
-                                            fontSize: 13,
-                                            fontWeight: 600,
-                                            color: T.ink,
-                                        }}
-                                    >
-                                        Summary
-                                    </div>
-                                    {selectedRoomsDetails.length > 0 && (
-                                        <span
-                                            style={{
-                                                fontSize: 11,
-                                                color: T.muted,
-                                                background: T.lineSoft,
-                                                padding: "2px 8px",
-                                                borderRadius: 6,
-                                                fontWeight: 500,
-                                            }}
-                                        >
-                                            {selectedRoomsDetails.length} room
-                                            {selectedRoomsDetails.length > 1
-                                                ? "s"
-                                                : ""}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <Divider
-                                style={{ margin: 0, borderColor: T.lineSoft }}
-                            />
-
-                            {selectedRoomsDetails.length > 0 ? (
-                                <div
-                                    style={{
-                                        maxHeight: 320,
-                                        overflowY: "auto",
-                                        padding: "4px 20px",
-                                    }}
-                                >
-                                    {selectedRoomsDetails.map((room) => {
-                                        const roomTotal =
-                                            calculateRoomTotalWithAddOns(room);
-                                        return (
-                                            <div
-                                                key={room.id}
+                                        {selectedRoomsDetails.length > 0 && (
+                                            <span
                                                 style={{
-                                                    padding: "12px 0",
-                                                    borderBottom: `1px solid ${T.lineSoft}`,
+                                                    fontSize: 11,
+                                                    color: T.muted,
+                                                    background: T.lineSoft,
+                                                    padding: "2px 8px",
+                                                    borderRadius: 6,
+                                                    fontWeight: 500,
                                                 }}
                                             >
+                                                {selectedRoomsDetails.length}{" "}
+                                                room
+                                                {selectedRoomsDetails.length > 1
+                                                    ? "s"
+                                                    : ""}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <Divider
+                                    style={{
+                                        margin: 0,
+                                        borderColor: T.lineSoft,
+                                    }}
+                                />
+
+                                {selectedRoomsDetails.length > 0 ? (
+                                    <div
+                                        style={{
+                                            maxHeight: 320,
+                                            overflowY: "auto",
+                                            padding: "4px 20px",
+                                        }}
+                                    >
+                                        {selectedRoomsDetails.map((room) => {
+                                            const roomTotal =
+                                                calculateRoomTotalWithAddOns(
+                                                    room,
+                                                );
+                                            return (
                                                 <div
+                                                    key={room.id}
                                                     style={{
-                                                        display: "flex",
-                                                        justifyContent:
-                                                            "space-between",
-                                                        alignItems: "center",
-                                                        marginBottom: 4,
+                                                        padding: "12px 0",
+                                                        borderBottom: `1px solid ${T.lineSoft}`,
                                                     }}
                                                 >
-                                                    <span
-                                                        style={{
-                                                            fontSize: 12,
-                                                            fontWeight: 600,
-                                                            color: T.ink,
-                                                        }}
-                                                    >
-                                                        Room {room.room_number}
-                                                    </span>
-                                                    <span
-                                                        style={{
-                                                            fontSize: 13,
-                                                            fontWeight: 600,
-                                                            color: T.ink,
-                                                            fontVariantNumeric:
-                                                                "tabular-nums",
-                                                        }}
-                                                    >
-                                                        {formatPeso(roomTotal)}
-                                                    </span>
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        fontSize: 11,
-                                                        color: T.muted,
-                                                        display: "flex",
-                                                        justifyContent:
-                                                            "space-between",
-                                                    }}
-                                                >
-                                                    <span>
-                                                        {room.stay_type ===
-                                                        "short_stay"
-                                                            ? "Short stay"
-                                                            : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
-                                                    </span>
-                                                    <span
-                                                        style={{
-                                                            fontVariantNumeric:
-                                                                "tabular-nums",
-                                                        }}
-                                                    >
-                                                        {formatPeso(
-                                                            room.subtotal,
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                {room.addons.map((addon) => (
                                                     <div
-                                                        key={addon.id}
+                                                        style={{
+                                                            display: "flex",
+                                                            justifyContent:
+                                                                "space-between",
+                                                            alignItems:
+                                                                "center",
+                                                            marginBottom: 4,
+                                                        }}
+                                                    >
+                                                        <span
+                                                            style={{
+                                                                fontSize: 12,
+                                                                fontWeight: 600,
+                                                                color: T.ink,
+                                                            }}
+                                                        >
+                                                            Room{" "}
+                                                            {room.room_number}
+                                                        </span>
+                                                        <span
+                                                            style={{
+                                                                fontSize: 13,
+                                                                fontWeight: 600,
+                                                                color: T.ink,
+                                                                fontVariantNumeric:
+                                                                    "tabular-nums",
+                                                            }}
+                                                        >
+                                                            {formatPeso(
+                                                                roomTotal,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div
                                                         style={{
                                                             fontSize: 11,
                                                             color: T.muted,
                                                             display: "flex",
                                                             justifyContent:
                                                                 "space-between",
-                                                            marginTop: 3,
                                                         }}
                                                     >
                                                         <span>
-                                                            {addon.add_on_name}{" "}
-                                                            × {addon.quantity}
+                                                            {room.stay_type ===
+                                                            "short_stay"
+                                                                ? "Short stay"
+                                                                : `${room.nights} night${room.nights > 1 ? "s" : ""}`}
                                                         </span>
                                                         <span
                                                             style={{
-                                                                color: T.primary,
                                                                 fontVariantNumeric:
                                                                     "tabular-nums",
                                                             }}
                                                         >
-                                                            +
                                                             {formatPeso(
-                                                                addon.subtotal,
+                                                                room.subtotal,
                                                             )}
                                                         </span>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div style={{ padding: "32px 20px" }}>
-                                    <Empty
-                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                        description={
-                                            <span
-                                                style={{
-                                                    fontSize: 12,
-                                                    color: T.muted,
-                                                }}
-                                            >
-                                                No rooms selected
-                                            </span>
-                                        }
-                                    />
-                                </div>
-                            )}
-
-                            {/* Payment method */}
-                            {selectedRoomsDetails.length > 0 && (
-                                <>
-                                    <Divider
-                                        style={{
-                                            margin: 0,
-                                            borderColor: T.lineSoft,
-                                        }}
-                                    />
-                                    <div style={{ padding: "16px 20px" }}>
-                                        <div
-                                            style={{
-                                                fontSize: 11,
-                                                fontWeight: 600,
-                                                color: T.faint,
-                                                textTransform: "uppercase",
-                                                letterSpacing: 0.5,
-                                                marginBottom: 8,
-                                            }}
-                                        >
-                                            Payment method
-                                        </div>
-
-                                        {/* Single / Split toggle */}
-                                        <div
-                                            style={{
-                                                display: "grid",
-                                                gridTemplateColumns: "1fr 1fr",
-                                                gap: 6,
-                                                marginBottom: 10,
-                                            }}
-                                        >
-                                            {[
-                                                {
-                                                    value: "single" as const,
-                                                    label: "Single method",
-                                                },
-                                                {
-                                                    value: "split" as const,
-                                                    label: "Split payment",
-                                                },
-                                            ].map((opt) => {
-                                                const active =
-                                                    paymentMode === opt.value;
-                                                return (
-                                                    <button
-                                                        key={opt.value}
-                                                        onClick={() =>
-                                                            setPaymentMode(
-                                                                opt.value,
-                                                            )
-                                                        }
-                                                        style={{
-                                                            padding: "6px 10px",
-                                                            background: active
-                                                                ? T.ink
-                                                                : T.lineSoft,
-                                                            color: active
-                                                                ? T.white
-                                                                : T.muted,
-                                                            border: "none",
-                                                            borderRadius: 7,
-                                                            fontSize: 11,
-                                                            fontWeight: 600,
-                                                            cursor: "pointer",
-                                                            fontFamily:
-                                                                "inherit",
-                                                            transition:
-                                                                "all 0.15s",
-                                                        }}
-                                                    >
-                                                        {opt.label}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {paymentMode === "single" && (
-                                            <>
-                                                <div
-                                                    style={{
-                                                        display: "grid",
-                                                        gridTemplateColumns:
-                                                            "1fr 1fr",
-                                                        gap: 8,
-                                                    }}
-                                                >
-                                                    {[
-                                                        {
-                                                            value: "cash" as const,
-                                                            label: "Cash",
-                                                            icon: (
-                                                                <CreditCard
-                                                                    size={14}
-                                                                />
-                                                            ),
-                                                        },
-                                                        {
-                                                            value: "qrph" as const,
-                                                            label: "QR Ph",
-                                                            icon: (
-                                                                <QrCode
-                                                                    size={14}
-                                                                />
-                                                            ),
-                                                        },
-                                                    ].map((option) => {
-                                                        const active =
-                                                            paymentMethod ===
-                                                            option.value;
-                                                        return (
-                                                            <button
-                                                                key={
-                                                                    option.value
-                                                                }
-                                                                onClick={() =>
-                                                                    setPaymentMethod(
-                                                                        option.value,
-                                                                    )
-                                                                }
+                                                    {room.addons.map(
+                                                        (addon) => (
+                                                            <div
+                                                                key={addon.id}
                                                                 style={{
+                                                                    fontSize: 11,
+                                                                    color: T.muted,
                                                                     display:
                                                                         "flex",
-                                                                    alignItems:
-                                                                        "center",
                                                                     justifyContent:
-                                                                        "center",
-                                                                    gap: 6,
-                                                                    padding:
-                                                                        "10px 12px",
-                                                                    background:
-                                                                        active
-                                                                            ? T.primarySoft
-                                                                            : T.white,
-                                                                    border: `1px solid ${active ? T.primaryBorder : T.line}`,
-                                                                    color: active
-                                                                        ? T.primary
-                                                                        : T.inkSoft,
-                                                                    borderRadius: 8,
-                                                                    fontSize: 12,
-                                                                    fontWeight: 600,
-                                                                    cursor: "pointer",
-                                                                    transition:
-                                                                        "all 0.15s",
-                                                                    fontFamily:
-                                                                        "inherit",
+                                                                        "space-between",
+                                                                    marginTop: 3,
                                                                 }}
                                                             >
-                                                                {option.icon}
-                                                                {option.label}
-                                                            </button>
-                                                        );
-                                                    })}
+                                                                <span>
+                                                                    {
+                                                                        addon.add_on_name
+                                                                    }{" "}
+                                                                    ×{" "}
+                                                                    {
+                                                                        addon.quantity
+                                                                    }
+                                                                </span>
+                                                                <span
+                                                                    style={{
+                                                                        color: T.primary,
+                                                                        fontVariantNumeric:
+                                                                            "tabular-nums",
+                                                                    }}
+                                                                >
+                                                                    +
+                                                                    {formatPeso(
+                                                                        addon.subtotal,
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        ),
+                                                    )}
                                                 </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div style={{ padding: "32px 20px" }}>
+                                        <Empty
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description={
+                                                <span
+                                                    style={{
+                                                        fontSize: 12,
+                                                        color: T.muted,
+                                                    }}
+                                                >
+                                                    No rooms selected
+                                                </span>
+                                            }
+                                        />
+                                    </div>
+                                )}
 
-                                                {pendingBookingId &&
-                                                    paymentMethod ===
-                                                        "qrph" && (
-                                                        <div
+                                {/* Payment method */}
+                                {selectedRoomsDetails.length > 0 && (
+                                    <>
+                                        <Divider
+                                            style={{
+                                                margin: 0,
+                                                borderColor: T.lineSoft,
+                                            }}
+                                        />
+                                        <div style={{ padding: "16px 20px" }}>
+                                            <div
+                                                style={{
+                                                    fontSize: 11,
+                                                    fontWeight: 600,
+                                                    color: T.faint,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: 0.5,
+                                                    marginBottom: 8,
+                                                }}
+                                            >
+                                                Payment method
+                                            </div>
+
+                                            {/* Single / Split toggle */}
+                                            <div
+                                                style={{
+                                                    display: "grid",
+                                                    gridTemplateColumns:
+                                                        "1fr 1fr",
+                                                    gap: 6,
+                                                    marginBottom: 10,
+                                                }}
+                                            >
+                                                {[
+                                                    {
+                                                        value: "single" as const,
+                                                        label: "Single method",
+                                                    },
+                                                    {
+                                                        value: "split" as const,
+                                                        label: "Split payment",
+                                                    },
+                                                ].map((opt) => {
+                                                    const active =
+                                                        paymentMode ===
+                                                        opt.value;
+                                                    return (
+                                                        <button
+                                                            key={opt.value}
+                                                            onClick={() =>
+                                                                setPaymentMode(
+                                                                    opt.value,
+                                                                )
+                                                            }
                                                             style={{
-                                                                marginTop: 10,
                                                                 padding:
-                                                                    "10px 12px",
+                                                                    "6px 10px",
                                                                 background:
-                                                                    T.warnSoft,
-                                                                border: `1px solid ${T.warnBorder}`,
-                                                                borderRadius: 8,
-                                                                display: "flex",
-                                                                justifyContent:
-                                                                    "space-between",
-                                                                alignItems:
-                                                                    "center",
-                                                                gap: 8,
+                                                                    active
+                                                                        ? T.ink
+                                                                        : T.lineSoft,
+                                                                color: active
+                                                                    ? T.white
+                                                                    : T.muted,
+                                                                border: "none",
+                                                                borderRadius: 7,
+                                                                fontSize: 11,
+                                                                fontWeight: 600,
+                                                                cursor: "pointer",
+                                                                fontFamily:
+                                                                    "inherit",
+                                                                transition:
+                                                                    "all 0.15s",
                                                             }}
                                                         >
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 11,
-                                                                    color: T.warn,
-                                                                    lineHeight: 1.3,
-                                                                }}
-                                                            >
-                                                                Unpaid QR
-                                                                booking{" "}
-                                                                <strong>
-                                                                    #
-                                                                    {
-                                                                        pendingBookingId
-                                                                    }
-                                                                </strong>
-                                                            </div>
-                                                            <Button
-                                                                size="small"
-                                                                onClick={async () => {
-                                                                    if (
-                                                                        !pendingBookingId
-                                                                    )
-                                                                        return;
-                                                                    setQrInFlight(
-                                                                        true,
-                                                                    );
-                                                                    setQrModalOpen(
-                                                                        true,
-                                                                    );
-                                                                    setQrAmount(
-                                                                        pendingAmount,
-                                                                    );
-                                                                    await generateQr(
-                                                                        pendingBookingId,
-                                                                        pendingAmount,
-                                                                    );
-                                                                }}
-                                                                style={{
-                                                                    background:
-                                                                        T.white,
-                                                                    borderColor:
-                                                                        T.warnBorder,
-                                                                    color: T.warn,
-                                                                    fontSize: 11,
-                                                                    height: 26,
-                                                                    borderRadius: 6,
-                                                                    fontWeight: 600,
-                                                                }}
-                                                            >
-                                                                Regenerate
-                                                            </Button>
-                                                        </div>
-                                                    )}
-                                            </>
-                                        )}
+                                                            {opt.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
 
-                                        {paymentMode === "split" && (
-                                            <div>
+                                            {pendingQrPaymentId && (
                                                 <div
                                                     style={{
-                                                        display: "flex",
-                                                        gap: 6,
-                                                        marginBottom: 6,
-                                                        alignItems: "center",
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 64,
-                                                            fontSize: 12,
-                                                            fontWeight: 600,
-                                                            color: T.inkSoft,
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            gap: 5,
-                                                        }}
-                                                    >
-                                                        <CreditCard size={12} />
-                                                        Cash
-                                                    </div>
-                                                    <Input
-                                                        size="small"
-                                                        type="number"
-                                                        placeholder="0.00"
-                                                        prefix="₱"
-                                                        value={
-                                                            splitCashAmount ??
-                                                            ""
-                                                        }
-                                                        onChange={(e) =>
-                                                            setSplitCashAmount(
-                                                                e.target
-                                                                    .value ===
-                                                                    ""
-                                                                    ? null
-                                                                    : Number(
-                                                                          e
-                                                                              .target
-                                                                              .value,
-                                                                      ),
-                                                            )
-                                                        }
-                                                        style={{
-                                                            flex: 1,
-                                                            borderRadius: 7,
-                                                        }}
-                                                    />
-                                                </div>
-
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        gap: 6,
-                                                        marginBottom: 8,
-                                                        alignItems: "center",
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 64,
-                                                            fontSize: 12,
-                                                            fontWeight: 600,
-                                                            color: T.inkSoft,
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            gap: 5,
-                                                        }}
-                                                    >
-                                                        <QrCode size={12} />
-                                                        QR Ph
-                                                    </div>
-                                                    <Input
-                                                        size="small"
-                                                        type="number"
-                                                        placeholder="0.00"
-                                                        prefix="₱"
-                                                        value={
-                                                            splitQrphAmount ??
-                                                            ""
-                                                        }
-                                                        onChange={(e) =>
-                                                            setSplitQrphAmount(
-                                                                e.target
-                                                                    .value ===
-                                                                    ""
-                                                                    ? null
-                                                                    : Number(
-                                                                          e
-                                                                              .target
-                                                                              .value,
-                                                                      ),
-                                                            )
-                                                        }
-                                                        style={{
-                                                            flex: 1,
-                                                            borderRadius: 7,
-                                                        }}
-                                                    />
-                                                </div>
-
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        justifyContent:
-                                                            "space-between",
+                                                        marginBottom: 10,
+                                                        padding: "10px 12px",
+                                                        background: T.warnSoft,
+                                                        border: `1px solid ${T.warnBorder}`,
+                                                        borderRadius: 8,
                                                         fontSize: 11,
-                                                        padding: "6px 2px",
-                                                        color:
-                                                            Math.abs(
-                                                                splitRemaining,
-                                                            ) < 0.01
-                                                                ? T.primary
-                                                                : T.warn,
-                                                        fontWeight: 600,
-                                                    }}
-                                                >
-                                                    <span>
-                                                        {Math.abs(
-                                                            splitRemaining,
-                                                        ) < 0.01
-                                                            ? "Fully allocated"
-                                                            : splitRemaining > 0
-                                                              ? "Remaining"
-                                                              : "Over by"}
-                                                    </span>
-                                                    <span>
-                                                        {formatPeso(
-                                                            Math.abs(
-                                                                splitRemaining,
-                                                            ),
-                                                        )}
-                                                    </span>
-                                                </div>
-
-                                                <div
-                                                    style={{
-                                                        marginTop: 8,
-                                                        fontSize: 10,
-                                                        color: T.faint,
+                                                        color: T.warn,
                                                         lineHeight: 1.4,
                                                     }}
                                                 >
-                                                    Cash is collected now. The
-                                                    guest will scan a QR code
-                                                    for the remaining amount
-                                                    before check-in is
-                                                    finalized.
+                                                    Booking{" "}
+                                                    <strong>
+                                                        #{pendingBookingId}
+                                                    </strong>{" "}
+                                                    is reserved.
+                                                    {totalAmount -
+                                                        pendingAmount >
+                                                        0.009 && (
+                                                        <>
+                                                            {" "}
+                                                            Already paid:{" "}
+                                                            <strong>
+                                                                {formatPeso(
+                                                                    totalAmount -
+                                                                        pendingAmount,
+                                                                )}
+                                                            </strong>
+                                                            .
+                                                        </>
+                                                    )}{" "}
+                                                    Amount still to pay:{" "}
+                                                    <strong>
+                                                        {formatPeso(
+                                                            pendingAmount,
+                                                        )}
+                                                    </strong>
+                                                    .
+                                                    {!paymentChosen &&
+                                                        " Choose Cash, QR Ph or Split to continue."}
                                                 </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
+                                            )}
 
-                            {/* Total + Action */}
-                            {selectedRoomsDetails.length > 0 && (
-                                <>
-                                    <Divider
-                                        style={{
-                                            margin: 0,
-                                            borderColor: T.lineSoft,
-                                        }}
-                                    />
-                                    <div style={{ padding: "16px 20px 20px" }}>
+                                            {paymentMode === "single" && (
+                                                <>
+                                                    <div
+                                                        style={{
+                                                            display: "grid",
+                                                            gridTemplateColumns:
+                                                                "1fr 1fr",
+                                                            gap: 8,
+                                                        }}
+                                                    >
+                                                        {[
+                                                            {
+                                                                value: "cash" as const,
+                                                                label: "Cash",
+                                                                icon: (
+                                                                    <CreditCard
+                                                                        size={
+                                                                            14
+                                                                        }
+                                                                    />
+                                                                ),
+                                                            },
+                                                            {
+                                                                value: "qrph" as const,
+                                                                label: "QR Ph",
+                                                                icon: (
+                                                                    <QrCode
+                                                                        size={
+                                                                            14
+                                                                        }
+                                                                    />
+                                                                ),
+                                                            },
+                                                        ].map((option) => {
+                                                            const active =
+                                                                paymentChosen &&
+                                                                paymentMethod ===
+                                                                    option.value;
+                                                            return (
+                                                                <button
+                                                                    key={
+                                                                        option.value
+                                                                    }
+                                                                    onClick={() => {
+                                                                        setPaymentMethod(
+                                                                            option.value,
+                                                                        );
+                                                                        setPaymentChosen(
+                                                                            true,
+                                                                        );
+                                                                    }}
+                                                                    style={{
+                                                                        display:
+                                                                            "flex",
+                                                                        alignItems:
+                                                                            "center",
+                                                                        justifyContent:
+                                                                            "center",
+                                                                        gap: 6,
+                                                                        padding:
+                                                                            "10px 12px",
+                                                                        background:
+                                                                            active
+                                                                                ? T.primarySoft
+                                                                                : T.white,
+                                                                        border: `1px solid ${active ? T.primaryBorder : T.line}`,
+                                                                        color: active
+                                                                            ? T.primary
+                                                                            : T.inkSoft,
+                                                                        borderRadius: 8,
+                                                                        fontSize: 12,
+                                                                        fontWeight: 600,
+                                                                        cursor: "pointer",
+                                                                        transition:
+                                                                            "all 0.15s",
+                                                                        fontFamily:
+                                                                            "inherit",
+                                                                    }}
+                                                                >
+                                                                    {
+                                                                        option.icon
+                                                                    }
+                                                                    {
+                                                                        option.label
+                                                                    }
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {pendingBookingId &&
+                                                        paymentChosen &&
+                                                        paymentMethod ===
+                                                            "qrph" && (
+                                                            <div
+                                                                style={{
+                                                                    marginTop: 10,
+                                                                    padding:
+                                                                        "10px 12px",
+                                                                    background:
+                                                                        T.warnSoft,
+                                                                    border: `1px solid ${T.warnBorder}`,
+                                                                    borderRadius: 8,
+                                                                    display:
+                                                                        "flex",
+                                                                    justifyContent:
+                                                                        "space-between",
+                                                                    alignItems:
+                                                                        "center",
+                                                                    gap: 8,
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    style={{
+                                                                        fontSize: 11,
+                                                                        color: T.warn,
+                                                                        lineHeight: 1.3,
+                                                                    }}
+                                                                >
+                                                                    Unpaid QR
+                                                                    booking{" "}
+                                                                    <strong>
+                                                                        #
+                                                                        {
+                                                                            pendingBookingId
+                                                                        }
+                                                                    </strong>
+                                                                </div>
+                                                                <Button
+                                                                    size="small"
+                                                                    onClick={async () => {
+                                                                        if (
+                                                                            !pendingBookingId
+                                                                        )
+                                                                            return;
+                                                                        setQrInFlight(
+                                                                            true,
+                                                                        );
+                                                                        setQrModalOpen(
+                                                                            true,
+                                                                        );
+                                                                        setQrAmount(
+                                                                            pendingAmount,
+                                                                        );
+                                                                        await generateQr(
+                                                                            pendingBookingId,
+                                                                            pendingAmount,
+                                                                            pendingQrPaymentId,
+                                                                        );
+                                                                    }}
+                                                                    style={{
+                                                                        background:
+                                                                            T.white,
+                                                                        borderColor:
+                                                                            T.warnBorder,
+                                                                        color: T.warn,
+                                                                        fontSize: 11,
+                                                                        height: 26,
+                                                                        borderRadius: 6,
+                                                                        fontWeight: 600,
+                                                                    }}
+                                                                >
+                                                                    Regenerate
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                </>
+                                            )}
+
+                                            {paymentMode === "split" && (
+                                                <div>
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 6,
+                                                            marginBottom: 6,
+                                                            alignItems:
+                                                                "center",
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                width: 64,
+                                                                fontSize: 12,
+                                                                fontWeight: 600,
+                                                                color: T.inkSoft,
+                                                                display: "flex",
+                                                                alignItems:
+                                                                    "center",
+                                                                gap: 5,
+                                                            }}
+                                                        >
+                                                            <CreditCard
+                                                                size={12}
+                                                            />
+                                                            Cash
+                                                        </div>
+                                                        <Input
+                                                            size="small"
+                                                            type="number"
+                                                            placeholder="0.00"
+                                                            prefix="₱"
+                                                            value={
+                                                                splitCashAmount ??
+                                                                ""
+                                                            }
+                                                            onChange={(e) =>
+                                                                setSplitCashAmount(
+                                                                    e.target
+                                                                        .value ===
+                                                                        ""
+                                                                        ? null
+                                                                        : Number(
+                                                                              e
+                                                                                  .target
+                                                                                  .value,
+                                                                          ),
+                                                                )
+                                                            }
+                                                            style={{
+                                                                flex: 1,
+                                                                borderRadius: 7,
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 6,
+                                                            marginBottom: 8,
+                                                            alignItems:
+                                                                "center",
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                width: 64,
+                                                                fontSize: 12,
+                                                                fontWeight: 600,
+                                                                color: T.inkSoft,
+                                                                display: "flex",
+                                                                alignItems:
+                                                                    "center",
+                                                                gap: 5,
+                                                            }}
+                                                        >
+                                                            <QrCode size={12} />
+                                                            QR Ph
+                                                        </div>
+                                                        <Input
+                                                            size="small"
+                                                            type="number"
+                                                            placeholder="0.00"
+                                                            prefix="₱"
+                                                            value={
+                                                                splitQrphAmount ??
+                                                                ""
+                                                            }
+                                                            onChange={(e) =>
+                                                                setSplitQrphAmount(
+                                                                    e.target
+                                                                        .value ===
+                                                                        ""
+                                                                        ? null
+                                                                        : Number(
+                                                                              e
+                                                                                  .target
+                                                                                  .value,
+                                                                          ),
+                                                                )
+                                                            }
+                                                            style={{
+                                                                flex: 1,
+                                                                borderRadius: 7,
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            justifyContent:
+                                                                "space-between",
+                                                            fontSize: 11,
+                                                            padding: "6px 2px",
+                                                            color:
+                                                                Math.abs(
+                                                                    splitRemaining,
+                                                                ) < 0.01
+                                                                    ? T.primary
+                                                                    : T.warn,
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        <span>
+                                                            {Math.abs(
+                                                                splitRemaining,
+                                                            ) < 0.01
+                                                                ? "Fully allocated"
+                                                                : splitRemaining >
+                                                                    0
+                                                                  ? "Remaining"
+                                                                  : "Over by"}
+                                                        </span>
+                                                        <span>
+                                                            {formatPeso(
+                                                                Math.abs(
+                                                                    splitRemaining,
+                                                                ),
+                                                            )}
+                                                        </span>
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            marginTop: 8,
+                                                            fontSize: 10,
+                                                            color: T.faint,
+                                                            lineHeight: 1.4,
+                                                        }}
+                                                    >
+                                                        Cash is collected now.
+                                                        The guest will scan a QR
+                                                        code for the remaining
+                                                        amount before check-in
+                                                        is finalized.
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Total + Action */}
+                                {selectedRoomsDetails.length > 0 && (
+                                    <>
+                                        <Divider
+                                            style={{
+                                                margin: 0,
+                                                borderColor: T.lineSoft,
+                                            }}
+                                        />
                                         <div
                                             style={{
-                                                display: "flex",
-                                                justifyContent: "space-between",
-                                                alignItems: "baseline",
-                                                marginBottom: 14,
+                                                padding: "16px 20px 20px",
                                             }}
                                         >
-                                            <span
-                                                style={{
-                                                    fontSize: 12,
-                                                    color: T.muted,
-                                                    fontWeight: 500,
-                                                }}
-                                            >
-                                                Total amount
-                                            </span>
-                                            <span
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 700,
-                                                    color: T.ink,
-                                                    letterSpacing: -0.4,
-                                                    fontVariantNumeric:
-                                                        "tabular-nums",
-                                                }}
-                                            >
-                                                {formatPeso(totalAmount)}
-                                            </span>
-                                        </div>
-
-                                        <Button
-                                            type="primary"
-                                            size="large"
-                                            block
-                                            icon={
-                                                paymentMode === "single" &&
-                                                paymentMethod === "qrph" ? (
-                                                    <QrCode size={14} />
-                                                ) : (
-                                                    <ArrowRight size={14} />
-                                                )
-                                            }
-                                            onClick={handleSubmit}
-                                            loading={loading}
-                                            disabled={completeDisabled}
-                                            style={{
-                                                background: T.primary,
-                                                borderColor: T.primary,
-                                                height: 44,
-                                                fontSize: 13,
-                                                fontWeight: 600,
-                                                borderRadius: 9,
-                                                letterSpacing: 0.1,
-                                            }}
-                                        >
-                                            {paymentMode === "single" &&
-                                            paymentMethod === "qrph"
-                                                ? pendingBookingId
-                                                    ? "Retry QR payment"
-                                                    : "Generate QR"
-                                                : "Complete check-in"}
-                                        </Button>
-
-                                        {!selectedGuest && (
                                             <div
                                                 style={{
-                                                    marginTop: 10,
-                                                    textAlign: "center",
-                                                    fontSize: 11,
-                                                    color: T.warn,
+                                                    display: "flex",
+                                                    justifyContent:
+                                                        "space-between",
+                                                    alignItems: "baseline",
+                                                    marginBottom: 14,
                                                 }}
                                             >
-                                                Select a guest to continue
+                                                <span
+                                                    style={{
+                                                        fontSize: 12,
+                                                        color: T.muted,
+                                                        fontWeight: 500,
+                                                    }}
+                                                >
+                                                    Total amount
+                                                </span>
+                                                <span
+                                                    style={{
+                                                        fontSize: 22,
+                                                        fontWeight: 700,
+                                                        color: T.ink,
+                                                        letterSpacing: -0.4,
+                                                        fontVariantNumeric:
+                                                            "tabular-nums",
+                                                    }}
+                                                >
+                                                    {formatPeso(totalAmount)}
+                                                </span>
                                             </div>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </Col>
-                </Row>
+
+                                            <Button
+                                                type="primary"
+                                                size="large"
+                                                block
+                                                icon={
+                                                    paymentMode === "single" &&
+                                                    paymentMethod === "qrph" ? (
+                                                        <QrCode size={14} />
+                                                    ) : (
+                                                        <ArrowRight size={14} />
+                                                    )
+                                                }
+                                                onClick={handleSubmit}
+                                                loading={loading}
+                                                disabled={completeDisabled}
+                                                style={{
+                                                    background: T.primary,
+                                                    borderColor: T.primary,
+                                                    height: 44,
+                                                    fontSize: 13,
+                                                    fontWeight: 600,
+                                                    borderRadius: 9,
+                                                    letterSpacing: 0.1,
+                                                }}
+                                            >
+                                                {paymentMode === "split"
+                                                    ? "Collect cash & generate QR"
+                                                    : paymentMode ===
+                                                            "single" &&
+                                                        paymentMethod === "qrph"
+                                                      ? pendingBookingId
+                                                          ? "Retry QR payment"
+                                                          : "Generate QR"
+                                                      : pendingQrPaymentId
+                                                        ? `Collect ${formatPeso(pendingAmount)} in cash`
+                                                        : "Complete check-in"}
+                                            </Button>
+
+                                            {!selectedGuest && (
+                                                <div
+                                                    style={{
+                                                        marginTop: 10,
+                                                        textAlign: "center",
+                                                        fontSize: 11,
+                                                        color: T.warn,
+                                                    }}
+                                                >
+                                                    Select a guest to continue
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </Col>
+                    </Row>
+                )}
             </div>
 
             {/* ── New Guest Modal ── */}
@@ -3860,7 +4243,9 @@ function WalkInContent() {
                             size="large"
                             loading={savingGuest}
                             onClick={handleSaveNewGuest}
-                            disabled={!guestFormIsValid || savingGuest}
+                            disabled={
+                                viewOnly || !guestFormIsValid || savingGuest
+                            }
                             style={{
                                 minWidth: 130,
                                 height: 42,
@@ -3909,7 +4294,6 @@ function WalkInContent() {
                 paymentId={currentPaymentId}
                 paymentIds={currentPaymentIds}
             />
-
         </div>
     );
 }

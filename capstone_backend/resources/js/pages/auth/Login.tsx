@@ -29,7 +29,7 @@ export default function Login() {
     const [email, setEmail] = useState<string>("");
     const [password, setPassword] = useState<string>("");
     const [showPassword, setShowPassword] = useState<boolean>(false);
-    const [remember, setRemember] = useState<boolean>(true);
+    const [remember, setRemember] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string>("");
 
@@ -76,6 +76,7 @@ export default function Login() {
             const res = await api.post<LoginResponse>("/auth/login", {
                 email,
                 password,
+                remember,
             });
             const user = res.data.user;
             const token = res.data.token;

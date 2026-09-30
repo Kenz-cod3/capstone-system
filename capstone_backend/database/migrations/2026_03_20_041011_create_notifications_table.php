@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users');
             $table->string('title');
             $table->text('message');
+            $table->unsignedBigInteger('booking_id')->nullable()->index();
             $table->boolean('is_read')->default(false);
             $table->timestamps();
         });

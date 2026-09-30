@@ -200,7 +200,7 @@ class WalkInGuestController extends Controller
      *
      * Cash  -> BookedRoom checked_in, payment paid (unchanged behaviour).
      * QRPh  -> BookedRoom confirmed (reserved), payment pending.
-     *          Room stays available until QR confirms.
+     *          Room stays available until the PayMongo WEBHOOK confirms.
      */
     public function checkin(Request $request)
     {
@@ -224,7 +224,8 @@ class WalkInGuestController extends Controller
             // SPLIT PAYMENT: exactly cash + qrph, in either order.
             // The cash portion is paid immediately at the counter; the
             // qrph portion is generated as a QR right after this request
-            // and only marks the booking checked-in once confirmed.
+            // and only marks the booking checked-in once the webhook
+            // confirms it.
             'payments' => 'nullable|array|min:2|max:2',
             'payments.*.payment_method' => 'required|in:cash,qrph',
             'payments.*.amount' => 'required|numeric|min:0.01',
@@ -272,7 +273,8 @@ class WalkInGuestController extends Controller
 
                 // If the split includes a QRPh leg, the booking is NOT fully
                 // paid immediately — the room stays 'confirmed' (reserved)
-                // until that leg is confirmed, same as a pure QRPh walk-in.
+                // until that leg is confirmed by the webhook, same as a
+                // pure QRPh walk-in.
                 $isCash = !$splitHasQrph;
             } else {
                 $isCash = $validated['payment_method'] === 'cash';
@@ -446,7 +448,7 @@ class WalkInGuestController extends Controller
 
                 // Only flip the physical room to occupied for cash.
                 // QRPh holds the room via BookedRoom.status = 'confirmed';
-                // Room.status flips on confirmQr.
+                // Room.status flips when the PayMongo webhook confirms.
                 if ($isCash) {
                     $room->update([
                         'status' => Room::STATUS_OCCUPIED,
@@ -495,7 +497,7 @@ class WalkInGuestController extends Controller
                         'amount_due_at_split' => $totalPrice,
                         'payment_method' => $leg['payment_method'],
                         // Cash leg is paid on the spot; the QRPh leg stays
-                        // pending until the guest scans and confirmQr runs.
+                        // pending until the PayMongo webhook marks it paid.
                         'payment_status' => $legIsQrph ? 'pending' : 'paid',
                         'gcash_reference' => null,
                         'bank_reference' => null,
@@ -538,6 +540,17 @@ class WalkInGuestController extends Controller
             }
 
             $payment = $paymentsCreated[0];
+
+            if ($isCash) {
+                \App\Models\BookingHistory::create([
+                    'booking_id'  => $booking->id,
+                    'old_status'  => 'pending',
+                    'new_status'  => 'checked_in',
+                    'change_note' => 'Guest checked in by ' . trim(Auth::user()->first_name . ' ' . Auth::user()->last_name),
+                    'changed_by'  => Auth::id(),
+                    'changed_at'  => now(),
+                ]);
+            }
 
             DB::commit();
 
@@ -582,9 +595,11 @@ class WalkInGuestController extends Controller
                     'Walk-in: ' .
                         $guest->first_name . ' ' .
                         $guest->last_name .
-                        ' checked in (Rooms: ' .
-                        implode(', ', $roomNumbers) . ')' .
-                        $addOnsMessage
+                        ' checked in (Room ' .
+                        implode(', ', $roomNumbers) .
+                        ' | Booking: ' . $reference . ')' .
+                        $addOnsMessage,
+                    $booking->id
                 );
             }
 
@@ -604,6 +619,9 @@ class WalkInGuestController extends Controller
                 'booking_reference' => $reference,
                 'payment_id' => $payment->id,
                 'payment_ids' => collect($paymentsCreated)->pluck('id'),
+                'qr_payment_id' => collect($paymentsCreated)
+                    ->firstWhere('payment_method', 'qrph')
+                    ?->id,
                 'is_split_payment' => $isSplit,
                 'requires_qr_confirmation' => $splitHasQrph,
                 'qrph_amount' => $splitHasQrph ? $qrphLegAmount : null,
@@ -624,39 +642,117 @@ class WalkInGuestController extends Controller
     }
 
     /**
-     * CONFIRM A WALK-IN QR PH PAYMENT (called by frontend after polling succeeds)
+     * SWITCH A PENDING QR PAYMENT TO CASH
      *
-     * Idempotent: repeated calls on an already-confirmed booking are no-ops.
+     * Used when the guest initially chooses QR Ph
+     * but decides to pay cash before the QR payment succeeds.
      */
-    public function confirmQr(Request $request, $bookingId)
+    public function switchToCash($bookingId)
     {
-        $booking = Booking::with(['bookedRooms', 'walkInGuest'])->findOrFail($bookingId);
-
-        // Idempotency: already confirmed?
-        $allCheckedIn = $booking->bookedRooms->every(
-            fn($br) => in_array($br->status, ['checked_in', 'checked_out'])
-        );
-
-        $payment = $booking->payments()
-            ->where('payment_method', 'qrph')
-            ->latest('id')
-            ->first();
-
-        if ($allCheckedIn && $payment && $payment->payment_status === 'paid') {
-            return response()->json([
-                'message' => 'Payment already confirmed',
-                'payment_id' => $payment->id,
-                'booking_id' => $booking->id,
-                'already_confirmed' => true,
-            ], 200);
-        }
-
         DB::beginTransaction();
 
         try {
 
+            $booking = Booking::with([
+                'bookedRooms',
+                'payments',
+            ])->findOrFail($bookingId);
+
+            // ---------------------------------------------------------
+            // 1. Find the latest pending QR payment
+            // ---------------------------------------------------------
+            $qrPayment = $booking->payments()
+                ->where('payment_method', 'qrph')
+                ->where('payment_status', 'pending')
+                ->latest('id')
+                ->first();
+
+            if (!$qrPayment) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => 'No pending QR payment found for this booking.',
+                ], 409);
+            }
+
+            // ---------------------------------------------------------
+            // 2. SAFETY CHECK
+            // Never allow changing the method if something
+            // has already been paid.
+            // ---------------------------------------------------------
+            $alreadyPaid = $booking->payments()
+                ->where('payment_status', 'paid')
+                ->exists();
+
+            if ($alreadyPaid) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' =>
+                    'This booking has already been paid and cannot be changed to Cash.',
+                ], 409);
+            }
+
+            // ---------------------------------------------------------
+            // 3. Mark the old QR payment as failed
+            // ---------------------------------------------------------
+            $qrPayment->update([
+                'payment_status' => 'failed',
+            ]);
+
+            // ---------------------------------------------------------
+            // 4. Get current open shift
+            // ---------------------------------------------------------
+            $shift = Shift::whereNull('closed_at')
+                ->latest()
+                ->first();
+
+            // ---------------------------------------------------------
+            // 5. Generate new receipt number
+            // ---------------------------------------------------------
+            $lastPayment = BookingPayment::whereNotNull('receipt_number')
+                ->latest('id')
+                ->first();
+
+            $nextNumber = 1;
+
+            if ($lastPayment && $lastPayment->receipt_number) {
+                $nextNumber =
+                    ((int) substr($lastPayment->receipt_number, -6)) + 1;
+            }
+
+            $receiptNumber =
+                'OR-' .
+                date('Y') .
+                '-' .
+                str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+
+            // ---------------------------------------------------------
+            // 6. Create the actual CASH payment
+            // ---------------------------------------------------------
+            $cashPayment = BookingPayment::create([
+                'booking_id' => $booking->id,
+                'shift_id' => $shift?->id,
+                'receipt_number' => $receiptNumber,
+                'amount' => $booking->total_price,
+                'payment_method' => 'cash',
+                'payment_status' => 'paid',
+                'gcash_reference' => null,
+                'bank_reference' => null,
+                'received_by' => Auth::id(),
+                'payment_date' => now(),
+            ]);
+
+            // ---------------------------------------------------------
+            // 7. Check in the booked rooms
+            // ---------------------------------------------------------
             foreach ($booking->bookedRooms as $bookedRoom) {
-                if ($bookedRoom->status === 'confirmed' || $bookedRoom->status === 'pending') {
+
+                if (in_array($bookedRoom->status, [
+                    'pending',
+                    'confirmed',
+                ])) {
+
                     $bookedRoom->update([
                         'status' => 'checked_in',
                         'check_in_time' => now(),
@@ -669,13 +765,161 @@ class WalkInGuestController extends Controller
                 }
             }
 
-            if ($payment && $payment->payment_status !== 'paid') {
-                $payment->update([
-                    'payment_status' => 'paid',
-                    'payment_date' => now(),
-                    'bank_reference' => $request->input('payment_reference', $payment->bank_reference),
-                    'received_by' => Auth::id() ?? $payment->received_by,
-                ]);
+            DB::commit();
+
+            // ---------------------------------------------------------
+            // 8. Refresh dashboard/room data
+            // ---------------------------------------------------------
+            Cache::flush();
+
+            event(new DashboardUpdated());
+
+            return response()->json([
+                'message' =>
+                'Payment method changed to Cash successfully.',
+
+                'booking_id' => $booking->id,
+
+                'payment_id' => $cashPayment->id,
+
+                'payment_method' => 'cash',
+
+                'payment_status' => 'paid',
+            ], 200);
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            Log::error(
+                'Failed to switch QR payment to cash: ' .
+                    $e->getMessage()
+            );
+
+            return response()->json([
+                'message' => 'Failed to change payment method.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * CANCEL A PENDING QR PAYMENT (Back to payment options)
+     * Only flips THIS payment row pending -> failed.
+     * Does NOT cancel the booking, rooms, or create any payment.
+     */
+    public function cancelQr($paymentId)
+    {
+        DB::beginTransaction();
+
+        try {
+            $payment = BookingPayment::lockForUpdate()->findOrFail($paymentId);
+
+            if ($payment->payment_method !== 'qrph') {
+                DB::rollBack();
+                return response()->json(['message' => 'This payment is not a QR Ph payment.'], 409);
+            }
+
+            if ($payment->payment_status !== 'pending') {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'This QR payment is no longer pending (' . $payment->payment_status . ').',
+                    'payment_status' => $payment->payment_status,
+                ], 409);
+            }
+
+            $booking = Booking::find($payment->booking_id);
+
+            if (!$booking || $booking->booking_type !== 'walk_in') {
+                DB::rollBack();
+                return response()->json(['message' => 'Not a walk-in booking payment.'], 409);
+            }
+
+            $payment->update(['payment_status' => 'failed']);
+
+            DB::commit();
+
+            Cache::flush();
+            event(new DashboardUpdated());
+
+            return response()->json([
+                'message' => 'QR payment cancelled.',
+                'payment_id' => $payment->id,
+                'booking_id' => $payment->booking_id,
+                'payment_status' => 'failed',
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('cancelQr failed: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to cancel QR payment.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * CHANGE AN EXISTING (pending/failed) QR PAYMENT ROW TO CASH
+     * Updates the SAME row. No BookingPayment::create().
+     * Rooms are checked in only when every payment leg is paid.
+     */
+    public function changeToCash($paymentId)
+    {
+        DB::beginTransaction();
+
+        try {
+            $payment = BookingPayment::lockForUpdate()->findOrFail($paymentId);
+
+            if (
+                $payment->payment_method !== 'qrph' ||
+                !in_array($payment->payment_status, ['pending', 'failed'])
+            ) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Only a pending or failed QR Ph payment can be changed to Cash.',
+                ], 409);
+            }
+
+            $booking = Booking::with('bookedRooms')->findOrFail($payment->booking_id);
+
+            if ($booking->booking_type !== 'walk_in') {
+                DB::rollBack();
+                return response()->json(['message' => 'Not a walk-in booking payment.'], 409);
+            }
+
+            $shift = Shift::whereNull('closed_at')->latest()->first();
+
+            // Same row: qrph -> cash, pending/failed -> paid.
+            // bank_reference is cleared so no old QR intent can match this row.
+            $payment->update([
+                'payment_method' => 'cash',
+                'payment_status' => 'paid',
+                'received_by' => Auth::id(),
+                'payment_date' => now(),
+                'shift_id' => $shift?->id,
+                'bank_reference' => null,
+            ]);
+
+            // Booking is complete only when no leg is still pending/failed.
+            $hasUnpaidLeg = $booking->payments()
+                ->whereIn('payment_status', ['pending', 'failed'])
+                ->exists();
+
+            $checkedIn = false;
+
+            if (!$hasUnpaidLeg) {
+                foreach ($booking->bookedRooms as $bookedRoom) {
+                    if (in_array($bookedRoom->status, ['pending', 'confirmed'])) {
+                        $bookedRoom->update([
+                            'status' => 'checked_in',
+                            'check_in_time' => $bookedRoom->check_in_time ?? now(),
+                        ]);
+
+                        Room::where('id', $bookedRoom->room_id)
+                            ->update(['status' => Room::STATUS_OCCUPIED]);
+                    }
+                }
+                $checkedIn = true;
             }
 
             DB::commit();
@@ -683,45 +927,201 @@ class WalkInGuestController extends Controller
             Cache::flush();
             event(new DashboardUpdated());
 
-            $guestName = $booking->walkInGuest
-                ? $booking->walkInGuest->first_name . ' ' . $booking->walkInGuest->last_name
-                : 'Walk-in Guest';
+            if ($checkedIn) {
+                StaffActivityLog::create([
+                    'user_id' => Auth::id(),
+                    'action' => 'Walk-in Check-In (QR switched to Cash)',
+                    'details' => 'Reference: ' . $booking->booking_reference,
+                    'ip_address' => request()->ip(),
+                    'total_amount' => $booking->total_price,
+                    'timestamp' => now(),
+                ]);
 
-            $roomNumbers = $booking->bookedRooms->pluck('room.room_number')->filter()->implode(', ');
+                \App\Models\BookingHistory::create([
+                    'booking_id'  => $booking->id,
+                    'old_status'  => 'confirmed',
+                    'new_status'  => 'checked_in',
+                    'change_note' => 'Guest checked in by ' . trim(Auth::user()->first_name . ' ' . Auth::user()->last_name),
+                    'changed_by'  => Auth::id(),
+                    'changed_at'  => now(),
+                ]);
 
-            StaffActivityLog::create([
-                'user_id' => Auth::id(),
-                'action' => 'Walk-in QR Ph Confirmed',
-                'details' =>
-                'Guest: ' . $guestName .
-                    ' | Rooms: ' . $roomNumbers .
-                    ' | Reference: ' . $booking->booking_reference,
-                'ip_address' => request()->ip(),
-                'total_amount' => $booking->total_price,
-                'timestamp' => now(),
-            ]);
-
-            NotificationService::notifyAdmins(
-                'Walk-in QR Ph Paid',
-                $guestName . ' paid via QR Ph and checked in (Rooms: ' . $roomNumbers . ')'
-            );
+                NotificationService::notifyAdmins(
+                    'Walk-in Check-In',
+                    'Walk-in booking (Booking: ' . $booking->booking_reference . ') paid and checked in.',
+                    $booking->id
+                );
+            }
 
             return response()->json([
-                'message' => 'QR Ph payment confirmed. Guest checked in.',
-                'payment_id' => $payment?->id,
+                'message' => 'Payment changed to Cash.',
                 'booking_id' => $booking->id,
-                'booking_reference' => $booking->booking_reference,
+                'payment_id' => $payment->id,
+                'payment_ids' => $booking->payments()->orderBy('id')->pluck('id'),
+                'payment_method' => 'cash',
+                'payment_status' => 'paid',
+                'checked_in' => $checkedIn,
             ], 200);
         } catch (\Exception $e) {
-
             DB::rollBack();
-
-            Log::error('confirmQr error: ' . $e->getMessage());
+            Log::error('changeToCash failed: ' . $e->getMessage());
 
             return response()->json([
-                'message' => 'Failed to confirm QR payment: ' . $e->getMessage()
+                'message' => 'Failed to change payment to Cash.',
+                'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * RE-SPLIT A PENDING/FAILED QR LEG INTO CASH + NEW QR
+     * cash_amount + qrph_amount must equal the leg's current amount.
+     * The QR row is reused (smaller amount); a new PAID cash row is created.
+     */
+    public function resplit(Request $request, $paymentId)
+    {
+        $validated = $request->validate([
+            'cash_amount' => 'required|numeric|min:0.01',
+            'qrph_amount' => 'required|numeric|min:0.01',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $payment = BookingPayment::lockForUpdate()->findOrFail($paymentId);
+
+            if (
+                $payment->payment_method !== 'qrph' ||
+                !in_array($payment->payment_status, ['pending', 'failed'])
+            ) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Only a pending or failed QR Ph payment can be split.',
+                ], 409);
+            }
+
+            $booking = Booking::findOrFail($payment->booking_id);
+
+            if ($booking->booking_type !== 'walk_in') {
+                DB::rollBack();
+                return response()->json(['message' => 'Not a walk-in booking payment.'], 409);
+            }
+
+            $legAmount = round((float) $payment->amount, 2);
+            $sum = round($validated['cash_amount'] + $validated['qrph_amount'], 2);
+
+            if ($sum !== $legAmount) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Cash + QR Ph (₱' . number_format($sum, 2) .
+                        ') must equal the amount still to pay (₱' . number_format($legAmount, 2) . ').',
+                ], 422);
+            }
+
+            $shift = Shift::whereNull('closed_at')->latest()->first();
+
+            $groupId = $payment->split_group_id ?: (string) Str::uuid();
+            $maxSeq = (int) BookingPayment::where('booking_id', $booking->id)->max('split_sequence');
+
+            $lastPayment = BookingPayment::whereNotNull('receipt_number')
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
+
+            $nextNumber = $lastPayment && $lastPayment->receipt_number
+                ? ((int) substr($lastPayment->receipt_number, -6)) + 1
+                : 1;
+
+            $receiptNumber = 'OR-' . date('Y') . '-' . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+
+            // New CASH leg (paid on the spot)
+            BookingPayment::create([
+                'booking_id' => $booking->id,
+                'shift_id' => $shift?->id,
+                'receipt_number' => $receiptNumber,
+                'amount' => $validated['cash_amount'],
+                'split_group_id' => $groupId,
+                'split_sequence' => $maxSeq + 1,
+                'amount_due_at_split' => $booking->total_price,
+                'payment_method' => 'cash',
+                'payment_status' => 'paid',
+                'gcash_reference' => null,
+                'bank_reference' => null,
+                'is_split_payment' => true,
+                'received_by' => Auth::id(),
+                'payment_date' => now(),
+            ]);
+
+            // Same QR row, smaller amount, back to pending.
+            // bank_reference cleared so the old intent can't match it.
+            $payment->update([
+                'amount' => $validated['qrph_amount'],
+                'payment_status' => 'pending',
+                'bank_reference' => null,
+                'payment_date' => null,
+                'split_group_id' => $groupId,
+                'split_sequence' => $payment->split_sequence ?: $maxSeq + 2,
+                'amount_due_at_split' => $booking->total_price,
+                'is_split_payment' => true,
+            ]);
+
+            DB::commit();
+
+            Cache::flush();
+            event(new DashboardUpdated());
+
+            return response()->json([
+                'message' => 'Payment split. Generate the QR for the remaining amount.',
+                'booking_id' => $booking->id,
+                'qr_payment_id' => $payment->id,
+                'qrph_amount' => (float) $validated['qrph_amount'],
+                'payment_ids' => $booking->payments()
+                    ->where('payment_status', '!=', 'failed')
+                    ->orderBy('id')
+                    ->pluck('id'),
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('resplit failed: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to split payment.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * WALK-IN QR PH PAYMENT STATUS (READ-ONLY)
+     *
+     * Ibinabalik lang nito kung ano ang nasa DATABASE. Walang write at
+     * walang tawag sa PayMongo. Ang PayMongo WEBHOOK (PayMongoController)
+     * lang ang puwedeng mag-flip ng payment sa 'paid' at ng rooms sa
+     * 'checked_in'. Kapag hindi dumating ang webhook (hal. naka-off ang
+     * ngrok), mananatiling pending ang payment.
+     */
+    public function paymentStatus($bookingId)
+    {
+        $booking = Booking::with(['bookedRooms', 'payments'])->findOrFail($bookingId);
+
+        $payment = $booking->payments()
+            ->where('payment_method', 'qrph')
+            ->latest('id')
+            ->first();
+
+        $isPaid = $payment && $payment->payment_status === 'paid';
+
+        $allCheckedIn = $booking->bookedRooms->isNotEmpty() &&
+            $booking->bookedRooms->every(
+                fn($br) => in_array($br->status, ['checked_in', 'checked_out'])
+            );
+
+        return response()->json([
+            'paid' => $isPaid && $allCheckedIn,
+            'payment_status' => $payment?->payment_status,
+            'payment_id' => $payment?->id,
+            'booking_id' => $booking->id,
+        ]);
     }
 
     /**
@@ -742,6 +1142,8 @@ class WalkInGuestController extends Controller
             $status = $booking->bookedRooms->first()->status ?? null;
 
             if ($status === 'checked_out') {
+                DB::rollBack();
+
                 return response()->json([
                     'message' => 'Booking is already checked out'
                 ], 400);
@@ -813,6 +1215,15 @@ class WalkInGuestController extends Controller
                 $addOnsInfo = ' | Add-ons: ' . $allAddOns->implode(', ');
             }
 
+            \App\Models\BookingHistory::create([
+                'booking_id'  => $booking->id,
+                'old_status'  => 'checked_in',
+                'new_status'  => 'checked_out',
+                'change_note' => 'Guest checked out by ' . trim(Auth::user()->first_name . ' ' . Auth::user()->last_name),
+                'changed_by'  => Auth::id(),
+                'changed_at'  => now(),
+            ]);
+
             StaffActivityLog::create([
                 'user_id' => Auth::id(),
                 'action' => 'Walk-in Check-Out',
@@ -824,13 +1235,20 @@ class WalkInGuestController extends Controller
                 'timestamp' => now(),
             ]);
 
+            $checkedOutRooms = $booking->bookedRooms
+                ->map(fn($br) => $br->room?->room_number)
+                ->filter()
+                ->implode(', ');
+
             NotificationService::notifyAdmins(
                 'Walk-in Check-Out',
                 $name .
-                    ' checked out (Ref: ' .
+                    ' checked out (Room ' . $checkedOutRooms .
+                    ' | Booking: ' .
                     $booking->booking_reference .
                     ')' .
-                    $addOnsInfo
+                    $addOnsInfo,
+                $booking->id
             );
 
             return response()->json([

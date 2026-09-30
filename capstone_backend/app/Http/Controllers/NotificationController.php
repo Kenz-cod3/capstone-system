@@ -96,6 +96,20 @@ class NotificationController extends Controller
         ]);
     }
 
+    // MARK SINGLE AS UNREAD
+    public function markAsUnread($id)
+    {
+        $notification = Notification::findOrFail($id);
+
+        $notification->update([
+            'is_read' => false
+        ]);
+
+        return response()->json([
+            'message' => 'Marked as unread'
+        ], 200);
+    }
+
     // UNREAD COUNT
     public function unreadCount($id)
     {
@@ -116,6 +130,7 @@ class NotificationController extends Controller
             'id',
             'title',
             'message',
+            'booking_id',
             'is_read',
             'created_at',
         ])

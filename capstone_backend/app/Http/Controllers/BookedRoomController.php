@@ -427,6 +427,7 @@ class BookedRoomController extends Controller
                             $notification = Notification::create([
                                 'user_id' => $user->id,
                                 'title' => 'Booking Confirmed',
+                                'booking_id' => $booking->id,
                                 'message' => $staffName .
                                     ' confirmed booking ' .
                                     $booking->booking_reference . '.',
@@ -440,6 +441,7 @@ class BookedRoomController extends Controller
                             $notification = Notification::create([
                                 'user_id' => $booking->user_id,
                                 'title' => 'Booking Confirmed',
+                                'booking_id' => $booking->id,
                                 'message' => 'Your booking ' .
                                     $booking->booking_reference .
                                     ' has been confirmed.',
@@ -461,8 +463,22 @@ class BookedRoomController extends Controller
 
                         break;
 
-                    // CHECKED IN
                     case 'checked_in':
+                        // Walk-in na may pending QR Ph: bawal i-check-in hangga't walang webhook
+                        $hasPendingQr = $bookedRoom->booking
+                            && $bookedRoom->booking->booking_type === 'walk_in'
+                            && $bookedRoom->booking->payments()
+                            ->where('payment_method', 'qrph')
+                            ->where('payment_status', 'pending')
+                            ->exists();
+
+                        if ($hasPendingQr) {
+                            $earlyResponse = response()->json([
+                                'message' => 'QR Ph payment is still pending. Wait for confirmation or switch to cash.'
+                            ], 409);
+                            return $bookedRoom;
+                        }
+
                         $alreadyOccupied = BookedRoom::where('room_id', $bookedRoom->room_id)
                             ->where('id', '!=', $bookedRoom->id)
                             ->whereNull('archived_at')
@@ -534,12 +550,15 @@ class BookedRoomController extends Controller
                             ]);
                         }
 
-                        $users = User::whereIn('role', ['admin', 'staff'])->get();
+                        $users = User::whereIn('role', ['admin', 'staff'])
+                            ->when(Auth::id(), fn($q) => $q->where('id', '!=', Auth::id()))
+                            ->get();
 
                         foreach ($users as $user) {
                             $notification = Notification::create([
                                 'user_id' => $user->id,
                                 'title' => 'Guest Checked In',
+                                'booking_id' => $bookedRoom->booking_id,
                                 'message' => 'Guest has checked in to Room ' .
                                     $bookedRoom->room->room_number .
                                     ' (Booking: ' .
@@ -644,9 +663,12 @@ class BookedRoomController extends Controller
                                 $notification = Notification::create([
                                     'user_id' => $housekeeper->id,
                                     'title' => 'New Cleaning Task',
+                                    'booking_id' => $bookedRoom->booking_id,
                                     'message' => 'Room ' .
                                         $bookedRoom->room->room_number .
-                                        ' is ready for cleaning.',
+                                        ' is ready for cleaning (Booking: ' .
+                                        $bookedRoom->booking->booking_reference .
+                                        ').',
                                     'is_read' => false,
                                 ]);
 
@@ -686,15 +708,20 @@ class BookedRoomController extends Controller
                             }
                         }
 
-                        $users = User::whereIn('role', ['admin', 'staff'])->get();
+                        $users = User::whereIn('role', ['admin', 'staff'])
+                            ->when(Auth::id(), fn($q) => $q->where('id', '!=', Auth::id()))
+                            ->get();
 
                         foreach ($users as $user) {
                             $notification = Notification::create([
                                 'user_id' => $user->id,
                                 'title' => 'Checked-out',
+                                'booking_id' => $bookedRoom->booking_id,
                                 'message' => 'Guest Room ' .
                                     $bookedRoom->room->room_number .
-                                    ' has been checked out.',
+                                    ' has been checked out (Booking: ' .
+                                    $bookedRoom->booking->booking_reference .
+                                    ').',
                             ]);
 
                             broadcast(new NotificationCreated($notification))->toOthers();
@@ -717,12 +744,15 @@ class BookedRoomController extends Controller
                         $bookedRoom->overdue_started_at = null;
                         $bookedRoom->checkout_status = 'ontime';
 
-                        $users = User::whereIn('role', ['admin', 'staff'])->get();
+                        $users = User::whereIn('role', ['admin', 'staff'])
+                            ->when(Auth::id(), fn($q) => $q->where('id', '!=', Auth::id()))
+                            ->get();
 
                         foreach ($users as $user) {
                             $notification = Notification::create([
                                 'user_id' => $user->id,
                                 'title' => 'Booking Cancelled',
+                                'booking_id' => $bookedRoom->booking_id,
                                 'message' => 'Booking ' .
                                     $bookedRoom->booking->booking_reference .
                                     ' has been cancelled. Room ' .

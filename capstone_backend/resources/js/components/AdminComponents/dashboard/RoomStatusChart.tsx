@@ -40,7 +40,7 @@ const renderCustomizedLabel = ({
 };
 
 export default function RoomStatusChart({
-    data = [],
+    data: rawData = [],
     selectedDate,
     onDateChange,
     emptyMessage,
@@ -50,6 +50,19 @@ export default function RoomStatusChart({
     onDateChange?: (date: string) => void;
     emptyMessage?: string;
 }) {
+    // Itago ang "Reserved" sa UI lang
+    const labelMap: Record<string, string> = {
+        Preparing: "Queued",
+        Ongoing: "Cleaning",
+    };
+
+    const data = rawData
+        .filter((item) => item.name !== "Reserved")
+        .map((item) => ({
+            ...item,
+            name: labelMap[item.name] ?? item.name,
+        }));
+
     const totalRooms = data.reduce((sum, item) => sum + item.value, 0);
     const today = new Date().toISOString().slice(0, 10);
 

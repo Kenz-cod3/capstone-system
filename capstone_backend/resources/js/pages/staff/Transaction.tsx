@@ -334,7 +334,7 @@ export default function TransactionsPage() {
     const showSkeleton = loading || isChangingPage;
 
     return (
-        <div className="p-8 min-h-screen font-[DM_Sans,sans-serif] select-none">
+        <div className="pt-2 pb-6 font-[DM_Sans,sans-serif] select-none">
             {/* Page Header */}
             <div className="mb-8">
                 <h1

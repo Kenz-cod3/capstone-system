@@ -66,6 +66,17 @@ const getPriceColor = (status?: string) => {
 const capitalize = (s?: string) =>
     s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown";
 
+const statusLabel = (status?: string) => {
+    switch (status?.toLowerCase()) {
+        case "preparing":
+            return "Queued";
+        case "ongoing":
+            return "Cleaning";
+        default:
+            return capitalize(status);
+    }
+};
+
 const imageUrl = (img: any): string =>
     img?.url ?? img?.image_url ?? img?.path ?? "";
 
@@ -199,7 +210,7 @@ const RoomCard = memo(({ room, onEdit, onDelete, onView, onViewInfo }: any) => {
                 <span
                     className={`absolute top-3 left-3 px-2.5 py-1 text-xs font-semibold rounded-full ring-1 shadow-sm backdrop-blur-sm ${getStatusBadgeStyle(room.status)}`}
                 >
-                    {capitalize(room.status)}
+                    {statusLabel(room.status)}
                 </span>
 
                 {/* 360° button (only when a panorama exists) */}

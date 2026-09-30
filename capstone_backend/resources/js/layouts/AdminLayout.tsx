@@ -15,9 +15,7 @@ import {
     PanelRight,
     ChevronDown,
     Settings,
-    LifeBuoy,
     Bell,
-    UserPlus,
     ShoppingCart,
     UtensilsCrossed,
     MessageCircle,
@@ -26,9 +24,11 @@ import {
     ChevronUp,
     Menu,
     X,
-    Package,
     TrendingUp,
     TrendingDown,
+    Clock,
+    ReceiptText, // <-- IDINAGDAG ITO
+    ScrollText,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -58,6 +58,64 @@ import Echo from "@/services/echo";
 import NProgress from "nprogress";
 import { toast } from "sonner";
 import "nprogress/nprogress.css";
+
+function NotificationGuestAvatar({
+    src,
+    name,
+    loading,
+}: {
+    src?: string | null;
+    name?: string | null;
+    loading?: boolean;
+}) {
+    const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+        src ? "loading" : "error",
+    );
+    const imgRef = useRef<HTMLImageElement | null>(null);
+
+    useEffect(() => {
+        if (!src) {
+            setStatus("error");
+            return;
+        }
+        if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+            setStatus("loaded");
+        } else {
+            setStatus("loading");
+        }
+    }, [src]);
+
+    // Naglo-load pa ang booking data
+    if (loading) {
+        return <div className="avatar-skeleton h-8 w-8 shrink-0" />;
+    }
+
+    // Walang image (walk-in) o nag-error: letter
+    if (!src || status === "error") {
+        return (
+            <div className="h-8 w-8 shrink-0 rounded-full bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center uppercase">
+                {name?.[0] || "G"}
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative h-8 w-8 shrink-0">
+            {status === "loading" && (
+                <div className="avatar-skeleton h-8 w-8" />
+            )}
+            <img
+                ref={imgRef}
+                src={src}
+                alt=""
+                onLoad={() => setStatus("loaded")}
+                onError={() => setStatus("error")}
+                className="h-8 w-8 rounded-full object-cover"
+                style={{ display: status === "loaded" ? "block" : "none" }}
+            />
+        </div>
+    );
+}
 
 const AdminLayout = ({
     children,
@@ -112,6 +170,10 @@ const AdminLayout = ({
     const isClickingNotif = useRef(false);
     const notifButtonRef = useRef<HTMLButtonElement | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement | null>(null);
+    const ignoreOutsideClick = useRef(false);
+    const bookingCache = useRef<
+        Record<string, { guestName: string | null; bookingInfo: any }>
+    >({});
     const timeMapRef = useRef<{ [key: number]: string }>({});
     const [notificationsLoading, setNotificationsLoading] = useState(false);
     const [offset, setOffset] = useState(0);
@@ -119,6 +181,14 @@ const AdminLayout = ({
     const [selectedNotification, setSelectedNotification] = useState<any>(null);
     const [guestName, setGuestName] = useState<string | null>(null);
     const [guestNameLoading, setGuestNameLoading] = useState(false);
+    const [bookingInfo, setBookingInfo] = useState<{
+        reference: string | null;
+        rooms: string | null;
+        roomTypes: string | null;
+        actor: string | null;
+        guestAvatar: string | null;
+        guestType: "online" | "walk_in" | null;
+    } | null>(null);
 
     // State for dropdown toggles
     const [openDropdowns, setOpenDropdowns] = useState<{
@@ -158,6 +228,7 @@ const AdminLayout = ({
         "/admin/menu": "Menu",
         "/admin/orders": "Order Reports",
         "/reports": "Reports",
+        "/payment-logs": "Payment Logs",
     };
 
     const getPageTitle = () => {
@@ -480,6 +551,48 @@ const AdminLayout = ({
         }
     };
 
+    // Humingi ng permission sa unang click (kailangan ito ng browser)
+    useEffect(() => {
+        if (!("Notification" in window)) return;
+        if (Notification.permission !== "default") return;
+
+        const ask = () => {
+            Notification.requestPermission();
+            window.removeEventListener("click", ask);
+        };
+        window.addEventListener("click", ask);
+        return () => window.removeEventListener("click", ask);
+    }, []);
+
+    const playNotificationSound = () => {
+        const audio = new Audio("/sounds/notification.mp3");
+        audio.volume = 0.7;
+        audio.play().catch((err) => console.error("Sound blocked:", err));
+    };
+
+    const playMessageSound = () => {
+        const audio = new Audio("/sounds/notification.mp3");
+        audio.volume = 0.7;
+        audio.play().catch((err) => console.error("Sound blocked:", err));
+    };
+
+    const showDesktopNotification = (n: any) => {
+        if (!("Notification" in window)) return;
+        if (Notification.permission !== "granted") return;
+
+        const desktopNotif = new Notification(n.title ?? "New notification", {
+            body: n.message ?? "",
+            icon: logo,
+            tag: `notif-${n.id}`,
+        });
+
+        desktopNotif.onclick = () => {
+            window.focus();
+            setSelectedNotification(n);
+            desktopNotif.close();
+        };
+    };
+
     const refreshData = () => {
         fetchMessages();
         fetchNotifications();
@@ -516,6 +629,8 @@ const AdminLayout = ({
                 });
 
                 setUnreadCount((prev) => prev + 1);
+                playNotificationSound();
+                showDesktopNotification(newNotification);
             },
         );
 
@@ -536,6 +651,7 @@ const AdminLayout = ({
             console.log("📩 REALTIME MESSAGE:", e);
 
             fetchMessages();
+            playMessageSound();
         });
 
         return () => {
@@ -696,15 +812,19 @@ const AdminLayout = ({
                 .querySelector(".mobile-sidebar")
                 ?.contains(target);
 
-            if (
-                !insideChatDropdown &&
-                !insideChatBox &&
-                !insideChatButton &&
-                !insideNotifDropdown &&
-                !insideNotifButton
-            ) {
-                setIsChatOpen(false);
-                setIsNotifOpen(false);
+            // Habang nakabukas ang notification modal, huwag isara ang dropdown
+            if (!selectedNotification && !ignoreOutsideClick.current) {
+                if (
+                    !insideChatDropdown &&
+                    !insideChatBox &&
+                    !insideChatButton
+                ) {
+                    setIsChatOpen(false);
+                }
+
+                if (!insideNotifDropdown && !insideNotifButton) {
+                    setIsNotifOpen(false);
+                }
             }
 
             // Only close mobile menu when clicking outside, not when clicking inside dropdown items
@@ -724,11 +844,12 @@ const AdminLayout = ({
         window.addEventListener("mousedown", handleClickOutside);
         return () =>
             window.removeEventListener("mousedown", handleClickOutside);
-    }, [isMobileMenuOpen]);
+    }, [isMobileMenuOpen, selectedNotification]);
 
     useEffect(() => {
         if (!selectedNotification) {
             setGuestName(null);
+            setBookingInfo(null);
             return;
         }
 
@@ -736,23 +857,110 @@ const AdminLayout = ({
             selectedNotification.message,
         );
 
-        if (!bookingReference) {
+        const bookingId = selectedNotification.booking_id;
+
+        if (!bookingId && !bookingReference) {
             setGuestName(null);
+            setBookingInfo(null);
+            return;
+        }
+
+        const cached = bookingCache.current[String(selectedNotification.id)];
+        if (cached) {
+            setGuestName(cached.guestName);
+            setBookingInfo(cached.bookingInfo);
+            setGuestNameLoading(false);
             return;
         }
 
         setGuestNameLoading(true);
-        api.get(`/bookings/reference/${bookingReference}`)
-            .then((res) => {
-                setGuestName(res.data?.guest_name ?? null);
-            })
+
+        const request = bookingId
+            ? api.get(`/bookings/${bookingId}`).then((res) => {
+                  const b = res.data;
+                  const person =
+                      b?.booking_type === "walk_in"
+                          ? (b?.walk_in_guest ?? null)
+                          : (b?.user ?? null);
+                  const name = person
+                      ? `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim()
+                      : null;
+                  const bookedRooms = b?.booked_rooms ?? [];
+
+                  const rooms = bookedRooms
+                      .map((br: any) => br.room?.room_number)
+                      .filter(Boolean)
+                      .join(", ");
+
+                  const roomTypes = Array.from(
+                      new Set(
+                          bookedRooms
+                              .map(
+                                  (br: any) =>
+                                      br.room?.room_type?.name ??
+                                      br.room?.room_type?.type_name ??
+                                      br.room?.room_type?.room_type_name ??
+                                      br.room?.room_type?.title,
+                              )
+                              .filter(Boolean),
+                      ),
+                  ).join(", ");
+
+                  const statusByTitle: Record<string, string> = {
+                      "Checked-out": "checked_out",
+                      "Guest Checked In": "checked_in",
+                      "Booking Cancelled": "cancelled",
+                      "Booking Confirmed": "confirmed",
+                  };
+                  const targetStatus =
+                      statusByTitle[selectedNotification.title];
+                  const matches = (b?.histories ?? []).filter(
+                      (h: any) =>
+                          !targetStatus || h.new_status === targetStatus,
+                  );
+                  const lastChange = matches[matches.length - 1];
+                  const actor = lastChange?.user
+                      ? `${lastChange.user.first_name ?? ""} ${lastChange.user.last_name ?? ""}`.trim()
+                      : null;
+
+                  setGuestName(name || null);
+                  setBookingInfo({
+                      reference: b?.booking_reference ?? null,
+                      guestType:
+                          b?.booking_type === "walk_in" ? "walk_in" : "online",
+                      rooms: rooms || null,
+                      roomTypes: roomTypes || null,
+                      actor: actor || null,
+                      guestAvatar: b?.user?.avatar_url ?? null,
+                  });
+              })
+            : api.get(`/bookings/reference/${bookingReference}`).then((res) => {
+                  setGuestName(res.data?.guest_name ?? null);
+                  setBookingInfo(null);
+              });
+
+        request
             .catch(() => {
                 setGuestName(null);
+                setBookingInfo(null);
             })
             .finally(() => {
                 setGuestNameLoading(false);
             });
     }, [selectedNotification]);
+
+    useEffect(() => {
+        if (
+            selectedNotification &&
+            !guestNameLoading &&
+            (guestName || bookingInfo)
+        ) {
+            bookingCache.current[String(selectedNotification.id)] = {
+                guestName,
+                bookingInfo,
+            };
+        }
+    }, [guestNameLoading, guestName, bookingInfo]);
 
     if (!user) {
         return null;
@@ -875,6 +1083,12 @@ const AdminLayout = ({
                     href: "/expenses",
                     icon: TrendingDown,
                 },
+                {
+                    name: "Payment Logs",
+                    description: "PayMongo payment history",
+                    href: "/payment-logs",
+                    icon: ScrollText,
+                },
             ],
         },
         {
@@ -902,6 +1116,12 @@ const AdminLayout = ({
                     description: "Order Sales Management",
                     href: "/admin/orders",
                     icon: UtensilsCrossed,
+                },
+                {
+                    name: "Orders Transaction Report",
+                    description: "View all POS payments",
+                    href: "/admin/orders-transaction-report",
+                    icon: ReceiptText,
                 },
             ],
         },
@@ -1359,9 +1579,9 @@ const AdminLayout = ({
                                     <div
                                         key={n.id}
                                         onClick={() => {
-                                            markNotificationAsRead(n.id);
+                                            if (!n.is_read)
+                                                markNotificationAsRead(n.id);
                                             setSelectedNotification(n);
-                                            setIsNotifOpen(false);
                                         }}
                                         className={`px-4 py-3 cursor-pointer hover:bg-gray-50 rounded-lg mb-1 select-none ${!n.is_read ? "bg-emerald-50" : ""}`}
                                     >
@@ -1472,6 +1692,16 @@ const AdminLayout = ({
                 }
                 .scrollbar-hide::-webkit-scrollbar {
                     display: none;
+                }
+                .avatar-skeleton {
+                    border-radius: 9999px;
+                    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+                    background-size: 200% 100%;
+                    animation: avatarShimmer 1.2s ease-in-out infinite;
+                }
+                @keyframes avatarShimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
                 }
                 .select-none {
                     user-select: none;
@@ -1715,7 +1945,7 @@ const AdminLayout = ({
                             </div>
                             <div className="flex flex-col">
                                 <span className="font-bold text-sm tracking-tight leading-tight text-gray-800">
-                                    Lynn Ennia's
+                                    Lyn Enia's
                                 </span>
                                 <span className="text-[10px] text-emerald-600/80 tracking-wide">
                                     Traveler's Inn
@@ -1883,7 +2113,7 @@ const AdminLayout = ({
                                             className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200"
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <MessageDropdownContent />
+                                            {MessageDropdownContent()}
                                         </div>
                                     )}
                                 </div>
@@ -1921,7 +2151,7 @@ const AdminLayout = ({
                                             className="absolute right-0 mt-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200"
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <NotificationDropdownContent />
+                                            {NotificationDropdownContent()}
                                         </div>
                                     )}
                                 </div>
@@ -2002,18 +2232,17 @@ const AdminLayout = ({
 
             <Dialog
                 open={!!selectedNotification}
-                onOpenChange={(open) => !open && setSelectedNotification(null)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        ignoreOutsideClick.current = true;
+                        setSelectedNotification(null);
+                        setTimeout(() => {
+                            ignoreOutsideClick.current = false;
+                        }, 300);
+                    }
+                }}
             >
-                <DialogContent className="sm:max-w-md bg-white border border-gray-100 shadow-lg ring-0 outline-none focus:outline-none focus:ring-0 focus-visible:ring-0">
-                    <DialogHeader>
-                        <DialogTitle className="text-gray-900">
-                            {selectedNotification?.title}
-                        </DialogTitle>
-                        <DialogDescription className="text-gray-500">
-                            {selectedNotification?.message}
-                        </DialogDescription>
-                    </DialogHeader>
-
+                <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-white border border-gray-100 shadow-xl ring-0 outline-none focus:outline-none focus:ring-0 focus-visible:ring-0 gap-0">
                     {selectedNotification &&
                         (() => {
                             const { room, bookingReference } =
@@ -2021,50 +2250,153 @@ const AdminLayout = ({
                                     selectedNotification.message,
                                 );
 
-                            if (!room && !bookingReference) return null;
+                            const actorByTitle: Record<string, string> = {
+                                "Checked-out": "Checked out by",
+                                "Guest Checked In": "Checked in by",
+                                "Booking Cancelled": "Cancelled by",
+                                "Booking Confirmed": "Confirmed by",
+                            };
+                            const actorLabel =
+                                actorByTitle[selectedNotification.title] ||
+                                "Handled by";
+
+                            const created = new Date(
+                                selectedNotification.created_at,
+                            );
+                            const formattedDate = isNaN(created.getTime())
+                                ? null
+                                : created.toLocaleString("en-PH", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      hour12: true,
+                                  });
+
+                            const ref =
+                                bookingInfo?.reference || bookingReference;
+                            const roomValue = bookingInfo?.rooms || room;
+
+                            const details = [
+                                { label: "Room", value: roomValue },
+                                {
+                                    label: "Type",
+                                    value: bookingInfo?.roomTypes,
+                                },
+                                {
+                                    label: actorLabel,
+                                    value: bookingInfo?.actor,
+                                },
+                            ].filter((d) => d.value);
 
                             return (
-                                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-2">
-                                    {(guestName || guestNameLoading) && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Guest
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {guestNameLoading
-                                                    ? "Loading..."
-                                                    : guestName}
-                                            </span>
+                                <>
+                                    {/* Header */}
+                                    <div className="px-5 pt-5 pb-3 pr-12">
+                                        <div className="min-w-0">
+                                            <DialogHeader className="space-y-0.5 text-left">
+                                                <DialogTitle className="text-base font-semibold text-gray-900">
+                                                    {selectedNotification.title}
+                                                </DialogTitle>
+                                                <DialogDescription className="text-xs text-gray-500 leading-snug">
+                                                    {
+                                                        selectedNotification.message
+                                                    }
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                        </div>
+                                    </div>
+
+                                    {/* Guest + Ref */}
+                                    {(guestName || guestNameLoading || ref) && (
+                                        <div className="mx-5 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <NotificationGuestAvatar
+                                                    src={
+                                                        bookingInfo?.guestAvatar
+                                                    }
+                                                    name={guestName}
+                                                    loading={guestNameLoading}
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5 h-4">
+                                                        <span className="text-[10px] uppercase tracking-wide text-gray-400 leading-4">
+                                                            Guest
+                                                        </span>
+                                                        {bookingInfo?.guestType && (
+                                                            <span
+                                                                className={`inline-flex items-center h-4 rounded px-1.5 text-[9px] font-semibold leading-none ${
+                                                                    bookingInfo.guestType ===
+                                                                    "walk_in"
+                                                                        ? "bg-emerald-50 text-emerald-600"
+                                                                        : "bg-blue-50 text-blue-600"
+                                                                }`}
+                                                            >
+                                                                {bookingInfo.guestType ===
+                                                                "walk_in"
+                                                                    ? "Walk-in"
+                                                                    : "Online"}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm font-medium text-gray-900 truncate capitalize">
+                                                        {guestNameLoading
+                                                            ? "Loading..."
+                                                            : guestName || "—"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {ref && (
+                                                <span className="shrink-0 rounded-md bg-white border border-gray-200 px-2 py-1 text-[11px] font-mono text-gray-600">
+                                                    {ref}
+                                                </span>
+                                            )}
                                         </div>
                                     )}
-                                    {room && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Room
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {room}
-                                            </span>
+
+                                    {/* Details */}
+                                    {details.length > 0 && (
+                                        <div
+                                            className={`mx-5 mt-3 grid gap-2 ${
+                                                details.length === 1
+                                                    ? "grid-cols-1"
+                                                    : details.length === 2
+                                                      ? "grid-cols-2"
+                                                      : "grid-cols-3"
+                                            }`}
+                                        >
+                                            {details.map((d) => (
+                                                <div
+                                                    key={d.label}
+                                                    className="rounded-lg border border-gray-100 px-3 py-2"
+                                                >
+                                                    <p className="text-[10px] uppercase tracking-wide text-gray-400 leading-none">
+                                                        {d.label}
+                                                    </p>
+                                                    <p className="mt-1 text-sm font-medium text-gray-800 truncate">
+                                                        {d.value}
+                                                    </p>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
-                                    {bookingReference && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">
-                                                Booking Ref
-                                            </span>
-                                            <span className="font-medium text-gray-800">
-                                                {bookingReference}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
+
+                                    {/* Footer */}
+                                    <div className="mt-4 flex items-center justify-between border-t border-gray-100 bg-gray-50/60 px-5 py-2.5 text-[11px] text-gray-400">
+                                        <span className="flex items-center gap-1.5">
+                                            <Clock className="h-3 w-3" />
+                                            {formattedDate}
+                                        </span>
+                                        <span>
+                                            {timeAgo(
+                                                selectedNotification.created_at,
+                                            )}
+                                        </span>
+                                    </div>
+                                </>
                             );
                         })()}
-
-                    <p className="text-xs text-gray-400">
-                        {selectedNotification &&
-                            timeAgo(selectedNotification.created_at)}
-                    </p>
                 </DialogContent>
             </Dialog>
         </TooltipProvider>

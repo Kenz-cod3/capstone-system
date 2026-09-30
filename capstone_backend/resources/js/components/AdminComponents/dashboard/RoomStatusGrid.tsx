@@ -151,6 +151,17 @@ function CheckoutBadge({
     );
 }
 
+const statusLabel = (status: string) => {
+    switch (status) {
+        case "preparing":
+            return "Queued";
+        case "ongoing":
+            return "Cleaning";
+        default:
+            return status;
+    }
+};
+
 export default function RoomStatusGrid({ rooms = [] }: any) {
     const navigate = useNavigate();
     const [page, setPage] = useState(0);
@@ -385,21 +396,21 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                         <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
                         Available
                     </span>
-                    <span className="flex items-center gap-2 text-gray-600">
+                    {/* <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
                         Reserved
-                    </span>
+                    </span> */}
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
                         Occupied
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                        Ongoing
+                        Cleaning
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                        Preparing
+                        Queued
                     </span>
                     <span className="flex items-center gap-2 text-gray-600">
                         <span className="w-2 h-2 bg-red-500 rounded-full"></span>
@@ -441,7 +452,7 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                                         {room.room_number}
                                     </p>
                                     <p className="text-xs opacity-70 capitalize leading-none mt-1">
-                                        {room.status}
+                                        {statusLabel(room.status)}
                                     </p>
                                     {/* Countdown rectangle - shows for occupied rooms with expected checkout */}
                                     {room.status === "occupied" &&
@@ -486,16 +497,38 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                             Room {hovered.room.room_number}
                         </p>
                         <p className={`text-xs ${theme.subtle} capitalize`}>
-                            {hovered.room.status}
+                            {statusLabel(hovered.room.status)}
                         </p>
                     </div>
 
-                    <div className="mb-2">
-                        <p className={`text-[11px] ${theme.subtle}`}>Guest</p>
-                        <p className="text-sm font-medium">
-                            {hovered.room.current_guest || "No active guest"}
-                        </p>
-                    </div>
+                    {hovered.room.status === "preparing" && (
+                        <div className="mb-3 rounded-lg bg-purple-50 border border-purple-100 px-3 py-2">
+                            <p className="text-xs text-purple-700 leading-snug">
+                                Awaiting housekeeping.
+                            </p>
+                        </div>
+                    )}
+
+                    {hovered.room.status === "ongoing" && (
+                        <div className="mb-3 rounded-lg bg-yellow-50 border border-yellow-100 px-3 py-2">
+                            <p className="text-xs text-yellow-700 leading-snug">
+                                Housekeeping in progress.
+                            </p>
+                        </div>
+                    )}
+
+                    {hovered.room.status !== "preparing" &&
+                        hovered.room.status !== "ongoing" && (
+                            <div className="mb-2">
+                                <p className={`text-[11px] ${theme.subtle}`}>
+                                    Guest
+                                </p>
+                                <p className="text-sm font-medium">
+                                    {hovered.room.current_guest ||
+                                        "No active guest"}
+                                </p>
+                            </div>
+                        )}
 
                     {hovered.room.booking_status && (
                         <div className="mb-2">

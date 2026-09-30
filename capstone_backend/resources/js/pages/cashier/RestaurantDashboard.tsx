@@ -1,9 +1,5 @@
 /**
  * Restaurant Dashboard — "Ticket Rail" design (matches Order & Menu management)
- *
- * Fonts used (add to your index.html <head>, or a global stylesheet):
- *   <link rel="preconnect" href="https://fonts.googleapis.com">
- *   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
  */
 
 import React, { useEffect, useState } from "react";
@@ -73,7 +69,9 @@ export default function RestaurantDashboard() {
         (sum, o) => sum + parseFloat(o.total_amount || 0),
         0,
     );
-    const pendingOrders = orders.filter((o) => o.order_status === "pending").length;
+    const pendingOrders = orders.filter(
+        (o) => o.order_status === "pending",
+    ).length;
     const paidOrders = orders.filter((o) => o.order_status === "paid").length;
 
     const lowStock = menu.filter(
@@ -82,7 +80,11 @@ export default function RestaurantDashboard() {
     const outOfStock = menu.filter((item) => item.stock_quantity === 0);
 
     const recentOrders = [...orders]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .sort(
+            (a, b) =>
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime(),
+        )
         .slice(0, 5);
 
     const formatCurrency = (amount: number) =>
@@ -94,16 +96,16 @@ export default function RestaurantDashboard() {
 
     if (loading) {
         return (
-            //bg-[#eef0ea]
             <div className="min-h-screen flex flex-col items-center justify-center">
                 <Loader2 className="h-10 w-10 animate-spin text-[#a8822f]" />
-                <p className="mt-4 text-[#8a8f83] text-sm">Loading dashboard...</p>
+                <p className="mt-4 text-[#8a8f83] text-sm">
+                    Loading dashboard...
+                </p>
             </div>
         );
     }
 
     return (
-        //bg-[#eef0ea]
         <div className="min-h-screen">
             <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Header */}
@@ -125,7 +127,11 @@ export default function RestaurantDashboard() {
                         disabled={refreshing}
                         className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#dde1d7] rounded-lg text-[#5c6258] text-[13px] font-medium hover:bg-[#f5f6f2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <RefreshCcw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                        <RefreshCcw
+                            className={`w-3.5 h-3.5 ${
+                                refreshing ? "animate-spin" : ""
+                            }`}
+                        />
                         Refresh
                     </button>
                 </div>
@@ -144,9 +150,13 @@ export default function RestaurantDashboard() {
                             {totalOrders}
                         </p>
                         <div className="flex items-center gap-2 text-[11px] font-['IBM_Plex_Mono']">
-                            <span className="text-[#1f7a5c]">Paid {paidOrders}</span>
+                            <span className="text-[#1f7a5c]">
+                                Paid {paidOrders}
+                            </span>
                             <span className="text-[#dde1d7]">·</span>
-                            <span className="text-[#c1861f]">Pending {pendingOrders}</span>
+                            <span className="text-[#c1861f]">
+                                Pending {pendingOrders}
+                            </span>
                         </div>
                     </div>
 
@@ -241,15 +251,22 @@ export default function RestaurantDashboard() {
                                                         {item.name}
                                                     </p>
                                                     <p className="text-[11px] text-[#8a8f83] mt-0.5 font-['IBM_Plex_Mono']">
-                                                        threshold {item.low_stock_threshold || 5}
+                                                        threshold{" "}
+                                                        {item.low_stock_threshold ||
+                                                            5}
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
                                                     <span
                                                         className="text-sm font-semibold font-['IBM_Plex_Mono']"
-                                                        style={{ color: zero ? "#a1402f" : "#8a5a0f" }}
+                                                        style={{
+                                                            color: zero
+                                                                ? "#a1402f"
+                                                                : "#8a5a0f",
+                                                        }}
                                                     >
-                                                        {item.stock_quantity} left
+                                                        {item.stock_quantity}{" "}
+                                                        left
                                                     </span>
                                                     {zero && (
                                                         <p className="text-[11px] text-[#a1402f] mt-0.5 flex items-center justify-end gap-1">
@@ -284,12 +301,16 @@ export default function RestaurantDashboard() {
                             {recentOrders.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-10">
                                     <ShoppingBag className="h-10 w-10 text-[#dde1d7] mb-3" />
-                                    <p className="text-[#8a8f83] text-sm">No orders yet</p>
+                                    <p className="text-[#8a8f83] text-sm">
+                                        No orders yet
+                                    </p>
                                 </div>
                             ) : (
                                 <div className="space-y-2">
                                     {recentOrders.map((order) => {
-                                        const meta = statusMeta(order.order_status)!;
+                                        const meta = statusMeta(
+                                            order.order_status,
+                                        )!;
                                         return (
                                             <div
                                                 key={order.id}
@@ -298,34 +319,49 @@ export default function RestaurantDashboard() {
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <span className="font-['IBM_Plex_Mono'] font-semibold text-[#3c423a] bg-white border border-[#e4e7dd] px-2 py-0.5 rounded text-xs">
-                                                            {order.order_number || `#${order.id}`}
+                                                            {order.order_number ||
+                                                                `#${order.id}`}
                                                         </span>
                                                         <span
                                                             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                                                             style={{
-                                                                backgroundColor: meta.bg,
+                                                                backgroundColor:
+                                                                    meta.bg,
                                                                 color: meta.text,
                                                             }}
                                                         >
                                                             <span
                                                                 className="w-1.5 h-1.5 rounded-full"
-                                                                style={{ backgroundColor: meta.dot }}
+                                                                style={{
+                                                                    backgroundColor:
+                                                                        meta.dot,
+                                                                }}
                                                             />
-                                                            {order.order_status}
+                                                            {
+                                                                order.order_status
+                                                            }
                                                         </span>
                                                     </div>
                                                     <p className="text-[11px] text-[#8a8f83] font-['IBM_Plex_Mono']">
                                                         {new Date(
-                                                            order.created_at || order.order_date,
+                                                            order.created_at ||
+                                                                order.order_date,
                                                         ).toLocaleString()}
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="font-['IBM_Plex_Mono'] font-semibold text-sm text-[#1f7a5c] tabular-nums">
-                                                        {formatCurrency(parseFloat(order.total_amount || 0))}
+                                                        {formatCurrency(
+                                                            parseFloat(
+                                                                order.total_amount ||
+                                                                    0,
+                                                            ),
+                                                        )}
                                                     </p>
                                                     <p className="text-[11px] text-[#8a8f83] mt-0.5 font-['IBM_Plex_Mono']">
-                                                        {order.items?.length || 0} items
+                                                        {order.items?.length ||
+                                                            0}{" "}
+                                                        items
                                                     </p>
                                                 </div>
                                             </div>
@@ -348,7 +384,11 @@ export default function RestaurantDashboard() {
                                 Avg order value
                             </p>
                             <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
-                                {formatCurrency(totalOrders > 0 ? totalSales / totalOrders : 0)}
+                                {formatCurrency(
+                                    totalOrders > 0
+                                        ? totalSales / totalOrders
+                                        : 0,
+                                )}
                             </p>
                         </div>
                         <TrendingUp className="w-6 h-6 text-white/70" />
@@ -378,7 +418,12 @@ export default function RestaurantDashboard() {
                                 Completion rate
                             </p>
                             <p className="font-['IBM_Plex_Mono'] text-xl font-semibold text-white tabular-nums">
-                                {totalOrders > 0 ? Math.round((paidOrders / totalOrders) * 100) : 0}%
+                                {totalOrders > 0
+                                    ? Math.round(
+                                          (paidOrders / totalOrders) * 100,
+                                      )
+                                    : 0}
+                                %
                             </p>
                         </div>
                         <TrendingUp className="w-6 h-6 text-white/70" />

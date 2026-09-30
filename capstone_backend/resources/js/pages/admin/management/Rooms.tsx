@@ -35,7 +35,7 @@ export default function Rooms() {
     const { data: rooms = [], isLoading } = useQuery<Room[]>({
         queryKey: ["rooms"],
         queryFn: async () => {
-            const res = await getRooms();
+            const res = await getRooms({ view: "admin" });
             return res.data;
         },
         staleTime: 1000 * 60 * 5,
@@ -83,15 +83,37 @@ export default function Rooms() {
 
     // Calculate stats with color coding
     const totalRooms = rooms.length;
-    const availableRooms = rooms.filter(
-        (r) => r.status?.toLowerCase() === "available",
-    ).length;
-    const occupiedRooms = rooms.filter(
-        (r) => r.status?.toLowerCase() === "occupied",
-    ).length;
-    const maintenanceRooms = rooms.filter(
-        (r) => r.status?.toLowerCase() === "maintenance",
-    ).length;
+    const countBy = (s: string) =>
+        rooms.filter((r) => r.status?.toLowerCase() === s).length;
+
+    const stats = [
+        { label: "Total Rooms", value: totalRooms, color: "text-gray-900" },
+        {
+            label: "Available",
+            value: countBy("available"),
+            color: "text-green-600",
+        },
+        {
+            label: "Occupied",
+            value: countBy("occupied"),
+            color: "text-blue-600",
+        },
+        {
+            label: "Preparing",
+            value: countBy("preparing"),
+            color: "text-purple-600",
+        },
+        {
+            label: "Ongoing",
+            value: countBy("ongoing"),
+            color: "text-amber-600",
+        },
+        {
+            label: "Maintenance",
+            value: countBy("maintenance"),
+            color: "text-red-600",
+        },
+    ];
 
     if (isLoading) {
         return (
@@ -186,123 +208,21 @@ export default function Rooms() {
                     </div>
                 </div>
 
-                {/* Stats Cards with Color Coding */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    {/* Total Rooms */}
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-500">
-                                    Total Rooms
-                                </p>
-                                <p className="text-3xl font-bold text-gray-900 mt-1">
-                                    {totalRooms}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-gray-100 rounded-xl">
-                                <svg
-                                    className="w-6 h-6 text-gray-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                                    />
-                                </svg>
-                            </div>
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+                    {stats.map((s) => (
+                        <div
+                            key={s.label}
+                            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200"
+                        >
+                            <p className="text-sm font-medium text-gray-500">
+                                {s.label}
+                            </p>
+                            <p className={"text-3xl font-bold mt-1 " + s.color}>
+                                {s.value}
+                            </p>
                         </div>
-                    </div>
-
-                    {/* Available - GREEN */}
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-500">
-                                    Available
-                                </p>
-                                <p className="text-3xl font-bold text-green-600 mt-1">
-                                    {availableRooms}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-green-50 rounded-xl">
-                                <svg
-                                    className="w-6 h-6 text-green-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Occupied - BLUE */}
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-500">
-                                    Occupied
-                                </p>
-                                <p className="text-3xl font-bold text-blue-600 mt-1">
-                                    {occupiedRooms}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-blue-50 rounded-xl">
-                                <svg
-                                    className="w-6 h-6 text-blue-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Maintenance - RED */}
-                    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-500">
-                                    Maintenance
-                                </p>
-                                <p className="text-3xl font-bold text-red-600 mt-1">
-                                    {maintenanceRooms}
-                                </p>
-                            </div>
-                            <div className="p-3 bg-red-50 rounded-xl">
-                                <svg
-                                    className="w-6 h-6 text-red-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                                    />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
+                    ))}
                 </div>
 
                 {/* Rooms Grid */}

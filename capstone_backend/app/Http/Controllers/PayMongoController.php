@@ -26,6 +26,7 @@ class PayMongoController extends Controller
             'booking_id' => 'required|exists:bookings,id',
             'amount'     => 'required|numeric|min:1',
             'fee_type'   => 'nullable|in:early_checkin,late_checkout,extension',
+            'payment_id' => 'nullable|exists:booking_payments,id',
         ]);
 
         $isFeePayment = ! empty($validated['fee_type']);
@@ -38,6 +39,27 @@ class PayMongoController extends Controller
             'amount' => $validated['amount'],
             'booking_type' => $booking->booking_type,
         ]);
+
+        // Reuse an existing walk-in payment leg (pending, or failed after "Back to payment options").
+        $walkInPayment = null;
+
+        if (! $isFeePayment && ! empty($validated['payment_id'])) {
+            $walkInPayment = BookingPayment::find($validated['payment_id']);
+
+            if (
+                ! $walkInPayment ||
+                (int) $walkInPayment->booking_id !== (int) $booking->id ||
+                $walkInPayment->payment_method !== 'qrph' ||
+                ! in_array($walkInPayment->payment_status, ['pending', 'failed'])
+            ) {
+                return response()->json([
+                    'message' => 'This payment can no longer be paid by QR Ph.'
+                ], 409);
+            }
+
+            // The leg's own amount is the source of truth.
+            $validated['amount'] = (float) $walkInPayment->amount;
+        }
 
         // Walk-in QR bookings are created with BookedRoom.status = 'confirmed'
         // (reserved but not yet checked in), so we accept both 'pending'
@@ -79,6 +101,7 @@ class PayMongoController extends Controller
                             'payment_method' => 'qrph',
                             'booking_type' => $booking->booking_type,
                             'fee_type' => $validated['fee_type'] ?? null,
+                            'booking_payment_id' => $walkInPayment ? (string) $walkInPayment->id : null,
                         ]),
                     ],
                 ],
@@ -195,6 +218,16 @@ class PayMongoController extends Controller
             ], 422);
         }
 
+        if ($walkInPayment) {
+            // Same row, new intent. No new booking_payments row.
+            $walkInPayment->update([
+                'payment_method' => 'qrph',
+                'payment_status' => 'pending',
+                'bank_reference' => $paymentIntentId,
+                'payment_date'   => null,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Dynamic QRPH generated successfully',
             'payment_intent_id' => $paymentIntentId,
@@ -243,10 +276,30 @@ class PayMongoController extends Controller
         $status = $response->json('data.attributes.status');
         $paymentId = $response->json('data.attributes.payments.0.id');
 
+        if ($status === 'succeeded') {
+            Log::channel('paymongo')->info('✅ QR status poll: SUCCEEDED', [
+                'payment_intent_id' => $paymentIntentId,
+                'payment_id'        => $paymentId,
+            ]);
+        }
+
         return response()->json([
             'status' => $status,
             'payment_id' => $paymentId,
         ], 200);
+    }
+
+    // FEE QR STATUS (DB lang, read-only, walang tawag sa PayMongo)
+    public function feeStatus(string $paymentIntentId)
+    {
+        $payment = BookingPayment::where('bank_reference', $paymentIntentId)
+            ->where('payment_status', 'paid')
+            ->first();
+
+        return response()->json([
+            'paid' => (bool) $payment,
+            'payment_id' => $payment?->id,
+        ]);
     }
 
     // PAYMONGO WEBHOOK
@@ -283,14 +336,114 @@ class PayMongoController extends Controller
 
         $session = data_get($payload, 'data.attributes.data');
 
-        // Fee payments are recorded by the staff UI after the QR is paid
+        Log::channel('paymongo')->info('✅ PAYMONGO PAYMENT SUCCESS (webhook received)', [
+            'event'       => $eventType,
+            'payment_id'  => data_get($session, 'id'),
+            'intent_id'   => data_get($session, 'attributes.payment_intent_id'),
+            'amount'      => ((int) data_get($session, 'attributes.amount', 0)) / 100,
+            'fee'         => ((int) data_get($session, 'attributes.fee', 0)) / 100,
+            'net_amount'  => ((int) data_get($session, 'attributes.net_amount', 0)) / 100,
+            'method'      => data_get($session, 'attributes.source.type'),
+            'description' => data_get($session, 'attributes.description'),
+            'booking_id'  => data_get($session, 'attributes.metadata.booking_id'),
+            'fee_type'    => data_get($session, 'attributes.metadata.fee_type'),
+            'paid_at'     => data_get($session, 'attributes.paid_at'),
+        ]);
+
+        \App\Models\PaymentLog::firstOrCreate(
+            ['payment_id' => data_get($session, 'id')],
+            [
+                'event'       => $eventType,
+                'intent_id'   => data_get($session, 'attributes.payment_intent_id'),
+                'booking_id'  => data_get($session, 'attributes.metadata.booking_id'),
+                'amount'      => ((int) data_get($session, 'attributes.amount', 0)) / 100,
+                'fee'         => ((int) data_get($session, 'attributes.fee', 0)) / 100,
+                'net_amount'  => ((int) data_get($session, 'attributes.net_amount', 0)) / 100,
+                'method'      => data_get($session, 'attributes.source.type'),
+                'description' => data_get($session, 'attributes.description'),
+                'status'      => 'paid',
+                'paid_at'     => data_get($session, 'attributes.paid_at')
+                    ? \Carbon\Carbon::createFromTimestamp(data_get($session, 'attributes.paid_at'))
+                    : now(),
+            ]
+        );
+
+        // ============================================================
+        // ROUTING: Kung Restaurant POS ito, ipasa sa OrderQrController
+        // ============================================================
+        $metadata = data_get($session, 'attributes.metadata', []);
+
+        if (data_get($metadata, 'source') === 'restaurant_pos') {
+            Log::info('Webhook: Routing to OrderQrController (Restaurant POS)');
+
+            return app(\App\Http\Controllers\OrderQrController::class)
+                ->webhook($request);
+        }
+        // ============================================================
+
+        // Fee payments (early check-in, late check-out, extension): ang webhook na ang nagre-record
         if (data_get($session, 'attributes.metadata.fee_type')) {
-            return response()->json(['message' => 'Fee payment handled by client'], 200);
+            $feeBookingId = data_get($session, 'attributes.metadata.booking_id');
+            $feeAmount = ((int) data_get($session, 'attributes.amount', 0)) / 100;
+            // payment intent id (pi_...) ang ginagamit ng frontend sa pag-poll
+            $feeReference = data_get($session, 'attributes.payment_intent_id')
+                ?? data_get($session, 'id');
+
+            if (! $feeBookingId || ! $feeReference || $feeAmount <= 0) {
+                Log::warning('PayMongo webhook: fee payment missing data', $payload);
+                return response()->json(['message' => 'Missing data'], 200);
+            }
+
+            if (BookingPayment::where('bank_reference', $feeReference)->exists()) {
+                return response()->json(['message' => 'Already processed'], 200);
+            }
+
+            $feeBooking = Booking::find($feeBookingId);
+
+            if (! $feeBooking) {
+                return response()->json(['message' => 'Booking not found'], 200);
+            }
+
+            $feeShift = Shift::whereNull('closed_at')->latest()->first();
+
+            $lastFeePayment = BookingPayment::whereNotNull('receipt_number')
+                ->latest('id')
+                ->first();
+
+            $feeNext = $lastFeePayment && $lastFeePayment->receipt_number
+                ? ((int) substr($lastFeePayment->receipt_number, -6)) + 1
+                : 1;
+
+            BookingPayment::create([
+                'booking_id'      => $feeBooking->id,
+                'shift_id'        => $feeShift?->id,
+                'receipt_number'  => 'OR-' . date('Y') . '-' . str_pad($feeNext, 6, '0', STR_PAD_LEFT),
+                'amount'          => $feeAmount,
+                'payment_method'  => 'qrph',
+                'payment_status'  => 'paid',
+                'gcash_reference' => null,
+                'bank_reference'  => $feeReference,
+                'received_by'     => $feeBooking->created_by,
+                'payment_date'    => now(),
+            ]);
+
+            broadcast(new DashboardUpdated())->toOthers();
+
+            Log::channel('paymongo')->info('💾 Fee payment saved to DB', [
+                'booking_id' => $feeBooking->id,
+                'fee_type'   => data_get($session, 'attributes.metadata.fee_type'),
+                'reference'  => $feeReference,
+                'amount'     => $feeAmount,
+            ]);
+
+            return response()->json(['message' => 'Fee payment recorded'], 200);
         }
 
         $bookingId     = data_get($session, 'attributes.metadata.booking_id');
         $paymentMethod = data_get($session, 'attributes.metadata.payment_method', 'gcash');
         $bookingType   = data_get($session, 'attributes.metadata.booking_type');
+        $bookingPaymentId = data_get($session, 'attributes.metadata.booking_payment_id');
+        $intentId         = data_get($session, 'attributes.payment_intent_id');
 
         // Direct Payment Intent flow (e.g. QRPH): amount/id sit on the payment object itself.
         // Checkout Session flow (e.g. gcash/bank via checkout): amount/id sit inside "payments[0]".
@@ -359,10 +512,42 @@ class PayMongoController extends Controller
         // Update THAT row instead of inserting a new one — otherwise the
         // original pending row is orphaned and keeps showing as "PENDING"
         // in the UI even though PayMongo already confirmed payment.
-        $payment = BookingPayment::where('booking_id', $booking->id)
-            ->where('payment_status', 'pending')
-            ->latest('id')
-            ->first();
+        if ($bookingPaymentId) {
+            // Exact leg, and it must still be pending and belong to this intent.
+            $payment = BookingPayment::where('id', $bookingPaymentId)
+                ->where('booking_id', $booking->id)
+                ->first();
+
+            $valid = $payment
+                && $payment->payment_method === 'qrph'
+                && $payment->payment_status === 'pending'
+                && (! $payment->bank_reference || ! $intentId || $payment->bank_reference === $intentId);
+
+            if (! $valid) {
+                Log::warning('PayMongo webhook ignored: payment leg is cancelled/changed/stale. MANUAL RECONCILIATION MAY BE NEEDED.', [
+                    'booking_payment_id' => $bookingPaymentId,
+                    'payment_reference'  => $paymentReference,
+                    'status'             => $payment?->payment_status,
+                ]);
+
+                return response()->json(['message' => 'Payment leg no longer pending.'], 200);
+            }
+        } else {
+            $payment = BookingPayment::where('booking_id', $booking->id)
+                ->where('payment_status', 'pending')
+                ->latest('id')
+                ->first();
+
+            // Walk-in QR must never create a fallback row.
+            if ($isWalkInQr && ! $payment) {
+                Log::warning('PayMongo webhook ignored: no pending walk-in QR row.', [
+                    'booking_id' => $booking->id,
+                    'payment_reference' => $paymentReference,
+                ]);
+
+                return response()->json(['message' => 'No pending payment.'], 200);
+            }
+        }
 
         if ($payment) {
             $payment->update([
@@ -398,7 +583,7 @@ class PayMongoController extends Controller
                 'payment_status'  => 'paid',
                 'gcash_reference' => $paymentMethod === 'gcash' ? $paymentReference : null,
                 'bank_reference'  => in_array($paymentMethod, ['bank', 'qrph']) ? $paymentReference : null,
-                'received_by'     => null,
+                'received_by'     => $booking->created_by,
                 'payment_date'    => now(),
             ]);
         }
@@ -411,7 +596,11 @@ class PayMongoController extends Controller
         // and the physical Room(s) to 'occupied'. Online bookings continue to
         // require manual staff confirmation.
         // ---------------------------------------------------------------------
-        if ($isWalkInQr) {
+        $hasUnpaidLeg = BookingPayment::where('booking_id', $booking->id)
+            ->whereIn('payment_status', ['pending', 'failed'])
+            ->exists();
+
+        if ($isWalkInQr && ! $hasUnpaidLeg) {
             foreach ($booking->bookedRooms as $bookedRoom) {
                 if (in_array($bookedRoom->status, ['pending', 'confirmed'])) {
                     $bookedRoom->update([
@@ -448,15 +637,45 @@ class PayMongoController extends Controller
 
         Log::info("PayMongo payment recorded for booking {$booking->id}", ['payment_id' => $payment->id]);
 
+        Log::channel('paymongo')->info('💾 Payment saved to DB', [
+            'booking_id'         => $booking->id,
+            'booking_reference'  => $booking->booking_reference,
+            'booking_payment_id' => $payment->id,
+            'paymongo_reference' => $paymentReference,
+            'amount'             => $amount,
+            'walk_in_qr'         => $isWalkInQr,
+        ]);
+
+        // Staff who handled this walk-in at the counter
+        $booking->loadMissing('createdBy');
+
+        $handlerName = $booking->createdBy
+            ? trim($booking->createdBy->first_name . ' ' . $booking->createdBy->last_name)
+            : null;
+
+        if ($isWalkInQr && ! $hasUnpaidLeg) {
+            BookingHistory::create([
+                'booking_id'  => $booking->id,
+                'old_status'  => 'confirmed',
+                'new_status'  => 'checked_in',
+                'change_note' => 'Guest checked in via QR Ph' . ($handlerName ? ' (handled by ' . $handlerName . ')' : ''),
+                'changed_by'  => $booking->created_by,
+                'changed_at'  => now(),
+            ]);
+        }
+
         // Notify Admins and Staff
-        $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])->get();
+        $staffAndAdmins = User::whereIn('role', ['admin', 'staff'])
+            ->when($booking->created_by, fn($q) => $q->where('id', '!=', $booking->created_by))
+            ->get();
 
         foreach ($staffAndAdmins as $user) {
             $notification = Notification::create([
                 'user_id' => $user->id,
+                'booking_id' => $booking->id,
                 'title'   => $isWalkInQr ? 'Walk-in QR Ph Paid' : 'Payment Received',
                 'message' => $isWalkInQr
-                    ? 'Walk-in booking ' . $booking->booking_reference . ' paid via QR Ph and auto-checked-in.'
+                    ? 'Walk-in booking ' . $booking->booking_reference . ' paid via QR Ph and auto-checked-in.' . ($handlerName ? ' Handled by ' . $handlerName . '.' : '')
                     : 'Payment received for booking ' . $booking->booking_reference . ' via QR Ph. Awaiting staff confirmation.',
                 'is_read' => false,
             ]);
@@ -471,6 +690,7 @@ class PayMongoController extends Controller
 
             $notification = Notification::create([
                 'user_id' => $booking->user_id,
+                'booking_id' => $booking->id,
                 'title'   => 'Payment Received',
                 'message' => $isWalkInQr
                     ? 'We received your payment for booking ' . $booking->booking_reference . '. You are now checked in.'
@@ -495,6 +715,27 @@ class PayMongoController extends Controller
         broadcast(new DashboardUpdated())->toOthers();
 
         return response()->json(['message' => 'Payment recorded'], 200);
+    }
+
+
+    // PAYMENT LOGS (admin lang)
+    public function logs(Request $request)
+    {
+        if ($request->user()?->role !== 'admin') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $query = \App\Models\PaymentLog::query()->latest('paid_at');
+
+        if ($search = $request->search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('payment_id', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('booking_id', $search);
+            });
+        }
+
+        return response()->json($query->paginate($request->per_page ?? 15));
     }
 
     private function verifySignature(string $payload, ?string $signatureHeader): bool

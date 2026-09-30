@@ -248,6 +248,17 @@ export default function AddRoomModal({ onClose, refresh }: any) {
         }
     };
 
+    const statusLabel = (status: string) => {
+        switch (status.toLowerCase()) {
+            case "preparing":
+                return "Queued";
+            case "ongoing":
+                return "Cleaning";
+            default:
+                return status;
+        }
+    };
+
     const getStatusColor = (status: string) => {
         switch (status.toLowerCase()) {
             case "available":
@@ -422,7 +433,6 @@ export default function AddRoomModal({ onClose, refresh }: any) {
                             <div className="px-3 grid grid-cols-3 gap-2">
                                 {[
                                     "available",
-                                    "reserved",
                                     "occupied",
                                     "maintenance",
                                     "preparing",
@@ -445,7 +455,7 @@ export default function AddRoomModal({ onClose, refresh }: any) {
                                                 : "opacity-80 hover:opacity-100"
                                         }`}
                                     >
-                                        {status}
+                                        {statusLabel(status)}
                                     </button>
                                 ))}
                             </div>

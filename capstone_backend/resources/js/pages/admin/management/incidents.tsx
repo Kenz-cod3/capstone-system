@@ -4,9 +4,8 @@ import api, { API_BASE } from "@/services/api";
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
 
-  .dr-root {
-    padding: 32px;
-    min-height: 100vh;
+   .dr-root {
+    padding: 8px 0 24px;
     font-family: 'DM Sans', sans-serif;
     animation: dr-fade-in-page 0.5s ease;
   }
@@ -612,430 +611,553 @@ const styles = `
 `;
 
 interface RoomIncident {
-  id: number;
-  room_id: number;
-  cleaner_id: number | null;
-  booking_id: number | null;
-  report_type: 'damaged' | 'lost' | 'found';
-  status: 'pending' | 'repairing' | 'resolved';
-  note: string | null;
-  photos: string[];
-  reported_at: string | null;
-  resolved_at: string | null;
-  created_at: string;
-  updated_at: string;
-  room: {
     id: number;
-    room_number: string;
-  } | null;
-  cleaner: {
-    id: number;
-    first_name: string;
-    last_name: string;
-  } | null;
-  resolvedBy: {
-    id: number;
-    first_name: string;
-    last_name: string;
-  } | null;
-  booking: {
-    id: number;
-    booking_reference: string;
-    guest_name: string | null;
-    user: {
-      id: number;
-      first_name: string;
-      last_name: string;
+    room_id: number;
+    cleaner_id: number | null;
+    booking_id: number | null;
+    report_type: "damaged" | "lost" | "found";
+    status: "pending" | "repairing" | "resolved";
+    note: string | null;
+    photos: string[];
+    reported_at: string | null;
+    resolved_at: string | null;
+    created_at: string;
+    updated_at: string;
+    room: {
+        id: number;
+        room_number: string;
     } | null;
-    walkInGuest: {
-      id: number;
-      first_name: string;
-      middle_name: string | null;
-      last_name: string;
+    cleaner: {
+        id: number;
+        first_name: string;
+        last_name: string;
     } | null;
-  } | null;
+    resolvedBy: {
+        id: number;
+        first_name: string;
+        last_name: string;
+    } | null;
+    booking: {
+        id: number;
+        booking_reference: string;
+        guest_name: string | null;
+        user: {
+            id: number;
+            first_name: string;
+            last_name: string;
+        } | null;
+        walkInGuest: {
+            id: number;
+            first_name: string;
+            middle_name: string | null;
+            last_name: string;
+        } | null;
+    } | null;
 }
 
 export default function DamagedRooms() {
-  const [rooms, setRooms] = useState<RoomIncident[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [repairingId, setRepairingId] = useState<number | null>(null);
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [totalRecords, setTotalRecords] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isChangingPage, setIsChangingPage] = useState(false);
+    const [rooms, setRooms] = useState<RoomIncident[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [repairingId, setRepairingId] = useState<number | null>(null);
 
-  const getDamagedRooms = async (page: number = 1, size: number = 10) => {
-    try {
-      setLoading(true);
-      const res = await api.get("/housekeeper/incidents", {
-        params: { page, per_page: size }
-      });
-      
-      const data = Array.isArray(res.data) ? res.data : res.data?.data || [];
-      setRooms(data);
-      
-      if (res.data?.total !== undefined) {
-        setTotalRecords(res.data.total);
-        setTotalPages(res.data.last_page || 1);
-      } else {
-        setTotalRecords(data.length);
-        setTotalPages(Math.ceil(data.length / size));
-      }
-      setCurrentPage(page);
-    } catch (err) {
-      console.log("Error fetching reports:", err);
-    } finally {
-      setLoading(false);
-      setIsChangingPage(false);
-    }
-  };
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [totalRecords, setTotalRecords] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+    const [isChangingPage, setIsChangingPage] = useState(false);
 
-  const markResolved = async (id: number) => {
-    try {
-      setRepairingId(id);
-      await api.put(`/housekeeper/incidents/${id}/status`, { status: "resolved" });
-      await getDamagedRooms(currentPage, pageSize);
-    } catch (err) {
-      console.log("Resolve error:", err);
-    } finally {
-      setRepairingId(null);
-    }
-  };
+    const getDamagedRooms = async (page: number = 1, size: number = 10) => {
+        try {
+            setLoading(true);
+            const res = await api.get("/housekeeper/incidents", {
+                params: { page, per_page: size },
+            });
 
-  useEffect(() => { 
-    getDamagedRooms(1, pageSize); 
-  }, []);
+            const data = Array.isArray(res.data)
+                ? res.data
+                : res.data?.data || [];
+            setRooms(data);
 
-  const handlePageChange = (page: number) => {
-    if (page === currentPage || page < 1 || page > totalPages) return;
-    setIsChangingPage(true);
-    setCurrentPage(page);
-    getDamagedRooms(page, pageSize);
-  };
+            if (res.data?.total !== undefined) {
+                setTotalRecords(res.data.total);
+                setTotalPages(res.data.last_page || 1);
+            } else {
+                setTotalRecords(data.length);
+                setTotalPages(Math.ceil(data.length / size));
+            }
+            setCurrentPage(page);
+        } catch (err) {
+            console.log("Error fetching reports:", err);
+        } finally {
+            setLoading(false);
+            setIsChangingPage(false);
+        }
+    };
 
-  const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const size = parseInt(e.target.value);
-    if (size === pageSize) return;
-    setPageSize(size);
-    setCurrentPage(1);
-    getDamagedRooms(1, size);
-  };
+    const markResolved = async (id: number) => {
+        try {
+            setRepairingId(id);
+            await api.put(`/housekeeper/incidents/${id}/status`, {
+                status: "resolved",
+            });
+            await getDamagedRooms(currentPage, pageSize);
+        } catch (err) {
+            console.log("Resolve error:", err);
+        } finally {
+            setRepairingId(null);
+        }
+    };
 
-  const getTypeBadgeClass = (type: string) => {
-    if (type === "damaged") return "dr-badge dr-badge-damaged";
-    if (type === "lost") return "dr-badge dr-badge-lost";
-    return "dr-badge dr-badge-found";
-  };
+    useEffect(() => {
+        getDamagedRooms(1, pageSize);
+    }, []);
 
-  const getStatusBadgeClass = (status: string) => {
-    if (status === "resolved") return "dr-badge dr-status-resolved";
-    if (status === "repairing") return "dr-badge dr-status-repairing";
-    return "dr-badge dr-status-pending";
-  };
+    const handlePageChange = (page: number) => {
+        if (page === currentPage || page < 1 || page > totalPages) return;
+        setIsChangingPage(true);
+        setCurrentPage(page);
+        getDamagedRooms(page, pageSize);
+    };
 
-  const startRange = totalRecords > 0 ? Math.min((currentPage - 1) * pageSize + 1, totalRecords) : 0;
-  const endRange = totalRecords > 0 ? Math.min(currentPage * pageSize, totalRecords) : 0;
+    const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const size = parseInt(e.target.value);
+        if (size === pageSize) return;
+        setPageSize(size);
+        setCurrentPage(1);
+        getDamagedRooms(1, size);
+    };
 
-  const showSkeleton = loading && !isChangingPage;
+    const getTypeBadgeClass = (type: string) => {
+        if (type === "damaged") return "dr-badge dr-badge-damaged";
+        if (type === "lost") return "dr-badge dr-badge-lost";
+        return "dr-badge dr-badge-found";
+    };
 
-  return (
-    <>
-      <style>{styles}</style>
-      <div className="dr-root">
-        {/* Header */}
-        <div className="dr-page-header">
-          <h1 className="dr-page-title">Room Incidents</h1>
-          <p className="dr-page-subtitle">Track and manage room incidents</p>
-        </div>
+    const getStatusBadgeClass = (status: string) => {
+        if (status === "resolved") return "dr-badge dr-status-resolved";
+        if (status === "repairing") return "dr-badge dr-status-repairing";
+        return "dr-badge dr-status-pending";
+    };
 
-        {/* Card */}
-        <div className="dr-card">
-          <div className="dr-card-header">
-            <h2 className="dr-card-title">All Incidents</h2>
-            <div className="dr-header-controls">
-              {!showSkeleton && (
-                <span className="dr-count-badge">{totalRecords} records</span>
-              )}
-              <select
-                className="dr-page-size-select"
-                value={pageSize}
-                onChange={handlePageSizeChange}
-                disabled={showSkeleton}
-              >
-                <option value={10}>10 per page</option>
-                <option value={20}>20 per page</option>
-                <option value={50}>50 per page</option>
-                <option value={100}>100 per page</option>
-              </select>
-            </div>
-          </div>
+    const startRange =
+        totalRecords > 0
+            ? Math.min((currentPage - 1) * pageSize + 1, totalRecords)
+            : 0;
+    const endRange =
+        totalRecords > 0 ? Math.min(currentPage * pageSize, totalRecords) : 0;
 
-          {showSkeleton ? (
-            <div className="dr-loading">
-              {[...Array(Math.min(pageSize, 20))].map((_, i) => (
-                <div
-                  key={i}
-                  className="dr-skeleton-row"
-                  style={{ animationDelay: `${i * 0.04}s` }}
-                />
-              ))}
-            </div>
-          ) : rooms.length === 0 ? (
-            <div className="dr-state">
-              No room incidents found
-            </div>
-          ) : (
-            <>
-              <div className={`dr-table-wrap ${isChangingPage ? 'dr-content-loading' : ''}`}>
-                <table className="dr-table">
-                  <thead>
-                    <tr>
-                      <th>Room</th>
-                      <th>Type</th>
-                      <th>Status</th>
-                      <th>Note</th>
-                      <th>Photos</th>
-                      <th>Reported By</th>
-                      <th>Date</th>
-                      <th>Guest</th>
-                      <th>Booking Ref</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rooms.map((report) => {
-                      const cleanerName = report.cleaner
-                        ? `${report.cleaner.first_name} ${report.cleaner.last_name}`
-                        : null;
+    const showSkeleton = loading && !isChangingPage;
 
-                      let guestName: string | null = null;
-                      if (report.booking) {
-                        if (report.booking.guest_name) {
-                          guestName = report.booking.guest_name;
-                        } else if (report.booking.user) {
-                          guestName = `${report.booking.user.first_name} ${report.booking.user.last_name}`;
-                        } else if (report.booking.walkInGuest) {
-                          const wg = report.booking.walkInGuest;
-                          guestName = `${wg.first_name} ${wg.middle_name ? wg.middle_name + ' ' : ''}${wg.last_name}`;
-                        }
-                      }
-
-                      const bookingRef = report.booking?.booking_reference || null;
-
-                      return (
-                        <tr key={report.id}>
-                          <td>
-                            <span className="dr-room-num">
-                              {report.room?.room_number ?? "—"}
-                            </span>
-                          </td>
-
-                          <td>
-                            <span className={getTypeBadgeClass(report.report_type)}>
-                              {report.report_type}
-                            </span>
-                          </td>
-
-                          <td>
-                            <span className={getStatusBadgeClass(report.status)}>
-                              {report.status}
-                            </span>
-                          </td>
-
-                          <td>
-                            {report.note
-                              ? <span className="dr-note">"{report.note}"</span>
-                              : <span className="dr-na">—</span>
-                            }
-                          </td>
-
-                          <td>
-                            {report.photos && report.photos.length > 0 ? (
-                              <div className="dr-photos">
-                                {report.photos.slice(0, 3).map((photo: string, index: number) => (
-                                  <img
-                                    key={index}
-                                    src={`${API_BASE}/storage/${photo}`}
-                                    alt="Damage"
-                                    className="dr-photo-thumb"
-                                    onClick={() => setPreviewImage(`${API_BASE}/storage/${photo}`)}
-                                  />
-                                ))}
-                                {report.photos.length > 3 && (
-                                  <span className="dr-photo-more">+{report.photos.length - 3}</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="dr-no-photos">No photos</span>
-                            )}
-                          </td>
-
-                          <td>
-                            {cleanerName
-                              ? <span className="dr-person">{cleanerName}</span>
-                              : <span className="dr-na">—</span>
-                            }
-                          </td>
-
-                          <td>
-                            {report.reported_at
-                              ? <span className="dr-date">
-                                {new Date(report.reported_at).toLocaleString("en-PH", {
-                                  month: "short", day: "numeric", year: "numeric",
-                                  hour: "2-digit", minute: "2-digit",
-                                })}
-                              </span>
-                              : <span className="dr-na">—</span>
-                            }
-                          </td>
-
-                          <td>
-                            {guestName
-                              ? <span className="dr-person">{guestName}</span>
-                              : <span className="dr-na">—</span>
-                            }
-                          </td>
-
-                          <td>
-                            {bookingRef
-                              ? <span className="dr-ref">{bookingRef}</span>
-                              : <span className="dr-na">—</span>
-                            }
-                          </td>
-
-                          <td>
-                            {report.status !== "resolved" ? (
-                              <button
-                                className="dr-btn-resolve"
-                                onClick={() => markResolved(report.id)}
-                                disabled={repairingId === report.id}
-                              >
-                                {repairingId === report.id ? "Updating..." : "Mark Resolved"}
-                              </button>
-                            ) : (
-                              <span className="dr-resolved-label">
-                                ✔ Resolved
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="dr-pagination">
-                <span className="dr-pagination-info">
-                  {totalRecords > 0 
-                    ? `Showing ${startRange}–${endRange} of ${totalRecords} incidents`
-                    : "No incidents found"
-                  }
-                </span>
-
-                <div className="dr-pagination-controls">
-                  <button
-                    className="dr-page-btn"
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1 || loading}
-                  >
-                    ‹
-                  </button>
-
-                  {(() => {
-                    const pages: (number | string)[] = [];
-                    const total = totalPages;
-                    
-                    if (total <= 7) {
-                      for (let i = 1; i <= total; i++) {
-                        pages.push(i);
-                      }
-                    } else if (currentPage <= 4) {
-                      for (let i = 1; i <= 5; i++) {
-                        pages.push(i);
-                      }
-                      pages.push('...');
-                      pages.push(total);
-                    } else if (currentPage >= total - 3) {
-                      pages.push(1);
-                      pages.push('...');
-                      for (let i = total - 4; i <= total; i++) {
-                        pages.push(i);
-                      }
-                    } else {
-                      pages.push(1);
-                      pages.push('...');
-                      for (let i = currentPage - 1; i <= currentPage + 1; i++) {
-                        pages.push(i);
-                      }
-                      pages.push('...');
-                      pages.push(total);
-                    }
-                    
-                    return pages.map((p, index) => {
-                      if (p === '...') {
-                        return (
-                          <span key={`ellipsis-${index}`} className="dr-page-ellipsis">…</span>
-                        );
-                      }
-                      const pageNum = p as number;
-                      return (
-                        <button
-                          key={pageNum}
-                          className={`dr-page-btn ${currentPage === pageNum ? "dr-page-active" : ""}`}
-                          onClick={() => handlePageChange(pageNum)}
-                          disabled={loading}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    });
-                  })()}
-
-                  <button
-                    className="dr-page-btn"
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages || totalPages === 0 || loading}
-                  >
-                    ›
-                  </button>
+    return (
+        <>
+            <style>{styles}</style>
+            <div className="dr-root">
+                {/* Header */}
+                <div className="dr-page-header">
+                    <h1 className="dr-page-title">Room Incidents</h1>
+                    <p className="dr-page-subtitle">
+                        Track and manage room incidents
+                    </p>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
 
-      {/* Image Preview Modal */}
-      {previewImage && (
-        <div
-          className="dr-modal-backdrop"
-          onClick={() => setPreviewImage(null)}
-        >
-          <div
-            className="dr-modal-inner"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="dr-modal-close"
-              onClick={() => setPreviewImage(null)}
-            >
-              ✕
-            </button>
-            <img
-              src={previewImage}
-              alt="Damage preview"
-              className="dr-modal-img"
-            />
-          </div>
-        </div>
-      )}
-    </>
-  );
+                {/* Card */}
+                <div className="dr-card">
+                    <div className="dr-card-header">
+                        <h2 className="dr-card-title">All Incidents</h2>
+                        <div className="dr-header-controls">
+                            {!showSkeleton && (
+                                <span className="dr-count-badge">
+                                    {totalRecords} records
+                                </span>
+                            )}
+                            <select
+                                className="dr-page-size-select"
+                                value={pageSize}
+                                onChange={handlePageSizeChange}
+                                disabled={showSkeleton}
+                            >
+                                <option value={10}>10 per page</option>
+                                <option value={20}>20 per page</option>
+                                <option value={50}>50 per page</option>
+                                <option value={100}>100 per page</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {showSkeleton ? (
+                        <div className="dr-loading">
+                            {[...Array(Math.min(pageSize, 20))].map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="dr-skeleton-row"
+                                    style={{ animationDelay: `${i * 0.04}s` }}
+                                />
+                            ))}
+                        </div>
+                    ) : rooms.length === 0 ? (
+                        <div className="dr-state">No room incidents found</div>
+                    ) : (
+                        <>
+                            <div
+                                className={`dr-table-wrap ${isChangingPage ? "dr-content-loading" : ""}`}
+                            >
+                                <table className="dr-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Room</th>
+                                            <th>Type</th>
+                                            <th>Status</th>
+                                            <th>Note</th>
+                                            <th>Photos</th>
+                                            <th>Reported By</th>
+                                            <th>Date</th>
+                                            <th>Guest</th>
+                                            <th>Booking Ref</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rooms.map((report) => {
+                                            const cleanerName = report.cleaner
+                                                ? `${report.cleaner.first_name} ${report.cleaner.last_name}`
+                                                : null;
+
+                                            let guestName: string | null = null;
+                                            if (report.booking) {
+                                                if (report.booking.guest_name) {
+                                                    guestName =
+                                                        report.booking
+                                                            .guest_name;
+                                                } else if (
+                                                    report.booking.user
+                                                ) {
+                                                    guestName = `${report.booking.user.first_name} ${report.booking.user.last_name}`;
+                                                } else if (
+                                                    report.booking.walkInGuest
+                                                ) {
+                                                    const wg =
+                                                        report.booking
+                                                            .walkInGuest;
+                                                    guestName = `${wg.first_name} ${wg.middle_name ? wg.middle_name + " " : ""}${wg.last_name}`;
+                                                }
+                                            }
+
+                                            const bookingRef =
+                                                report.booking
+                                                    ?.booking_reference || null;
+
+                                            return (
+                                                <tr key={report.id}>
+                                                    <td>
+                                                        <span className="dr-room-num">
+                                                            {report.room
+                                                                ?.room_number ??
+                                                                "—"}
+                                                        </span>
+                                                    </td>
+
+                                                    <td>
+                                                        <span
+                                                            className={getTypeBadgeClass(
+                                                                report.report_type,
+                                                            )}
+                                                        >
+                                                            {report.report_type}
+                                                        </span>
+                                                    </td>
+
+                                                    <td>
+                                                        <span
+                                                            className={getStatusBadgeClass(
+                                                                report.status,
+                                                            )}
+                                                        >
+                                                            {report.status}
+                                                        </span>
+                                                    </td>
+
+                                                    <td>
+                                                        {report.note ? (
+                                                            <span className="dr-note">
+                                                                "{report.note}"
+                                                            </span>
+                                                        ) : (
+                                                            <span className="dr-na">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {report.photos &&
+                                                        report.photos.length >
+                                                            0 ? (
+                                                            <div className="dr-photos">
+                                                                {report.photos
+                                                                    .slice(0, 3)
+                                                                    .map(
+                                                                        (
+                                                                            photo: string,
+                                                                            index: number,
+                                                                        ) => (
+                                                                            <img
+                                                                                key={
+                                                                                    index
+                                                                                }
+                                                                                src={`${API_BASE}/storage/${photo}`}
+                                                                                alt="Damage"
+                                                                                className="dr-photo-thumb"
+                                                                                onClick={() =>
+                                                                                    setPreviewImage(
+                                                                                        `${API_BASE}/storage/${photo}`,
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                        ),
+                                                                    )}
+                                                                {report.photos
+                                                                    .length >
+                                                                    3 && (
+                                                                    <span className="dr-photo-more">
+                                                                        +
+                                                                        {report
+                                                                            .photos
+                                                                            .length -
+                                                                            3}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="dr-no-photos">
+                                                                No photos
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {cleanerName ? (
+                                                            <span className="dr-person">
+                                                                {cleanerName}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="dr-na">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {report.reported_at ? (
+                                                            <span className="dr-date">
+                                                                {new Date(
+                                                                    report.reported_at,
+                                                                ).toLocaleString(
+                                                                    "en-PH",
+                                                                    {
+                                                                        month: "short",
+                                                                        day: "numeric",
+                                                                        year: "numeric",
+                                                                        hour: "2-digit",
+                                                                        minute: "2-digit",
+                                                                    },
+                                                                )}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="dr-na">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {guestName ? (
+                                                            <span className="dr-person">
+                                                                {guestName}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="dr-na">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {bookingRef ? (
+                                                            <span className="dr-ref">
+                                                                {bookingRef}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="dr-na">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        {report.status !==
+                                                        "resolved" ? (
+                                                            <button
+                                                                className="dr-btn-resolve"
+                                                                onClick={() =>
+                                                                    markResolved(
+                                                                        report.id,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    repairingId ===
+                                                                    report.id
+                                                                }
+                                                            >
+                                                                {repairingId ===
+                                                                report.id
+                                                                    ? "Updating..."
+                                                                    : "Mark Resolved"}
+                                                            </button>
+                                                        ) : (
+                                                            <span className="dr-resolved-label">
+                                                                ✔ Resolved
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Pagination */}
+                            <div className="dr-pagination">
+                                <span className="dr-pagination-info">
+                                    {totalRecords > 0
+                                        ? `Showing ${startRange}–${endRange} of ${totalRecords} incidents`
+                                        : "No incidents found"}
+                                </span>
+
+                                <div className="dr-pagination-controls">
+                                    <button
+                                        className="dr-page-btn"
+                                        onClick={() =>
+                                            handlePageChange(currentPage - 1)
+                                        }
+                                        disabled={currentPage === 1 || loading}
+                                    >
+                                        ‹
+                                    </button>
+
+                                    {(() => {
+                                        const pages: (number | string)[] = [];
+                                        const total = totalPages;
+
+                                        if (total <= 7) {
+                                            for (let i = 1; i <= total; i++) {
+                                                pages.push(i);
+                                            }
+                                        } else if (currentPage <= 4) {
+                                            for (let i = 1; i <= 5; i++) {
+                                                pages.push(i);
+                                            }
+                                            pages.push("...");
+                                            pages.push(total);
+                                        } else if (currentPage >= total - 3) {
+                                            pages.push(1);
+                                            pages.push("...");
+                                            for (
+                                                let i = total - 4;
+                                                i <= total;
+                                                i++
+                                            ) {
+                                                pages.push(i);
+                                            }
+                                        } else {
+                                            pages.push(1);
+                                            pages.push("...");
+                                            for (
+                                                let i = currentPage - 1;
+                                                i <= currentPage + 1;
+                                                i++
+                                            ) {
+                                                pages.push(i);
+                                            }
+                                            pages.push("...");
+                                            pages.push(total);
+                                        }
+
+                                        return pages.map((p, index) => {
+                                            if (p === "...") {
+                                                return (
+                                                    <span
+                                                        key={`ellipsis-${index}`}
+                                                        className="dr-page-ellipsis"
+                                                    >
+                                                        …
+                                                    </span>
+                                                );
+                                            }
+                                            const pageNum = p as number;
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    className={`dr-page-btn ${currentPage === pageNum ? "dr-page-active" : ""}`}
+                                                    onClick={() =>
+                                                        handlePageChange(
+                                                            pageNum,
+                                                        )
+                                                    }
+                                                    disabled={loading}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        });
+                                    })()}
+
+                                    <button
+                                        className="dr-page-btn"
+                                        onClick={() =>
+                                            handlePageChange(currentPage + 1)
+                                        }
+                                        disabled={
+                                            currentPage === totalPages ||
+                                            totalPages === 0 ||
+                                            loading
+                                        }
+                                    >
+                                        ›
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Image Preview Modal */}
+            {previewImage && (
+                <div
+                    className="dr-modal-backdrop"
+                    onClick={() => setPreviewImage(null)}
+                >
+                    <div
+                        className="dr-modal-inner"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            className="dr-modal-close"
+                            onClick={() => setPreviewImage(null)}
+                        >
+                            ✕
+                        </button>
+                        <img
+                            src={previewImage}
+                            alt="Damage preview"
+                            className="dr-modal-img"
+                        />
+                    </div>
+                </div>
+            )}
+        </>
+    );
 }

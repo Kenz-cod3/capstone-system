@@ -90,6 +90,15 @@ export interface AddOnItem {
     quantity: number;
     subtotal: number;
 }
+export interface PaymentEntry {
+    id: number;
+    method: string;
+    amount: number;
+    reference?: string;
+    receipt_number?: string;
+    paid_on?: string;
+    received_by?: string;
+}
 
 export interface StaffAttribution {
     label: string;
@@ -123,6 +132,7 @@ export interface BookingData {
     guest_email?: string;
     guest_address?: string;
     guest_id?: string;
+    guest_avatar_url?: string;
     booking_type?: string;
     stay_type: string;
     check_in_date: string;
@@ -139,6 +149,7 @@ export interface BookingData {
     amount_paid: number;
     paid_on?: string;
     payment_reference?: string;
+    payments?: PaymentEntry[];
     receipt_number?: string;
     notes: string;
     timeline: TimelineItem[];
@@ -241,10 +252,81 @@ const SectionCard: React.FC<{
 
 // -----------------------------------------------------------------------------
 
+const GuestAvatar: React.FC<{ src?: string; size?: number }> = ({
+    src,
+    size = 44,
+}) => {
+    const [status, setStatus] = React.useState<"loading" | "loaded" | "error">(
+        src ? "loading" : "error",
+    );
+    const imgRef = React.useRef<HTMLImageElement>(null);
+
+    React.useEffect(() => {
+        if (!src) {
+            setStatus("error");
+            return;
+        }
+        // Kung cached na ang image, loaded na agad
+        if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+            setStatus("loaded");
+        } else {
+            setStatus("loading");
+        }
+    }, [src]);
+
+    // Walang image (walk-in) o nag-error: icon fallback
+    if (!src || status === "error") {
+        return (
+            <Avatar
+                style={{
+                    backgroundColor: MINT_GREEN_BG,
+                    color: MINT_GREEN,
+                    fontSize: "18px",
+                    flexShrink: 0,
+                }}
+                size={size}
+                icon={<UserOutlined />}
+            />
+        );
+    }
+
+    return (
+        <div
+            style={{
+                position: "relative",
+                width: size,
+                height: size,
+                flexShrink: 0,
+            }}
+        >
+            {status === "loading" && (
+                <div
+                    className="avatar-skeleton"
+                    style={{ width: size, height: size }}
+                />
+            )}
+            <img
+                ref={imgRef}
+                src={src}
+                alt=""
+                onLoad={() => setStatus("loaded")}
+                onError={() => setStatus("error")}
+                style={{
+                    width: size,
+                    height: size,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    display: status === "loaded" ? "block" : "none",
+                }}
+            />
+        </div>
+    );
+};
+
 const BookingDetails: React.FC<BookingDetailsProps> = ({
     booking,
     onAction,
-    userRole = "staff",
+    userRole,
 }) => {
     const navigate = useNavigate();
     const [selectedRoom, setSelectedRoom] = React.useState<RoomDetail | null>(
@@ -384,15 +466,22 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         }
 
         if (mainStatus === "CANCELLED") {
-            items.push({
-                key: "refund",
-                label: "Refund Room",
-                danger: true,
-                onClick: () => onAction && onAction("refund"),
-            });
+            const isPaid = booking.payment_status?.toUpperCase() === "PAID";
+
+            const isRefunded =
+                booking.payment_status?.toUpperCase() === "REFUNDED";
+
+            if (isPaid && !isRefunded) {
+                items.push({
+                    key: "refund",
+                    label: "Refund Room",
+                    danger: true,
+                    onClick: () => onAction && onAction("refund"),
+                });
+            }
         }
 
-        if (userRole === "admin") {
+        if (userRole?.toLowerCase() === "admin") {
             items.push({
                 key: "trash",
                 label: "Move to Trash",
@@ -486,12 +575,19 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
         }
 
         if (roomStatus === "CANCELLED") {
-            items.push({
-                key: `refund:${room.id}`,
-                label: "Refund Room",
-                danger: true,
-                onClick: () => onAction && onAction(`refund:${room.id}`),
-            });
+            const isPaid = booking.payment_status?.toUpperCase() === "PAID";
+
+            const isRefunded =
+                booking.payment_status?.toUpperCase() === "REFUNDED";
+
+            if (isPaid && !isRefunded) {
+                items.push({
+                    key: `refund:${room.id}`,
+                    label: "Refund Room",
+                    danger: true,
+                    onClick: () => onAction && onAction(`refund:${room.id}`),
+                });
+            }
         }
 
         if (userRole === "admin") {
@@ -520,7 +616,8 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
     const showsPaymentReference =
         booking.payment_method &&
         booking.payment_method.toUpperCase() !== "CASH" &&
-        !!booking.payment_reference;
+        !!booking.payment_reference &&
+        (booking.payments?.length ?? 0) <= 1;
 
     const isRefunded = booking.payment_status?.toUpperCase() === "REFUNDED";
     const overdueDays = booking.overdue_days ?? 0;
@@ -1677,15 +1774,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                             minWidth: 200,
                         }}
                     >
-                        <Avatar
-                            style={{
-                                backgroundColor: MINT_GREEN_BG,
-                                color: MINT_GREEN,
-                                fontSize: "18px",
-                            }}
-                            size={44}
-                            icon={<UserOutlined />}
-                        />
+                        <GuestAvatar src={booking.guest_avatar_url} size={44} />
                         <div>
                             <Label>Guest</Label>
                             <div>
@@ -2605,6 +2694,115 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                             )}
                         </Row>
 
+                        {(booking.payments?.length ?? 0) > 1 && (
+                            <div style={{ marginTop: 14 }}>
+                                <Label>Split Payments</Label>
+                                <div style={{ marginTop: 8 }}>
+                                    {booking.payments!.map((p) => (
+                                        <div
+                                            key={p.id}
+                                            style={{
+                                                padding: "8px 10px",
+                                                border: `1px solid ${BORDER}`,
+                                                borderRadius: 8,
+                                                marginBottom: 8,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    justifyContent:
+                                                        "space-between",
+                                                    alignItems: "center",
+                                                }}
+                                            >
+                                                <Tag
+                                                    style={{
+                                                        border: "none",
+                                                        margin: 0,
+                                                        background:
+                                                            p.method === "CASH"
+                                                                ? MINT_GREEN_BG
+                                                                : "#e6f7ff",
+                                                        color:
+                                                            p.method === "CASH"
+                                                                ? MINT_GREEN
+                                                                : "#1890ff",
+                                                        fontWeight: 600,
+                                                    }}
+                                                >
+                                                    {p.method}
+                                                </Tag>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        color: MINT_GREEN,
+                                                    }}
+                                                >
+                                                    ₱
+                                                    {p.amount.toLocaleString(
+                                                        undefined,
+                                                        {
+                                                            minimumFractionDigits: 2,
+                                                        },
+                                                    )}
+                                                </Text>
+                                            </div>
+
+                                            {p.reference && (
+                                                <div
+                                                    style={{
+                                                        marginTop: 6,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 6,
+                                                    }}
+                                                >
+                                                    <Text
+                                                        type="secondary"
+                                                        style={{ fontSize: 11 }}
+                                                    >
+                                                        Ref: {p.reference}
+                                                    </Text>
+                                                    <Button
+                                                        type="text"
+                                                        size="small"
+                                                        icon={
+                                                            <CopyOutlined
+                                                                style={{
+                                                                    fontSize: 11,
+                                                                }}
+                                                            />
+                                                        }
+                                                        onClick={() =>
+                                                            copyToClipboard(
+                                                                p.reference!,
+                                                            )
+                                                        }
+                                                        style={{
+                                                            padding: "2px 4px",
+                                                            height: "auto",
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+                                            {p.receipt_number && (
+                                                <Text
+                                                    type="secondary"
+                                                    style={{
+                                                        fontSize: 11,
+                                                        display: "block",
+                                                    }}
+                                                >
+                                                    Receipt: {p.receipt_number}
+                                                </Text>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <Divider style={{ margin: "16px 0 12px" }} />
 
                         <div>
@@ -3223,6 +3421,16 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                         color: #475569 !important;
                         text-transform: uppercase;
                         letter-spacing: 0.4px;
+                    }
+                    .avatar-skeleton {
+                        border-radius: 50%;
+                        background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+                        background-size: 200% 100%;
+                        animation: avatarShimmer 1.2s ease-in-out infinite;
+                    }
+                    @keyframes avatarShimmer {
+                        0% { background-position: 200% 0; }
+                        100% { background-position: -200% 0; }
                     }
                     .addon-row-grid {
                         display: grid;

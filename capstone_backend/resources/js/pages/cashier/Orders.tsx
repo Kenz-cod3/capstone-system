@@ -1,9 +1,5 @@
 /**
- * Point of Sale — "Ticket Rail" design (matches Order/Menu management & Dashboard)
- *
- * Fonts used (add to your index.html <head>, or a global stylesheet):
- *   <link rel="preconnect" href="https://fonts.googleapis.com">
- *   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+ * Point of Sale — "Ticket Rail" design
  *
  * Payment methods:
  *   cash  - recorded immediately via POST /order-payments
@@ -31,7 +27,7 @@ import {
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
-// Design tokens — same "Ticket Rail" palette as Order/Menu management
+// Design tokens
 // ---------------------------------------------------------------------------
 const DARK_MINT = "#146C4B";
 const DARK_MINT_HOVER = "#0F5A3E";
@@ -62,7 +58,7 @@ type QrState = {
     amount: number;
     cash: number;
     expiresAt: number;
-    testUrl?: string | null; // PayMongo test-mode simulator link
+    testUrl?: string | null;
 };
 
 export default function Orders() {
@@ -167,7 +163,6 @@ export default function Orders() {
     );
     const grandTotal = total;
 
-    // Amount helpers
     const cashNum = parseFloat(String(cashAmount)) || 0;
     const qrAmount =
         paymentMethod === "qrph"
@@ -191,13 +186,13 @@ export default function Orders() {
         setSearchTerm("");
         setPaymentMethod("cash");
         setQr(null);
-        fetchMenu(); // refresh stock
+        fetchMenu();
     };
 
     const cancelQr = async (reason = "Payment cancelled") => {
         if (!qr) return;
         try {
-            await api.delete(`/orders/${qr.orderId}`); // restores stock
+            await api.delete(`/orders/${qr.orderId}`);
             toast.info(reason);
         } catch {
             toast.error("Could not cancel order. Check Order Management.");
@@ -208,38 +203,128 @@ export default function Orders() {
 
     // -----------------------------------------------------------------------
     // Poll QR status
+    //
+    // HINDI tayo mag-sasabi ng success hangga't hindi confirmed ng DB
+    // na paid na ang order. Kung hindi pa, magsa-save tayo ng payment
+    // manually (fallback) at magre-recheck.
     // -----------------------------------------------------------------------
     useEffect(() => {
         if (!qr) return;
 
+        let attempts = 0;
+        const MAX_ATTEMPTS = 60; // 60 * 2s = 2 minutes max wait
+
         const timer = setInterval(async () => {
-            if (Date.now() > qr.expiresAt) {
+            attempts++;
+
+            // Timeout: QR expired or too many attempts
+            if (Date.now() > qr.expiresAt || attempts > MAX_ATTEMPTS) {
                 clearInterval(timer);
                 await cancelQr("QR expired");
                 return;
             }
+
             try {
-                // NOTE: match this path to your registered checkQrStatus route
+                // 1) Check PayMongo status
                 const { data } = await api.get(
                     `/orders/qr-status/${qr.intentId}`,
                     { params: { client_key: qr.clientKey } },
                 );
+
+                // 2) If PayMongo says succeeded, verify the DB has the payment
                 if (data.status === "succeeded") {
-                    clearInterval(timer);
-                    if (qr.cash > 0) {
-                        await api.post("/order-payments", {
-                            order_id: qr.orderId,
-                            amount: qr.cash,
-                            payment_method: "cash",
-                        });
+                    try {
+                        // Check if webhook already saved the OrderPayment
+                        const orderRes = await api.get(`/orders/${qr.orderId}`);
+                        const order = orderRes.data;
+
+                        // Calculate total PAID from order_payments
+                        // (filter by payment_status === 'paid')
+                        const totalPaid = (order.payments || [])
+                            .filter((p: any) => p.payment_status === "paid")
+                            .reduce(
+                                (sum: number, p: any) =>
+                                    sum + Number(p.amount || 0),
+                                0,
+                            );
+
+                        // Check if the order is already marked as paid
+                        if (order.order_status === "paid") {
+                            // Webhook already handled it — success na!
+                            clearInterval(timer);
+                            toast.success(
+                                "QR payment received. Order completed!",
+                            );
+                            resetPos();
+                            return;
+                        }
+
+                        // If not yet paid, save the payment manually (fallback)
+                        if (totalPaid < order.total_amount) {
+                            const remaining =
+                                order.total_amount - totalPaid;
+
+                            // Save QRPH payment (webhook fallback)
+                            await api.post("/order-payments", {
+                                order_id: qr.orderId,
+                                amount: remaining,
+                                payment_method: "qrph",
+                                gcash_reference: data.payment_id,
+                            });
+
+                            // Save cash portion if split payment
+                            if (qr.cash > 0) {
+                                await api.post("/order-payments", {
+                                    order_id: qr.orderId,
+                                    amount: qr.cash,
+                                    payment_method: "cash",
+                                });
+                            }
+
+                            // Re-check the order to confirm it's now paid
+                            const finalRes = await api.get(
+                                `/orders/${qr.orderId}`,
+                            );
+
+                            if (finalRes.data.order_status === "paid") {
+                                clearInterval(timer);
+                                toast.success(
+                                    "QR payment received. Order completed!",
+                                );
+                                resetPos();
+                            } else {
+                                // Still not paid? Wait for next poll
+                                console.warn(
+                                    "Payment saved but order not marked paid yet. Retrying...",
+                                );
+                            }
+                        } else {
+                            // Total paid na pero hindi pa naka-mark as paid?
+                            // I-update natin ang order manually
+                            await api.put(`/orders/${qr.orderId}`, {
+                                order_status: "paid",
+                            });
+
+                            clearInterval(timer);
+                            toast.success(
+                                "QR payment received. Order completed!",
+                            );
+                            resetPos();
+                        }
+                    } catch (dbErr: any) {
+                        // DB save failed — keep polling, don't reset POS
+                        console.error(
+                            "Failed to verify/save payment:",
+                            dbErr?.response?.data || dbErr,
+                        );
                     }
-                    toast.success("QR payment received. Order completed!");
-                    resetPos();
                 }
+                // Kung 'pending' pa ang status, maghintay lang tayo
+                // Walang gagawin — hindi mag-sasabi ng success
             } catch {
                 // ignore transient polling errors
             }
-        }, 3000);
+        }, 2000); // Poll every 2 seconds
 
         return () => clearInterval(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -312,7 +397,6 @@ export default function Orders() {
             }
         } catch (error: any) {
             toast.dismiss(loadingToast);
-            // Order was created but QR/payment failed -> restore stock
             if (newOrderId !== undefined) {
                 await api.delete(`/orders/${newOrderId}`).catch(() => {});
                 fetchMenu();
@@ -392,7 +476,7 @@ export default function Orders() {
         if (paymentMethod === "cash") return cashNum < grandTotal;
         if (paymentMethod === "split")
             return cashNum <= 0 || cashNum >= grandTotal;
-        return false; // qrph
+        return false;
     };
 
     const payMeta = PAYMENT_META[paymentMethod];
@@ -401,7 +485,6 @@ export default function Orders() {
         <div className="h-full flex gap-4  p-4">
             {/* LEFT — MENU */}
             <div className="w-3/5 flex flex-col h-full">
-                {/* Header */}
                 <div className="mb-4 flex-shrink-0">
                     <p className="text-[11px] font-semibold tracking-[0.18em] text-[#a8822f] uppercase mb-1 font-['IBM_Plex_Mono']">
                         Point of sale
@@ -414,7 +497,6 @@ export default function Orders() {
                     </h2>
                 </div>
 
-                {/* Category tabs — segmented control */}
                 <div className="mb-3 flex-shrink-0 overflow-x-auto">
                     <div className="inline-flex items-center gap-1 bg-white border border-[#dde1d7] rounded-lg p-1">
                         {categories.map((category) => {
@@ -474,7 +556,6 @@ export default function Orders() {
                     </div>
                 </div>
 
-                {/* Search */}
                 <div className="relative mb-4 flex-shrink-0">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#a8ad9f]" />
                     <input
@@ -486,7 +567,6 @@ export default function Orders() {
                     />
                 </div>
 
-                {/* Menu Grid */}
                 <div className="grid grid-cols-2 gap-3 overflow-auto pr-1 flex-1">
                     {filteredMenu.map((item) => {
                         const available = isItemAvailable(item);
@@ -505,7 +585,6 @@ export default function Orders() {
                                 }`}
                             >
                                 <div className="flex flex-row h-full min-h-[104px]">
-                                    {/* Image */}
                                     <div className="relative w-24 flex-shrink-0 bg-[#f5f6f2]">
                                         {item.image_url ? (
                                             <img
@@ -544,7 +623,6 @@ export default function Orders() {
                                         )}
                                     </div>
 
-                                    {/* Content */}
                                     <div className="flex-1 p-2.5 flex flex-col justify-between min-w-0">
                                         <div>
                                             <h3
@@ -622,7 +700,6 @@ export default function Orders() {
 
             {/* RIGHT — CART & PAYMENT */}
             <div className="w-2/5 flex flex-col bg-white rounded-lg border border-[#dde1d7] h-full overflow-hidden">
-                {/* Cart Header */}
                 <div className="px-5 py-4 border-b border-[#dde1d7] flex-shrink-0 flex items-center gap-2">
                     <ReceiptText className="w-4 h-4 text-[#a8822f]" />
                     <div>
@@ -638,7 +715,6 @@ export default function Orders() {
                     </div>
                 </div>
 
-                {/* Cart Items */}
                 <div className="flex-1 overflow-auto p-4 space-y-2">
                     {cart.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16">
@@ -723,7 +799,6 @@ export default function Orders() {
                     )}
                 </div>
 
-                {/* Order Summary — receipt-notched */}
                 <div className="flex-shrink-0 border-t border-[#dde1d7]">
                     <div
                         className="relative px-5 pt-4 pb-3"
@@ -757,7 +832,6 @@ export default function Orders() {
                     </div>
 
                     <div className="p-4 pt-3">
-                        {/* Payment method selection */}
                         <div className="grid grid-cols-3 gap-1.5 mb-3">
                             {(["cash", "qrph", "split"] as const).map(
                                 (method) => {
@@ -796,7 +870,6 @@ export default function Orders() {
                             )}
                         </div>
 
-                        {/* Payment inputs */}
                         {paymentMethod === "qrph" ? (
                             <div
                                 className="rounded-md p-3 mb-3"
@@ -895,7 +968,6 @@ export default function Orders() {
                             </div>
                         )}
 
-                        {/* Process Order Button */}
                         <button
                             onClick={processOrder}
                             disabled={isPayButtonDisabled()}
@@ -948,7 +1020,6 @@ export default function Orders() {
                             <Loader2 className="w-3 h-3 animate-spin" /> Waiting
                             for payment...
                         </p>
-                        {/* TEST MODE ONLY — PayMongo returns test_url only for test keys */}
                         {qr.testUrl && (
                             <a
                                 href={qr.testUrl}

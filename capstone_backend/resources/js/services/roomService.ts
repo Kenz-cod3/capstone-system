@@ -1,8 +1,7 @@
 import api from "./api";
 
-export const getRooms = () => {
-    return api.get("/rooms");
-};
+export const getRooms = (params?: Record<string, any>) =>
+    api.get("/rooms", { params });
 
 // ── NEW: full details for the View Info modal ──
 export const getRoomDetails = (id: number) =>

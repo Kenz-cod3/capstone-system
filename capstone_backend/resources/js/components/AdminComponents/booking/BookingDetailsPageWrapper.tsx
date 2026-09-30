@@ -108,6 +108,14 @@ const getGuestAddress = (booking: any): string | undefined => {
     return booking.walk_in_guest?.address || undefined;
 };
 
+// Online guests lang ang may profile image (walk-in walang image field)
+const getGuestAvatar = (booking: any): string | undefined => {
+    if (booking.booking_type === "online") {
+        return booking.user?.avatar_url || undefined;
+    }
+    return undefined;
+};
+
 const getGuestId = (booking: any): string | undefined => {
     if (booking.booking_type === "online") {
         return booking.user?.id_number || undefined;
@@ -545,6 +553,28 @@ const mapBookingToBookingData = (booking: any): BookingData => {
     );
     const firstPayment = paidPayment || booking.payments?.[0];
 
+    // All paid payments (split: Cash + QR Ph, etc.)
+    const paidPayments = (booking.payments || [])
+        .filter((p: any) => ["paid", "pending"].includes(p.payment_status))
+        .map((p: any) => ({
+            id: p.id,
+            method: (p.payment_method || "cash").toUpperCase(),
+            amount: Number(p.amount ?? 0),
+            reference: p.gcash_reference || p.bank_reference || undefined,
+            receipt_number: p.receipt_number || undefined,
+            paid_on: p.payment_date
+                ? formatDateTime(p.payment_date)
+                : undefined,
+            received_by: p.receiver
+                ? `${p.receiver.first_name || ""} ${p.receiver.last_name || ""}`.trim()
+                : undefined,
+        }));
+    const isSplit = paidPayments.length > 1;
+    // e.g. "CASH + QRPH"
+    const splitMethodLabel = Array.from(
+        new Set(paidPayments.map((p: any) => p.method)),
+    ).join(" + ");
+
     // Payment received by / refunded by
     let paymentReceivedBy: { name: string; role?: string } | undefined;
     let refundedBy: { name: string; role?: string } | undefined;
@@ -672,6 +702,7 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         guest_email: guestEmail,
         guest_address: guestAddress,
         guest_id: guestId,
+        guest_avatar_url: getGuestAvatar(booking),
         booking_type: booking.booking_type,
         stay_type:
             booking.stay_type === "short_stay" ? "Short Stay" : "Overnight",
@@ -690,15 +721,25 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         children: 0,
         total_amount: totalAmount,
         rooms,
-        payment_method: firstPayment?.payment_method?.toUpperCase() || "CASH",
+        payment_method: isSplit
+            ? splitMethodLabel
+            : firstPayment?.payment_method?.toUpperCase() || "CASH",
+        payments: paidPayments,
         payment_status: (refundedPayment
             ? "REFUNDED"
             : firstPayment?.payment_status || "pending"
         ).toUpperCase(),
-        amount_paid: refundedPayment ? refundedPayment.amount : totalAmount,
-        paid_on: firstPayment?.payment_date
-            ? formatDateTime(firstPayment.payment_date)
-            : undefined,
+        amount_paid: refundedPayment
+            ? refundedPayment.amount
+            : paidPayments.reduce((s: number, p: any) => s + p.amount, 0) ||
+              totalAmount,
+        paid_on:
+            refundedPayment?.payment_date || firstPayment?.payment_date
+                ? formatDateTime(
+                      refundedPayment?.payment_date ||
+                          firstPayment?.payment_date,
+                  )
+                : undefined,
         // When refunded, show the PayMongo refund reference (stored on the
         // refunded payment row) instead of the original payment's reference.
         payment_reference:
@@ -1517,6 +1558,7 @@ export default function BookingDetailsPageWrapper() {
     }
 
     const bookingData = mapBookingToBookingData(booking);
+    console.log("PAYMENTS:", JSON.stringify(booking.payments, null, 2));
     nProgress.done();
 
     return (

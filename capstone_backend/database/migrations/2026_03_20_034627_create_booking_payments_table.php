@@ -48,7 +48,7 @@ return new class extends Migration
                 ->nullable()
                 ->constrained('users');
 
-            $table->timestamp('payment_date');
+            $table->timestamp('payment_date')->nullable();
         });
     }
 

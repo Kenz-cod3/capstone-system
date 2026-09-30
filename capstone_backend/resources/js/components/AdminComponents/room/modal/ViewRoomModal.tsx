@@ -18,7 +18,13 @@ interface Props {
 
 /* ───────────────────────── Icons (inline, no extra deps) ───────────────────────── */
 
-function Icon({ className = "w-4 h-4", children }: { className?: string; children: ReactNode }) {
+function Icon({
+    className = "w-4 h-4",
+    children,
+}: {
+    className?: string;
+    children: ReactNode;
+}) {
     return (
         <svg
             className={className}
@@ -37,18 +43,27 @@ function Icon({ className = "w-4 h-4", children }: { className?: string; childre
 
 const I = {
     close: (c?: string) => (
-        <Icon className={c}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></Icon>
+        <Icon className={c}>
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </Icon>
     ),
     left: (c?: string) => (
-        <Icon className={c}><path d="m15 18-6-6 6-6" /></Icon>
+        <Icon className={c}>
+            <path d="m15 18-6-6 6-6" />
+        </Icon>
     ),
     right: (c?: string) => (
-        <Icon className={c}><path d="m9 18 6-6-6-6" /></Icon>
+        <Icon className={c}>
+            <path d="m9 18 6-6-6-6" />
+        </Icon>
     ),
     scan: (c?: string) => (
         <Icon className={c}>
-            <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
-            <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
             <circle cx="12" cy="12" r="3" />
         </Icon>
     ),
@@ -61,14 +76,21 @@ const I = {
     file: (c?: string) => (
         <Icon className={c}>
             <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-            <path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" />
+            <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+            <path d="M10 9H8" />
+            <path d="M16 13H8" />
+            <path d="M16 17H8" />
         </Icon>
     ),
     details: (c?: string) => (
         <Icon className={c}>
             <rect width="18" height="18" x="3" y="3" rx="2" />
-            <path d="M7 8h4" /><path d="M7 12h4" /><path d="M7 16h4" />
-            <path d="M15 8h2" /><path d="M15 12h2" /><path d="M15 16h2" />
+            <path d="M7 8h4" />
+            <path d="M7 12h4" />
+            <path d="M7 16h4" />
+            <path d="M15 8h2" />
+            <path d="M15 12h2" />
+            <path d="M15 16h2" />
         </Icon>
     ),
     star: (c?: string) => (
@@ -78,8 +100,10 @@ const I = {
     ),
     users: (c?: string) => (
         <Icon className={c}>
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-            <path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </Icon>
     ),
     tag: (c?: string) => (
@@ -89,68 +113,102 @@ const I = {
         </Icon>
     ),
     clock: (c?: string) => (
-        <Icon className={c}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></Icon>
+        <Icon className={c}>
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+        </Icon>
     ),
     calendar: (c?: string) => (
         <Icon className={c}>
-            <path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" />
+            <path d="M8 2v4" />
+            <path d="M16 2v4" />
+            <rect width="18" height="18" x="3" y="4" rx="2" />
+            <path d="M3 10h18" />
         </Icon>
     ),
     checkout: (c?: string) => (
         <Icon className={c}>
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <path d="m16 17 5-5-5-5" />
+            <path d="M21 12H9" />
         </Icon>
     ),
     cash: (c?: string) => (
         <Icon className={c}>
-            <rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2" />
-            <path d="M6 12h.01" /><path d="M18 12h.01" />
+            <rect width="20" height="12" x="2" y="6" rx="2" />
+            <circle cx="12" cy="12" r="2" />
+            <path d="M6 12h.01" />
+            <path d="M18 12h.01" />
         </Icon>
     ),
     snow: (c?: string) => (
         <Icon className={c}>
-            <path d="M12 2v20" /><path d="M2 12h20" /><path d="m4.93 4.93 14.14 14.14" /><path d="m19.07 4.93-14.14 14.14" />
+            <path d="M12 2v20" />
+            <path d="M2 12h20" />
+            <path d="m4.93 4.93 14.14 14.14" />
+            <path d="m19.07 4.93-14.14 14.14" />
         </Icon>
     ),
     tv: (c?: string) => (
         <Icon className={c}>
-            <rect width="20" height="14" x="2" y="3" rx="2" /><path d="M8 21h8" /><path d="M12 17v4" />
+            <rect width="20" height="14" x="2" y="3" rx="2" />
+            <path d="M8 21h8" />
+            <path d="M12 17v4" />
         </Icon>
     ),
     wifi: (c?: string) => (
         <Icon className={c}>
-            <path d="M5 12.55a11 11 0 0 1 14.08 0" /><path d="M1.42 9a16 16 0 0 1 21.16 0" />
-            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><path d="M12 20h.01" />
+            <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+            <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+            <path d="M12 20h.01" />
         </Icon>
     ),
     check: (c?: string) => (
-        <Icon className={c}><path d="M20 6 9 17l-5-5" /></Icon>
+        <Icon className={c}>
+            <path d="M20 6 9 17l-5-5" />
+        </Icon>
     ),
 };
 
 function amenityIcon(name: string) {
     const n = (name || "").toLowerCase();
-    if (n.includes("air") || n.includes("aircon") || n.includes("cool")) return I.snow("w-3.5 h-3.5");
-    if (n.includes("tv") || n.includes("television")) return I.tv("w-3.5 h-3.5");
-    if (n.includes("wifi") || n.includes("wi-fi") || n.includes("internet")) return I.wifi("w-3.5 h-3.5");
+    if (n.includes("air") || n.includes("aircon") || n.includes("cool"))
+        return I.snow("w-3.5 h-3.5");
+    if (n.includes("tv") || n.includes("television"))
+        return I.tv("w-3.5 h-3.5");
+    if (n.includes("wifi") || n.includes("wi-fi") || n.includes("internet"))
+        return I.wifi("w-3.5 h-3.5");
     return I.check("w-3.5 h-3.5");
 }
 
 /* ───────────────────────── Helpers ───────────────────────── */
 
 const STATUS_STYLES: Record<string, string> = {
-    available:   "bg-green-100 text-green-700",
-    reserved:    "bg-yellow-100 text-yellow-700",
-    occupied:    "bg-blue-100 text-blue-700",
+    available: "bg-green-100 text-green-700",
+    reserved: "bg-yellow-100 text-yellow-700",
+    occupied: "bg-blue-100 text-blue-700",
     maintenance: "bg-red-100 text-red-700",
-    dirty:       "bg-purple-100 text-purple-700",
-    cleaning:    "bg-amber-100 text-amber-700",
+    preparing: "bg-purple-100 text-purple-700",
+    ongoing: "bg-amber-100 text-amber-700",
 };
 
 const statusStyle = (status?: string) =>
     STATUS_STYLES[status?.toLowerCase() ?? ""] ?? "bg-gray-100 text-gray-700";
 
-const capitalize = (s?: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+const capitalize = (s?: string) =>
+    s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+
+const statusLabel = (status?: string) => {
+    switch (status?.toLowerCase()) {
+        case "preparing":
+            return "Queued";
+        case "ongoing":
+            return "Cleaning";
+        default:
+            return capitalize(status);
+    }
+};
 
 const fmtPrice = (n?: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -162,7 +220,11 @@ const fmtPrice = (n?: number) =>
 
 const fmtDate = (d?: string) =>
     d
-        ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        ? new Date(d).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+          })
         : "—";
 
 // "14:00:00" -> "2:00 PM"
@@ -190,7 +252,11 @@ const SLIM_SCROLL =
 
 /* ───────────────────────── Component ───────────────────────── */
 
-export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props) {
+export default function ViewRoomModal({
+    roomId,
+    onClose,
+    onViewPanorama,
+}: Props) {
     const { data, isLoading } = useQuery({
         queryKey: ["room-details", roomId],
         queryFn: async () => {
@@ -207,14 +273,18 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
     const goPrev = () => setActiveImage((i) => (i - 1 + total) % total);
     const goNext = () => setActiveImage((i) => (i + 1) % total);
 
-    useEffect(() => { setActiveImage(0); }, [roomId]);
+    useEffect(() => {
+        setActiveImage(0);
+    }, [roomId]);
 
     // Close on Escape, navigate gallery with arrow keys
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") onClose();
-            if (total > 1 && e.key === "ArrowLeft") setActiveImage((i) => (i - 1 + total) % total);
-            if (total > 1 && e.key === "ArrowRight") setActiveImage((i) => (i + 1) % total);
+            if (total > 1 && e.key === "ArrowLeft")
+                setActiveImage((i) => (i - 1 + total) % total);
+            if (total > 1 && e.key === "ArrowRight")
+                setActiveImage((i) => (i + 1) % total);
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
@@ -224,7 +294,9 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
     useEffect(() => {
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
-        return () => { document.body.style.overflow = prev; };
+        return () => {
+            document.body.style.overflow = prev;
+        };
     }, []);
 
     const mainImage = total > 0 ? images[activeImage]?.url : data?.image_url;
@@ -233,7 +305,7 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
     // Thumbnails never scroll: show a window of 4 that always contains the active image
     const thumbStart = Math.min(
         Math.max(0, activeImage - (THUMBS_VISIBLE - 1)),
-        Math.max(0, total - THUMBS_VISIBLE)
+        Math.max(0, total - THUMBS_VISIBLE),
     );
     const visibleThumbs = images
         .map((img, i) => ({ img, i }))
@@ -254,9 +326,13 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                 {/* ── HEADER ── */}
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
                     <div>
-                        <h2 className="text-lg font-bold text-gray-900 leading-tight">Room Information</h2>
+                        <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                            Room Information
+                        </h2>
                         <p className="text-xs text-gray-500">
-                            {isLoading ? "Loading…" : `Room ${data?.room_number ?? ""}`}
+                            {isLoading
+                                ? "Loading…"
+                                : `Room ${data?.room_number ?? ""}`}
                         </p>
                     </div>
                     <button
@@ -270,14 +346,19 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                 </div>
 
                 {/* ── BODY (scrolls only on mobile; on desktop the image column is fixed) ── */}
-                <div className={`flex-1 min-h-0 overflow-y-auto md:overflow-hidden ${SLIM_SCROLL}`}>
+                <div
+                    className={`flex-1 min-h-0 overflow-y-auto md:overflow-hidden ${SLIM_SCROLL}`}
+                >
                     {isLoading || !data ? (
                         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <div className="aspect-[3/2] bg-gray-200 rounded-xl animate-pulse" />
                                 <div className="grid grid-cols-4 gap-2">
                                     {[0, 1, 2, 3].map((i) => (
-                                        <div key={i} className="aspect-[4/3] bg-gray-200 rounded-lg animate-pulse" />
+                                        <div
+                                            key={i}
+                                            className="aspect-[4/3] bg-gray-200 rounded-lg animate-pulse"
+                                        />
                                     ))}
                                 </div>
                             </div>
@@ -310,7 +391,7 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                         <span
                                             className={`absolute top-3 left-3 inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full shadow-sm ${statusStyle(data.status)}`}
                                         >
-                                            {capitalize(data.status)}
+                                            {statusLabel(data.status)}
                                         </span>
                                     )}
 
@@ -320,10 +401,13 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                             type="button"
                                             onClick={() =>
                                                 onViewPanorama?.({
-                                                    panoramaSrc: data.panorama_url,
+                                                    panoramaSrc:
+                                                        data.panorama_url,
                                                     room: {
-                                                        room_number: data.room_number,
-                                                        room_type: data.room_type,
+                                                        room_number:
+                                                            data.room_number,
+                                                        room_type:
+                                                            data.room_type,
                                                     },
                                                 })
                                             }
@@ -362,7 +446,9 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                         {visibleThumbs.map(({ img, i }) => (
                                             <button
                                                 key={img.id ?? i}
-                                                onClick={() => setActiveImage(i)}
+                                                onClick={() =>
+                                                    setActiveImage(i)
+                                                }
                                                 aria-label={`Show image ${i + 1}`}
                                                 className={`aspect-[4/3] rounded-lg overflow-hidden transition ${
                                                     activeImage === i
@@ -370,7 +456,11 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                                         : "opacity-80 hover:opacity-100"
                                                 }`}
                                             >
-                                                <img src={img.url} alt="" className="w-full h-full object-cover" />
+                                                <img
+                                                    src={img.url}
+                                                    alt=""
+                                                    className="w-full h-full object-cover"
+                                                />
                                             </button>
                                         ))}
                                     </div>
@@ -378,26 +468,35 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                             </div>
 
                             {/* ── RIGHT: DETAILS (scrolls only if content is taller than the modal) ── */}
-                            <div className={`min-w-0 md:min-h-0 md:overflow-y-auto space-y-3 md:pr-2 ${SLIM_SCROLL}`}>
+                            <div
+                                className={`min-w-0 md:min-h-0 md:overflow-y-auto space-y-3 md:pr-2 ${SLIM_SCROLL}`}
+                            >
                                 {/* Name + price card */}
                                 <div className="flex items-center justify-between gap-3 bg-slate-100 rounded-xl px-4 py-3">
                                     <div className="min-w-0">
                                         <h3 className="text-lg font-bold text-gray-900 truncate leading-tight">
                                             {rt?.type_name || "Standard Room"}
                                         </h3>
-                                        <p className="text-xs text-gray-500">Room {data.room_number}</p>
+                                        <p className="text-xs text-gray-500">
+                                            Room {data.room_number}
+                                        </p>
                                     </div>
                                     <div className="text-right flex-shrink-0">
                                         <p className="text-2xl font-extrabold text-emerald-700 leading-none">
                                             {fmtPrice(rt?.base_price)}
                                         </p>
-                                        <p className="text-xs text-gray-500 mt-1">per night</p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            per night
+                                        </p>
                                     </div>
                                 </div>
 
                                 {/* Description */}
                                 {rt?.description && (
-                                    <Section icon={I.file("w-4 h-4")} title="Description">
+                                    <Section
+                                        icon={I.file("w-4 h-4")}
+                                        title="Description"
+                                    >
                                         <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line pl-6">
                                             {rt.description}
                                         </p>
@@ -405,21 +504,75 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                 )}
 
                                 {/* Room details */}
-                                <Section icon={I.details("w-4 h-4")} title="Room Details" divider>
+                                <Section
+                                    icon={I.details("w-4 h-4")}
+                                    title="Room Details"
+                                    divider
+                                >
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 bg-slate-100 rounded-xl p-2">
-                                        <InfoRow icon={I.users("w-4 h-4")}    label="Max Occupancy"       value={rt?.max_occupancy ?? "—"} />
-                                        <InfoRow icon={I.tag("w-4 h-4")}      label="Short Stay Price"    value={fmtPrice(rt?.short_stay_price)} />
-                                        <InfoRow icon={I.clock("w-4 h-4")}    label="Short Stay Hours"    value={rt?.short_stay_hours ? `${rt.short_stay_hours} hrs` : "—"} />
-                                        <InfoRow icon={I.calendar("w-4 h-4")} label="Standard Check-in"   value={fmtTime(rt?.standard_checkin_time)} />
-                                        <InfoRow icon={I.checkout("w-4 h-4")} label="Overnight Check-out" value={fmtTime(rt?.overnight_checkout_time)} />
-                                        <InfoRow icon={I.cash("w-4 h-4")}     label="Early Check-in Fee"  value={fmtPrice(rt?.early_checkin_fee)} />
-                                        <InfoRow icon={I.cash("w-4 h-4")}     label="Late Check-out Fee"  value={fmtPrice(rt?.late_checkout_fee)} />
-                                        <InfoRow icon={I.calendar("w-4 h-4")} label="Last Updated"        value={fmtDate(data.updated_at)} />
+                                        <InfoRow
+                                            icon={I.users("w-4 h-4")}
+                                            label="Max Occupancy"
+                                            value={rt?.max_occupancy ?? "—"}
+                                        />
+                                        <InfoRow
+                                            icon={I.tag("w-4 h-4")}
+                                            label="Short Stay Price"
+                                            value={fmtPrice(
+                                                rt?.short_stay_price,
+                                            )}
+                                        />
+                                        <InfoRow
+                                            icon={I.clock("w-4 h-4")}
+                                            label="Short Stay Hours"
+                                            value={
+                                                rt?.short_stay_hours
+                                                    ? `${rt.short_stay_hours} hrs`
+                                                    : "—"
+                                            }
+                                        />
+                                        <InfoRow
+                                            icon={I.calendar("w-4 h-4")}
+                                            label="Standard Check-in"
+                                            value={fmtTime(
+                                                rt?.standard_checkin_time,
+                                            )}
+                                        />
+                                        <InfoRow
+                                            icon={I.checkout("w-4 h-4")}
+                                            label="Overnight Check-out"
+                                            value={fmtTime(
+                                                rt?.overnight_checkout_time,
+                                            )}
+                                        />
+                                        <InfoRow
+                                            icon={I.cash("w-4 h-4")}
+                                            label="Early Check-in Fee"
+                                            value={fmtPrice(
+                                                rt?.early_checkin_fee,
+                                            )}
+                                        />
+                                        <InfoRow
+                                            icon={I.cash("w-4 h-4")}
+                                            label="Late Check-out Fee"
+                                            value={fmtPrice(
+                                                rt?.late_checkout_fee,
+                                            )}
+                                        />
+                                        <InfoRow
+                                            icon={I.calendar("w-4 h-4")}
+                                            label="Last Updated"
+                                            value={fmtDate(data.updated_at)}
+                                        />
                                     </div>
                                 </Section>
 
                                 {/* Amenities */}
-                                <Section icon={I.star("w-4 h-4")} title="Amenities" divider>
+                                <Section
+                                    icon={I.star("w-4 h-4")}
+                                    title="Amenities"
+                                    divider
+                                >
                                     {data.amenities?.length > 0 ? (
                                         <div className="flex flex-wrap gap-1.5">
                                             {data.amenities.map((a: any) => (
@@ -427,13 +580,17 @@ export default function ViewRoomModal({ roomId, onClose, onViewPanorama }: Props
                                                     key={a.id}
                                                     className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-slate-100 text-gray-700 rounded-full"
                                                 >
-                                                    <span className="text-gray-500">{amenityIcon(a.name)}</span>
+                                                    <span className="text-gray-500">
+                                                        {amenityIcon(a.name)}
+                                                    </span>
                                                     {a.name}
                                                 </span>
                                             ))}
                                         </div>
                                     ) : (
-                                        <p className="text-xs text-gray-400 pl-6">No amenities listed</p>
+                                        <p className="text-xs text-gray-400 pl-6">
+                                            No amenities listed
+                                        </p>
                                     )}
                                 </Section>
                             </div>
@@ -469,15 +626,27 @@ function Section({
     );
 }
 
-function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
+function InfoRow({
+    icon,
+    label,
+    value,
+}: {
+    icon: ReactNode;
+    label: string;
+    value: ReactNode;
+}) {
     return (
         <div className="flex items-center gap-2.5 px-1.5 py-1.5">
             <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-gray-200/80 text-gray-700">
                 {icon}
             </span>
             <div className="min-w-0">
-                <p className="text-[11px] text-gray-500 leading-tight">{label}</p>
-                <p className="text-sm font-medium text-gray-900 leading-snug">{value}</p>
+                <p className="text-[11px] text-gray-500 leading-tight">
+                    {label}
+                </p>
+                <p className="text-sm font-medium text-gray-900 leading-snug">
+                    {value}
+                </p>
             </div>
         </div>
     );

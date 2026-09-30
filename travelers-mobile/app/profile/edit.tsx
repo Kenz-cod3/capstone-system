@@ -11,6 +11,10 @@ import {
   Dimensions,
   Modal,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -29,12 +33,24 @@ interface EditProfileModalProps {
   user: any;
 }
 
-const Input = ({ label, value, onChange, secure = false, icon, editable = true }: any) => (
+const Input = ({
+  label,
+  value,
+  onChange,
+  secure = false,
+  icon,
+  editable = true,
+}: any) => (
   <View className="mb-4">
-    <Text className="text-[#1a4a35] text-sm font-medium mb-2 ml-1" style={{ fontFamily: "Georgia" }}>
+    <Text
+      className="text-[#1a4a35] text-sm font-medium mb-2 ml-1"
+      style={{ fontFamily: "Georgia" }}
+    >
       {label}
     </Text>
-    <View className={`flex-row items-center bg-[#faf8f3] rounded-2xl border border-[#1a4a35]/10 px-4 ${!editable && "opacity-60"}`}>
+    <View
+      className={`flex-row items-center bg-[#faf8f3] rounded-2xl border border-[#1a4a35]/10 px-4 ${!editable && "opacity-60"}`}
+    >
       {icon && <Ionicons name={icon} size={20} color="#c9a96e" />}
       <TextInput
         value={value}
@@ -49,7 +65,12 @@ const Input = ({ label, value, onChange, secure = false, icon, editable = true }
   </View>
 );
 
-export default function EditProfileModal({ visible, onClose, onUpdate, user }: EditProfileModalProps) {
+export default function EditProfileModal({
+  visible,
+  onClose,
+  onUpdate,
+  user,
+}: EditProfileModalProps) {
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
 
@@ -66,6 +87,8 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
   const [image, setImage] = useState<any>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
 
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
   useEffect(() => {
     if (user && visible) {
       setFirstName(user.first_name || "");
@@ -73,26 +96,47 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
       setPhone(user.contact_number || "");
       setEmail(user.email || "");
       setAddress(user.address || "");
-      setImageUri(user.profile_image ? `${BASE_URL}/storage/${user.profile_image}` : null);
+      setImageUri(
+        user.profile_image ? `${BASE_URL}/storage/${user.profile_image}` : null,
+      );
     }
   }, [user, visible]);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardVisible(true),
+    );
+
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardVisible(false),
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert("Permission Required", "Please allow access to your photo library");
+      Alert.alert(
+        "Permission Required",
+        "Please allow access to your photo library",
+      );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       quality: 0.5,
       allowsEditing: true,
       aspect: [1, 1],
+      selectionLimit: 1,
     });
 
-    if (!result.canceled) {
+    if (!result.canceled && result.assets?.length > 0) {
       setImage(result.assets[0]);
       setImageUri(result.assets[0].uri);
     }
@@ -156,13 +200,12 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
 
       onUpdate(res.data.data);
       onClose();
-
     } catch (error: any) {
       console.log("SAVE ERROR:", error.response?.data || error);
 
       Alert.alert(
         "Error",
-        error.response?.data?.message || "Something went wrong"
+        error.response?.data?.message || "Something went wrong",
       );
     } finally {
       setSaving(false);
@@ -173,173 +216,217 @@ export default function EditProfileModal({ visible, onClose, onUpdate, user }: E
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={true}
+      transparent={false}
+      presentationStyle="fullScreen"
       onRequestClose={onClose}
-      statusBarTranslucent={true}
+      statusBarTranslucent={false}
     >
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      
-      {/* Full screen blur background */}
-      <BlurView
-        intensity={90}
-        tint="dark"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: "100%",
-          height: "100%",
-        }}
+      <StatusBar
+        barStyle="dark-content"
+        translucent={false}
+        backgroundColor="#faf8f3"
       />
+      <KeyboardAvoidingView
+        style={{
+          flex: 1,
+          backgroundColor: "#faf8f3",
+        }}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={0}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "#faf8f3",
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "#faf8f3",
+            }}
+          >
+            <View
+              className="bg-[#faf8f3] rounded-t-3xl"
+              style={{
+                flex: 1,
+                backgroundColor: "#faf8f3",
+              }}
+            >
+              {/* Header */}
+              <View className="px-6 pt-6 pb-4 border-b border-[#1a4a35]/10">
+                <View className="flex-row justify-between items-center">
+                  <Text
+                    className="text-[#1a4a35] text-xl font-bold"
+                    style={{ fontFamily: "Georgia" }}
+                  >
+                    Edit Profile
+                  </Text>
+                  <TouchableOpacity
+                    onPress={onClose}
+                    className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center"
+                  >
+                    <Ionicons name="close" size={20} color="#1a4a35" />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-      <View className="flex-1 justify-end">
-        <View className="bg-[#faf8f3] rounded-t-3xl" style={{ maxHeight: height * 0.85 }}>
-          {/* Header */}
-          <View className="px-6 pt-6 pb-4 border-b border-[#1a4a35]/10">
-            <View className="flex-row justify-between items-center">
-              <Text className="text-[#1a4a35] text-xl font-bold" style={{ fontFamily: "Georgia" }}>
-                Edit Profile
-              </Text>
-              <TouchableOpacity
-                onPress={onClose}
-                className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center"
+              <ScrollView
+                className="p-6"
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="always"
+                keyboardDismissMode="none"
+                automaticallyAdjustKeyboardInsets={true}
+                nestedScrollEnabled={true}
+                contentContainerStyle={{
+                  paddingBottom: keyboardVisible ? 300 : insets.bottom + 40,
+                }}
               >
-                <Ionicons name="close" size={20} color="#1a4a35" />
-              </TouchableOpacity>
+                {/* Avatar Section */}
+                <View className="items-center mb-8">
+                  <TouchableOpacity onPress={pickImage} className="relative">
+                    <View className="w-32 h-32 rounded-full bg-[#1a4a35]/10 justify-center items-center border-2 border-[#c9a96e] overflow-hidden">
+                      {imageUri ? (
+                        <Image
+                          source={{ uri: imageUri }}
+                          className="w-full h-full"
+                        />
+                      ) : (
+                        <Text
+                          className="text-4xl font-bold text-[#1a4a35]"
+                          style={{ fontFamily: "Georgia" }}
+                        >
+                          {firstName?.charAt(0)?.toUpperCase() || "U"}
+                        </Text>
+                      )}
+                    </View>
+                    <View className="absolute bottom-0 right-0 bg-[#1a4a35] w-10 h-10 rounded-full justify-center items-center border-2 border-white">
+                      <Ionicons name="camera" size={18} color="#c9a96e" />
+                    </View>
+                  </TouchableOpacity>
+                  <Text
+                    className="text-[#1a4a35]/50 text-xs mt-3"
+                    style={{ fontFamily: "Georgia" }}
+                  >
+                    Tap to change profile photo
+                  </Text>
+                </View>
+
+                {/* Form Fields */}
+                <Input
+                  label="First Name"
+                  value={firstName}
+                  onChange={setFirstName}
+                  icon="person-outline"
+                />
+                <Input
+                  label="Last Name"
+                  value={lastName}
+                  onChange={setLastName}
+                  icon="person-outline"
+                />
+                <Input
+                  label="Email Address"
+                  value={email}
+                  onChange={setEmail}
+                  icon="mail-outline"
+                  editable={false}
+                />
+                <Input
+                  label="Phone Number"
+                  value={phone}
+                  onChange={setPhone}
+                  icon="call-outline"
+                />
+                <Input
+                  label="Address"
+                  value={address}
+                  onChange={setAddress}
+                  icon="location-outline"
+                />
+
+                {/* Change Password Toggle */}
+                <TouchableOpacity
+                  onPress={() => setShowPasswordFields(!showPasswordFields)}
+                  className="flex-row items-center justify-between py-4 mt-2"
+                >
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center">
+                      <Ionicons
+                        name="lock-closed-outline"
+                        size={18}
+                        color="#c9a96e"
+                      />
+                    </View>
+                    <Text
+                      className="text-[#1a4a35] font-medium"
+                      style={{ fontFamily: "Georgia" }}
+                    >
+                      Change Password
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={showPasswordFields ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color="#1a4a35"
+                  />
+                </TouchableOpacity>
+
+                {showPasswordFields && (
+                  <View className="ml-4 pl-3 border-l-2 border-[#c9a96e] mt-2">
+                    <Input
+                      label="New Password"
+                      value={newPassword}
+                      onChange={setNewPassword}
+                      secure={true}
+                      icon="key-outline"
+                    />
+                    <Input
+                      label="Confirm Password"
+                      value={confirmPassword}
+                      onChange={setConfirmPassword}
+                      secure={true}
+                      icon="checkmark-circle-outline"
+                    />
+                  </View>
+                )}
+
+                {/* Action Buttons */}
+                <View className="flex-row gap-3 mt-8 mb-10">
+                  <TouchableOpacity
+                    onPress={onClose}
+                    className="flex-1 py-4 rounded-2xl border border-[#1a4a35]/20 bg-white"
+                  >
+                    <Text
+                      className="text-[#1a4a35] text-center font-medium"
+                      style={{ fontFamily: "Georgia" }}
+                    >
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleSave}
+                    disabled={saving}
+                    className="flex-1 py-4 rounded-2xl bg-[#1a4a35]"
+                  >
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#c9a96e" />
+                    ) : (
+                      <Text
+                        className="text-white text-center font-bold"
+                        style={{ fontFamily: "Georgia" }}
+                      >
+                        Save Changes
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </View>
-
-          <ScrollView 
-            className="p-6" 
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-          >
-            {/* Avatar Section */}
-            <View className="items-center mb-8">
-              <TouchableOpacity onPress={pickImage} className="relative">
-                <View className="w-32 h-32 rounded-full bg-[#1a4a35]/10 justify-center items-center border-2 border-[#c9a96e] overflow-hidden">
-                  {imageUri ? (
-                    <Image
-                      source={{ uri: imageUri }}
-                      className="w-full h-full"
-                    />
-                  ) : (
-                    <Text className="text-4xl font-bold text-[#1a4a35]" style={{ fontFamily: "Georgia" }}>
-                      {firstName?.charAt(0)?.toUpperCase() || "U"}
-                    </Text>
-                  )}
-                </View>
-                <View className="absolute bottom-0 right-0 bg-[#1a4a35] w-10 h-10 rounded-full justify-center items-center border-2 border-white">
-                  <Ionicons name="camera" size={18} color="#c9a96e" />
-                </View>
-              </TouchableOpacity>
-              <Text className="text-[#1a4a35]/50 text-xs mt-3" style={{ fontFamily: "Georgia" }}>
-                Tap to change profile photo
-              </Text>
-            </View>
-
-            {/* Form Fields */}
-            <Input
-              label="First Name"
-              value={firstName}
-              onChange={setFirstName}
-              icon="person-outline"
-            />
-            <Input
-              label="Last Name"
-              value={lastName}
-              onChange={setLastName}
-              icon="person-outline"
-            />
-            <Input
-              label="Email Address"
-              value={email}
-              onChange={setEmail}
-              icon="mail-outline"
-              editable={false}
-            />
-            <Input
-              label="Phone Number"
-              value={phone}
-              onChange={setPhone}
-              icon="call-outline"
-            />
-            <Input
-              label="Address"
-              value={address}
-              onChange={setAddress}
-              icon="location-outline"
-            />
-
-            {/* Change Password Toggle */}
-            <TouchableOpacity
-              onPress={() => setShowPasswordFields(!showPasswordFields)}
-              className="flex-row items-center justify-between py-4 mt-2"
-            >
-              <View className="flex-row items-center gap-3">
-                <View className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center">
-                  <Ionicons name="lock-closed-outline" size={18} color="#c9a96e" />
-                </View>
-                <Text className="text-[#1a4a35] font-medium" style={{ fontFamily: "Georgia" }}>
-                  Change Password
-                </Text>
-              </View>
-              <Ionicons
-                name={showPasswordFields ? "chevron-up" : "chevron-down"}
-                size={20}
-                color="#1a4a35"
-              />
-            </TouchableOpacity>
-
-            {showPasswordFields && (
-              <View className="ml-4 pl-3 border-l-2 border-[#c9a96e] mt-2">
-                <Input
-                  label="New Password"
-                  value={newPassword}
-                  onChange={setNewPassword}
-                  secure={true}
-                  icon="key-outline"
-                />
-                <Input
-                  label="Confirm Password"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                  secure={true}
-                  icon="checkmark-circle-outline"
-                />
-              </View>
-            )}
-
-            {/* Action Buttons */}
-            <View className="flex-row gap-3 mt-8 mb-10">
-              <TouchableOpacity
-                onPress={onClose}
-                className="flex-1 py-4 rounded-2xl border border-[#1a4a35]/20 bg-white"
-              >
-                <Text className="text-[#1a4a35] text-center font-medium" style={{ fontFamily: "Georgia" }}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={handleSave}
-                disabled={saving}
-                className="flex-1 py-4 rounded-2xl bg-[#1a4a35]"
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#c9a96e" />
-                ) : (
-                  <Text className="text-white text-center font-bold" style={{ fontFamily: "Georgia" }}>
-                    Save Changes
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

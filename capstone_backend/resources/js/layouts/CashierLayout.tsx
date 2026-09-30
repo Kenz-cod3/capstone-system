@@ -11,40 +11,17 @@ import {
     MessageCircle,
     Settings,
     ChevronUp,
+    ReceiptText,
 } from "lucide-react";
 import ChatBox from "@/components/AdminComponents/ChatBox";
 import SettingsModal from "@/components/AdminComponents/SettingsModal";
 import { API_BASE } from "@/services/api";
-import logo from "../../images/logo1.png"; // Adjust path as needed
+import logo from "../../images/logo1.png";
 
 /**
- * Staff / Cashier layout — "Ticket Rail" design (matches Dashboard, Orders,
- * Menu, and Order management)
- *
- * Fonts used (add to your index.html <head>, or a global stylesheet):
- *   <link rel="preconnect" href="https://fonts.googleapis.com">
- *   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
- *
- * Animation notes (updated):
- *  - Swapped `ease-linear` for shadcn's own easing curve
- *    (cubic-bezier(0.4, 0, 0.2, 1)) at 300ms — this is what gives the
- *    "soft snap" feel instead of the old robotic linear slide.
- *  - Sidebar width, main padding, and the topbar's own left padding all
- *    share the EXACT same `SIDEBAR_TRANSITION` string. That's the key fix
- *    for the topbar feeling "steady": before, only the <main> wrapper had
- *    a padding transition, so the header (a sticky child of <main>) could
- *    visually lag/jitter behind the sidebar by a frame or two, especially
- *    on slower renders. Giving the header the identical duration+easing
- *    keeps it locked in lockstep with the sidebar instead of trailing it.
- *  - Labels are ALWAYS mounted (never conditionally rendered) and instead
- *    animate width/opacity with `overflow-hidden` + `whitespace-nowrap`.
- *    This is the shadcn sidebar trick — no popping in/out, just a smooth
- *    collapse/expand.
- *  - Added `will-change-[width,padding-left]` hints so the browser
- *    pre-optimizes the transition instead of janking on the first frame.
+ * Staff / Cashier layout — "Ticket Rail" design
  */
 
-// Single source of truth so sidebar + main + topbar can never drift apart
 const SIDEBAR_TRANSITION = "duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]";
 
 export default function StaffLayout() {
@@ -55,7 +32,6 @@ export default function StaffLayout() {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Logged-in user pulled straight from localStorage (set at login)
     const user =
         typeof window !== "undefined"
             ? JSON.parse(localStorage.getItem("user") || "null")
@@ -139,16 +115,102 @@ export default function StaffLayout() {
 
     return (
         <>
+            {/* ----------------------------------------------------------------- */}
+            {/* GLOBAL SCROLLBAR STYLES (GREEN + SLIM)                            */}
+            {/* ----------------------------------------------------------------- */}
+            <style>
+                {`
+                    /* ============ SIDEBAR NAV SCROLLBAR ============ */
+                    .sidebar-nav-scroll {
+                        scrollbar-width: thin;
+                        scrollbar-color: #3ECF8E transparent;
+                    }
+                    .sidebar-nav-scroll::-webkit-scrollbar {
+                        width: 4px;
+                    }
+                    .sidebar-nav-scroll::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    .sidebar-nav-scroll::-webkit-scrollbar-thumb {
+                        background-color: transparent;
+                        border-radius: 999px;
+                        transition: background-color 0.2s ease;
+                    }
+                    .sidebar-nav-scroll:hover::-webkit-scrollbar-thumb {
+                        background-color: #3ECF8E;
+                    }
+                    .sidebar-nav-scroll::-webkit-scrollbar-thumb:hover {
+                        background-color: #2fa876;
+                    }
+                    .sidebar-nav-scroll:hover {
+                        scrollbar-color: #2fa876 transparent;
+                    }
+                    .sidebar-nav-scroll::-webkit-scrollbar-button {
+                        display: none;
+                    }
+
+                    /* ============ MAIN CONTENT SCROLLBAR ============ */
+                    .main-content-scroll {
+                        scrollbar-width: thin;
+                        scrollbar-color: #3ECF8E transparent;
+                    }
+                    .main-content-scroll::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    .main-content-scroll::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    .main-content-scroll::-webkit-scrollbar-thumb {
+                        background-color: #3ECF8E;
+                        border-radius: 999px;
+                        transition: background-color 0.2s ease;
+                    }
+                    .main-content-scroll::-webkit-scrollbar-thumb:hover {
+                        background-color: #2fa876;
+                    }
+                    .main-content-scroll::-webkit-scrollbar-button {
+                        display: none;
+                    }
+
+                    /* ============ GLOBAL PAGE SCROLLBAR (html/body) ============ */
+                    html, body {
+                        scrollbar-width: thin;
+                        scrollbar-color: #3ECF8E transparent;
+                    }
+                    html::-webkit-scrollbar,
+                    body::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    html::-webkit-scrollbar-track,
+                    body::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    html::-webkit-scrollbar-thumb,
+                    body::-webkit-scrollbar-thumb {
+                        background-color: #3ECF8E;
+                        border-radius: 999px;
+                    }
+                    html::-webkit-scrollbar-thumb:hover,
+                    body::-webkit-scrollbar-thumb:hover {
+                        background-color: #2fa876;
+                    }
+                `}
+            </style>
+
             <div className="min-h-screen bg-[#eef0ea]">
-                {/* Overlay for mobile - closes dropdown when clicking outside */}
                 {dropdownOpen && (
-                    <div className="fixed inset-0 z-0" onClick={() => setDropdownOpen(false)} />
+                    <div
+                        className="fixed inset-0 z-0"
+                        onClick={() => setDropdownOpen(false)}
+                    />
                 )}
 
-                {/* SIDEBAR — floating, white panel */}
+                {/* SIDEBAR */}
                 <aside
                     className={`fixed top-3 left-3 bottom-3 bg-white shadow-[0_10px_30px_-12px_rgba(28,36,32,0.25)] transition-[width] ${SIDEBAR_TRANSITION} will-change-[width] z-50
-                    ${isSidebarOpen ? "w-64" : "w-20"} flex flex-col rounded-lg border border-[#e3e6dc]`}
+                    ${
+                        isSidebarOpen ? "w-64" : "w-20"
+                    } flex flex-col rounded-lg border border-[#e3e6dc]`}
                 >
                     {/* LOGO */}
                     <div
@@ -166,10 +228,13 @@ export default function StaffLayout() {
                                     alt="Lynn Ennia's Logo"
                                     className="h-full w-auto object-contain scale-110"
                                     onError={(e) => {
-                                        e.currentTarget.style.display = "none";
-                                        const parent = e.currentTarget.parentElement;
+                                        e.currentTarget.style.display =
+                                            "none";
+                                        const parent =
+                                            e.currentTarget.parentElement;
                                         if (parent) {
-                                            const fallbackIcon = document.createElement("div");
+                                            const fallbackIcon =
+                                                document.createElement("div");
                                             fallbackIcon.className =
                                                 "h-11 w-11 rounded-full bg-[#3ECF8E] flex items-center justify-center text-white font-bold text-lg";
                                             fallbackIcon.innerHTML = "🍽️";
@@ -179,10 +244,11 @@ export default function StaffLayout() {
                                 />
                             </div>
 
-                            {/* Always mounted — width/opacity animate instead of conditional render */}
                             <div
                                 className={`flex flex-col overflow-hidden transition-all ${SIDEBAR_TRANSITION} ${
-                                    isSidebarOpen ? "max-w-[160px] opacity-100" : "max-w-0 opacity-0"
+                                    isSidebarOpen
+                                        ? "max-w-[160px] opacity-100"
+                                        : "max-w-0 opacity-0"
                                 }`}
                             >
                                 <span className="font-['Space_Grotesk'] font-semibold text-[15px] tracking-tight leading-tight text-[#1c2420] whitespace-nowrap">
@@ -196,7 +262,7 @@ export default function StaffLayout() {
                     </div>
 
                     {/* NAVIGATION */}
-                    <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+                    <nav className="sidebar-nav-scroll flex-1 p-3 space-y-1.5 overflow-y-auto">
                         {navItems.map((item) => {
                             const active = isActive(item.href);
 
@@ -216,26 +282,33 @@ export default function StaffLayout() {
                                 >
                                     <item.icon
                                         className={`h-4.5 w-4.5 flex-shrink-0 ${
-                                            active ? "text-white" : "text-[#5c6258]"
+                                            active
+                                                ? "text-white"
+                                                : "text-[#5c6258]"
                                         }`}
                                     />
 
-                                    {/* Always mounted label block */}
                                     <div
                                         className={`flex flex-col min-w-0 overflow-hidden transition-all ${SIDEBAR_TRANSITION} ${
-                                            isSidebarOpen ? "max-w-[160px] opacity-100" : "max-w-0 opacity-0"
+                                            isSidebarOpen
+                                                ? "max-w-[160px] opacity-100"
+                                                : "max-w-0 opacity-0"
                                         }`}
                                     >
                                         <span
                                             className={`text-[13px] font-medium truncate whitespace-nowrap ${
-                                                active ? "text-white" : "text-[#3c423a]"
+                                                active
+                                                    ? "text-white"
+                                                    : "text-[#3c423a]"
                                             }`}
                                         >
                                             {item.name}
                                         </span>
                                         <span
                                             className={`text-[9.5px] font-['IBM_Plex_Mono'] whitespace-nowrap transition-colors ${
-                                                active ? "text-white/85" : "text-[#8a8f83]"
+                                                active
+                                                    ? "text-white/85"
+                                                    : "text-[#8a8f83]"
                                             }`}
                                         >
                                             {item.description}
@@ -246,7 +319,7 @@ export default function StaffLayout() {
                         })}
                     </nav>
 
-                    {/* FOOTER WITH AVATAR DROPDOWN */}
+                    {/* FOOTER */}
                     <div className="p-3 flex-shrink-0 relative z-20 border-t border-[#e3e6dc]">
                         <div className="relative">
                             <button
@@ -262,7 +335,8 @@ export default function StaffLayout() {
                                             alt={getDisplayName()}
                                             className="w-full h-full object-cover"
                                             onError={(e) => {
-                                                e.currentTarget.style.display = "none";
+                                                e.currentTarget.style.display =
+                                                    "none";
                                             }}
                                         />
                                     ) : (
@@ -270,10 +344,11 @@ export default function StaffLayout() {
                                     )}
                                 </div>
 
-                                {/* Always mounted — name / role / chevron */}
                                 <div
                                     className={`flex items-center flex-1 min-w-0 overflow-hidden transition-all ${SIDEBAR_TRANSITION} ${
-                                        isSidebarOpen ? "max-w-[160px] opacity-100" : "max-w-0 opacity-0"
+                                        isSidebarOpen
+                                            ? "max-w-[160px] opacity-100"
+                                            : "max-w-0 opacity-0"
                                     }`}
                                 >
                                     <div className="-mb-2 flex-1 text-left min-w-0">
@@ -292,11 +367,11 @@ export default function StaffLayout() {
                                 </div>
                             </button>
 
-                            {/* Dropdown Menu */}
                             {dropdownOpen && (
                                 <div
                                     className={`absolute bottom-full left-0 right-0 mb-2 bg-white rounded-lg shadow-[0_10px_30px_-12px_rgba(28,36,32,0.5)] border border-[#dde1d7] overflow-hidden z-30 ${
-                                        !isSidebarOpen && "left-1/2 -translate-x-1/2 w-48"
+                                        !isSidebarOpen &&
+                                        "left-1/2 -translate-x-1/2 w-48"
                                     }`}
                                 >
                                     <button
@@ -307,7 +382,9 @@ export default function StaffLayout() {
                                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#f5f6f2] transition-colors text-left"
                                     >
                                         <Settings className="h-4 w-4 text-[#8a8f83]" />
-                                        <span className="text-sm text-[#3c423a]">Settings</span>
+                                        <span className="text-sm text-[#3c423a]">
+                                            Settings
+                                        </span>
                                     </button>
                                     <div className="border-t border-[#dde1d7]"></div>
                                     <button
@@ -318,7 +395,9 @@ export default function StaffLayout() {
                                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#fbe9e6] transition-colors text-left"
                                     >
                                         <LogOut className="h-4 w-4 text-[#a1402f]" />
-                                        <span className="text-sm text-[#8a3226]">Logout</span>
+                                        <span className="text-sm text-[#8a3226]">
+                                            Logout
+                                        </span>
                                     </button>
                                 </div>
                             )}
@@ -326,13 +405,12 @@ export default function StaffLayout() {
                     </div>
                 </aside>
 
-                {/* MAIN CONTENT — padding-left transitions in lockstep with the sidebar width */}
+                {/* MAIN */}
                 <main
                     className={`transition-[padding-left] ${SIDEBAR_TRANSITION} will-change-[padding-left] ${
                         isSidebarOpen ? "pl-72" : "pl-28"
                     } flex flex-col min-h-screen`}
                 >
-                    {/* TOPBAR — same transition token as the sidebar/main so it never lags or jitters */}
                     <header
                         className={`sticky top-3 z-30 px-4 pt-3 transition-[padding-left] ${SIDEBAR_TRANSITION}`}
                     >
@@ -367,20 +445,24 @@ export default function StaffLayout() {
                         </div>
                     </header>
 
-                    {/* CONTENT */}
-                    <div className="flex-1 p-6">
+                    {/* MAIN CONTENT — may green slim scrollbar */}
+                    <div className="main-content-scroll flex-1 p-6 overflow-y-auto">
                         <Outlet />
                     </div>
                 </main>
             </div>
 
-            {/* CHATBOX */}
             {chatOpen && (
-                <ChatBox userId={user?.id || 1} userName={getDisplayName()} onClose={() => setChatOpen(false)} />
+                <ChatBox
+                    userId={user?.id || 1}
+                    userName={getDisplayName()}
+                    onClose={() => setChatOpen(false)}
+                />
             )}
 
-            {/* Settings Modal */}
-            {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
+            {isSettingsOpen && (
+                <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+            )}
         </>
     );
 }
