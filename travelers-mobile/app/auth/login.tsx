@@ -3,42 +3,110 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Image,
   ImageBackground,
-  Dimensions,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Keyboard,
   TouchableWithoutFeedback,
-  ScrollView,
-  Alert,
-  Modal,
+  useWindowDimensions,
+  StyleSheet,
+  findNodeHandle,
+  UIManager,
 } from "react-native";
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { login } from "../../services/authServices";
 import { setToken, clearToken } from "../../services/api";
 import { useAuthStore } from "../../store/authStore";
 import { useRouter } from "expo-router";
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 
-const { width, height } = Dimensions.get("window");
+const CREAM = "#F7F4EF";
+const INK = "#1B2B27";
+const GOLD = "#C89B5A";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [pendingEmail, setPendingEmail] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [error, setError] = useState("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const { setAuth } = useAuthStore();
   const router = useRouter();
+  const { height } = useWindowDimensions();
+
+  const passwordRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Track keyboard height so we can add a spacer only when the keyboard is up
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+
+      // Auto-scroll to the currently focused input
+      setTimeout(() => {
+        scrollToFocused();
+      }, 100);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // Which input is focused?
+  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+
+  // Scroll to the focused field so it's always visible above the keyboard
+  const scrollToFocused = () => {
+    const target = focusedField === "password" ? passwordRef.current : emailRef.current;
+    if (!target || !scrollRef.current) return;
+
+    const handle = findNodeHandle(target);
+    if (!handle) return;
+
+    // @ts-ignore — getInnerViewNode exists on ScrollView at runtime
+    const scrollNode = scrollRef.current.getInnerViewNode
+      ? scrollRef.current.getInnerViewNode()
+      : findNodeHandle(scrollRef.current);
+
+    UIManager.measureLayout(
+      handle,
+      scrollNode,
+      () => {},
+      (_x: number, y: number) => {
+        // Position the input ~140px from the top so it clears the keyboard
+        scrollRef.current?.scrollTo({
+          y: Math.max(y - 140, 0),
+          animated: true,
+        });
+      },
+    );
+  };
+
+  // When focus changes, scroll to the new field
+  useEffect(() => {
+    if (!focusedField) return;
+    const t = setTimeout(() => scrollToFocused(), 250);
+    return () => clearTimeout(t);
+  }, [focusedField, keyboardHeight]);
 
   const handleLogin = async () => {
+    setError("");
+
     if (!email || !password) {
-      Alert.alert("Validation Error", "Please enter email and password");
+      setError("Please enter your email and password.");
       return;
     }
 
@@ -48,325 +116,552 @@ export default function Login() {
     try {
       await clearToken();
 
-      const res = await login({ email, password });
+      const res = await login({
+        email,
+        password,
+      });
 
       console.log("LOGIN RESPONSE:", res);
 
       await setAuth(res.user, res.token);
       await setToken(res.token);
 
-      // ROLE BASED REDIRECT
       if (res.user.role === "guest") {
         router.replace("/(guest)/(tabs)/home");
       } else if (res.user.role === "housekeeper") {
         router.replace("/(housekeeper)/(tabs)/dashboard");
       }
-
     } catch (e: any) {
       console.log("LOGIN ERROR:", e.response?.data);
 
       const message = e.response?.data?.message;
       const userEmail = e.response?.data?.email || email;
 
-      // handle ANY verify message
       if (message?.toLowerCase().includes("verify")) {
-
-        Alert.alert(
-          "Account Not Verified",
-          "OTP sent to your email. Continue verification?",
-          [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "OK",
-              onPress: () => {
-                router.replace({
-                  pathname: "/auth/otp",
-                  params: { email: userEmail, from: "login" },
-                });
-              },
-            },
-          ]
-        );
-
+        router.replace({
+          pathname: "/auth/otp",
+          params: {
+            email: userEmail,
+            from: "login",
+          },
+        });
         return;
       }
 
-      // NORMAL ERROR
-      Alert.alert(
-        "Login Failed",
-        message || "Invalid email or password"
-      );
+      if (
+        message === "Account inactive" ||
+        message?.toLowerCase().includes("inactive")
+      ) {
+        router.replace({
+          pathname: "/inactive",
+          params: { email: userEmail },
+        });
+        return;
+      }
 
+      setError(message || "Invalid email or password. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <View style={{ flex: 1, backgroundColor: CREAM }}>
+      <StatusBar style="light" />
+
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
       >
-        {/* BACKGROUND WITH GRADIENT OVERLAY */}
-        <ImageBackground
-          source={require("../../assets/bg.jpg")}
-          style={{ flex: 1 }}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['rgba(13,46,31,0.55)', 'rgba(13,46,31,0.88)']}
-            style={{ flex: 1 }}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={{
+              flexGrow: 1,
+            }}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ flexGrow: 1 }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* CONTENT */}
-              <View className="flex-1 justify-center items-center px-6 py-8">
-                {/* LOGO */}
-                <View className="items-center mb-8">
-                  <View className="bg-[#c9a96e]/15 border border-[#c9a96e]/40 p-4 rounded-full mb-4">
-                    <Image
-                      source={require("../../assets/logo.jpg")}
-                      style={{
-                        width: height * 0.1,
-                        height: height * 0.1,
-                      }}
-                      className="rounded-full"
-                    />
-                  </View>
-                  <Text
-                    className="text-[#c9a96e] text-[11px] tracking-[4px] uppercase mb-2"
-                  >
-                    Welcome back
-                  </Text>
-                  <Text
-                    className="text-white text-3xl"
-                    style={{ fontFamily: "Georgia" }}
-                  >
-                    Lyn Enia's Travelers' Inn
-                  </Text>
-                  <Text
-                    className="text-white/50 text-sm mt-2"
-                    style={{ fontFamily: "Georgia", fontStyle: "italic" }}
-                  >
-                    Sign in to continue your stay
-                  </Text>
-                </View>
-
-                {/* FORM CARD */}
-                <View
-                  style={{
-                    width: width * 0.9,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 16,
-                    elevation: 8,
-                  }}
-                  className="bg-[#faf8f3] rounded-3xl overflow-hidden"
-                >
-                  <View className="p-6">
-                    <Text
-                      className="text-2xl text-center mb-1 text-[#1a4a35]"
-                      style={{ fontFamily: "Georgia" }}
-                    >
-                      Login
-                    </Text>
-                    <Text className="text-center text-[#1a4a35]/50 text-sm mb-6">
-                      Enter your credentials
-                    </Text>
-
-                    {/* EMAIL FIELD */}
-                    <View className="mb-4">
-                      <Text className="text-[#1a4a35] text-xs tracking-widest uppercase mb-2 ml-1">
-                        Email Address
-                      </Text>
-                      <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4">
-                        <Ionicons name="mail-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                        <TextInput
-                          value={email}
-                          onChangeText={setEmail}
-                          placeholder="Enter your email"
-                          placeholderTextColor="rgba(26,74,53,0.35)"
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          className="flex-1 py-3 px-3 text-[#1a4a35]"
-                          editable={!loading}
-                        />
-                      </View>
-                    </View>
-
-                    {/* PASSWORD FIELD */}
-                    <View className="mb-6">
-                      <Text className="text-[#1a4a35] text-xs tracking-widest uppercase mb-2 ml-1">
-                        Password
-                      </Text>
-                      <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4">
-                        <Ionicons name="lock-closed-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                        <TextInput
-                          value={password}
-                          onChangeText={setPassword}
-                          placeholder="Enter your password"
-                          placeholderTextColor="rgba(26,74,53,0.35)"
-                          secureTextEntry={!showPassword}
-                          className="flex-1 py-3 px-3 text-[#1a4a35]"
-                          editable={!loading}
-                        />
-                        <TouchableOpacity
-                          onPress={() => setShowPassword(!showPassword)}
-                          className="ml-2"
-                        >
-                          <Text className="text-[#c9a96e] font-semibold text-xs uppercase tracking-wide">
-                            {showPassword ? "Hide" : "Show"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => router.push("/")}
-                        className="mt-2 self-end"
-                      >
-                        <Text className="text-[#1a4a35]/60 text-xs">
-                          Forgot Password?
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* LOGIN BUTTON */}
-                    <TouchableOpacity
-                      onPress={handleLogin}
-                      disabled={loading}
-                      activeOpacity={0.9}
-                      className="rounded-2xl overflow-hidden"
-                    >
-                      <LinearGradient
-                        colors={['#1a4a35', '#0d2e1f']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={{
-                          paddingVertical: height * 0.018,
-                          opacity: loading ? 0.7 : 1,
-                        }}
-                        className="flex-row items-center justify-center gap-2"
-                      >
-                        {loading ? (
-                          <ActivityIndicator size="small" color="#c9a96e" />
-                        ) : (
-                          <>
-                            <Text
-                              className="text-white text-center text-base tracking-widest uppercase"
-                              style={{ fontFamily: "Georgia" }}
-                            >
-                              Sign In
-                            </Text>
-                            <Ionicons name="arrow-forward" size={16} color="#c9a96e" />
-                          </>
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
-
-                    {/* DIVIDER */}
-                    {/* <View className="flex-row items-center my-6">
-                      <View className="flex-1 h-px bg-[#1a4a35]/10" />
-                      <Text className="mx-4 text-[#1a4a35]/40 text-xs tracking-widest uppercase">or</Text>
-                      <View className="flex-1 h-px bg-[#1a4a35]/10" />
-                    </View> */}
-
-                    {/* SOCIAL LOGIN OPTIONS */}
-                    {/* <View className="flex-row justify-center space-x-4 gap-4"> */}
-                      {/* GOOGLE BUTTON */}
-                      {/* <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-white py-3 rounded-xl border border-[#1a4a35]/15">
-                        <Image
-                          source={require("../../assets/google-logo.png")}
-                          style={{ width: 18, height: 18 }}
-                        />
-                        <Text className="text-[#1a4a35] font-semibold ml-2 text-sm">
-                          Google
-                        </Text>
-                      </TouchableOpacity> */}
-
-                      {/* FACEBOOK BUTTON */}
-                      {/* <TouchableOpacity className="flex-1 flex-row items-center justify-center bg-white py-3 rounded-xl border border-[#1a4a35]/15">
-                        <Image
-                          source={require("../../assets/facebook-logo.png")}
-                          style={{ width: 18, height: 18 }}
-                        />
-                        <Text className="text-[#1a4a35] font-semibold ml-2 text-sm">
-                          Facebook
-                        </Text>
-                      </TouchableOpacity>
-                    </View> */}
-
-                    {/* REGISTER LINK */}
-                    <View className="mt-6 flex-row justify-center">
-                      <Text className="text-[#1a4a35]/50 text-sm">
-                        Don't have an account?{" "}
-                      </Text>
-                      <TouchableOpacity onPress={() => router.push("/auth/register")}>
-                        <Text className="text-[#1a4a35] font-semibold text-sm">
-                          Create Account
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-
-                {/* FOOTER */}
-                <Text className="text-white/50 text-xs text-center mt-6">
-                  By signing in, you agree to our Terms & Conditions
-                </Text>
-              </View>
-            </ScrollView>
-          </LinearGradient>
-        </ImageBackground>
-
-        {/* LOADING MODAL SPINNER */}
-        <Modal
-          transparent={true}
-          visible={showModal}
-          animationType="fade"
-          statusBarTranslucent={true}
-          onRequestClose={() => {
-            if (!loading) {
-              setShowModal(false);
-            }
-          }}
-        >
-          <View className="flex-1 justify-center items-center bg-black/60">
+            {/* ===================== HERO PANEL ===================== */}
             <View
-              className="bg-[#faf8f3] rounded-3xl items-center"
               style={{
-                width: width * 0.75,
-                padding: 30,
-                elevation: 10,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 5,
+                height: Math.max(height * 0.5, 380),
+                overflow: "hidden",
               }}
             >
-              <ActivityIndicator size="large" color="#1a4a35" />
-              <Text
-                className="text-xl mt-5 text-[#1a4a35]"
-                style={{ fontFamily: "Georgia" }}
+              <ImageBackground
+                source={require("../../assets/bg.jpg")}
+                style={{ flex: 1 }}
+                resizeMode="cover"
               >
-                {loading ? "Signing In" : "Please Wait"}
-              </Text>
-              <Text className="text-sm text-[#1a4a35]/50 mt-2 text-center">
-                {loading ? "Verifying your credentials" : ""}
-              </Text>
-              <Text className="text-xs text-[#1a4a35]/30 mt-4 text-center tracking-wide">
-                Please don't close the app
-              </Text>
+                <LinearGradient
+                  colors={[
+                    "rgba(27,43,39,0.35)",
+                    "rgba(27,43,39,0.65)",
+                    "rgba(27,43,39,0.95)",
+                  ]}
+                  style={{
+                    flex: 1,
+                    justifyContent: "space-between",
+                    paddingHorizontal: 24,
+                    paddingTop: 60,
+                    paddingBottom: 60,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 32,
+                        height: 1,
+                        backgroundColor: GOLD,
+                        marginRight: 10,
+                      }}
+                    />
+                    <Text style={styles.eyebrowWhite}>
+                      EST. 2019 · ALUBIJID
+                    </Text>
+                  </View>
+
+                  <View>
+                    <Text style={styles.heroTitle}>
+                      Welcome{"\n"}
+                      back to{" "}
+                      <Text style={{ color: GOLD, fontStyle: "italic" }}>
+                        comfort
+                      </Text>
+                      .
+                    </Text>
+
+                    <Text style={styles.heroScript}>
+                      "More than just a place to stay —{"\n"}
+                      it's a home for every traveler."
+                    </Text>
+
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginTop: 14,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 24,
+                          height: 1,
+                          backgroundColor: GOLD,
+                          marginRight: 8,
+                        }}
+                      />
+                      <Text style={styles.heroLabel}>TRAVELERS INN</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </ImageBackground>
             </View>
-          </View>
-        </Modal>
+
+            {/* ===================== FORM PANEL ===================== */}
+            <View
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                marginTop: -28,
+                paddingHorizontal: 24,
+                paddingTop: 32,
+                paddingBottom: 40,
+                ...Platform.select({
+                  ios: {
+                    shadowColor: INK,
+                    shadowOpacity: 0.08,
+                    shadowRadius: 20,
+                    shadowOffset: { width: 0, height: -8 },
+                  },
+                  android: { elevation: 6 },
+                }),
+              }}
+            >
+              {/* Title */}
+              <View style={{ marginBottom: 26 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 10,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 28,
+                      height: 1,
+                      backgroundColor: GOLD,
+                      marginRight: 10,
+                    }}
+                  />
+                  <Text style={styles.eyebrow}>SIGN IN</Text>
+                </View>
+
+                <Text style={styles.formTitle}>
+                  Login to your{"\n"}account.
+                </Text>
+
+                <Text style={styles.formSubtitle}>
+                  Enter your email below to continue.
+                </Text>
+              </View>
+
+              {!!error && (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              {/* Email */}
+              <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="mail-outline"
+                  size={16}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={emailRef}
+                  value={email}
+                  onChangeText={setEmail}
+                  onFocus={() => setFocusedField("email")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="you@example.com"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+              </View>
+
+              {/* Password */}
+              <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
+                PASSWORD
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={16}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={passwordRef}
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setFocusedField("password")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="••••••••"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
+                  editable={!loading}
+                  style={styles.input}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((s) => !s)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={18}
+                    color="rgba(27,43,39,0.4)"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Remember + Forgot */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 16,
+                  marginBottom: 24,
+                }}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setRemember((r) => !r)}
+                  style={{ flexDirection: "row", alignItems: "center" }}
+                >
+                  <View
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      borderWidth: 1.5,
+                      borderColor: remember ? GOLD : "rgba(27,43,39,0.25)",
+                      backgroundColor: remember ? GOLD : "transparent",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: 8,
+                    }}
+                  >
+                    {remember && (
+                      <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.rememberText}>Remember me</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.7}>
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Sign in button */}
+              <TouchableOpacity
+                onPress={handleLogin}
+                disabled={loading}
+                activeOpacity={0.9}
+                style={{ borderRadius: 999, overflow: "hidden" }}
+              >
+                <LinearGradient
+                  colors={[INK, INK]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    height: 52,
+                    borderRadius: 999,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: loading ? 0.7 : 1,
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <ActivityIndicator size="small" color={CREAM} />
+                      <Text style={[styles.signInText, { marginLeft: 10 }]}>
+                        Logging in...
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.signInText}>Sign in</Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={16}
+                        color={CREAM}
+                        style={{ marginLeft: 8 }}
+                      />
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Sign up link */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  marginTop: 24,
+                }}
+              >
+                <Text style={styles.signupText}>
+                  Don't have an account?{" "}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => router.push("/auth/register")}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.signupLink}>Sign up</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Security badge */}
+              <View style={styles.securityBadge}>
+                <View style={styles.securityIconWrap}>
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={18}
+                    color={GOLD}
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.securityTitle}>Secure access</Text>
+                  <Text style={styles.securityBody}>
+                    Your data is protected with enterprise-grade security.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ============ DYNAMIC KEYBOARD SPACER ============ */}
+            {keyboardHeight > 0 && (
+              <View style={{ height: keyboardHeight }} />
+            )}
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  eyebrow: {
+    color: GOLD,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    fontWeight: "600",
+  },
+  eyebrowWhite: {
+    color: GOLD,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    fontWeight: "600",
+  },
+
+  heroTitle: {
+    color: "#FFFFFF",
+    fontSize: 36,
+    lineHeight: 42,
+    letterSpacing: -0.3,
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  heroScript: {
+    color: "rgba(247,244,239,0.85)",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 14,
+    fontStyle: "italic",
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  heroLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: "600",
+  },
+
+  formTitle: {
+    color: INK,
+    fontSize: 28,
+    lineHeight: 32,
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  formSubtitle: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  errorBox: {
+    backgroundColor: "#FEF2F2",
+    borderLeftWidth: 2,
+    borderLeftColor: "#F87171",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 18,
+  },
+  errorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  fieldLabel: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: "600",
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(27,43,39,0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 52,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: INK,
+    paddingVertical: 0,
+  },
+
+  rememberText: {
+    color: "rgba(27,43,39,0.7)",
+    fontSize: 13,
+  },
+  forgotText: {
+    color: "rgba(27,43,39,0.7)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  signInText: {
+    color: CREAM,
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+
+  signupText: {
+    color: "rgba(27,43,39,0.6)",
+    fontSize: 13,
+  },
+  signupLink: {
+    color: INK,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+    textDecorationColor: GOLD,
+  },
+
+  securityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27,43,39,0.04)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(27,43,39,0.06)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 24,
+  },
+  securityIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "rgba(200,155,90,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  securityTitle: {
+    color: INK,
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  securityBody: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 11,
+    lineHeight: 15,
+  },
+});

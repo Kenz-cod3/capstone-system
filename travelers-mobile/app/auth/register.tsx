@@ -3,28 +3,45 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Image,
   ImageBackground,
-  Dimensions,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  Modal,
   ActivityIndicator,
-  ScrollView,
   Keyboard,
   TouchableWithoutFeedback,
+  useWindowDimensions,
+  StyleSheet,
+  Alert,
+  findNodeHandle,
+  UIManager,
 } from "react-native";
-import { useState, useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useRouter } from "expo-router";
 import { register } from "../../services/authServices";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 
-const { width, height } = Dimensions.get("window");
+const CREAM = "#F7F4EF";
+const INK = "#1B2B27";
+const GOLD = "#C89B5A";
+
+type FieldKey =
+  | "firstName"
+  | "lastName"
+  | "middleName"
+  | "contact"
+  | "address"
+  | "email"
+  | "password"
+  | "confirm"
+  | null;
 
 export default function Register() {
   const router = useRouter();
+  const { height } = useWindowDimensions();
+
   const [isNavigating, setIsNavigating] = useState(false);
 
   const [first_name, setFirstName] = useState("");
@@ -37,47 +54,122 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [focusedField, setFocusedField] = useState<FieldKey>(null);
+
   const isProcessing = useRef(false);
 
+  // All input refs
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef = useRef<TextInput>(null);
+  const middleNameRef = useRef<TextInput>(null);
+  const contactRef = useRef<TextInput>(null);
+  const addressRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Track keyboard height
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // Auto-scroll when focused field changes OR keyboard opens
+  useEffect(() => {
+    if (!focusedField) return;
+    const t = setTimeout(() => scrollToFocused(focusedField), 250);
+    return () => clearTimeout(t);
+  }, [focusedField, keyboardHeight]);
+
+  // Scroll to the focused input so it stays above the keyboard
+  const scrollToFocused = (field: FieldKey) => {
+    if (!field || !scrollRef.current) return;
+
+    const map: Record<string, React.RefObject<TextInput | null>> = {
+      firstName: firstNameRef,
+      lastName: lastNameRef,
+      middleName: middleNameRef,
+      contact: contactRef,
+      address: addressRef,
+      email: emailRef,
+      password: passwordRef,
+      confirm: confirmRef,
+    };
+
+    const target = map[field]?.current;
+    if (!target) return;
+
+    const handle = findNodeHandle(target);
+    if (!handle) return;
+
+    // @ts-ignore — getInnerViewNode exists at runtime
+    const scrollNode = scrollRef.current.getInnerViewNode
+      ? scrollRef.current.getInnerViewNode()
+      : findNodeHandle(scrollRef.current);
+
+    UIManager.measureLayout(
+      handle,
+      scrollNode,
+      () => {},
+      (_x: number, y: number) => {
+        // Leave ~140px of space above the input so it clears the keyboard
+        scrollRef.current?.scrollTo({
+          y: Math.max(y - 140, 0),
+          animated: true,
+        });
+      },
+    );
+  };
+
   const handleRegister = async () => {
-    // 🔥 Prevent double clicks and multiple submissions
     if (loading || isProcessing.current || isNavigating) {
       console.log("Prevented double click");
       return;
     }
 
-    // Validate required fields
+    setError("");
+
     if (!first_name || !last_name || !email || !password) {
-      Alert.alert("Validation Error", "Please fill all required fields");
+      setError("Please fill all required fields.");
       return;
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert("Validation Error", "Please enter a valid email address");
+      setError("Please enter a valid email address.");
       return;
     }
 
-    // Validate password length
-    // 🔥 PASSWORD VALIDATION (MATCH BACKEND)
     if (password.length < 8) {
-      Alert.alert("Validation Error", "Password must be at least 8 characters");
+      setError("Password must be at least 8 characters.");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert("Validation Error", "Passwords do not match");
+      setError("Passwords do not match.");
       return;
     }
 
     isProcessing.current = true;
     setLoading(true);
-    setShowModal(true); // Show modal immediately when registration starts
+    Keyboard.dismiss();
 
     try {
-      // Call register API
       const res = await register({
         first_name,
         middle_name: middle_name || null,
@@ -91,9 +183,8 @@ export default function Register() {
 
       console.log("REGISTER RESPONSE:", res);
 
-      // 🔥 CHECK IF NOT VERIFIED CASE
+      // NOT VERIFIED CASE
       if (res?.message?.includes("not verified")) {
-        setShowModal(false); // Hide modal before showing alert
         Alert.alert(
           "Account Not Verified",
           "This email is already registered but not verified.\n\nDo you want to continue verification?",
@@ -104,7 +195,7 @@ export default function Register() {
               onPress: () => {
                 isProcessing.current = false;
                 setLoading(false);
-              }
+              },
             },
             {
               text: "Continue",
@@ -114,27 +205,25 @@ export default function Register() {
                   pathname: "/auth/otp",
                   params: { email, from: "register" },
                 });
-              }
-            }
-          ]
+              },
+            },
+          ],
         );
         return;
       }
 
-      // Navigate to OTP screen IMMEDIATELY
       setIsNavigating(true);
       router.replace({
         pathname: "/auth/otp",
-        params: { email: email },
+        params: { email },
       });
-
     } catch (e: any) {
       console.log("ERROR DATA:", e.response?.data);
 
-      setShowModal(false); // Hide modal on error
-
-      // Handle specific error cases
-      if (e.response?.status === 400 && e.response?.data?.message === 'Email already registered') {
+      if (
+        e.response?.status === 400 &&
+        e.response?.data?.message === "Email already registered"
+      ) {
         Alert.alert(
           "Registration Failed",
           "This email is already registered and verified. Please login instead.",
@@ -145,7 +234,7 @@ export default function Register() {
               onPress: () => {
                 isProcessing.current = false;
                 setLoading(false);
-              }
+              },
             },
             {
               text: "Go to Login",
@@ -153,292 +242,641 @@ export default function Register() {
                 isProcessing.current = false;
                 setLoading(false);
                 router.push("/auth/login");
-              }
-            }
-          ]
+              },
+            },
+          ],
         );
       } else {
-        // Generic error message
-        const errorMessage = e.response?.data?.message || "Registration failed. Please try again.";
-        Alert.alert("Registration Error", errorMessage);
-
-        // Reset processing state on error
+        const errorMessage =
+          e.response?.data?.message || "Registration failed. Please try again.";
+        setError(errorMessage);
         isProcessing.current = false;
         setLoading(false);
       }
     }
-    // Don't reset loading on success because we're navigating away
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <View style={{ flex: 1, backgroundColor: CREAM }}>
+      <StatusBar style="light" />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
+        style={{ flex: 1 }}
       >
-        {/* BACKGROUND */}
-        <ImageBackground
-          source={require("../../assets/bg.jpg")}
-          style={{ flex: 1 }}
-          resizeMode="cover"
-        >
-          {/* OVERLAY */}
-          <LinearGradient
-            colors={["rgba(13,46,31,0.55)", "rgba(13,46,31,0.88)"]}
-            style={{ flex: 1 }}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={{ flexGrow: 1 }}
           >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ flexGrow: 1 }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* CONTENT */}
-              <View className="flex-1 justify-center items-center px-6 py-8">
-
-                {/* LOGO */}
-                <View className="items-center mb-6">
-                  <View className="bg-[#c9a96e]/15 border border-[#c9a96e]/40 p-3 rounded-full mb-3">
-                    <Image
-                      source={require("../../assets/logo.jpg")}
-                      style={{
-                        width: height * 0.09,
-                        height: height * 0.09,
-                      }}
-                      className="rounded-full"
-                    />
-                  </View>
-                  <Text className="text-[#c9a96e] text-[11px] tracking-[4px] uppercase mb-2">
-                    Join Us
-                  </Text>
-                  <Text
-                    className="text-white text-2xl"
-                    style={{ fontFamily: "Georgia" }}
-                  >
-                    Lyn Enia's Travelers' Inn
-                  </Text>
-                </View>
-
-                {/* FORM CARD */}
-                <View
-                  style={{
-                    width: width * 0.9,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 16,
-                    elevation: 8,
-                  }}
-                  className="bg-[#faf8f3] p-6 rounded-3xl overflow-hidden"
-                >
-                  <Text
-                    className="text-2xl text-center mb-1 text-[#1a4a35]"
-                    style={{ fontFamily: "Georgia" }}
-                  >
-                    Register
-                  </Text>
-                  <Text className="text-center text-[#1a4a35]/50 text-sm mb-6">
-                    Create your guest account
-                  </Text>
-
-                  {/* FIRST NAME */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="person-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="First Name *"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setFirstName}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* MIDDLE NAME */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="person-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Middle Name (Optional)"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setMiddleName}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* LAST NAME */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="person-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Last Name *"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setLastName}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* CONTACT */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="call-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Contact Number (Optional)"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setContactNumber}
-                      keyboardType="phone-pad"
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* ADDRESS */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="location-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Address (Optional)"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setAddress}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* EMAIL */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="mail-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Email *"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setEmail}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* PASSWORD */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-3">
-                    <Ionicons name="lock-closed-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Password *"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      secureTextEntry
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setPassword}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* CONFIRM PASSWORD */}
-                  <View className="flex-row items-center bg-white rounded-xl border border-[#1a4a35]/15 px-4 mb-5">
-                    <Ionicons name="lock-closed-outline" size={16} color="#1a4a35" style={{ opacity: 0.4 }} />
-                    <TextInput
-                      placeholder="Confirm Password *"
-                      placeholderTextColor="rgba(26,74,53,0.35)"
-                      secureTextEntry
-                      className="flex-1 py-3 px-3 text-[#1a4a35]"
-                      onChangeText={setConfirmPassword}
-                      editable={!loading}
-                    />
-                  </View>
-
-                  {/* BUTTON */}
-                  <TouchableOpacity
-                    onPress={handleRegister}
-                    disabled={loading || isNavigating}
-                    activeOpacity={0.9}
-                    className="rounded-2xl overflow-hidden"
-                  >
-                    <LinearGradient
-                      colors={
-                        loading || isNavigating
-                          ? ["#9ca3af", "#6b7280"]
-                          : ["#1a4a35", "#0d2e1f"]
-                      }
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={{ paddingVertical: height * 0.018 }}
-                      className="flex-row items-center justify-center gap-2"
-                    >
-                      {loading ? (
-                        <ActivityIndicator size="small" color="#c9a96e" />
-                      ) : (
-                        <>
-                          <Text
-                            className="text-white text-center text-base tracking-widest uppercase"
-                            style={{ fontFamily: "Georgia" }}
-                          >
-                            {isNavigating ? "Redirecting..." : "Register"}
-                          </Text>
-                          {!isNavigating && (
-                            <Ionicons name="arrow-forward" size={16} color="#c9a96e" />
-                          )}
-                        </>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  {/* LOGIN LINK */}
-                  <TouchableOpacity
-                    onPress={() => !loading && router.push("/auth/login")}
-                    disabled={loading}
-                    className="mt-5"
-                  >
-                    <Text className="text-center text-[#1a4a35]/50 text-sm">
-                      Already have an account?{" "}
-                      <Text className="text-[#1a4a35] font-semibold">
-                        Login
-                      </Text>
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* FOOTER */}
-                <Text className="text-white/50 text-xs text-center mt-6">
-                  By creating an account, you agree to our Terms & Conditions
-                </Text>
-              </View>
-            </ScrollView>
-          </LinearGradient>
-        </ImageBackground>
-
-        {/* 🔥 LOADING MODAL SPINNER */}
-        <Modal
-          transparent={true}
-          visible={showModal}
-          animationType="fade"
-          onRequestClose={() => {
-            // Don't allow closing by back button while processing
-            if (!loading) {
-              setShowModal(false);
-            }
-          }}
-        >
-          <View className="flex-1 justify-center items-center bg-black/60">
+            {/* ===================== HERO PANEL ===================== */}
             <View
-              className="bg-[#faf8f3] p-6 rounded-3xl items-center"
               style={{
-                width: width * 0.7,
-                elevation: 10,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 5,
+                height: Math.max(height * 0.38, 280),
+                overflow: "hidden",
               }}
             >
-              <ActivityIndicator size="large" color="#1a4a35" />
-              <Text
-                className="text-lg mt-4 text-[#1a4a35]"
-                style={{ fontFamily: "Georgia" }}
+              <ImageBackground
+                source={require("../../assets/bg.jpg")}
+                style={{ flex: 1 }}
+                resizeMode="cover"
               >
-                {loading ? "Processing..." : "Please wait..."}
-              </Text>
-              <Text className="text-sm text-[#1a4a35]/50 mt-2 text-center">
-                {loading ? "Creating your account..." : ""}
-              </Text>
+                <LinearGradient
+                  colors={[
+                    "rgba(27,43,39,0.35)",
+                    "rgba(27,43,39,0.65)",
+                    "rgba(27,43,39,0.95)",
+                  ]}
+                  style={{
+                    flex: 1,
+                    justifyContent: "space-between",
+                    paddingHorizontal: 24,
+                    paddingTop: 60,
+                    paddingBottom: 60,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View
+                      style={{
+                        width: 32,
+                        height: 1,
+                        backgroundColor: GOLD,
+                        marginRight: 10,
+                      }}
+                    />
+                    <Text style={styles.eyebrowWhite}>
+                      EST. 2019 · ALUBIJID
+                    </Text>
+                  </View>
+
+                  <View>
+                    <Text style={styles.heroTitle}>
+                      Join the{"\n"}
+                      <Text style={{ color: GOLD, fontStyle: "italic" }}>
+                        family
+                      </Text>
+                      .
+                    </Text>
+
+                    <Text style={styles.heroScript}>
+                      "A quiet place to rest,{"\n"}
+                      a warm place to return."
+                    </Text>
+
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginTop: 12,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 24,
+                          height: 1,
+                          backgroundColor: GOLD,
+                          marginRight: 8,
+                        }}
+                      />
+                      <Text style={styles.heroLabel}>TRAVELERS INN</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </ImageBackground>
             </View>
-          </View>
-        </Modal>
+
+            {/* ===================== FORM PANEL ===================== */}
+            <View
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                marginTop: -28,
+                paddingHorizontal: 24,
+                paddingTop: 32,
+                paddingBottom: 40,
+                ...Platform.select({
+                  ios: {
+                    shadowColor: INK,
+                    shadowOpacity: 0.08,
+                    shadowRadius: 20,
+                    shadowOffset: { width: 0, height: -8 },
+                  },
+                  android: { elevation: 6 },
+                }),
+              }}
+            >
+              {/* Title */}
+              <View style={{ marginBottom: 22 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 10,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 28,
+                      height: 1,
+                      backgroundColor: GOLD,
+                      marginRight: 10,
+                    }}
+                  />
+                  <Text style={styles.eyebrow}>CREATE ACCOUNT</Text>
+                </View>
+
+                <Text style={styles.formTitle}>
+                  Register your{"\n"}guest account.
+                </Text>
+
+                <Text style={styles.formSubtitle}>
+                  Fill in your details below to get started.
+                </Text>
+              </View>
+
+              {/* Error banner */}
+              {!!error && (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              {/* ============ NAME ROW ============ */}
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>FIRST NAME *</Text>
+                  <View style={styles.inputWrap}>
+                    <Ionicons
+                      name="person-outline"
+                      size={15}
+                      color="rgba(27,43,39,0.4)"
+                      style={{ marginRight: 8 }}
+                    />
+                    <TextInput
+                      ref={firstNameRef}
+                      value={first_name}
+                      onChangeText={setFirstName}
+                      onFocus={() => setFocusedField("firstName")}
+                      onBlur={() => setFocusedField(null)}
+                      placeholder="Juan"
+                      placeholderTextColor="rgba(27,43,39,0.35)"
+                      autoCapitalize="words"
+                      returnKeyType="next"
+                      onSubmitEditing={() => lastNameRef.current?.focus()}
+                      editable={!loading}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>LAST NAME *</Text>
+                  <View style={styles.inputWrap}>
+                    <Ionicons
+                      name="person-outline"
+                      size={15}
+                      color="rgba(27,43,39,0.4)"
+                      style={{ marginRight: 8 }}
+                    />
+                    <TextInput
+                      ref={lastNameRef}
+                      value={last_name}
+                      onChangeText={setLastName}
+                      onFocus={() => setFocusedField("lastName")}
+                      onBlur={() => setFocusedField(null)}
+                      placeholder="Dela Cruz"
+                      placeholderTextColor="rgba(27,43,39,0.35)"
+                      autoCapitalize="words"
+                      returnKeyType="next"
+                      onSubmitEditing={() => contactRef.current?.focus()}
+                      editable={!loading}
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Middle name */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                MIDDLE NAME
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="person-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={middleNameRef}
+                  value={middle_name}
+                  onChangeText={setMiddleName}
+                  onFocus={() => setFocusedField("middleName")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="Optional"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  onSubmitEditing={() => contactRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+              </View>
+
+              {/* Contact */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                CONTACT NUMBER
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="call-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={contactRef}
+                  value={contact_number}
+                  onChangeText={setContactNumber}
+                  onFocus={() => setFocusedField("contact")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="09XX XXX XXXX"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  keyboardType="phone-pad"
+                  returnKeyType="next"
+                  onSubmitEditing={() => addressRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+              </View>
+
+              {/* Address */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                ADDRESS
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="location-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={addressRef}
+                  value={address}
+                  onChangeText={setAddress}
+                  onFocus={() => setFocusedField("address")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="Optional"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  returnKeyType="next"
+                  onSubmitEditing={() => emailRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+              </View>
+
+              {/* Email */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                EMAIL ADDRESS *
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="mail-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={emailRef}
+                  value={email}
+                  onChangeText={setEmail}
+                  onFocus={() => setFocusedField("email")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="you@example.com"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+              </View>
+
+              {/* Password */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                PASSWORD *
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={passwordRef}
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setFocusedField("password")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="At least 8 characters"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                  onSubmitEditing={() => confirmRef.current?.focus()}
+                  editable={!loading}
+                  style={styles.input}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((s) => !s)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={17}
+                    color="rgba(27,43,39,0.4)"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Confirm Password */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                CONFIRM PASSWORD *
+              </Text>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={15}
+                  color="rgba(27,43,39,0.4)"
+                  style={{ marginRight: 10 }}
+                />
+                <TextInput
+                  ref={confirmRef}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  onFocus={() => setFocusedField("confirm")}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="Re-enter password"
+                  placeholderTextColor="rgba(27,43,39,0.35)"
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="go"
+                  onSubmitEditing={handleRegister}
+                  editable={!loading}
+                  style={styles.input}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword((s) => !s)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={
+                      showConfirmPassword ? "eye-off-outline" : "eye-outline"
+                    }
+                    size={17}
+                    color="rgba(27,43,39,0.4)"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Register button */}
+              <TouchableOpacity
+                onPress={handleRegister}
+                disabled={loading || isNavigating}
+                activeOpacity={0.9}
+                style={{ borderRadius: 999, overflow: "hidden", marginTop: 26 }}
+              >
+                <LinearGradient
+                  colors={[INK, INK]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    height: 52,
+                    borderRadius: 999,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: loading || isNavigating ? 0.7 : 1,
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <ActivityIndicator size="small" color={CREAM} />
+                      <Text style={[styles.registerText, { marginLeft: 10 }]}>
+                        Creating account...
+                      </Text>
+                    </>
+                  ) : isNavigating ? (
+                    <Text style={styles.registerText}>Redirecting...</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.registerText}>Create account</Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={16}
+                        color={CREAM}
+                        style={{ marginLeft: 8 }}
+                      />
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Login link */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  marginTop: 22,
+                }}
+              >
+                <Text style={styles.loginText}>
+                  Already have an account?{" "}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => !loading && router.push("/auth/login")}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.loginLink}>Sign in</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Security badge */}
+              <View style={styles.securityBadge}>
+                <View style={styles.securityIconWrap}>
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={18}
+                    color={GOLD}
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.securityTitle}>Your data is safe</Text>
+                  <Text style={styles.securityBody}>
+                    We protect your details with enterprise-grade security.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ============ DYNAMIC KEYBOARD SPACER ============ */}
+            {keyboardHeight > 0 && (
+              <View style={{ height: keyboardHeight }} />
+            )}
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  eyebrow: {
+    color: GOLD,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    fontWeight: "600",
+  },
+  eyebrowWhite: {
+    color: GOLD,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    fontWeight: "600",
+  },
+
+  heroTitle: {
+    color: "#FFFFFF",
+    fontSize: 34,
+    lineHeight: 40,
+    letterSpacing: -0.3,
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  heroScript: {
+    color: "rgba(247,244,239,0.85)",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 12,
+    fontStyle: "italic",
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  heroLabel: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: "600",
+  },
+
+  formTitle: {
+    color: INK,
+    fontSize: 26,
+    lineHeight: 30,
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+  },
+  formSubtitle: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  errorBox: {
+    backgroundColor: "#FEF2F2",
+    borderLeftWidth: 2,
+    borderLeftColor: "#F87171",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  fieldLabel: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 10,
+    letterSpacing: 1.8,
+    fontWeight: "600",
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(27,43,39,0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: INK,
+    paddingVertical: 0,
+  },
+
+  registerText: {
+    color: CREAM,
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+
+  loginText: {
+    color: "rgba(27,43,39,0.6)",
+    fontSize: 13,
+  },
+  loginLink: {
+    color: INK,
+    fontSize: 13,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+    textDecorationColor: GOLD,
+  },
+
+  securityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(27,43,39,0.04)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(27,43,39,0.06)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 24,
+  },
+  securityIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "rgba(200,155,90,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  securityTitle: {
+    color: INK,
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  securityBody: {
+    color: "rgba(27,43,39,0.55)",
+    fontSize: 11,
+    lineHeight: 15,
+  },
+});

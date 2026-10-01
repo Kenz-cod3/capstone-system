@@ -4,17 +4,19 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   Modal,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  useWindowDimensions,
   Alert,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Calendar } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -72,6 +74,12 @@ interface Room {
 }
 
 // =========================================================
+// MODULE-LEVEL CACHE
+// =========================================================
+
+const bookedDatesCache: Map<number, BookingRange[]> = new Map();
+
+// =========================================================
 // COMPONENT
 // =========================================================
 
@@ -79,6 +87,20 @@ export default function CreateBooking() {
   const { room } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+
+  // =======================================================
+  // RESPONSIVE HELPERS
+  // =======================================================
+
+  const isSmallDevice = width < 375;
+  const isMediumDevice = width >= 375 && width < 414;
+
+  const heroHeight = Math.min(480, height * 0.6);
+
+  const titleFontSize = isSmallDevice ? 32 : isMediumDevice ? 40 : 48;
+
+  const horizontalPadding = isSmallDevice ? 16 : 24;
 
   // =======================================================
   // PARSED ROOM
@@ -101,17 +123,13 @@ export default function CreateBooking() {
 
   const getToday = () => {
     const today = new Date();
-
     today.setHours(0, 0, 0, 0);
-
     return today;
   };
 
   const getTomorrow = () => {
     const tomorrow = getToday();
-
     tomorrow.setDate(tomorrow.getDate() + 1);
-
     return tomorrow;
   };
 
@@ -120,45 +138,37 @@ export default function CreateBooking() {
   // =======================================================
 
   const [checkInDate, setCheckInDate] = useState<Date | null>(getToday());
-
   const [checkOutDate, setCheckOutDate] = useState<Date | null>(getTomorrow());
-
   const [bookingType, setBookingType] = useState<BookingType>("overnight");
-
   const [expectedCheckInTime, setExpectedCheckInTime] = useState("2:00 PM");
-
   const [expectedCheckOutTime, setExpectedCheckOutTime] = useState("11:00 AM");
-
-  // const [showCheckInTime, setShowCheckInTime] = useState(false);
-
-  // // CUSTOM TIME PICKER
-  // const [pickerHour, setPickerHour] = useState("2");
-  // const [pickerMinute, setPickerMinute] = useState("00");
-  // const [pickerPeriod, setPickerPeriod] = useState<"AM" | "PM">("PM");
-
-  // const [showCheckOutTime, setShowCheckOutTime] = useState(false);
 
   const [availableCheckInTimes, setAvailableCheckInTimes] = useState<string[]>(
     [],
   );
-
   const [availableCheckOutTimes, setAvailableCheckOutTimes] = useState<
     string[]
   >([]);
 
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // =======================================================
   // MAIN ROOM CALENDAR
   // =======================================================
 
   const [showCheckIn, setShowCheckIn] = useState(false);
-
   const [showCheckOut, setShowCheckOut] = useState(false);
 
-  const [bookedRanges, setBookedRanges] = useState<BookingRange[]>([]);
+  const [bookedRanges, setBookedRanges] = useState<BookingRange[]>(() => {
+    if (parsedRoom?.id && bookedDatesCache.has(parsedRoom.id)) {
+      return bookedDatesCache.get(parsedRoom.id) ?? [];
+    }
+    return [];
+  });
 
   const [loadingBookedDates, setLoadingBookedDates] = useState(false);
+  const bookedDatesRequestRef = useRef(0);
 
   // =======================================================
   // SUGGESTED AVAILABLE DATE RANGES
@@ -179,13 +189,9 @@ export default function CreateBooking() {
   // =======================================================
 
   const [selectedRooms, setSelectedRooms] = useState<SelectedBookingRoom[]>([]);
-
   const [showAddRoomModal, setShowAddRoomModal] = useState(false);
-
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
-
   const [loadingRooms, setLoadingRooms] = useState(false);
-
   const [addingRoom, setAddingRoom] = useState(false);
 
   // =======================================================
@@ -193,14 +199,10 @@ export default function CreateBooking() {
   // =======================================================
 
   const [draftRoom, setDraftRoom] = useState<Room | null>(null);
-
   const [draftCheckInDate, setDraftCheckInDate] = useState<Date | null>(null);
-
   const [draftCheckOutDate, setDraftCheckOutDate] = useState<Date | null>(null);
-
   const [draftBookingType, setDraftBookingType] =
     useState<BookingType>("overnight");
-
   const [draftBookedRanges, setDraftBookedRanges] = useState<BookingRange[]>(
     [],
   );
@@ -211,31 +213,41 @@ export default function CreateBooking() {
 
   const [draftExpectedCheckInTime, setDraftExpectedCheckInTime] =
     useState("2:00 PM");
-
   const [draftExpectedCheckOutTime, setDraftExpectedCheckOutTime] =
     useState("6:00 PM");
-
   const [showDraftTimePicker, setShowDraftTimePicker] = useState(false);
-
   const [draftPickerHour, setDraftPickerHour] = useState("2");
-
   const [draftPickerMinute, setDraftPickerMinute] = useState("00");
-
   const [draftPickerPeriod, setDraftPickerPeriod] = useState<"AM" | "PM">("PM");
-
   const [draftLoadingDates, setDraftLoadingDates] = useState(false);
-
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
-
   const [showDraftCheckIn, setShowDraftCheckIn] = useState(false);
-
   const [showDraftCheckOut, setShowDraftCheckOut] = useState(false);
+
+  // =======================================================
+  // INITIAL LOAD
+  // =======================================================
 
   useEffect(() => {
     if (!parsedRoom?.id) return;
-
     fetchBookedDates();
   }, [parsedRoom?.id]);
+
+  // =======================================================
+  // REFRESH — ONLY REFRESHES ROOM LIST
+  // =======================================================
+
+  const handleRefresh = async () => {
+    if (refreshing || !parsedRoom) return;
+    try {
+      setRefreshing(true);
+      await fetchAvailableRooms();
+    } catch (error) {
+      console.log("Refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // =======================================================
   // NO ROOM
@@ -244,12 +256,7 @@ export default function CreateBooking() {
   if (!parsedRoom) {
     return (
       <View className="flex-1 justify-center items-center bg-[#faf8f3]">
-        <Text
-          className="text-[#1a4a35]/50"
-          style={{
-            fontFamily: "Georgia",
-          }}
-        >
+        <Text className="text-[#1a4a35]/50" style={{ fontFamily: "Georgia" }}>
           No room selected
         </Text>
       </View>
@@ -262,19 +269,14 @@ export default function CreateBooking() {
 
   const formatDate = (date: Date | null) => {
     if (!date) return "";
-
     const year = date.getFullYear();
-
     const month = String(date.getMonth() + 1).padStart(2, "0");
-
     const day = String(date.getDate()).padStart(2, "0");
-
     return `${year}-${month}-${day}`;
   };
 
   const formatDisplayDate = (date: Date | null) => {
     if (!date) return null;
-
     return date.toLocaleDateString("en-PH", {
       weekday: "short",
       month: "long",
@@ -283,9 +285,17 @@ export default function CreateBooking() {
     });
   };
 
+  const formatShortDate = (date: Date | null) => {
+    if (!date) return "";
+    return date.toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   const parseDate = (value: string) => {
     const [year, month, day] = value.split("-").map(Number);
-
     return new Date(year, month - 1, day);
   };
 
@@ -303,34 +313,21 @@ export default function CreateBooking() {
 
   const addHoursToTime = (time: string, hours: number) => {
     const [timePart, period] = time.split(" ");
-
     let [hour, minute] = timePart.split(":").map(Number);
 
-    if (period === "PM" && hour !== 12) {
-      hour += 12;
-    }
-
-    if (period === "AM" && hour === 12) {
-      hour = 0;
-    }
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
 
     const date = new Date();
-
     date.setHours(hour, minute, 0, 0);
-
     date.setHours(date.getHours() + hours);
 
     let newHour = date.getHours();
-
     const newMinute = String(date.getMinutes()).padStart(2, "0");
-
     const newPeriod = newHour >= 12 ? "PM" : "AM";
 
-    if (newHour === 0) {
-      newHour = 12;
-    } else if (newHour > 12) {
-      newHour -= 12;
-    }
+    if (newHour === 0) newHour = 12;
+    else if (newHour > 12) newHour -= 12;
 
     return `${newHour}:${newMinute} ${newPeriod}`;
   };
@@ -341,7 +338,6 @@ export default function CreateBooking() {
 
   const openDraftTimePicker = () => {
     const currentTime = draftExpectedCheckInTime.trim();
-
     const match = currentTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
 
     if (match) {
@@ -363,37 +359,25 @@ export default function CreateBooking() {
 
     if (hour < 1 || hour > 12 || minute < 0 || minute > 59) {
       Alert.alert("Invalid Time", "Please select a valid time.");
-
       return;
     }
 
     const formattedTime = `${hour}:${String(minute).padStart(2, "0")} ${draftPickerPeriod}`;
-
     setDraftExpectedCheckInTime(formattedTime);
-
     setDraftExpectedCheckOutTime(addHoursToTime(formattedTime, 4));
-
     setShowDraftTimePicker(false);
   };
 
   const changeDraftPickerHour = (direction: "up" | "down") => {
     setDraftPickerHour((current) => {
       let hour = Number(current);
-
       if (direction === "up") {
         hour += 1;
-
-        if (hour > 12) {
-          hour = 1;
-        }
+        if (hour > 12) hour = 1;
       } else {
         hour -= 1;
-
-        if (hour < 1) {
-          hour = 12;
-        }
+        if (hour < 1) hour = 12;
       }
-
       return String(hour);
     });
   };
@@ -401,21 +385,13 @@ export default function CreateBooking() {
   const changeDraftPickerMinute = (direction: "up" | "down") => {
     setDraftPickerMinute((current) => {
       let minute = Number(current);
-
       if (direction === "up") {
         minute += 1;
-
-        if (minute > 59) {
-          minute = 0;
-        }
+        if (minute > 59) minute = 0;
       } else {
         minute -= 1;
-
-        if (minute < 0) {
-          minute = 59;
-        }
+        if (minute < 0) minute = 59;
       }
-
       return String(minute).padStart(2, "0");
     });
   };
@@ -426,14 +402,10 @@ export default function CreateBooking() {
 
   const isValidExpectedCheckInTime = (time: string) => {
     const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-
-    if (!match) {
-      return false;
-    }
+    if (!match) return false;
 
     const hour = Number(match[1]);
     const minute = Number(match[2]);
-
     return hour >= 1 && hour <= 12 && minute >= 0 && minute <= 59;
   };
 
@@ -442,18 +414,13 @@ export default function CreateBooking() {
   // =======================================================
 
   const calculateNights = (start: Date | null, end: Date | null) => {
-    if (!start || !end || end <= start) {
-      return 0;
-    }
-
+    if (!start || !end || end <= start) return 0;
     return Math.round(
       (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
     );
   };
 
-  const getNights = () => {
-    return calculateNights(checkInDate, checkOutDate);
-  };
+  const getNights = () => calculateNights(checkInDate, checkOutDate);
 
   // =======================================================
   // PRICE HELPERS
@@ -467,16 +434,12 @@ export default function CreateBooking() {
     }).format(price);
 
   const basePrice = Number(parsedRoom.room_type?.base_price || 0);
-
   const shortStayPrice = Number(parsedRoom.room_type?.short_stay_price || 0);
-
   const nights = getNights();
-
   const overnightTotal = nights * basePrice;
-
   const shortTotal = shortStayPrice;
-
   const total = bookingType === "overnight" ? overnightTotal : shortTotal;
+
   // =======================================================
   // FIND SUGGESTED AVAILABLE DATES
   // =======================================================
@@ -487,266 +450,131 @@ export default function CreateBooking() {
   ): SuggestedDateRange[] => {
     const isBooked = (date: Date) => {
       const target = dateToNumber(date);
-
       return ranges.some((range) => {
         const start = dateToNumber(parseDate(range.check_in_date));
-
         const end = dateToNumber(parseDate(range.check_out_date));
-
-        // Check-out date itself is available.
         return target >= start && target < end;
       });
     };
 
     const suggestions: SuggestedDateRange[] = [];
-
     let current = getToday();
 
-    // Search up to 365 days.
     for (let i = 0; i < 365 && suggestions.length < numberOfSuggestions; i++) {
-      // Skip booked dates.
       if (isBooked(current)) {
         current = new Date(current);
         current.setDate(current.getDate() + 1);
         continue;
       }
 
-      // Find the next booked date.
       let nextBookedDate: Date | null = null;
-
       for (let j = 1; j <= 365; j++) {
         const testDate = new Date(current);
-
         testDate.setDate(testDate.getDate() + j);
-
         if (isBooked(testDate)) {
           nextBookedDate = testDate;
           break;
         }
       }
 
-      // No future booking.
       if (!nextBookedDate) {
         const checkOut = new Date(current);
-
         checkOut.setDate(checkOut.getDate() + 3);
-
-        suggestions.push({
-          checkIn: new Date(current),
-          checkOut,
-          nights: 3,
-        });
-
+        suggestions.push({ checkIn: new Date(current), checkOut, nights: 3 });
         current = new Date(checkOut);
         current.setDate(current.getDate() + 1);
-
         continue;
       }
 
-      // Number of free nights before
-      // the next booking.
       const availableNights = Math.round(
         (dateToNumber(nextBookedDate) - dateToNumber(current)) /
           (1000 * 60 * 60 * 24),
       );
 
       if (availableNights >= 1) {
-        // Prefer 3 nights.
         const nights = Math.min(3, availableNights);
-
         const checkOut = new Date(current);
-
         checkOut.setDate(checkOut.getDate() + nights);
-
-        suggestions.push({
-          checkIn: new Date(current),
-          checkOut,
-          nights,
-        });
-
+        suggestions.push({ checkIn: new Date(current), checkOut, nights });
         current = new Date(checkOut);
-
         current.setDate(current.getDate() + 1);
-
         continue;
       }
 
       current = new Date(current);
-
       current.setDate(current.getDate() + 1);
     }
 
     return suggestions;
   };
 
-  // =======================================================
-  // BACKWARD COMPATIBILITY FOR DRAFT ROOM
-  // =======================================================
-
   const findAutomaticDates = (ranges: BookingRange[]) => {
     const suggestions = findSuggestedDates(ranges, 1);
-
     if (suggestions.length > 0) {
       return {
         checkIn: suggestions[0].checkIn,
-
         checkOut: suggestions[0].checkOut,
       };
     }
-
-    return {
-      checkIn: getToday(),
-      checkOut: getTomorrow(),
-    };
+    return { checkIn: getToday(), checkOut: getTomorrow() };
   };
 
   // =======================================================
-  // APPLY SUGGESTED DATE
-  // =======================================================
-
-  const applySuggestedDate = (suggestion: SuggestedDateRange) => {
-    setCheckInDate(new Date(suggestion.checkIn));
-
-    if (bookingType === "overnight") {
-      setCheckOutDate(new Date(suggestion.checkOut));
-    } else {
-      setCheckOutDate(null);
-    }
-
-    setShowCheckIn(false);
-    setShowCheckOut(false);
-  };
-  // =======================================================
-  // FETCH BOOKED DATES FOR MAIN ROOM
+  // FETCH BOOKED DATES
   // =======================================================
 
   async function fetchBookedDates() {
-    if (!parsedRoom) return;
+    if (!parsedRoom?.id) return;
+
+    const roomId = parsedRoom.id;
+    const requestId = ++bookedDatesRequestRef.current;
+    const hasCache = bookedDatesCache.has(roomId);
 
     try {
-      setLoadingBookedDates(true);
+      if (!hasCache) setLoadingBookedDates(true);
 
-      const response = await api.get(`/rooms/${parsedRoom.id}/booked-dates`);
+      const response = await api.get(`/rooms/${roomId}/booked-dates`);
+
+      if (requestId !== bookedDatesRequestRef.current) return;
 
       const data = response.data?.data ?? response.data ?? [];
+      if (!Array.isArray(data)) {
+        console.log("Invalid booked dates response:", data);
+        return;
+      }
 
-      const ranges: BookingRange[] = Array.isArray(data) ? data : [];
-
+      const ranges: BookingRange[] = data;
+      bookedDatesCache.set(roomId, ranges);
       setBookedRanges(ranges);
 
-      // =======================================================
-      // LOAD AVAILABLE EXPECTED STAY TIMES
-      // =======================================================
-
-      const loadAvailableTimes = async (
-        roomId: number,
-        checkIn: Date | null,
-        checkOut: Date | null,
-        excludeCheckIn?: string,
-        excludeCheckOut?: string,
-      ) => {
-        if (!checkIn) {
-          return;
-        }
-
-        try {
-          const params: Record<string, string> = {
-            check_in_date: formatDate(checkIn),
-          };
-
-          if (checkOut) {
-            params.check_out_date = formatDate(checkOut);
-          }
-
-          if (excludeCheckIn) {
-            params.exclude_check_in_date = excludeCheckIn;
-          }
-
-          if (excludeCheckOut) {
-            params.exclude_check_out_date = excludeCheckOut;
-          }
-
-          const response = await api.get(`/rooms/${roomId}/available-times`, {
-            params,
-          });
-
-          const data = response.data?.data ?? response.data ?? {};
-
-          const checkInTimes = Array.isArray(data?.check_in_times)
-            ? data.check_in_times
-            : [];
-
-          const checkOutTimes = Array.isArray(data?.check_out_times)
-            ? data.check_out_times
-            : [];
-
-          setAvailableCheckInTimes(checkInTimes);
-          setAvailableCheckOutTimes(checkOutTimes);
-
-          // If current selected time is no longer available,
-          // automatically use the first available time.
-          if (
-            checkInTimes.length > 0 &&
-            !checkInTimes.includes(expectedCheckInTime)
-          ) {
-            setExpectedCheckInTime(checkInTimes[0]);
-          }
-
-          if (
-            checkOutTimes.length > 0 &&
-            !checkOutTimes.includes(expectedCheckOutTime)
-          ) {
-            setExpectedCheckOutTime(checkOutTimes[0]);
-          }
-        } catch (error: any) {
-          console.log(
-            "Failed to load available times:",
-            error?.response?.data || error,
-          );
-
-          setAvailableCheckInTimes([]);
-          setAvailableCheckOutTimes([]);
-
-          Alert.alert(
-            "Time Availability",
-            "Unable to load available stay times for this room.",
-          );
-        }
-      };
-
-      // ===================================================
-      // GENERATE SUGGESTED AVAILABLE DATES
-      // ===================================================
-
       const suggestions = findSuggestedDates(ranges, 3);
-
       setSuggestedDates(suggestions);
 
-      // ===================================================
-      // AUTOMATICALLY SELECT FIRST SUGGESTION
-      // ===================================================
-
+      // AUTO-PICK FIRST AVAILABLE RANGE
       if (suggestions.length > 0) {
-        setCheckInDate(new Date(suggestions[0].checkIn));
+        setCheckInDate(suggestions[0].checkIn);
 
-        setCheckOutDate(new Date(suggestions[0].checkOut));
+        if (bookingType === "overnight") {
+          setCheckOutDate(suggestions[0].checkOut);
+        } else {
+          setCheckOutDate(null);
+        }
       } else {
-        setCheckInDate(getToday());
-
-        setCheckOutDate(getTomorrow());
+        const automatic = findAutomaticDates(ranges);
+        setCheckInDate(automatic.checkIn);
+        setCheckOutDate(
+          bookingType === "overnight" ? automatic.checkOut : null,
+        );
       }
-    } catch (error) {
-      console.log("Failed to fetch booked dates:", error);
-
-      setBookedRanges([]);
-
-      setSuggestedDates([]);
-
-      setCheckInDate(getToday());
-
-      setCheckOutDate(getTomorrow());
+    } catch (error: any) {
+      if (requestId !== bookedDatesRequestRef.current) return;
+      console.log(
+        "Failed to fetch booked dates:",
+        error?.response?.data || error,
+      );
     } finally {
-      setLoadingBookedDates(false);
+      if (requestId === bookedDatesRequestRef.current)
+        setLoadingBookedDates(false);
     }
   }
 
@@ -756,26 +584,19 @@ export default function CreateBooking() {
 
   const isDateBooked = (date: Date) => {
     const target = dateToNumber(date);
-
     return bookedRanges.some((range) => {
       const checkIn = dateToNumber(parseDate(range.check_in_date));
-
       const checkOut = dateToNumber(parseDate(range.check_out_date));
-
       return target >= checkIn && target < checkOut;
     });
   };
 
   const hasDateRangeConflict = (startDate: Date, endDate: Date) => {
     const selectedStart = dateToNumber(startDate);
-
     const selectedEnd = dateToNumber(endDate);
-
     return bookedRanges.some((range) => {
       const bookedStart = dateToNumber(parseDate(range.check_in_date));
-
       const bookedEnd = dateToNumber(parseDate(range.check_out_date));
-
       return selectedStart < bookedEnd && selectedEnd > bookedStart;
     });
   };
@@ -786,89 +607,98 @@ export default function CreateBooking() {
 
   const bookedMarkedDates = useMemo(() => {
     const marked: Record<string, any> = {};
-
     bookedRanges.forEach((range) => {
       const start = parseDate(range.check_in_date);
-
       const end = parseDate(range.check_out_date);
-
       const current = new Date(start);
 
       while (current < end) {
         const key = formatDate(current);
-
         if (key) {
           marked[key] = {
             disabled: true,
             disableTouchEvent: true,
-            selected: true,
-            selectedColor: "#dc2626",
-            textColor: "#ffffff",
+            customStyles: {
+              container: {
+                backgroundColor: "#FDE2E2",
+                borderWidth: 1,
+                borderColor: "#B91C1C",
+                borderRadius: 20,
+              },
+              text: { color: "#B91C1C", fontWeight: "600" },
+            },
           };
         }
-
         current.setDate(current.getDate() + 1);
       }
     });
-
     return marked;
   }, [bookedRanges]);
 
   const checkInMarkedDates = useMemo(() => {
-    const marked = {
-      ...bookedMarkedDates,
-    };
-
+    const marked = { ...bookedMarkedDates };
     if (checkInDate) {
       const key = formatDate(checkInDate);
-
       if (key && !isDateBooked(checkInDate)) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#1a4a35",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#DDEFE7",
+              borderWidth: 1,
+              borderColor: "#1A4A35",
+              borderRadius: 20,
+            },
+            text: { color: "#1A4A35", fontWeight: "600" },
+          },
         };
       }
     }
-
     return marked;
   }, [bookedMarkedDates, checkInDate]);
 
   const checkOutMarkedDates = useMemo(() => {
-    const marked = {
-      ...bookedMarkedDates,
-    };
-
+    const marked = { ...bookedMarkedDates };
     if (checkOutDate) {
       const key = formatDate(checkOutDate);
-
       if (key) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#c9a96e",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#F5EBD2",
+              borderWidth: 1,
+              borderColor: "#A8863A",
+              borderRadius: 20,
+            },
+            text: { color: "#8A6D2F", fontWeight: "600" },
+          },
         };
       }
     }
-
     if (checkInDate) {
       const key = formatDate(checkInDate);
-
       if (key) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#1a4a35",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#DDEFE7",
+              borderWidth: 1,
+              borderColor: "#1A4A35",
+              borderRadius: 20,
+            },
+            text: { color: "#1A4A35", fontWeight: "600" },
+          },
         };
       }
     }
-
     return marked;
   }, [bookedMarkedDates, checkInDate, checkOutDate]);
 
@@ -885,16 +715,13 @@ export default function CreateBooking() {
     selectedExpectedCheckOutTime: string = "11:00 AM",
   ): SelectedBookingRoom => {
     const roomBasePrice = Number(selectedRoom.room_type?.base_price || 0);
-
     const roomShortPrice = Number(
       selectedRoom.room_type?.short_stay_price || 0,
     );
-
     const roomNights =
       selectedBookingType === "overnight"
         ? calculateNights(selectedCheckIn, selectedCheckOut)
         : 1;
-
     const roomSubtotal =
       selectedBookingType === "overnight"
         ? roomNights * roomBasePrice
@@ -902,30 +729,19 @@ export default function CreateBooking() {
 
     return {
       id: Number(selectedRoom.id),
-
       room_type_id: selectedRoom.room_type_id ?? selectedRoom.room_type?.id,
-
       room_number: String(selectedRoom.room_number),
-
       room_type_name: selectedRoom.room_type?.type_name || "Standard",
-
       base_price: roomBasePrice,
-
       short_stay_price: roomShortPrice,
-
       stay_type: selectedBookingType,
-
       check_in_date: formatDate(selectedCheckIn),
-
       check_out_date: formatDate(
         selectedBookingType === "short" ? selectedCheckIn : selectedCheckOut,
       ),
-
       expected_check_in_time: selectedExpectedCheckInTime,
       expected_check_out_time: selectedExpectedCheckOutTime,
-
       nights: roomNights,
-
       subtotal: Number(roomSubtotal),
     };
   };
@@ -934,78 +750,62 @@ export default function CreateBooking() {
   // FETCH ALL ROOMS FOR ROOM SELECTION
   // =======================================================
 
-  // =======================================================
-  // FETCH ALL ROOMS FOR ROOM SELECTION
-  // =======================================================
-
   const fetchAvailableRooms = async () => {
     try {
       setLoadingRooms(true);
-
       const response = await api.get("/rooms");
-
-      console.log("ROOMS RESPONSE:", response.data);
-
       const payload = response.data;
-
       let rooms: Room[] = [];
 
-      // -----------------------------------------------
-      // CASE 1:
-      // Laravel paginator
-      //
-      // {
-      //   data: {
-      //     data: [...]
-      //   }
-      // }
-      // -----------------------------------------------
-
-      if (Array.isArray(payload?.data?.data)) {
-        rooms = payload.data.data;
-      }
-
-      // -----------------------------------------------
-      // CASE 2:
-      // Normal Laravel response
-      //
-      // {
-      //   data: [...]
-      // }
-      // -----------------------------------------------
-      else if (Array.isArray(payload?.data)) {
-        rooms = payload.data;
-      }
-
-      // -----------------------------------------------
-      // CASE 3:
-      // {
-      //   rooms: [...]
-      // }
-      // -----------------------------------------------
-      else if (Array.isArray(payload?.rooms)) {
-        rooms = payload.rooms;
-      }
-
-      // -----------------------------------------------
-      // CASE 4:
-      // Direct array
-      // -----------------------------------------------
-      else if (Array.isArray(payload)) {
-        rooms = payload;
-      }
-
-      console.log("ROOMS LOADED:", rooms);
+      if (Array.isArray(payload?.data?.data)) rooms = payload.data.data;
+      else if (Array.isArray(payload?.data)) rooms = payload.data;
+      else if (Array.isArray(payload?.rooms)) rooms = payload.rooms;
+      else if (Array.isArray(payload)) rooms = payload;
 
       setAvailableRooms(rooms);
     } catch (error: any) {
       console.log("Failed to load rooms:", error?.response?.data || error);
-
       setAvailableRooms([]);
-
       Alert.alert("Error", "Failed to load rooms.");
     } finally {
       setLoadingRooms(false);
+    }
+  };
+
+  // =======================================================
+  // AUTO-PICK AVAILABLE DATES (MANUAL ACTION)
+  // =======================================================
+
+  const handleAutoPickAvailableDates = () => {
+    if (loadingBookedDates) return;
+
+    if (suggestedDates.length === 0) {
+      Alert.alert(
+        "No Available Dates",
+        "There are no available dates for this room in the next year.",
+      );
+      return;
+    }
+
+    const currentIndex = suggestedDates.findIndex(
+      (s) =>
+        checkInDate &&
+        dateToNumber(s.checkIn) === dateToNumber(checkInDate),
+    );
+
+    const nextIndex =
+      currentIndex === -1 || currentIndex === suggestedDates.length - 1
+        ? 0
+        : currentIndex + 1;
+
+    const chosen = suggestedDates[nextIndex];
+
+    setCheckInDate(chosen.checkIn);
+
+    if (bookingType === "overnight") {
+      setCheckOutDate(chosen.checkOut);
+    } else {
+      setCheckOutDate(null);
     }
   };
 
@@ -1016,13 +816,11 @@ export default function CreateBooking() {
   const handleAddAnotherRoom = async () => {
     if (!checkInDate) {
       Alert.alert("Date Required", "Please select a check-in date first.");
-
       return;
     }
 
     if (bookingType === "overnight" && !checkOutDate) {
       Alert.alert("Date Required", "Please select a check-out date first.");
-
       return;
     }
 
@@ -1032,7 +830,6 @@ export default function CreateBooking() {
       checkOutDate <= checkInDate
     ) {
       Alert.alert("Invalid Dates", "Check-out must be after check-in.");
-
       return;
     }
 
@@ -1044,9 +841,7 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${parsedRoom.room_number} is already booked for the selected dates.`,
       );
-
       await fetchBookedDates();
-
       return;
     }
 
@@ -1055,27 +850,14 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${parsedRoom.room_number} is already booked on this date.`,
       );
-
       await fetchBookedDates();
-
       return;
     }
 
-    // =====================================================
-    // PRESERVE EXISTING ROOM CONFIGURATION
-    // =====================================================
-
     setSelectedRooms((previous) => {
-      // If the first room is already configured,
-      // DO NOT rebuild or overwrite it.
       const alreadyExists = previous.some((item) => item.id === parsedRoom.id);
+      if (alreadyExists) return previous;
 
-      if (alreadyExists) {
-        return previous;
-      }
-
-      // Only create the first room if it is not yet
-      // stored inside selectedRooms.
       const currentRoom = createSelectedRoom(
         parsedRoom,
         bookingType,
@@ -1084,16 +866,12 @@ export default function CreateBooking() {
         bookingType === "short" ? expectedCheckInTime : "2:00 PM",
         bookingType === "short" ? expectedCheckOutTime : "11:00 AM",
       );
-
       return [...previous, currentRoom];
     });
 
     await fetchAvailableRooms();
-
     setDraftRoom(null);
-
     setEditingRoomId(null);
-
     setShowAddRoomModal(true);
   };
 
@@ -1108,40 +886,27 @@ export default function CreateBooking() {
     try {
       setAddingRoom(true);
 
-      // Normal Add Room clears edit mode.
-      // Edit -> Change Room keeps editingRoomId so the
-      // newly selected room replaces the original room.
-      if (!keepEditingRoom) {
-        setEditingRoomId(null);
-      }
+      if (!keepEditingRoom) setEditingRoomId(null);
 
       setDraftRoom(roomToConfigure);
-
       setDraftBookingType("overnight");
-
-      // Reset expected time when configuring a new room
       setDraftExpectedCheckInTime("2:00 PM");
       setDraftExpectedCheckOutTime("11:00 AM");
-
       setDraftLoadingDates(true);
 
       const response = await api.get(
         `/rooms/${roomToConfigure.id}/booked-dates`,
       );
-
       const data = response.data?.data ?? response.data ?? [];
-
       const ranges: BookingRange[] = Array.isArray(data) ? data : [];
 
       setDraftBookedRanges(ranges);
 
       const automaticDates = findAutomaticDates(ranges);
-
       setDraftCheckInDate(automaticDates.checkIn);
       setDraftCheckOutDate(automaticDates.checkOut);
     } catch (error) {
       console.log("Failed to load room dates:", error);
-
       setDraftBookedRanges([]);
       setDraftCheckInDate(getToday());
       setDraftCheckOutDate(getTomorrow());
@@ -1150,76 +915,45 @@ export default function CreateBooking() {
       setAddingRoom(false);
     }
   };
-  // =======================================================
-  // OPEN SELECTED ROOM FOR EDITING
-  // =======================================================
 
   // =======================================================
   // OPEN SELECTED ROOM FOR EDITING
-  // Works for BOTH:
-  // 1. Single-room booking
-  // 2. Multiple-room booking
   // =======================================================
 
   const openSelectedRoomForEdit = async (selectedRoom: SelectedBookingRoom) => {
     try {
       setAddingRoom(true);
-
-      // This is the room that will be replaced
       setEditingRoomId(selectedRoom.id);
 
-      // IMPORTANT:
-      // For SINGLE booking, selectedRooms may still be empty
-      // because the UI uses the fallback room.
-      //
-      // Put the current room into selectedRooms so
-      // Edit -> Change Room can replace it correctly.
       setSelectedRooms((previous) => {
         const exists = previous.some((item) => item.id === selectedRoom.id);
-
-        if (exists) {
-          return previous;
-        }
-
+        if (exists) return previous;
         return [...previous, selectedRoom];
       });
 
       const roomToEdit: Room = {
         id: selectedRoom.id,
-
         room_number: selectedRoom.room_number,
-
         status: "available",
-
         room_type: {
           type_name: selectedRoom.room_type_name,
-
           base_price: selectedRoom.base_price,
-
           short_stay_price: selectedRoom.short_stay_price,
         },
       };
 
       setDraftRoom(roomToEdit);
-
       setDraftBookingType(selectedRoom.stay_type);
-
-      // =====================================================
-      // LOAD EXPECTED STAY TIME
-      // =====================================================
 
       if (selectedRoom.stay_type === "short") {
         const checkInTime = selectedRoom.expected_check_in_time || "2:00 PM";
-
         setDraftExpectedCheckInTime(checkInTime);
-
         setDraftExpectedCheckOutTime(
           selectedRoom.expected_check_out_time ||
             addHoursToTime(checkInTime, 4),
         );
       } else {
         setDraftExpectedCheckInTime("2:00 PM");
-
         setDraftExpectedCheckOutTime("11:00 AM");
       }
 
@@ -1228,42 +962,19 @@ export default function CreateBooking() {
           ? parseDate(selectedRoom.check_in_date)
           : getToday(),
       );
-
       setDraftCheckOutDate(
         selectedRoom.stay_type === "overnight" && selectedRoom.check_out_date
           ? parseDate(selectedRoom.check_out_date)
           : null,
       );
 
-      // =====================================================
-      // LOAD ALL ROOMS
-      // =====================================================
-      //
-      // THIS WAS MISSING.
-      //
-      // Without this, single booking edit has:
-      //
-      // availableRooms = []
-      //
-      // therefore Change Room shows no rooms.
-      //
-
       await fetchAvailableRooms();
-
-      // =====================================================
-      // LOAD BOOKED DATES OF CURRENT ROOM
-      // =====================================================
-
       setDraftLoadingDates(true);
 
       const response = await api.get(`/rooms/${selectedRoom.id}/booked-dates`);
-
       const data = response.data?.data ?? response.data ?? [];
-
       let ranges: BookingRange[] = Array.isArray(data) ? data : [];
 
-      // Don't let the current room's own booking
-      // block itself while editing.
       if (selectedRoom.check_in_date) {
         ranges = ranges.filter(
           (range) =>
@@ -1275,21 +986,16 @@ export default function CreateBooking() {
       }
 
       setDraftBookedRanges(ranges);
-
       setShowAddRoomModal(true);
     } catch (error: any) {
       console.log(
         "Failed to load room for editing:",
         error?.response?.data || error,
       );
-
       setDraftBookedRanges([]);
-
-      // Still load rooms even if booked-dates failed
       try {
         await fetchAvailableRooms();
       } catch {}
-
       setShowAddRoomModal(true);
     } finally {
       setDraftLoadingDates(false);
@@ -1303,26 +1009,19 @@ export default function CreateBooking() {
 
   const isDraftDateBooked = (date: Date) => {
     const target = dateToNumber(date);
-
     return draftBookedRanges.some((range) => {
       const start = dateToNumber(parseDate(range.check_in_date));
-
       const end = dateToNumber(parseDate(range.check_out_date));
-
       return target >= start && target < end;
     });
   };
 
   const hasDraftDateRangeConflict = (startDate: Date, endDate: Date) => {
     const selectedStart = dateToNumber(startDate);
-
     const selectedEnd = dateToNumber(endDate);
-
     return draftBookedRanges.some((range) => {
       const bookedStart = dateToNumber(parseDate(range.check_in_date));
-
       const bookedEnd = dateToNumber(parseDate(range.check_out_date));
-
       return selectedStart < bookedEnd && selectedEnd > bookedStart;
     });
   };
@@ -1333,89 +1032,98 @@ export default function CreateBooking() {
 
   const draftBookedMarkedDates = useMemo(() => {
     const marked: Record<string, any> = {};
-
     draftBookedRanges.forEach((range) => {
       const start = parseDate(range.check_in_date);
-
       const end = parseDate(range.check_out_date);
-
       const current = new Date(start);
 
       while (current < end) {
         const key = formatDate(current);
-
         if (key) {
           marked[key] = {
             disabled: true,
             disableTouchEvent: true,
-            selected: true,
-            selectedColor: "#dc2626",
-            textColor: "#ffffff",
+            customStyles: {
+              container: {
+                backgroundColor: "#FDE2E2",
+                borderWidth: 1,
+                borderColor: "#B91C1C",
+                borderRadius: 20,
+              },
+              text: { color: "#B91C1C", fontWeight: "600" },
+            },
           };
         }
-
         current.setDate(current.getDate() + 1);
       }
     });
-
     return marked;
   }, [draftBookedRanges]);
 
   const draftCheckInMarkedDates = useMemo(() => {
-    const marked = {
-      ...draftBookedMarkedDates,
-    };
-
+    const marked = { ...draftBookedMarkedDates };
     if (draftCheckInDate) {
       const key = formatDate(draftCheckInDate);
-
       if (key && !isDraftDateBooked(draftCheckInDate)) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#1a4a35",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#DDEFE7",
+              borderWidth: 1,
+              borderColor: "#1A4A35",
+              borderRadius: 20,
+            },
+            text: { color: "#1A4A35", fontWeight: "600" },
+          },
         };
       }
     }
-
     return marked;
   }, [draftBookedMarkedDates, draftCheckInDate]);
 
   const draftCheckOutMarkedDates = useMemo(() => {
-    const marked = {
-      ...draftBookedMarkedDates,
-    };
-
+    const marked = { ...draftBookedMarkedDates };
     if (draftCheckOutDate) {
       const key = formatDate(draftCheckOutDate);
-
       if (key) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#c9a96e",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#F5EBD2",
+              borderWidth: 1,
+              borderColor: "#A8863A",
+              borderRadius: 20,
+            },
+            text: { color: "#8A6D2F", fontWeight: "600" },
+          },
         };
       }
     }
-
     if (draftCheckInDate) {
       const key = formatDate(draftCheckInDate);
-
       if (key) {
         marked[key] = {
           ...(marked[key] || {}),
-          selected: true,
-          selectedColor: "#1a4a35",
           disabled: false,
           disableTouchEvent: false,
+          customStyles: {
+            container: {
+              backgroundColor: "#DDEFE7",
+              borderWidth: 1,
+              borderColor: "#1A4A35",
+              borderRadius: 20,
+            },
+            text: { color: "#1A4A35", fontWeight: "600" },
+          },
         };
       }
     }
-
     return marked;
   }, [draftBookedMarkedDates, draftCheckInDate, draftCheckOutDate]);
 
@@ -1429,9 +1137,7 @@ export default function CreateBooking() {
       : 1;
 
   const draftBasePrice = Number(draftRoom?.room_type?.base_price || 0);
-
   const draftShortPrice = Number(draftRoom?.room_type?.short_stay_price || 0);
-
   const draftSubtotal =
     draftBookingType === "overnight"
       ? draftNights * draftBasePrice
@@ -1454,14 +1160,11 @@ export default function CreateBooking() {
   // =======================================================
 
   const selectAnotherRoom = async (roomToAdd: Room) => {
-    if (addingRoom) {
-      return;
-    }
+    if (addingRoom) return;
 
     const alreadySelected = selectedRooms.some(
       (item) => item.id === roomToAdd.id,
     );
-
     const isCurrentEditingRoom =
       editingRoomId !== null && roomToAdd.id === editingRoomId;
 
@@ -1470,18 +1173,15 @@ export default function CreateBooking() {
         "Room Already Added",
         `Room ${roomToAdd.room_number} is already included in this booking.`,
       );
-
       return;
     }
 
     const status = String(roomToAdd.status || "").toLowerCase();
-
     if (status === "maintenance") {
       Alert.alert(
         "Room Unavailable",
         `Room ${roomToAdd.room_number} is currently under maintenance.`,
       );
-
       return;
     }
 
@@ -1493,19 +1193,15 @@ export default function CreateBooking() {
   // =======================================================
 
   const addDraftRoom = () => {
-    if (!draftRoom) {
-      return;
-    }
+    if (!draftRoom) return;
 
     if (!draftCheckInDate) {
       Alert.alert("Date Required", "Please select a check-in date.");
-
       return;
     }
 
     if (draftBookingType === "overnight" && !draftCheckOutDate) {
       Alert.alert("Date Required", "Please select a check-out date.");
-
       return;
     }
 
@@ -1515,7 +1211,6 @@ export default function CreateBooking() {
       draftCheckOutDate <= draftCheckInDate
     ) {
       Alert.alert("Invalid Dates", "Check-out must be after check-in.");
-
       return;
     }
 
@@ -1527,7 +1222,6 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${draftRoom.room_number} is already booked for the selected dates.`,
       );
-
       return;
     }
 
@@ -1536,7 +1230,6 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${draftRoom.room_number} is already booked on this date.`,
       );
-
       return;
     }
 
@@ -1545,13 +1238,8 @@ export default function CreateBooking() {
         "Pricing Unavailable",
         `Short stay pricing is not available for Room ${draftRoom.room_number}.`,
       );
-
       return;
     }
-
-    // =====================================================
-    // VALIDATE SHORT STAY EXPECTED TIME
-    // =====================================================
 
     if (
       draftBookingType === "short" &&
@@ -1561,7 +1249,6 @@ export default function CreateBooking() {
         "Invalid Check-in Time",
         "Please enter a valid time such as 2:00 PM.",
       );
-
       return;
     }
 
@@ -1569,7 +1256,6 @@ export default function CreateBooking() {
       draftBookingType === "short"
         ? draftExpectedCheckInTime.trim()
         : "2:00 PM";
-
     const finalExpectedCheckOutTime =
       draftBookingType === "short" ? draftExpectedCheckOutTime : "11:00 AM";
 
@@ -1582,77 +1268,48 @@ export default function CreateBooking() {
       finalExpectedCheckOutTime,
     );
 
-    // =====================================================
-    // EDIT EXISTING ROOM
-    // =====================================================
-
     if (editingRoomId !== null) {
       setBookingType(draftBookingType);
-
       setCheckInDate(draftCheckInDate);
-
       setCheckOutDate(
         draftBookingType === "short" ? draftCheckInDate : draftCheckOutDate,
       );
 
       setSelectedRooms((previous) => {
         const exists = previous.some((item) => item.id === editingRoomId);
-
         if (!exists) {
           console.log("ROOM TO UPDATE NOT FOUND:", editingRoomId);
           return previous;
         }
-
-        const updatedRooms = previous.map((item) =>
+        return previous.map((item) =>
           item.id === editingRoomId ? updatedRoom : item,
         );
-
-        console.log("SELECTED ROOMS AFTER UPDATE:", updatedRooms);
-
-        return updatedRooms;
       });
 
       setEditingRoomId(null);
-
       setDraftRoom(null);
-
       setDraftCheckInDate(null);
-
       setDraftCheckOutDate(null);
-
       setDraftBookedRanges([]);
-
       setShowAddRoomModal(false);
-
       return;
     }
 
-    // =====================================================
-    // ADD NEW ROOM
-    // =====================================================
-
     setSelectedRooms((previous) => {
       const exists = previous.some((item) => item.id === updatedRoom.id);
-
       if (exists) {
         return previous.map((item) =>
           item.id === updatedRoom.id ? updatedRoom : item,
         );
       }
-
       return [...previous, updatedRoom];
     });
 
     setDraftRoom(null);
-
     setDraftCheckInDate(null);
-
     setDraftCheckOutDate(null);
-
     setDraftBookedRanges([]);
-
     setEditingRoomId(null);
-
     setShowAddRoomModal(true);
   };
 
@@ -1666,10 +1323,8 @@ export default function CreateBooking() {
         "First Room",
         "The first selected room cannot be removed from this screen.",
       );
-
       return;
     }
-
     setSelectedRooms((previous) =>
       previous.filter((item) => item.id !== roomId),
     );
@@ -1702,13 +1357,10 @@ export default function CreateBooking() {
   // =======================================================
 
   const handleBooking = async () => {
-    if (loading) {
-      return;
-    }
+    if (loading) return;
 
     if (!checkInDate) {
       Alert.alert("Date Required", "Please select a check-in date.");
-
       return;
     }
 
@@ -1717,7 +1369,6 @@ export default function CreateBooking() {
         "Dates Required",
         "Please select check-in and check-out dates.",
       );
-
       return;
     }
 
@@ -1727,7 +1378,6 @@ export default function CreateBooking() {
       checkOutDate <= checkInDate
     ) {
       Alert.alert("Invalid Dates", "Check-out must be after check-in.");
-
       return;
     }
 
@@ -1739,9 +1389,7 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${parsedRoom.room_number} is already booked for the selected dates.`,
       );
-
       await fetchBookedDates();
-
       return;
     }
 
@@ -1750,9 +1398,7 @@ export default function CreateBooking() {
         "Room Unavailable",
         `Room ${parsedRoom.room_number} is already booked on this date.`,
       );
-
       await fetchBookedDates();
-
       return;
     }
 
@@ -1761,7 +1407,6 @@ export default function CreateBooking() {
         "Pricing Unavailable",
         "Short stay pricing is not available for this room.",
       );
-
       return;
     }
 
@@ -1774,23 +1419,17 @@ export default function CreateBooking() {
       bookingType === "short" ? expectedCheckOutTime : "11:00 AM",
     );
 
-    // If the room was already configured in Edit Room,
-    // KEEP the configured room data.
-    // Do not overwrite its expected stay time.
     const finalRooms = selectedRooms.length > 0 ? selectedRooms : [currentRoom];
 
     if (finalRooms.length === 0) {
       Alert.alert("Room Required", "Please select at least one room.");
-
       return;
     }
 
     setLoading(true);
-
     try {
       router.push({
         pathname: "/bookings/payment",
-
         params: {
           multiple: "true",
           rooms: JSON.stringify(finalRooms),
@@ -1810,24 +1449,39 @@ export default function CreateBooking() {
   const changeBookingType = (type: BookingType) => {
     setBookingType(type);
 
-    setCheckInDate(getToday());
+    const preservedCheckIn = checkInDate ?? getToday();
 
     if (type === "overnight") {
-      setCheckOutDate(getTomorrow());
+      if (suggestedDates.length > 0) {
+        const first = suggestedDates[0];
+        const isCheckInValid = !isDateBooked(preservedCheckIn);
 
-      // Restore normal overnight expected times
+        if (isCheckInValid) {
+          setCheckInDate(preservedCheckIn);
+          const nextDay = new Date(preservedCheckIn);
+          nextDay.setDate(nextDay.getDate() + 1);
+          setCheckOutDate(nextDay);
+        } else {
+          setCheckInDate(first.checkIn);
+          setCheckOutDate(first.checkOut);
+        }
+      } else {
+        setCheckInDate(preservedCheckIn);
+        setCheckOutDate(getTomorrow());
+      }
+
       setExpectedCheckInTime("2:00 PM");
       setExpectedCheckOutTime("11:00 AM");
     } else {
-      // Short Stay uses the same date
+      if (isDateBooked(preservedCheckIn)) {
+        const automatic = findAutomaticDates(bookedRanges);
+        setCheckInDate(automatic.checkIn);
+      } else {
+        setCheckInDate(preservedCheckIn);
+      }
       setCheckOutDate(null);
-
-      // Default short-stay check-in
       const defaultCheckIn = "2:00 PM";
-
       setExpectedCheckInTime(defaultCheckIn);
-
-      // Automatically +4 hours
       setExpectedCheckOutTime(addHoursToTime(defaultCheckIn, 4));
     }
   };
@@ -1840,32 +1494,22 @@ export default function CreateBooking() {
     setDraftBookingType(type);
 
     if (type === "overnight") {
-      // Overnight does not use expected stay time
       setDraftExpectedCheckInTime("2:00 PM");
       setDraftExpectedCheckOutTime("11:00 AM");
 
       if (!draftCheckInDate) {
         const automatic = findAutomaticDates(draftBookedRanges);
-
         setDraftCheckInDate(automatic.checkIn);
         setDraftCheckOutDate(automatic.checkOut);
       } else if (!draftCheckOutDate || draftCheckOutDate <= draftCheckInDate) {
         const next = new Date(draftCheckInDate);
-
         next.setDate(next.getDate() + 1);
-
         setDraftCheckOutDate(next);
       }
     } else {
-      // Short Stay uses the same date
       setDraftCheckOutDate(null);
-
-      // Default Short Stay time
       const defaultCheckIn = "2:00 PM";
-
       setDraftExpectedCheckInTime(defaultCheckIn);
-
-      // Automatically +4 hours
       setDraftExpectedCheckOutTime(addHoursToTime(defaultCheckIn, 4));
     }
   };
@@ -1876,22 +1520,16 @@ export default function CreateBooking() {
 
   const handleCheckInSelect = (dateString: string) => {
     const selected = parseDate(dateString);
-
     if (isDateBooked(selected)) {
       Alert.alert(
         "Date Unavailable",
         "This date is already booked for this room.",
       );
-
       return;
     }
 
     setCheckInDate(selected);
-
-    if (checkOutDate && checkOutDate <= selected) {
-      setCheckOutDate(null);
-    }
-
+    if (checkOutDate && checkOutDate <= selected) setCheckOutDate(null);
     setShowCheckIn(false);
   };
 
@@ -1901,14 +1539,10 @@ export default function CreateBooking() {
 
   const handleCheckOutSelect = (dateString: string) => {
     const selected = parseDate(dateString);
-
-    if (!checkInDate) {
-      return;
-    }
+    if (!checkInDate) return;
 
     if (selected <= checkInDate) {
       Alert.alert("Invalid Check-out", "Check-out must be after check-in.");
-
       return;
     }
 
@@ -1917,12 +1551,10 @@ export default function CreateBooking() {
         "Date Unavailable",
         "Your selected stay overlaps another booking for this room.",
       );
-
       return;
     }
 
     setCheckOutDate(selected);
-
     setShowCheckOut(false);
   };
 
@@ -1932,22 +1564,17 @@ export default function CreateBooking() {
 
   const handleDraftCheckInSelect = (dateString: string) => {
     const selected = parseDate(dateString);
-
     if (isDraftDateBooked(selected)) {
       Alert.alert(
         "Date Unavailable",
         `Room ${draftRoom?.room_number || ""} is already booked on this date.`,
       );
-
       return;
     }
 
     setDraftCheckInDate(selected);
-
-    if (draftCheckOutDate && draftCheckOutDate <= selected) {
+    if (draftCheckOutDate && draftCheckOutDate <= selected)
       setDraftCheckOutDate(null);
-    }
-
     setShowDraftCheckIn(false);
   };
 
@@ -1957,14 +1584,10 @@ export default function CreateBooking() {
 
   const handleDraftCheckOutSelect = (dateString: string) => {
     const selected = parseDate(dateString);
-
-    if (!draftCheckInDate) {
-      return;
-    }
+    if (!draftCheckInDate) return;
 
     if (selected <= draftCheckInDate) {
       Alert.alert("Invalid Check-out", "Check-out must be after check-in.");
-
       return;
     }
 
@@ -1973,12 +1596,10 @@ export default function CreateBooking() {
         "Date Unavailable",
         `The selected dates are already booked for Room ${draftRoom?.room_number || ""}.`,
       );
-
       return;
     }
 
     setDraftCheckOutDate(selected);
-
     setShowDraftCheckOut(false);
   };
 
@@ -1988,27 +1609,13 @@ export default function CreateBooking() {
 
   const roomsForSelection = availableRooms.filter((item) => {
     const status = String(item.status || "").toLowerCase();
-
     const alreadySelected = selectedRooms.some(
       (selected) => selected.id === item.id,
     );
 
-    // Never show maintenance rooms
-    if (status === "maintenance") {
-      return false;
-    }
-
-    // The room being edited is the OLD room.
-    // Do not show it when changing to another room.
-    if (editingRoomId !== null && item.id === editingRoomId) {
-      return false;
-    }
-
-    // Do not show rooms already included
-    // in the current booking.
-    if (alreadySelected) {
-      return false;
-    }
+    if (status === "maintenance") return false;
+    if (editingRoomId !== null && item.id === editingRoomId) return false;
+    if (alreadySelected) return false;
 
     return true;
   });
@@ -2025,28 +1632,15 @@ export default function CreateBooking() {
 
       <LinearGradient
         colors={["#0d2e1f", "#1a4a35"]}
-        start={{
-          x: 0,
-          y: 0,
-        }}
-        end={{
-          x: 1,
-          y: 1,
-        }}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={{
           paddingTop: insets.top + 12,
           paddingBottom: 28,
-          paddingHorizontal: 24,
+          paddingHorizontal: horizontalPadding,
           overflow: "hidden",
         }}
       >
-        {/* =====================================================
-      DECORATIVE CIRCLES
-      SAME STYLE AS HOME.TSX
-  ===================================================== */}
-
-        {/* Large circle */}
-
         <View
           style={{
             position: "absolute",
@@ -2059,8 +1653,6 @@ export default function CreateBooking() {
             borderColor: "rgba(255,255,255,0.05)",
           }}
         />
-
-        {/* Small circle */}
 
         <View
           style={{
@@ -2075,10 +1667,6 @@ export default function CreateBooking() {
           }}
         />
 
-        {/* =====================================================
-      BACK BUTTON
-  ===================================================== */}
-
         <TouchableOpacity
           onPress={() => router.back()}
           activeOpacity={0.8}
@@ -2087,41 +1675,37 @@ export default function CreateBooking() {
           <Ionicons name="chevron-back" size={20} color="#fff" />
         </TouchableOpacity>
 
-        {/* =====================================================
-      HEADER LABEL
-  ===================================================== */}
-
         <Text className="text-[#c9a96e] text-[10px] tracking-[4px] uppercase mb-1">
           {selectedRooms.length > 1
             ? "MULTIPLE ROOMS"
             : parsedRoom.room_type?.type_name}
         </Text>
 
-        {/* =====================================================
-      HEADER TITLE
-  ===================================================== */}
-
         <Text
-          className="text-white text-4xl mb-1"
+          className="text-white mb-1"
           style={{
             fontFamily: "Georgia",
+            fontSize: titleFontSize,
+            lineHeight: titleFontSize * 1.15,
+            flexShrink: 1,
           }}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
         >
           {selectedRooms.length > 1
             ? "Reserve your stay"
             : `Room ${parsedRoom.room_number}`}
         </Text>
 
-        {/* =====================================================
-      HEADER SUBTITLE
-  ===================================================== */}
-
         <Text
           className="text-white/40 text-sm"
           style={{
             fontFamily: "Georgia",
             fontStyle: "italic",
+            flexShrink: 1,
           }}
+          numberOfLines={2}
         >
           {selectedRooms.length > 1
             ? "Add rooms one by one with their own stay type"
@@ -2132,12 +1716,19 @@ export default function CreateBooking() {
       {/* MAIN CONTENT */}
 
       <ScrollView
+        className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingBottom: 190 + insets.bottom,
-        }}
+        contentContainerStyle={{ paddingBottom: 180 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#1a4a35"
+            colors={["#1a4a35"]}
+          />
+        }
       >
-        <View className="px-6 pt-3">
+        <View style={{ paddingHorizontal: horizontalPadding, paddingTop: 12 }}>
           {/* BOOKING TYPE */}
 
           <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-3">
@@ -2155,6 +1746,8 @@ export default function CreateBooking() {
                 className={`text-center ${
                   bookingType === "overnight" ? "text-white" : "text-black"
                 }`}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 Overnight
               </Text>
@@ -2170,6 +1763,8 @@ export default function CreateBooking() {
                 className={`text-center ${
                   bookingType === "short" ? "text-white" : "text-black"
                 }`}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 Short Stay
               </Text>
@@ -2178,143 +1773,221 @@ export default function CreateBooking() {
 
           {/* MAIN ROOM DATES */}
 
-          <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-3">
-            {bookingType === "short" ? "Stay Date" : "Stay Dates"}
-          </Text>
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
+              {bookingType === "short" ? "Stay Date" : "Stay Dates"}
+            </Text>
 
-          {/* =================================================
-    BLOCKED DATES
-================================================= */}
-
-          {!loadingBookedDates && bookedRanges.length > 0 && (
-            <View className="mb-7">
-              {/* SECTION HEADER */}
-
-              <View className="flex-row items-center justify-between mb-3">
-                <View className="flex-1">
-                  <Text className="text-[#1a4a35] text-base font-semibold">
-                    Blocked Dates
-                  </Text>
-
-                  <Text className="text-[#1a4a35]/40 text-xs mt-1">
-                    These dates are already reserved and unavailable.
-                  </Text>
-                </View>
-
-                <View className="w-9 h-9 rounded-full bg-[#fbe9e7] justify-center items-center">
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={16}
-                    color="#dc2626"
-                  />
-                </View>
-              </View>
-
-              {/* BLOCKED DATE CARDS */}
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{
-                  paddingRight: 10,
-                }}
+            {/* ✅ AUTO PICK ACTION — HIDDEN FOR SHORT STAY */}
+            {bookingType !== "short" && suggestedDates.length > 0 && (
+              <TouchableOpacity
+                onPress={handleAutoPickAvailableDates}
+                activeOpacity={0.85}
+                className="flex-row items-center bg-[#e9efeb] px-3 py-1.5 rounded-full border border-[#1a4a35]/10"
               >
-                {bookedRanges.map((range, index) => {
-                  const startDate = parseDate(range.check_in_date);
-                  const endDate = parseDate(range.check_out_date);
+                <Text className="text-[#1a4a35] text-[10px] font-semibold ml-1 tracking-wide">
+                  Auto Pick Available
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-                  return (
-                    <View
-                      key={`${range.check_in_date}-${range.check_out_date}-${index}`}
-                      className="mr-3 rounded-2xl p-4 bg-white border border-red-200"
-                      style={{
-                        width: 190,
-                      }}
+          {/* ✅ AUTO PICKED INDICATOR — HIDDEN FOR SHORT STAY */}
+
+          {bookingType !== "short" &&
+            suggestedDates.length > 0 &&
+            checkInDate &&
+            dateToNumber(suggestedDates[0].checkIn) ===
+              dateToNumber(checkInDate) && (
+              <View className="mb-3 flex-row items-center bg-[#e9efeb]/70 border border-[#1a4a35]/10 rounded-xl px-3 py-2">
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color="#1a4a35"
+                />
+                <Text className="text-[#1a4a35]/70 text-[11px] ml-2 flex-1">
+                  Auto-picked the next available dates for this room.
+                </Text>
+              </View>
+            )}
+
+          {/* ✅ AVAILABLE + BLOCKED SECTION — HIDDEN FOR SHORT STAY */}
+
+          {bookingType !== "short" &&
+            (suggestedDates.length > 1 || bookedRanges.length > 0) && (
+              <View className="mb-5">
+                {/* AVAILABLE RANGES */}
+
+                {suggestedDates.length > 1 && (
+                  <>
+                    <Text className="text-[#1a4a35]/40 text-[10px] tracking-[2px] uppercase mb-2">
+                      Other Available Ranges
+                    </Text>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingRight: 10, gap: 10 }}
+                      style={{ marginBottom: 16 }}
                     >
-                      {/* TOP */}
+                      {suggestedDates.map((range, index) => {
+                        const isActive =
+                          checkInDate &&
+                          dateToNumber(range.checkIn) ===
+                            dateToNumber(checkInDate);
 
-                      <View className="flex-row items-center justify-between mb-3">
-                        <View className="w-9 h-9 rounded-full bg-[#fbe9e7] justify-center items-center">
-                          <Ionicons
-                            name="calendar-outline"
-                            size={17}
-                            color="#dc2626"
-                          />
-                        </View>
+                        return (
+                          <TouchableOpacity
+                            key={`${range.checkIn.toISOString()}-${index}`}
+                            onPress={() => {
+                              setCheckInDate(range.checkIn);
+                              if (bookingType === "overnight") {
+                                setCheckOutDate(range.checkOut);
+                              } else {
+                                setCheckOutDate(null);
+                              }
+                            }}
+                            activeOpacity={0.85}
+                            style={{
+                              width: 160,
+                              height: 92,
+                              borderWidth: 1.5,
+                              borderColor: isActive
+                                ? "#1a4a35"
+                                : "rgba(26,74,53,0.15)",
+                              backgroundColor: isActive
+                                ? "#e9efeb"
+                                : "#ffffff",
+                            }}
+                            className="rounded-[20px] px-3 py-3 justify-between"
+                          >
+                            <View className="flex-row items-center justify-between">
+                              <Text
+                                className="text-[9px] uppercase tracking-widest"
+                                style={{
+                                  color: isActive
+                                    ? "#1a4a35cc"
+                                    : "#1a4a35aa",
+                                }}
+                              >
+                                Available
+                              </Text>
 
-                        <View className="px-2.5 py-1 rounded-full bg-[#fbe9e7]">
-                          <Text className="text-[9px] font-semibold text-[#dc2626]">
-                            BLOCKED
-                          </Text>
-                        </View>
-                      </View>
+                              <View
+                                className="px-2 py-1 rounded-full"
+                                style={{
+                                  backgroundColor: isActive
+                                    ? "#1a4a35"
+                                    : "#e9efeb",
+                                }}
+                              >
+                                <Text
+                                  className="text-[8px] font-semibold"
+                                  style={{
+                                    color: isActive
+                                      ? "#c9a96e"
+                                      : "#1a4a35",
+                                  }}
+                                >
+                                  {range.nights}{" "}
+                                  {range.nights === 1 ? "NIGHT" : "NIGHTS"}
+                                </Text>
+                              </View>
+                            </View>
 
-                      {/* CHECK-IN */}
+                            <View>
+                              <Text
+                                className="text-[9px] uppercase tracking-widest mb-0.5"
+                                style={{
+                                  color: isActive
+                                    ? "#1a4a35cc"
+                                    : "#1a4a35aa",
+                                }}
+                              >
+                                Dates
+                              </Text>
 
-                      <Text className="text-[#1a4a35]/40 text-[9px] uppercase tracking-widest mb-1">
-                        Check-in
-                      </Text>
+                              <Text
+                                className="text-[#1a4a35] text-xs font-semibold"
+                                style={{ fontFamily: "Georgia" }}
+                                numberOfLines={1}
+                              >
+                                {range.checkIn.toLocaleDateString("en-PH", {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                                {" → "}
+                                {range.checkOut.toLocaleDateString("en-PH", {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                )}
 
-                      <Text
-                        className="text-[#1a4a35] text-sm font-semibold"
-                        style={{
-                          fontFamily: "Georgia",
-                        }}
-                      >
-                        {formatDisplayDate(startDate)}
-                      </Text>
+                {/* BLOCKED DATES */}
 
-                      {/* DIVIDER */}
+                {bookedRanges.length > 0 && (
+                  <>
+                    <Text className="text-[#1a4a35]/40 text-[10px] tracking-[2px] uppercase mb-2">
+                      Blocked Dates
+                    </Text>
 
-                      <View className="flex-row items-center my-2">
-                        <View className="h-px flex-1 bg-[#1a4a35]/10" />
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingRight: 10, gap: 10 }}
+                    >
+                      {bookedRanges.map((range, index) => {
+                        const startDate = parseDate(range.check_in_date);
+                        const endDate = parseDate(range.check_out_date);
 
-                        <Ionicons
-                          name="arrow-down"
-                          size={12}
-                          color="#dc2626"
-                          style={{
-                            marginHorizontal: 6,
-                          }}
-                        />
+                        return (
+                          <View
+                            key={`${range.check_in_date}-${range.check_out_date}-${index}`}
+                            style={{ width: 160, height: 92 }}
+                            className="rounded-[20px] px-3 py-3 bg-white border border-red-200 justify-between"
+                          >
+                            <View className="flex-row items-center justify-between">
+                              <Text className="text-[#1a4a35]/40 text-[9px] uppercase tracking-widest">
+                                Not Available
+                              </Text>
 
-                        <View className="h-px flex-1 bg-[#1a4a35]/10" />
-                      </View>
+                              <View className="px-2 py-1 rounded-full bg-[#fbe9e7]">
+                                <Text className="text-[8px] font-semibold text-[#dc2626]">
+                                  BLOCKED
+                                </Text>
+                              </View>
+                            </View>
 
-                      {/* CHECK-OUT */}
+                            <View>
+                              <Text className="text-[#1a4a35]/40 text-[9px] uppercase tracking-widest mb-0.5">
+                                Dates
+                              </Text>
 
-                      <Text className="text-[#1a4a35]/40 text-[9px] uppercase tracking-widest mb-1">
-                        Check-out
-                      </Text>
-
-                      <Text
-                        className="text-[#1a4a35] text-sm font-semibold"
-                        style={{
-                          fontFamily: "Georgia",
-                        }}
-                      >
-                        {formatDisplayDate(endDate)}
-                      </Text>
-
-                      {/* STATUS */}
-
-                      <View className="flex-row items-center mt-3">
-                        <Ionicons
-                          name="close-circle-outline"
-                          size={13}
-                          color="#dc2626"
-                        />
-
-                        <Text className="text-[#dc2626] text-xs ml-1">
-                          Not available
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
+                              <Text
+                                className="text-[#1a4a35] text-xs font-semibold"
+                                style={{ fontFamily: "Georgia" }}
+                                numberOfLines={1}
+                              >
+                                {formatShortDate(startDate)}
+                                {" → "}
+                                {formatShortDate(endDate)}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                )}
+              </View>
+            )}
 
           <View className="gap-4 mb-8">
             {/* CHECK-IN */}
@@ -2326,7 +1999,7 @@ export default function CreateBooking() {
             >
               <View className="px-5 py-4">
                 <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-3">
+                  <View className="flex-row items-center gap-3 flex-1">
                     <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
                       <Ionicons
                         name={
@@ -2339,7 +2012,7 @@ export default function CreateBooking() {
                       />
                     </View>
 
-                    <View>
+                    <View className="flex-1">
                       <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
                         {bookingType === "short" ? "Date" : "Check-in"}
                       </Text>
@@ -2347,9 +2020,7 @@ export default function CreateBooking() {
                       {checkInDate ? (
                         <Text
                           className="text-[#1a4a35] text-base"
-                          style={{
-                            fontFamily: "Georgia",
-                          }}
+                          style={{ fontFamily: "Georgia" }}
                         >
                           {formatDisplayDate(checkInDate)}
                         </Text>
@@ -2365,9 +2036,7 @@ export default function CreateBooking() {
                     name="chevron-forward"
                     size={16}
                     color="#1a4a35"
-                    style={{
-                      opacity: 0.3,
-                    }}
+                    style={{ opacity: 0.3 }}
                   />
                 </View>
               </View>
@@ -2375,7 +2044,6 @@ export default function CreateBooking() {
               {checkInDate && (
                 <>
                   <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
-
                   <View className="px-5 py-2">
                     <Text className="text-[#c9a96e] text-xs tracking-wide">
                       {formatDate(checkInDate)}
@@ -2391,11 +2059,9 @@ export default function CreateBooking() {
               <>
                 <View className="items-center">
                   <View className="w-px h-4 bg-[#1a4a35]/10" />
-
                   <View className="w-6 h-6 rounded-full bg-[#1a4a35]/06 border border-[#1a4a35]/10 justify-center items-center">
                     <Ionicons name="arrow-down" size={12} color="#1a4a35" />
                   </View>
-
                   <View className="w-px h-4 bg-[#1a4a35]/10" />
                 </View>
 
@@ -2406,10 +2072,8 @@ export default function CreateBooking() {
                         "Check-in Required",
                         "Please select your check-in date first.",
                       );
-
                       return;
                     }
-
                     setShowCheckOut(true);
                   }}
                   activeOpacity={0.85}
@@ -2417,7 +2081,7 @@ export default function CreateBooking() {
                 >
                   <View className="px-5 py-4">
                     <View className="flex-row items-center justify-between">
-                      <View className="flex-row items-center gap-3">
+                      <View className="flex-row items-center gap-3 flex-1">
                         <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
                           <Ionicons
                             name="exit-outline"
@@ -2426,7 +2090,7 @@ export default function CreateBooking() {
                           />
                         </View>
 
-                        <View>
+                        <View className="flex-1">
                           <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-0.5">
                             Check-out
                           </Text>
@@ -2434,9 +2098,7 @@ export default function CreateBooking() {
                           {checkOutDate ? (
                             <Text
                               className="text-[#1a4a35] text-base"
-                              style={{
-                                fontFamily: "Georgia",
-                              }}
+                              style={{ fontFamily: "Georgia" }}
                             >
                               {formatDisplayDate(checkOutDate)}
                             </Text>
@@ -2452,9 +2114,7 @@ export default function CreateBooking() {
                         name="chevron-forward"
                         size={16}
                         color="#1a4a35"
-                        style={{
-                          opacity: 0.3,
-                        }}
+                        style={{ opacity: 0.3 }}
                       />
                     </View>
                   </View>
@@ -2462,7 +2122,6 @@ export default function CreateBooking() {
                   {checkOutDate && (
                     <>
                       <View className="h-0.5 bg-[#1a4a35]/05 mx-5" />
-
                       <View className="px-5 py-2">
                         <Text className="text-[#c9a96e] text-xs tracking-wide">
                           {formatDate(checkOutDate)}
@@ -2482,15 +2141,13 @@ export default function CreateBooking() {
             )}
           </View>
 
-          {/* =================================================
-              SELECTED ROOMS
-          ================================================= */}
+          {/* SELECTED ROOMS */}
 
           <View className="mb-6">
             <View className="flex-row items-center mb-4">
               <View className="w-1 h-8 rounded-full bg-[#c9a96e] mr-3" />
 
-              <View>
+              <View className="flex-1">
                 <Text className="text-[#1a4a35] text-base font-semibold">
                   Selected Rooms ({selectedRooms.length || 1})
                 </Text>
@@ -2500,8 +2157,6 @@ export default function CreateBooking() {
                 </Text>
               </View>
             </View>
-
-            {/* ROOM CARDS */}
 
             {(selectedRooms.length > 0
               ? selectedRooms
@@ -2527,8 +2182,6 @@ export default function CreateBooking() {
                 key={`${item.id}-${index}`}
                 className="bg-white rounded-2xl border border-[#1a4a35]/10 p-5 mb-4"
               >
-                {/* ROOM HEADER */}
-
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center flex-1">
                     <View className="w-12 h-12 rounded-full bg-[#e9efeb] justify-center items-center mr-4">
@@ -2538,9 +2191,7 @@ export default function CreateBooking() {
                     <View className="flex-1">
                       <Text
                         className="text-[#1a4a35] text-lg"
-                        style={{
-                          fontFamily: "Georgia",
-                        }}
+                        style={{ fontFamily: "Georgia" }}
                       >
                         Room {item.room_number}
                       </Text>
@@ -2551,8 +2202,6 @@ export default function CreateBooking() {
                     </View>
                   </View>
 
-                  {/* EDIT BUTTON */}
-
                   <TouchableOpacity
                     onPress={() => openSelectedRoomForEdit(item)}
                     activeOpacity={0.8}
@@ -2560,8 +2209,6 @@ export default function CreateBooking() {
                   >
                     <Ionicons name="create-outline" size={19} color="#1a4a35" />
                   </TouchableOpacity>
-
-                  {/* DELETE BUTTON */}
 
                   {item.id !== parsedRoom.id && (
                     <TouchableOpacity
@@ -2579,13 +2226,22 @@ export default function CreateBooking() {
 
                 <View className="h-px bg-[#1a4a35]/10 my-4" />
 
-                {/* STAY TYPE */}
-
                 <View className="flex-row justify-between items-center mb-3">
-                  <Text className="text-[#1a4a35]/50 text-xs">Stay Type</Text>
+                  <Text
+                    className="text-[#1a4a35]/50 text-xs"
+                    style={{ flexShrink: 0 }}
+                  >
+                    Stay Type
+                  </Text>
 
-                  <View className="bg-[#e3effb] px-3 py-1.5 rounded-full">
-                    <Text className="text-[#3971b9] text-xs font-semibold">
+                  <View
+                    className="bg-[#e3effb] px-3 py-1.5 rounded-full"
+                    style={{ flexShrink: 1, marginLeft: 12 }}
+                  >
+                    <Text
+                      className="text-[#3971b9] text-xs font-semibold text-right"
+                      style={{ flexWrap: "wrap" }}
+                    >
                       {item.stay_type === "overnight"
                         ? `Overnight (${item.nights} ${
                             item.nights === 1 ? "night" : "nights"
@@ -2595,20 +2251,24 @@ export default function CreateBooking() {
                   </View>
                 </View>
 
-                {/* DATES */}
+                <View className="flex-row justify-between items-start mb-3">
+                  <Text
+                    className="text-[#1a4a35]/50 text-xs"
+                    style={{ flexShrink: 0, marginTop: 2 }}
+                  >
+                    Dates
+                  </Text>
 
-                <View className="flex-row justify-between items-center mb-3">
-                  <Text className="text-[#1a4a35]/50 text-xs">Dates</Text>
-
-                  <Text className="text-[#1a4a35] text-xs font-semibold">
+                  <Text
+                    className="text-[#1a4a35] text-xs font-semibold text-right"
+                    style={{ flex: 1, marginLeft: 12 }}
+                  >
                     {item.check_in_date
                       ? `${formatDisplayDate(
                           parseDate(item.check_in_date),
                         )?.replace(/^.*?, /, "")}`
                       : "-"}
-
                     {" → "}
-
                     {item.check_out_date
                       ? `${formatDisplayDate(
                           parseDate(item.check_out_date),
@@ -2617,61 +2277,64 @@ export default function CreateBooking() {
                   </Text>
                 </View>
 
-                {/* EXPECTED TIMES */}
-
-                <View className="flex-row justify-between items-center mb-3">
-                  <Text className="text-[#1a4a35]/50 text-xs">
+                <View className="flex-row justify-between items-start mb-3">
+                  <Text
+                    className="text-[#1a4a35]/50 text-xs"
+                    style={{ flexShrink: 0, marginTop: 2 }}
+                  >
                     Expected Time
                   </Text>
 
-                  <View className="items-end">
-                    <Text className="text-[#1a4a35] text-xs font-semibold">
+                  <View
+                    className="items-end"
+                    style={{ flex: 1, marginLeft: 12 }}
+                  >
+                    <Text className="text-[#1a4a35] text-xs font-semibold text-right">
                       {item.expected_check_in_time || expectedCheckInTime}
                       {" → "}
                       {item.expected_check_out_time || expectedCheckOutTime}
                     </Text>
 
-                    <Text className="text-[#1a4a35]/35 text-[9px] mt-0.5">
+                    <Text className="text-[#1a4a35]/35 text-[9px] mt-0.5 text-right">
                       Check-in → Check-out
                     </Text>
                   </View>
                 </View>
 
-                {/* RATE */}
-
                 <View className="flex-row justify-between items-center mb-3">
-                  <Text className="text-[#1a4a35]/50 text-xs">Rate</Text>
+                  <Text
+                    className="text-[#1a4a35]/50 text-xs"
+                    style={{ flexShrink: 0 }}
+                  >
+                    Rate
+                  </Text>
 
-                  <Text className="text-[#1a4a35] text-xs font-semibold">
+                  <Text
+                    className="text-[#1a4a35] text-xs font-semibold text-right"
+                    style={{ flex: 1, marginLeft: 12 }}
+                  >
                     {formatPrice(
                       item.stay_type === "overnight"
                         ? item.base_price
                         : item.short_stay_price,
                     )}
-
                     {item.stay_type === "overnight" && "/night"}
                   </Text>
                 </View>
 
                 <View className="h-px bg-[#1a4a35]/10 mb-3" />
 
-                {/* SUBTOTAL */}
-
                 <View className="flex-row justify-between items-center">
                   <Text
                     className="text-[#1a4a35] text-base"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     Subtotal
                   </Text>
 
                   <Text
                     className="text-[#c9a96e] text-lg"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {formatPrice(Number(item.subtotal))}
                   </Text>
@@ -2679,15 +2342,12 @@ export default function CreateBooking() {
               </View>
             ))}
 
-            {/* ADD ANOTHER ROOM */}
-
             <TouchableOpacity
               onPress={handleAddAnotherRoom}
               activeOpacity={0.85}
               className="bg-[#1a4a35] rounded-2xl py-4 flex-row justify-center items-center"
             >
               <Ionicons name="add-circle-outline" size={21} color="#c9a96e" />
-
               <Text className="text-white text-sm font-semibold ml-2">
                 Add Another Room
               </Text>
@@ -2701,23 +2361,35 @@ export default function CreateBooking() {
               Booking Summary
             </Text>
 
-            {/* TOTAL ROOMS */}
+            <View className="flex-row justify-between items-center mb-3">
+              <Text
+                className="text-[#1a4a35]/50 text-sm"
+                style={{ flexShrink: 0 }}
+              >
+                Total Rooms
+              </Text>
 
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-[#1a4a35]/50 text-sm">Total Rooms</Text>
-
-              <Text className="text-[#1a4a35] text-sm font-semibold">
+              <Text
+                className="text-[#1a4a35] text-sm font-semibold text-right"
+                style={{ flex: 1, marginLeft: 12 }}
+              >
                 {selectedRooms.length || 1}{" "}
                 {selectedRooms.length === 1 ? "room" : "rooms"}
               </Text>
             </View>
 
-            {/* SHORT STAY */}
+            <View className="flex-row justify-between items-center mb-3">
+              <Text
+                className="text-[#1a4a35]/50 text-sm"
+                style={{ flexShrink: 0 }}
+              >
+                Short Stay
+              </Text>
 
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-[#1a4a35]/50 text-sm">Short Stay</Text>
-
-              <Text className="text-[#1a4a35] text-sm font-semibold">
+              <Text
+                className="text-[#1a4a35] text-sm font-semibold text-right"
+                style={{ flex: 1, marginLeft: 12 }}
+              >
                 {
                   (selectedRooms.length
                     ? selectedRooms
@@ -2733,12 +2405,18 @@ export default function CreateBooking() {
               </Text>
             </View>
 
-            {/* OVERNIGHT */}
+            <View className="flex-row justify-between items-center mb-3">
+              <Text
+                className="text-[#1a4a35]/50 text-sm"
+                style={{ flexShrink: 0 }}
+              >
+                Overnight
+              </Text>
 
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-[#1a4a35]/50 text-sm">Overnight</Text>
-
-              <Text className="text-[#1a4a35] text-sm font-semibold">
+              <Text
+                className="text-[#1a4a35] text-sm font-semibold text-right"
+                style={{ flex: 1, marginLeft: 12 }}
+              >
                 {
                   (selectedRooms.length
                     ? selectedRooms
@@ -2754,17 +2432,10 @@ export default function CreateBooking() {
               </Text>
             </View>
 
-            {/* OVERNIGHT NIGHTS */}
-
             {(() => {
               const rooms = selectedRooms.length
                 ? selectedRooms
-                : [
-                    {
-                      stay_type: bookingType,
-                      nights,
-                    },
-                  ];
+                : [{ stay_type: bookingType, nights }];
 
               const overnightRooms = rooms.filter(
                 (item) => item.stay_type === "overnight",
@@ -2775,17 +2446,21 @@ export default function CreateBooking() {
                 0,
               );
 
-              if (totalOvernightNights <= 0) {
-                return null;
-              }
+              if (totalOvernightNights <= 0) return null;
 
               return (
-                <View className="flex-row justify-between mb-5">
-                  <Text className="text-[#1a4a35]/50 text-sm">
+                <View className="flex-row justify-between items-center mb-5">
+                  <Text
+                    className="text-[#1a4a35]/50 text-sm"
+                    style={{ flexShrink: 0 }}
+                  >
                     Overnight Stay
                   </Text>
 
-                  <Text className="text-[#1a4a35] text-sm font-semibold">
+                  <Text
+                    className="text-[#1a4a35] text-sm font-semibold text-right"
+                    style={{ flex: 1, marginLeft: 12 }}
+                  >
                     {totalOvernightNights}{" "}
                     {totalOvernightNights === 1 ? "night" : "nights"}
                   </Text>
@@ -2793,27 +2468,19 @@ export default function CreateBooking() {
               );
             })()}
 
-            {/* DIVIDER */}
-
             <View className="h-px bg-[#1a4a35]/10 mb-4" />
-
-            {/* TOTAL */}
 
             <View className="flex-row justify-between items-center">
               <Text
                 className="text-[#1a4a35] text-lg"
-                style={{
-                  fontFamily: "Georgia",
-                }}
+                style={{ fontFamily: "Georgia" }}
               >
                 Total
               </Text>
 
               <Text
                 className="text-[#c9a96e] text-2xl"
-                style={{
-                  fontFamily: "Georgia",
-                }}
+                style={{ fontFamily: "Georgia" }}
               >
                 {formatPrice(
                   selectedRooms.length > 0 ? multipleBookingTotal : total,
@@ -2824,20 +2491,23 @@ export default function CreateBooking() {
         </View>
       </ScrollView>
 
-      {/* =====================================================
-          BOTTOM CONFIRM BUTTON
-      ===================================================== */}
+      {/* BOTTOM CONFIRM BUTTON */}
 
       <View
-        className="absolute bottom-0 left-0 right-0 px-6 bg-[#faf8f3] border-t border-[#1a4a35]/08"
+        className="absolute bottom-0 left-0 right-0 bg-[#faf8f3] border-t border-[#1a4a35]/08"
         style={{
           paddingBottom: insets.bottom + 16,
           paddingTop: 16,
+          paddingHorizontal: horizontalPadding,
         }}
       >
         {canBook && (
           <View className="flex-row justify-between items-center mb-3">
-            <Text className="text-[#1a4a35]/40 text-xs tracking-widest uppercase">
+            <Text
+              className="text-[#1a4a35]/40 text-xs tracking-widest uppercase"
+              style={{ flexShrink: 1 }}
+              numberOfLines={2}
+            >
               {selectedRooms.length > 1
                 ? `${selectedRooms.length} Rooms Total`
                 : "Total"}
@@ -2845,9 +2515,7 @@ export default function CreateBooking() {
 
             <Text
               className="text-[#1a4a35] text-xl"
-              style={{
-                fontFamily: "Georgia",
-              }}
+              style={{ fontFamily: "Georgia" }}
             >
               {formatPrice(
                 selectedRooms.length > 0 ? multipleBookingTotal : total,
@@ -2870,27 +2538,24 @@ export default function CreateBooking() {
                   ? ["#d1d5db", "#9ca3af"]
                   : ["#1a4a35", "#0d2e1f"]
             }
-            start={{
-              x: 0,
-              y: 0,
-            }}
-            end={{
-              x: 1,
-              y: 0,
-            }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
             className="flex-row items-center justify-center py-4 gap-2"
           >
             {loading ? (
               <View className="flex-row items-center gap-2">
                 <ActivityIndicator size="small" color="#fff" />
-
                 <Text className="text-white text-sm tracking-widest uppercase">
                   Processing...
                 </Text>
               </View>
             ) : (
               <>
-                <Text className="text-white text-sm tracking-widest uppercase">
+                <Text
+                  className="text-white text-sm tracking-widest uppercase"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {canBook
                     ? "Confirm Booking"
                     : bookingType === "short" && !shortStayPrice
@@ -2907,9 +2572,7 @@ export default function CreateBooking() {
         </TouchableOpacity>
       </View>
 
-      {/* =====================================================
-          MAIN CHECK-IN CALENDAR
-      ===================================================== */}
+      {/* MAIN CHECK-IN CALENDAR */}
 
       <Modal
         visible={showCheckIn}
@@ -2920,21 +2583,17 @@ export default function CreateBooking() {
         <View className="flex-1 justify-end bg-black/40">
           <View
             className="bg-[#faf8f3] rounded-t-[30px] overflow-hidden"
-            style={{
-              paddingBottom: insets.bottom + 16,
-            }}
+            style={{ paddingBottom: insets.bottom + 16 }}
           >
             <View className="px-6 pt-5 pb-3 flex-row items-center justify-between">
-              <View>
+              <View className="flex-1">
                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
                   Room {parsedRoom.room_number}
                 </Text>
 
                 <Text
                   className="text-[#1a4a35] text-2xl mt-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   {bookingType === "short" ? "Stay Date" : "Check-in Date"}
                 </Text>
@@ -2948,44 +2607,64 @@ export default function CreateBooking() {
               </TouchableOpacity>
             </View>
 
-            {loadingBookedDates ? (
-              <View className="py-12 items-center">
-                <ActivityIndicator size="large" color="#1a4a35" />
-
-                <Text className="text-[#1a4a35]/40 text-sm mt-3">
+            {loadingBookedDates && (
+              <View className="flex-row items-center justify-center py-2">
+                <ActivityIndicator size="small" color="#1a4a35" />
+                <Text className="text-[#1a4a35]/40 text-xs ml-2">
                   Checking room availability...
                 </Text>
               </View>
-            ) : (
-              <Calendar
-                minDate={formatDate(new Date())}
-                markedDates={checkInMarkedDates}
-                onDayPress={(day) => handleCheckInSelect(day.dateString)}
-                theme={{
-                  backgroundColor: "#faf8f3",
-                  calendarBackground: "#faf8f3",
-                  textSectionTitleColor: "#1a4a35",
-                  selectedDayBackgroundColor: "#1a4a35",
-                  selectedDayTextColor: "#ffffff",
-                  todayTextColor: "#c9a96e",
-                  dayTextColor: "#1a4a35",
-                  textDisabledColor: "#c4c4c4",
-                  monthTextColor: "#1a4a35",
-                  arrowColor: "#1a4a35",
-                  textDayFontFamily: "System",
-                  textMonthFontFamily: "Georgia",
-                  textDayHeaderFontFamily: "System",
-                }}
-              />
             )}
 
-            <View className="px-6 pt-2">
-              <View className="flex-row items-center mb-4">
-                <View className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+            <Calendar
+              markingType="custom"
+              minDate={formatDate(new Date())}
+              markedDates={checkInMarkedDates}
+              onDayPress={(day) => handleCheckInSelect(day.dateString)}
+              theme={{
+                backgroundColor: "#faf8f3",
+                calendarBackground: "#faf8f3",
+                textSectionTitleColor: "#1a4a35",
+                selectedDayBackgroundColor: "#1a4a35",
+                selectedDayTextColor: "#ffffff",
+                todayTextColor: "#c9a96e",
+                dayTextColor: "#1a4a35",
+                textDisabledColor: "#c4c4c4",
+                monthTextColor: "#1a4a35",
+                arrowColor: "#1a4a35",
+                textDayFontFamily: "System",
+                textMonthFontFamily: "Georgia",
+                textDayHeaderFontFamily: "System",
+              }}
+            />
 
-                <Text className="text-[#1a4a35]/50 text-xs">
-                  Already booked
-                </Text>
+            <View className="px-6 pt-2">
+              <View className="flex-row items-center justify-center gap-3 mb-4 flex-wrap">
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#dc2626" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">
+                    Already booked
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#1a4a35" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-in</Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#c9a96e" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-out</Text>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -3001,9 +2680,7 @@ export default function CreateBooking() {
         </View>
       </Modal>
 
-      {/* =====================================================
-          MAIN CHECK-OUT CALENDAR
-      ===================================================== */}
+      {/* MAIN CHECK-OUT CALENDAR */}
 
       <Modal
         visible={showCheckOut}
@@ -3014,21 +2691,17 @@ export default function CreateBooking() {
         <View className="flex-1 justify-end bg-black/40">
           <View
             className="bg-[#faf8f3] rounded-t-[30px] overflow-hidden"
-            style={{
-              paddingBottom: insets.bottom + 16,
-            }}
+            style={{ paddingBottom: insets.bottom + 16 }}
           >
             <View className="px-6 pt-5 pb-3 flex-row items-center justify-between">
-              <View>
+              <View className="flex-1">
                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
                   Room {parsedRoom.room_number}
                 </Text>
 
                 <Text
                   className="text-[#1a4a35] text-2xl mt-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   Check-out Date
                 </Text>
@@ -3042,50 +2715,64 @@ export default function CreateBooking() {
               </TouchableOpacity>
             </View>
 
-            {loadingBookedDates ? (
-              <View className="py-12 items-center">
-                <ActivityIndicator size="large" color="#1a4a35" />
-
-                <Text className="text-[#1a4a35]/40 text-sm mt-3">
+            {loadingBookedDates && (
+              <View className="flex-row items-center justify-center py-2">
+                <ActivityIndicator size="small" color="#1a4a35" />
+                <Text className="text-[#1a4a35]/40 text-xs ml-2">
                   Checking room availability...
                 </Text>
               </View>
-            ) : (
-              <Calendar
-                minDate={
-                  checkInDate
-                    ? formatDate(
-                        new Date(checkInDate.getTime() + 24 * 60 * 60 * 1000),
-                      )
-                    : formatDate(new Date())
-                }
-                markedDates={checkOutMarkedDates}
-                onDayPress={(day) => handleCheckOutSelect(day.dateString)}
-                theme={{
-                  backgroundColor: "#faf8f3",
-                  calendarBackground: "#faf8f3",
-                  textSectionTitleColor: "#1a4a35",
-                  selectedDayBackgroundColor: "#c9a96e",
-                  selectedDayTextColor: "#ffffff",
-                  todayTextColor: "#c9a96e",
-                  dayTextColor: "#1a4a35",
-                  textDisabledColor: "#c4c4c4",
-                  monthTextColor: "#1a4a35",
-                  arrowColor: "#1a4a35",
-                  textDayFontFamily: "System",
-                  textMonthFontFamily: "Georgia",
-                  textDayHeaderFontFamily: "System",
-                }}
-              />
             )}
 
-            <View className="px-6 pt-2">
-              <View className="flex-row items-center mb-4">
-                <View className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+            <Calendar
+              markingType="custom"
+              minDate={formatDate(checkInDate || new Date())}
+              markedDates={checkOutMarkedDates}
+              onDayPress={(day) => handleCheckOutSelect(day.dateString)}
+              theme={{
+                backgroundColor: "#faf8f3",
+                calendarBackground: "#faf8f3",
+                textSectionTitleColor: "#1a4a35",
+                selectedDayBackgroundColor: "#1a4a35",
+                selectedDayTextColor: "#ffffff",
+                todayTextColor: "#c9a96e",
+                dayTextColor: "#1a4a35",
+                textDisabledColor: "#c4c4c4",
+                monthTextColor: "#1a4a35",
+                arrowColor: "#1a4a35",
+                textDayFontFamily: "System",
+                textMonthFontFamily: "Georgia",
+                textDayHeaderFontFamily: "System",
+              }}
+            />
 
-                <Text className="text-[#1a4a35]/50 text-xs">
-                  Already booked
-                </Text>
+            <View className="px-6 pt-2">
+              <View className="flex-row items-center justify-center gap-3 mb-4 flex-wrap">
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#B91C1C" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">
+                    Already booked
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#1A4A35" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-in</Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#A8863A" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-out</Text>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -3101,9 +2788,7 @@ export default function CreateBooking() {
         </View>
       </Modal>
 
-      {/* =====================================================
-          ADD / EDIT ROOM MODAL
-      ===================================================== */}
+      {/* ADD / EDIT ROOM MODAL */}
 
       <Modal
         visible={showAddRoomModal}
@@ -3111,9 +2796,7 @@ export default function CreateBooking() {
         animationType="slide"
         onRequestClose={() => {
           setShowAddRoomModal(false);
-
           setDraftRoom(null);
-
           setEditingRoomId(null);
         }}
       >
@@ -3125,8 +2808,6 @@ export default function CreateBooking() {
               maxHeight: "90%",
             }}
           >
-            {/* MODAL HEADER */}
-
             <View className="px-6 pt-5 pb-4 flex-row items-center justify-between">
               <View className="flex-1">
                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
@@ -3135,9 +2816,7 @@ export default function CreateBooking() {
 
                 <Text
                   className="text-[#1a4a35] text-2xl mt-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   {draftRoom
                     ? editingRoomId !== null
@@ -3158,9 +2837,7 @@ export default function CreateBooking() {
               <TouchableOpacity
                 onPress={() => {
                   setShowAddRoomModal(false);
-
                   setDraftRoom(null);
-
                   setEditingRoomId(null);
                 }}
                 className="w-10 h-10 rounded-full bg-[#1a4a35]/06 justify-center items-center"
@@ -3169,16 +2846,9 @@ export default function CreateBooking() {
               </TouchableOpacity>
             </View>
 
-            {/*CHANGE ROOM BUTTON*/}
-
             {editingRoomId !== null && (
               <TouchableOpacity
                 onPress={() => {
-                  // IMPORTANT:
-                  // Do NOT clear editingRoomId.
-                  // It tells addDraftRoom() which old room
-                  // should be replaced.
-
                   setDraftRoom(null);
                   setDraftCheckInDate(null);
                   setDraftCheckOutDate(null);
@@ -3207,10 +2877,6 @@ export default function CreateBooking() {
               </TouchableOpacity>
             )}
 
-            {/* =================================================
-                ROOM SELECTION
-            ================================================= */}
-
             {!draftRoom ? (
               <>
                 <ScrollView
@@ -3223,7 +2889,6 @@ export default function CreateBooking() {
                   {loadingRooms ? (
                     <View className="py-12 items-center">
                       <ActivityIndicator size="large" color="#1a4a35" />
-
                       <Text className="text-[#1a4a35]/40 text-sm mt-3">
                         Loading rooms...
                       </Text>
@@ -3234,9 +2899,7 @@ export default function CreateBooking() {
                         name="bed-outline"
                         size={36}
                         color="#1a4a35"
-                        style={{
-                          opacity: 0.3,
-                        }}
+                        style={{ opacity: 0.3 }}
                       />
 
                       <Text className="text-[#1a4a35]/40 text-sm mt-3 text-center">
@@ -3264,9 +2927,7 @@ export default function CreateBooking() {
                           <View className="flex-1 ml-4">
                             <Text
                               className="text-[#1a4a35] text-lg"
-                              style={{
-                                fontFamily: "Georgia",
-                              }}
+                              style={{ fontFamily: "Georgia" }}
                             >
                               Room {item.room_number}
                             </Text>
@@ -3318,7 +2979,6 @@ export default function CreateBooking() {
                     paddingBottom: 20,
                   }}
                 >
-                  {/* ROOM CARD */}
                   <View className="bg-white rounded-2xl border border-[#1a4a35]/08 p-4 mb-5">
                     <View className="flex-row items-center">
                       <View className="w-12 h-12 rounded-xl bg-[#1a4a35]/06 justify-center items-center">
@@ -3332,9 +2992,7 @@ export default function CreateBooking() {
                       <View className="flex-1 ml-4">
                         <Text
                           className="text-[#1a4a35] text-lg"
-                          style={{
-                            fontFamily: "Georgia",
-                          }}
+                          style={{ fontFamily: "Georgia" }}
                         >
                           Room {draftRoom.room_number}
                         </Text>
@@ -3361,7 +3019,7 @@ export default function CreateBooking() {
                       </View>
                     </View>
                   </View>
-                  {/* STAY TYPE */}
+
                   <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-3">
                     Stay Type
                   </Text>
@@ -3380,6 +3038,8 @@ export default function CreateBooking() {
                             ? "text-white"
                             : "text-black"
                         }`}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                       >
                         Overnight
                       </Text>
@@ -3399,12 +3059,14 @@ export default function CreateBooking() {
                             ? "text-white"
                             : "text-black"
                         }`}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                       >
                         Short Stay
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  {/* DRAFT CHECK-IN */}
+
                   <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-3">
                     {draftBookingType === "short"
                       ? "Stay Date"
@@ -3417,7 +3079,7 @@ export default function CreateBooking() {
                   >
                     <View className="px-5 py-4">
                       <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
+                        <View className="flex-row items-center gap-3 flex-1">
                           <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
                             <Ionicons
                               name="calendar-outline"
@@ -3426,7 +3088,7 @@ export default function CreateBooking() {
                             />
                           </View>
 
-                          <View>
+                          <View className="flex-1">
                             <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase">
                               {draftBookingType === "short"
                                 ? "Date"
@@ -3436,9 +3098,7 @@ export default function CreateBooking() {
                             {draftCheckInDate ? (
                               <Text
                                 className="text-[#1a4a35] text-base mt-1"
-                                style={{
-                                  fontFamily: "Georgia",
-                                }}
+                                style={{ fontFamily: "Georgia" }}
                               >
                                 {formatDisplayDate(draftCheckInDate)}
                               </Text>
@@ -3461,7 +3121,6 @@ export default function CreateBooking() {
                     {draftCheckInDate && (
                       <>
                         <View className="h-px bg-[#1a4a35]/06 mx-5" />
-
                         <View className="px-5 py-2">
                           <Text className="text-[#c9a96e] text-xs">
                             {formatDate(draftCheckInDate)}
@@ -3471,10 +3130,6 @@ export default function CreateBooking() {
                     )}
                   </TouchableOpacity>
 
-                  {/* =================================================
-                      EXPECTED STAY TIME — EDIT ROOM
-                  ================================================= */}
-
                   {draftBookingType === "short" && (
                     <View className="mb-5">
                       <View className="flex-row items-center mb-3">
@@ -3483,9 +3138,7 @@ export default function CreateBooking() {
                         <View className="flex-1">
                           <Text
                             className="text-[#1a4a35] text-base font-semibold"
-                            style={{
-                              fontFamily: "Georgia",
-                            }}
+                            style={{ fontFamily: "Georgia" }}
                           >
                             Expected Stay Time
                           </Text>
@@ -3501,7 +3154,6 @@ export default function CreateBooking() {
                             size={13}
                             color="#1a4a35"
                           />
-
                           <Text className="text-[#1a4a35] text-[10px] font-semibold ml-1">
                             4 HOURS
                           </Text>
@@ -3509,8 +3161,6 @@ export default function CreateBooking() {
                       </View>
 
                       <View className="flex-row gap-3">
-                        {/* EXPECTED CHECK-IN */}
-
                         <View className="flex-1">
                           <Text className="text-[#1a4a35]/40 text-[10px] tracking-[2px] uppercase mb-2">
                             Expected Check-in
@@ -3521,47 +3171,10 @@ export default function CreateBooking() {
                             activeOpacity={0.85}
                             className="bg-white rounded-2xl border border-[#1a4a35]/10"
                           >
-                            <View className="px-4 py-4 flex-row items-center">
-                              <View className="w-9 h-9 rounded-full bg-[#e9efeb] justify-center items-center mr-3">
+                            <View className="px-3 py-4 flex-row items-center">
+                              <View className="w-8 h-8 rounded-full bg-[#e9efeb] justify-center items-center mr-2">
                                 <Ionicons
                                   name="time-outline"
-                                  size={17}
-                                  color="#1a4a35"
-                                />
-                              </View>
-
-                              <View className="flex-1">
-                                <Text
-                                  className="text-[#1a4a35] text-base"
-                                  style={{
-                                    fontFamily: "Georgia",
-                                  }}
-                                >
-                                  {draftExpectedCheckInTime}
-                                </Text>
-                              </View>
-
-                              <Ionicons
-                                name="chevron-down"
-                                size={18}
-                                color="#1a4a35"
-                              />
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* EXPECTED CHECK-OUT */}
-
-                        <View className="flex-1">
-                          <Text className="text-[#1a4a35]/40 text-[10px] tracking-[2px] uppercase mb-2">
-                            Expected Check-out
-                          </Text>
-
-                          <View className="bg-[#e9efeb] rounded-2xl border border-[#1a4a35]/10">
-                            <View className="px-4 py-4 flex-row items-center">
-                              <View className="w-9 h-9 rounded-full bg-[#1a4a35]/10 justify-center items-center mr-3">
-                                <Ionicons
-                                  name="lock-closed-outline"
                                   size={15}
                                   color="#1a4a35"
                                 />
@@ -3569,15 +3182,46 @@ export default function CreateBooking() {
 
                               <View className="flex-1">
                                 <Text
-                                  className="text-[#1a4a35] text-base"
-                                  style={{
-                                    fontFamily: "Georgia",
-                                  }}
+                                  className="text-[#1a4a35] text-sm"
+                                  style={{ fontFamily: "Georgia" }}
+                                >
+                                  {draftExpectedCheckInTime}
+                                </Text>
+                              </View>
+
+                              <Ionicons
+                                name="chevron-down"
+                                size={16}
+                                color="#1a4a35"
+                              />
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+
+                        <View className="flex-1">
+                          <Text className="text-[#1a4a35]/40 text-[10px] tracking-[2px] uppercase mb-2">
+                            Expected Check-out
+                          </Text>
+
+                          <View className="bg-[#e9efeb] rounded-2xl border border-[#1a4a35]/10">
+                            <View className="px-3 py-4 flex-row items-center">
+                              <View className="w-8 h-8 rounded-full bg-[#1a4a35]/10 justify-center items-center mr-2">
+                                <Ionicons
+                                  name="lock-closed-outline"
+                                  size={13}
+                                  color="#1a4a35"
+                                />
+                              </View>
+
+                              <View className="flex-1">
+                                <Text
+                                  className="text-[#1a4a35] text-sm"
+                                  style={{ fontFamily: "Georgia" }}
                                 >
                                   {draftExpectedCheckOutTime}
                                 </Text>
 
-                                <Text className="text-[#1a4a35]/40 text-[9px] mt-1">
+                                <Text className="text-[#1a4a35]/40 text-[8px] mt-1">
                                   Automatic +4 hours
                                 </Text>
                               </View>
@@ -3588,7 +3232,6 @@ export default function CreateBooking() {
                     </View>
                   )}
 
-                  {/* DRAFT CHECK-OUT */}
                   {draftBookingType === "overnight" && (
                     <>
                       <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-3">
@@ -3602,10 +3245,8 @@ export default function CreateBooking() {
                               "Check-in Required",
                               "Please select the check-in date first.",
                             );
-
                             return;
                           }
-
                           setShowDraftCheckOut(true);
                         }}
                         activeOpacity={0.85}
@@ -3613,7 +3254,7 @@ export default function CreateBooking() {
                       >
                         <View className="px-5 py-4">
                           <View className="flex-row items-center justify-between">
-                            <View className="flex-row items-center gap-3">
+                            <View className="flex-row items-center gap-3 flex-1">
                               <View className="w-9 h-9 rounded-full bg-[#1a4a35]/06 justify-center items-center">
                                 <Ionicons
                                   name="calendar-outline"
@@ -3622,7 +3263,7 @@ export default function CreateBooking() {
                                 />
                               </View>
 
-                              <View>
+                              <View className="flex-1">
                                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase">
                                   Check-out
                                 </Text>
@@ -3630,9 +3271,7 @@ export default function CreateBooking() {
                                 {draftCheckOutDate ? (
                                   <Text
                                     className="text-[#1a4a35] text-base mt-1"
-                                    style={{
-                                      fontFamily: "Georgia",
-                                    }}
+                                    style={{ fontFamily: "Georgia" }}
                                   >
                                     {formatDisplayDate(draftCheckOutDate)}
                                   </Text>
@@ -3655,7 +3294,6 @@ export default function CreateBooking() {
                         {draftCheckOutDate && (
                           <>
                             <View className="h-px bg-[#1a4a35]/06 mx-5" />
-
                             <View className="px-5 py-2">
                               <Text className="text-[#c9a96e] text-xs">
                                 {formatDate(draftCheckOutDate)}
@@ -3666,18 +3304,24 @@ export default function CreateBooking() {
                       </TouchableOpacity>
                     </>
                   )}
-                  {/* PRICE SUMMARY */}
+
                   <View className="bg-white rounded-2xl border border-[#1a4a35]/08 p-5 mt-5 mb-5">
                     <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase mb-4">
                       Room Summary
                     </Text>
 
-                    <View className="flex-row justify-between mb-3">
-                      <Text className="text-[#1a4a35]/50 text-sm">
+                    <View className="flex-row justify-between items-center mb-3">
+                      <Text
+                        className="text-[#1a4a35]/50 text-sm"
+                        style={{ flexShrink: 0 }}
+                      >
                         Stay Type
                       </Text>
 
-                      <Text className="text-[#1a4a35] text-sm font-semibold">
+                      <Text
+                        className="text-[#1a4a35] text-sm font-semibold text-right"
+                        style={{ flex: 1, marginLeft: 12 }}
+                      >
                         {draftBookingType === "overnight"
                           ? "Overnight"
                           : "Short Stay"}
@@ -3685,31 +3329,37 @@ export default function CreateBooking() {
                     </View>
 
                     {draftBookingType === "overnight" && (
-                      <View className="flex-row justify-between mb-3">
-                        <Text className="text-[#1a4a35]/50 text-sm">
+                      <View className="flex-row justify-between items-center mb-3">
+                        <Text
+                          className="text-[#1a4a35]/50 text-sm"
+                          style={{ flexShrink: 0 }}
+                        >
                           Nights
                         </Text>
 
-                        <Text className="text-[#1a4a35] text-sm font-semibold">
+                        <Text
+                          className="text-[#1a4a35] text-sm font-semibold text-right"
+                          style={{ flex: 1, marginLeft: 12 }}
+                        >
                           {draftNights}
                         </Text>
                       </View>
                     )}
 
-                    <View className="flex-row justify-between">
+                    <View className="flex-row justify-between items-center">
                       <Text
                         className="text-[#1a4a35] text-base"
-                        style={{
-                          fontFamily: "Georgia",
-                        }}
+                        style={{ fontFamily: "Georgia", flexShrink: 0 }}
                       >
                         Subtotal
                       </Text>
 
                       <Text
-                        className="text-[#c9a96e] text-xl"
+                        className="text-[#c9a96e] text-xl text-right"
                         style={{
                           fontFamily: "Georgia",
+                          flex: 1,
+                          marginLeft: 12,
                         }}
                       >
                         {formatPrice(draftSubtotal)}
@@ -3717,8 +3367,6 @@ export default function CreateBooking() {
                     </View>
                   </View>
                 </ScrollView>
-
-                {/* DRAFT ACTIONS */}
 
                 <View className="px-6 pt-2">
                   <TouchableOpacity
@@ -3742,13 +3390,9 @@ export default function CreateBooking() {
                   <TouchableOpacity
                     onPress={() => {
                       setDraftRoom(null);
-
                       setDraftCheckInDate(null);
-
                       setDraftCheckOutDate(null);
-
                       setDraftBookedRanges([]);
-
                       setEditingRoomId(null);
                     }}
                     className="py-3 items-center"
@@ -3764,9 +3408,7 @@ export default function CreateBooking() {
         </View>
       </Modal>
 
-      {/* =================================================
-    SHORT STAY TIME PICKER
-================================================= */}
+      {/* SHORT STAY TIME PICKER */}
 
       <Modal
         visible={showDraftTimePicker}
@@ -3785,25 +3427,18 @@ export default function CreateBooking() {
             className="bg-white rounded-3xl w-full max-w-[330px] overflow-hidden"
             style={{
               shadowColor: "#000",
-              shadowOffset: {
-                width: 0,
-                height: 8,
-              },
+              shadowOffset: { width: 0, height: 8 },
               shadowOpacity: 0.2,
               shadowRadius: 20,
               elevation: 10,
             }}
           >
-            {/* HEADER */}
-
             <View className="px-5 pt-5 pb-3">
               <View className="flex-row items-center justify-between">
                 <View className="flex-1">
                   <Text
                     className="text-[#1a4a35] text-lg"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     Expected Check-in
                   </Text>
@@ -3822,12 +3457,8 @@ export default function CreateBooking() {
               </View>
             </View>
 
-            {/* TIME PICKER */}
-
             <View className="mx-5 mt-2 rounded-2xl bg-[#f4f6f4] border border-[#1a4a35]/10">
               <View className="flex-row items-center justify-center py-4">
-                {/* HOUR */}
-
                 <View className="items-center w-20">
                   <TouchableOpacity
                     onPress={() => changeDraftPickerHour("up")}
@@ -3838,9 +3469,7 @@ export default function CreateBooking() {
 
                   <Text
                     className="text-[#1a4a35] text-4xl"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {draftPickerHour}
                   </Text>
@@ -3853,18 +3482,12 @@ export default function CreateBooking() {
                   </TouchableOpacity>
                 </View>
 
-                {/* COLON */}
-
                 <Text
                   className="text-[#1a4a35] text-4xl mx-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   :
                 </Text>
-
-                {/* MINUTE */}
 
                 <View className="items-center w-20">
                   <TouchableOpacity
@@ -3876,9 +3499,7 @@ export default function CreateBooking() {
 
                   <Text
                     className="text-[#1a4a35] text-4xl"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {draftPickerMinute}
                   </Text>
@@ -3891,8 +3512,6 @@ export default function CreateBooking() {
                   </TouchableOpacity>
                 </View>
               </View>
-
-              {/* AM / PM */}
 
               <View className="flex-row mx-4 mb-4 border border-[#1a4a35]/20 rounded-xl overflow-hidden">
                 <TouchableOpacity
@@ -3931,8 +3550,6 @@ export default function CreateBooking() {
               </View>
             </View>
 
-            {/* CHECK-OUT PREVIEW */}
-
             <View className="px-5 pt-4">
               <View className="flex-row items-center justify-between bg-[#e9efeb] rounded-xl px-4 py-3">
                 <View className="flex-1">
@@ -3942,9 +3559,7 @@ export default function CreateBooking() {
 
                   <Text
                     className="text-[#1a4a35] text-base mt-1"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {addHoursToTime(
                       `${draftPickerHour}:${draftPickerMinute} ${draftPickerPeriod}`,
@@ -3961,8 +3576,6 @@ export default function CreateBooking() {
               </View>
             </View>
 
-            {/* APPLY BUTTON */}
-
             <View className="px-5 pt-4 pb-5">
               <TouchableOpacity
                 onPress={applyDraftTimePicker}
@@ -3978,9 +3591,7 @@ export default function CreateBooking() {
         </View>
       </Modal>
 
-      {/* =====================================================
-          DRAFT CHECK-IN CALENDAR
-      ===================================================== */}
+      {/* DRAFT CHECK-IN CALENDAR */}
 
       <Modal
         visible={showDraftCheckIn}
@@ -3991,21 +3602,17 @@ export default function CreateBooking() {
         <View className="flex-1 justify-end bg-black/40">
           <View
             className="bg-[#faf8f3] rounded-t-[30px] overflow-hidden"
-            style={{
-              paddingBottom: insets.bottom + 16,
-            }}
+            style={{ paddingBottom: insets.bottom + 16 }}
           >
             <View className="px-6 pt-5 pb-3 flex-row items-center justify-between">
-              <View>
+              <View className="flex-1">
                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
                   Room {draftRoom?.room_number}
                 </Text>
 
                 <Text
                   className="text-[#1a4a35] text-2xl mt-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   {draftBookingType === "short" ? "Stay Date" : "Check-in Date"}
                 </Text>
@@ -4022,13 +3629,13 @@ export default function CreateBooking() {
             {draftLoadingDates ? (
               <View className="py-12 items-center">
                 <ActivityIndicator size="large" color="#1a4a35" />
-
                 <Text className="text-[#1a4a35]/40 text-sm mt-3">
                   Checking room availability...
                 </Text>
               </View>
             ) : (
               <Calendar
+                markingType="custom"
                 minDate={formatDate(new Date())}
                 markedDates={draftCheckInMarkedDates}
                 onDayPress={(day) => handleDraftCheckInSelect(day.dateString)}
@@ -4051,12 +3658,32 @@ export default function CreateBooking() {
             )}
 
             <View className="px-6 pt-2">
-              <View className="flex-row items-center mb-4">
-                <View className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+              <View className="flex-row items-center justify-center gap-3 mb-4 flex-wrap">
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#B91C1C" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">
+                    Already booked
+                  </Text>
+                </View>
 
-                <Text className="text-[#1a4a35]/50 text-xs">
-                  Already booked
-                </Text>
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#1A4A35" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-in</Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#A8863A" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-out</Text>
+                </View>
               </View>
 
               <TouchableOpacity
@@ -4072,9 +3699,7 @@ export default function CreateBooking() {
         </View>
       </Modal>
 
-      {/* =====================================================
-          DRAFT CHECK-OUT CALENDAR
-      ===================================================== */}
+      {/* DRAFT CHECK-OUT CALENDAR */}
 
       <Modal
         visible={showDraftCheckOut}
@@ -4085,21 +3710,17 @@ export default function CreateBooking() {
         <View className="flex-1 justify-end bg-black/40">
           <View
             className="bg-[#faf8f3] rounded-t-[30px] overflow-hidden"
-            style={{
-              paddingBottom: insets.bottom + 16,
-            }}
+            style={{ paddingBottom: insets.bottom + 16 }}
           >
             <View className="px-6 pt-5 pb-3 flex-row items-center justify-between">
-              <View>
+              <View className="flex-1">
                 <Text className="text-[#1a4a35]/40 text-[10px] tracking-[3px] uppercase">
                   Room {draftRoom?.room_number}
                 </Text>
 
                 <Text
                   className="text-[#1a4a35] text-2xl mt-1"
-                  style={{
-                    fontFamily: "Georgia",
-                  }}
+                  style={{ fontFamily: "Georgia" }}
                 >
                   Check-out Date
                 </Text>
@@ -4116,13 +3737,13 @@ export default function CreateBooking() {
             {draftLoadingDates ? (
               <View className="py-12 items-center">
                 <ActivityIndicator size="large" color="#1a4a35" />
-
                 <Text className="text-[#1a4a35]/40 text-sm mt-3">
                   Checking room availability...
                 </Text>
               </View>
             ) : (
               <Calendar
+                markingType="custom"
                 minDate={
                   draftCheckInDate
                     ? formatDate(
@@ -4153,12 +3774,32 @@ export default function CreateBooking() {
             )}
 
             <View className="px-6 pt-2">
-              <View className="flex-row items-center mb-4">
-                <View className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+              <View className="flex-row items-center justify-center gap-3 mb-4 flex-wrap">
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#B91C1C" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">
+                    Already booked
+                  </Text>
+                </View>
 
-                <Text className="text-[#1a4a35]/50 text-xs">
-                  Already booked
-                </Text>
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#1A4A35" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-in</Text>
+                </View>
+
+                <View className="flex-row items-center">
+                  <View
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: "#A8863A" }}
+                  />
+                  <Text className="text-[#1a4a35]/60 text-xs">Check-out</Text>
+                </View>
               </View>
 
               <TouchableOpacity

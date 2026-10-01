@@ -1,7 +1,19 @@
+// services/notifications.ts
+
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+
+// ✅ Show notification as banner while app is foregrounded
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 export async function registerForPushNotificationsAsync() {
   if (!Device.isDevice) {
@@ -9,13 +21,22 @@ export async function registerForPushNotificationsAsync() {
     return null;
   }
 
-  // Android notification channel
+  // Android notification channels
   if (Platform.OS === "android") {
+    // ✅ Housekeeper channel
     await Notifications.setNotificationChannelAsync("housekeeping", {
       name: "Housekeeping",
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#14966E",
+    });
+
+    // ✅ Guest channel — para sa booking updates
+    await Notifications.setNotificationChannelAsync("bookings", {
+      name: "Bookings",
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#c9a96e",
     });
   }
 
@@ -27,7 +48,6 @@ export async function registerForPushNotificationsAsync() {
   // Ask permission if not granted
   if (existingStatus !== "granted") {
     const { status } = await Notifications.requestPermissionsAsync();
-
     finalStatus = status;
   }
 

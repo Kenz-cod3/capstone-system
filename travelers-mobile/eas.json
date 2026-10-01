@@ -8,19 +8,19 @@
       "developmentClient": true,
       "distribution": "internal"
     },
-
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_IP_ADDRESS": "https://lyneniatravelersinn.com"
       }
     },
-
     "production": {
       "autoIncrement": true
     }
   },
-
   "submit": {
     "production": {}
   }

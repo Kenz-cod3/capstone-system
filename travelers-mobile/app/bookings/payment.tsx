@@ -14,7 +14,7 @@ import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
 
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -44,6 +44,9 @@ export default function PaymentPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+
+  // ✅ Detect if this is a "Continue Payment" flow from Bookings tab
+  const isExistingBooking = params.existing === "true";
 
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -203,11 +206,36 @@ export default function PaymentPage() {
       setStatusError(null);
       successFiredRef.current = false;
 
-      const isMultiple = params.multiple === "true";
       let bookingId: number | null = null;
       let totalAmount = 0;
 
-      /* 1. CREATE BOOKING(S) AS PENDING ------------------------------- */
+      /* =========================================================
+         0. CONTINUE PAYMENT — existing booking, skip creation
+      ========================================================= */
+      if (isExistingBooking) {
+        bookingId = Number(params.booking_id);
+        totalAmount = Number(params.amount || 0);
+
+        if (!bookingId || !totalAmount || Number.isNaN(totalAmount)) {
+          throw new Error("Could not determine booking amount");
+        }
+
+        setReceiptBookingId(bookingId);
+
+        setShowQr(true);
+        setQrStatus("loading_qr");
+        setProcessing(false);
+        setLoading(false);
+
+        await generateQr(bookingId, totalAmount);
+        return;
+      }
+
+      /* =========================================================
+         1. NEW MULTI-ROOM BOOKING
+      ========================================================= */
+      const isMultiple = params.multiple === "true";
+
       if (isMultiple) {
         const rooms = JSON.parse(params.rooms as string);
 
@@ -231,6 +259,9 @@ export default function PaymentPage() {
         bookingId = booking.id;
         totalAmount = Number(booking.total_price);
       } else {
+        /* =========================================================
+           2. NEW SINGLE-ROOM BOOKING
+        ========================================================= */
         const payload = {
           payment_method: "qrph",
           rooms: [
@@ -266,7 +297,7 @@ export default function PaymentPage() {
 
       setReceiptBookingId(bookingId);
 
-      /* 2. OPEN MODAL + GENERATE QR ---------------------------------- */
+      /* 3. OPEN MODAL + GENERATE QR ---------------------------------- */
       setShowQr(true);
       setQrStatus("loading_qr");
       setProcessing(false);
@@ -330,20 +361,11 @@ export default function PaymentPage() {
           barStyle="dark-content"
         />
 
-        {/* =====================================================
-    HEADER
-===================================================== */}
-
+        {/* HEADER */}
         <LinearGradient
           colors={["#0d2e1f", "#1a4a35"]}
-          start={{
-            x: 0,
-            y: 0,
-          }}
-          end={{
-            x: 1,
-            y: 1,
-          }}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={{
             paddingTop: insets.top + 12,
             paddingBottom: 28,
@@ -363,8 +385,6 @@ export default function PaymentPage() {
               borderColor: "rgba(255,255,255,0.05)",
             }}
           />
-
-          {/* Small decorative circle */}
 
           <View
             style={{
@@ -401,9 +421,7 @@ export default function PaymentPage() {
 
           <Text
             className="text-white text-4xl"
-            style={{
-              fontFamily: "Georgia",
-            }}
+            style={{ fontFamily: "Georgia" }}
           >
             Pay via QR Ph
           </Text>
@@ -415,6 +433,24 @@ export default function PaymentPage() {
           showsVerticalScrollIndicator={false}
         >
           <View className="px-6 pt-8">
+            {/* ✅ Show amount summary when continuing existing booking */}
+            {isExistingBooking && params.amount && (
+              <View className="rounded-2xl border border-[#1a4a35]/10 bg-white p-5 mb-4">
+                <Text className="text-[#1a4a35]/40 text-xs tracking-widest uppercase mb-2">
+                  Amount Due
+                </Text>
+                <Text
+                  className="text-[#1a4a35] text-3xl font-bold"
+                  style={{ fontFamily: "Georgia" }}
+                >
+                  ₱{Number(params.amount).toLocaleString("en-PH", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </Text>
+              </View>
+            )}
+
             {/* QR Ph info card */}
             <View className="rounded-2xl border border-[#1a4a35]/10 bg-white p-5 mb-4">
               <View className="flex-row items-center gap-3 mb-4">
@@ -522,9 +558,7 @@ export default function PaymentPage() {
         </View>
       </View>
 
-      {/* ============================================================ */}
-      {/* QR Ph MODAL                                                  */}
-      {/* ============================================================ */}
+      {/* QR Ph MODAL */}
       <Modal
         visible={showQr}
         transparent
@@ -569,7 +603,6 @@ export default function PaymentPage() {
               showsVerticalScrollIndicator={false}
             >
               {qrStatus === "confirmed" ? (
-                /* ── Success inside modal ── */
                 <>
                   <MaterialCommunityIcons
                     name="check-decagram"
@@ -584,7 +617,6 @@ export default function PaymentPage() {
                   </Text>
                 </>
               ) : qrStatus === "expired" ? (
-                /* ── Expired ── */
                 <>
                   <Ionicons name="time-outline" size={90} color="#c9a96e" />
 
@@ -617,7 +649,6 @@ export default function PaymentPage() {
                   </TouchableOpacity>
                 </>
               ) : qrStatus === "error" ? (
-                /* ── Error ── */
                 <>
                   <Ionicons
                     name="alert-circle-outline"
@@ -649,7 +680,6 @@ export default function PaymentPage() {
                   </TouchableOpacity>
                 </>
               ) : (
-                /* ── Loading / Waiting ── */
                 <>
                   <Text className="text-[#141414] text-2xl font-bold mb-1">
                     Scan to Pay
@@ -725,7 +755,6 @@ export default function PaymentPage() {
                     </>
                   )}
 
-                  {/* Test-mode simulation button — opens PayMongo's test URL */}
                   {qrTestUrl && qrStatus === "waiting" && (
                     <TouchableOpacity
                       onPress={handleTestSimulate}
@@ -754,9 +783,7 @@ export default function PaymentPage() {
         </View>
       </Modal>
 
-      {/* ============================================================ */}
-      {/* PROCESSING / SUCCESS SHEET                                   */}
-      {/* ============================================================ */}
+      {/* PROCESSING / SUCCESS SHEET */}
       <Modal
         visible={processing || paymentSuccess}
         transparent

@@ -9,11 +9,13 @@ import {
   StatusBar,
   Modal,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useEffect, useRef, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import api from "@/services/api";
 
 const STATUS_CONFIG = {
@@ -22,6 +24,12 @@ const STATUS_CONFIG = {
     text: "#fff",
     dot: "#fff",
     label: "Pending",
+  },
+  confirmed: {
+    bg: "rgba(37,99,235,0.85)",
+    text: "#fff",
+    dot: "#fff",
+    label: "Confirmed",
   },
   checked_in: {
     bg: "rgba(37,99,235,0.85)",
@@ -50,6 +58,7 @@ const STATUS_CONFIG = {
 };
 
 export default function Bookings() {
+  const router = useRouter();
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
@@ -62,7 +71,6 @@ export default function Bookings() {
 
   // BOOKING DETAILS MODAL
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
-
   const [showBookingDetails, setShowBookingDetails] = useState(false);
 
   // Prevent unnecessary refetch
@@ -89,15 +97,25 @@ export default function Bookings() {
       const endpoint =
         filter === "history"
           ? `/bookings/history?page=${currentPage}&per_page=10`
-          : "/bookings";
+          : `/bookings/active?page=${currentPage}&per_page=10`;
 
       const res = await api.get(endpoint);
 
-      if (filter === "history") {
-        setData(res.data.data);
+      const bookings = Array.isArray(res.data?.data)
+        ? res.data.data
+        : Array.isArray(res.data)
+          ? res.data
+          : [];
+
+      const sortedBookings = [...bookings].sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+
+      setData(sortedBookings);
+
+      if (res.data?.last_page) {
         setLastPage(res.data.last_page);
-      } else {
-        setData(res.data);
       }
     } catch (e: any) {
       console.log("❌ FETCH ERROR:", e?.response || e);
@@ -129,10 +147,8 @@ export default function Bookings() {
 
   useEffect(() => {
     const filterChanged = previousFilter.current !== filter;
-
     const pageChanged = previousPage.current !== page;
 
-    // First load only
     if (!hasLoadedBookings.current) {
       hasLoadedBookings.current = true;
 
@@ -144,7 +160,6 @@ export default function Bookings() {
       return;
     }
 
-    // Fetch only when filter or page changes
     if (filterChanged || pageChanged) {
       previousFilter.current = filter;
       previousPage.current = page;
@@ -158,13 +173,16 @@ export default function Bookings() {
   // =========================================================
 
   const filteredData = data.filter((item) => {
-    const status = item.booked_rooms?.[0]?.status || item.booking_status;
+    const status =
+      item.booked_rooms?.[0]?.status || item.booking_status || "pending";
 
     if (filter === "active") {
-      return !["checked_out", "refunded"].includes(status);
+      // Active = pending, confirmed, checked_in
+      return !["checked_out", "refunded", "cancelled"].includes(status);
     }
 
-    return ["checked_out", "refunded"].includes(status);
+    // History = checked_out, refunded, cancelled
+    return ["checked_out", "refunded", "cancelled"].includes(status);
   });
 
   // =========================================================
@@ -211,6 +229,101 @@ export default function Bookings() {
   };
 
   // =========================================================
+  // CHECK IF BOOKING NEEDS PAYMENT
+  // =========================================================
+
+  const needsPayment = (booking: any) => {
+    if (!booking) return false;
+
+    const status =
+      booking.booked_rooms?.[0]?.status ||
+      booking.booking_status ||
+      "pending";
+
+    // Only pending bookings need payment
+    if (status !== "pending") return false;
+
+    // Check if there's any paid payment
+    const payments = Array.isArray(booking.payments) ? booking.payments : [];
+    const hasPaid = payments.some(
+      (p: any) => String(p?.payment_status || "").toLowerCase() === "paid",
+    );
+
+    return !hasPaid;
+  };
+
+  // =========================================================
+  // CANCEL BOOKING
+  // =========================================================
+
+  const handleCancelBooking = (booking: any) => {
+    Alert.alert(
+      "Cancel Booking",
+      "Are you sure you want to cancel this booking? This action cannot be undone.",
+      [
+        { text: "Keep Booking", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setContentLoading(true);
+
+              await api.put(`/bookings/${booking.id}`, {
+                status: "cancelled",
+                override_reason: "Cancelled by guest",
+              });
+
+              closeBookingDetails();
+              await fetchBookings(page);
+            } catch (error: any) {
+              console.log(
+                "❌ CANCEL BOOKING ERROR:",
+                error?.response?.data || error,
+              );
+
+              Alert.alert(
+                "Cancel Failed",
+                error?.response?.data?.message ||
+                  "Could not cancel booking. Please try again.",
+              );
+            } finally {
+              setContentLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // =========================================================
+  // CONTINUE PAYMENT
+  // =========================================================
+
+  const handleContinuePayment = (booking: any) => {
+    const room = booking.booked_rooms?.[0]?.room || booking.rooms?.[0];
+    const bookedRoom = booking.booked_rooms?.[0];
+
+    const stayType =
+      bookedRoom?.stay_type || booking.stay_type || "overnight";
+
+    closeBookingDetails();
+
+    router.push({
+      pathname: "/bookings/payment",
+      params: {
+        booking_id: String(booking.id),
+        room_id: String(room?.id || bookedRoom?.room_id || ""),
+        booking_type: stayType,
+        check_in_date: bookedRoom?.check_in_date || booking.check_in_date,
+        check_out_date: bookedRoom?.check_out_date || booking.check_out_date,
+        amount: String(booking.total_price || 0),
+        existing: "true",
+      },
+    });
+  };
+
+  // =========================================================
   // LOADING
   // =========================================================
 
@@ -235,10 +348,7 @@ export default function Bookings() {
     <View className="flex-1 bg-[#faf8f3]">
       <StatusBar barStyle="light-content" translucent />
 
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
-
+      {/* HEADER */}
       <LinearGradient
         colors={["#0d2e1f", "#1a4a35"]}
         start={{ x: 0, y: 0 }}
@@ -249,29 +359,15 @@ export default function Bookings() {
           paddingHorizontal: 24,
         }}
       >
-        {/* Decorative circles */}
-
         <View
           className="absolute rounded-full border border-white/5"
-          style={{
-            width: 240,
-            height: 240,
-            top: -60,
-            right: -60,
-          }}
+          style={{ width: 240, height: 240, top: -60, right: -60 }}
         />
 
         <View
           className="absolute rounded-full border border-white/5"
-          style={{
-            width: 140,
-            height: 140,
-            top: -10,
-            right: -10,
-          }}
+          style={{ width: 140, height: 140, top: -10, right: -10 }}
         />
-
-        {/* Title */}
 
         <View className="flex-row justify-between items-start mb-6">
           <View>
@@ -297,7 +393,6 @@ export default function Bookings() {
         </View>
 
         {/* FILTER */}
-
         <View className="flex-row bg-white/10 rounded-2xl p-1 border border-white/10">
           {(["active", "history"] as const).map((tab) => (
             <TouchableOpacity
@@ -326,10 +421,7 @@ export default function Bookings() {
         </View>
       </LinearGradient>
 
-      {/* =====================================================
-          CONTENT LOADING
-      ===================================================== */}
-
+      {/* CONTENT LOADING */}
       {contentLoading && (
         <View className="absolute top-[220px] left-0 right-0 z-50 items-center">
           <View className="bg-white px-4 py-2 rounded-full shadow">
@@ -338,10 +430,7 @@ export default function Bookings() {
         </View>
       )}
 
-      {/* =====================================================
-          BOOKING LIST
-      ===================================================== */}
-
+      {/* BOOKING LIST */}
       <FlatList
         data={filteredData}
         keyExtractor={(item) => item.id.toString()}
@@ -388,17 +477,16 @@ export default function Bookings() {
         }
         renderItem={({ item }) => {
           const room = item.booked_rooms?.[0]?.room || item.rooms?.[0];
-
-          // IMPORTANT:
-          // Do NOT append Date.now() here.
-          // This prevents the image from reloading
-          // whenever the modal opens/closes.
           const normalImage = room?.image_url || null;
 
           const bookingStatus =
-            item.booked_rooms?.[0]?.status || item.booking_status || "pending";
+            item.booked_rooms?.[0]?.status ||
+            item.booking_status ||
+            "pending";
 
-          const statusKey = bookingStatus.toLowerCase().replace("-", "_");
+          const statusKey = String(bookingStatus)
+            .toLowerCase()
+            .replace("-", "_");
 
           const s = STATUS_CONFIG[statusKey as keyof typeof STATUS_CONFIG] ?? {
             bg: "rgba(0,0,0,0.45)",
@@ -408,17 +496,16 @@ export default function Bookings() {
           };
 
           const nights = (() => {
-            if (!item.check_in_date || !item.check_out_date) {
-              return null;
-            }
-
+            if (!item.check_in_date || !item.check_out_date) return null;
             const diff =
               (new Date(item.check_out_date).getTime() -
                 new Date(item.check_in_date).getTime()) /
               (1000 * 60 * 60 * 24);
-
             return Math.round(diff);
           })();
+
+          const isPending = bookingStatus === "pending";
+          const shouldPay = needsPayment(item);
 
           return (
             <View
@@ -431,7 +518,6 @@ export default function Bookings() {
               }}
             >
               {/* ROOM IMAGE */}
-
               <View className="relative">
                 <Image
                   source={{
@@ -439,10 +525,7 @@ export default function Bookings() {
                       normalImage ||
                       "https://picsum.photos/seed/booking/400/250",
                   }}
-                  style={{
-                    width: "100%",
-                    height: 180,
-                  }}
+                  style={{ width: "100%", height: 180 }}
                   fadeDuration={0}
                 />
 
@@ -452,43 +535,31 @@ export default function Bookings() {
                 />
 
                 {/* STATUS */}
-
                 <View
                   className="absolute top-4 left-4 flex-row items-center gap-1.5 px-3 py-1 rounded-full"
-                  style={{
-                    backgroundColor: s.bg,
-                  }}
+                  style={{ backgroundColor: s.bg }}
                 >
                   <View
                     className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      backgroundColor: s.dot,
-                    }}
+                    style={{ backgroundColor: s.dot }}
                   />
-
                   <Text
                     className="text-[10px] tracking-widest uppercase font-medium"
-                    style={{
-                      color: s.text,
-                    }}
+                    style={{ color: s.text }}
                   >
                     {s.label}
                   </Text>
                 </View>
 
                 {/* ROOM NUMBER / PRICE */}
-
                 <View className="absolute bottom-4 left-4 right-4 flex-row justify-between items-end">
                   <View>
                     <Text className="text-white/60 text-[10px] tracking-widest uppercase mb-0.5">
                       Room
                     </Text>
-
                     <Text
                       className="text-white text-3xl"
-                      style={{
-                        fontFamily: "Georgia",
-                      }}
+                      style={{ fontFamily: "Georgia" }}
                     >
                       {room?.room_number ?? "N/A"}
                     </Text>
@@ -496,9 +567,7 @@ export default function Bookings() {
 
                   <Text
                     className="text-[#c9a96e] text-xl"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {formatPrice(item.total_price)}
                   </Text>
@@ -506,44 +575,33 @@ export default function Bookings() {
               </View>
 
               {/* CARD BODY */}
-
               <View className="px-5 py-4">
                 <View className="flex-row items-center gap-3 mb-4">
-                  {/* CHECK-IN */}
-
                   <View className="flex-1">
                     <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-1">
                       Check-in
                     </Text>
-
                     <Text className="text-[#1a4a35] text-sm font-medium">
                       {formatDate(item.check_in_date)}
                     </Text>
                   </View>
 
-                  {/* NIGHTS */}
-
                   {nights !== null && (
                     <View className="items-center px-3">
                       <View className="w-px h-3 bg-[#1a4a35]/15" />
-
                       <View className="bg-[#1a4a35]/06 rounded-full px-2.5 py-1 my-1">
                         <Text className="text-[#1a4a35] text-[10px] tracking-wide">
                           {nights}n
                         </Text>
                       </View>
-
                       <View className="w-px h-3 bg-[#1a4a35]/15" />
                     </View>
                   )}
-
-                  {/* CHECK-OUT */}
 
                   <View className="flex-1 items-end">
                     <Text className="text-[#1a4a35]/40 text-[10px] tracking-widest uppercase mb-1">
                       Check-out
                     </Text>
-
                     <Text className="text-[#1a4a35] text-sm font-medium">
                       {formatDate(item.check_out_date)}
                     </Text>
@@ -553,10 +611,8 @@ export default function Bookings() {
                 <View className="h-px bg-[#1a4a35]/06 mb-4" />
 
                 {/* BUTTONS */}
-
                 <View className="flex-row gap-2">
                   {/* VIEW DETAILS */}
-
                   <TouchableOpacity
                     activeOpacity={0.85}
                     onPress={() => handleViewDetails(item)}
@@ -564,49 +620,39 @@ export default function Bookings() {
                   >
                     <LinearGradient
                       colors={["#1a4a35", "#0d2e1f"]}
-                      start={{
-                        x: 0,
-                        y: 0,
-                      }}
-                      end={{
-                        x: 1,
-                        y: 0,
-                      }}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
                       className="flex-row items-center justify-center py-3 gap-2"
                     >
                       <Text
                         className="text-white text-xs tracking-widest uppercase"
-                        style={{
-                          fontFamily: "Georgia",
-                        }}
+                        style={{ fontFamily: "Georgia" }}
                       >
                         View Details
                       </Text>
-
-                      <Ionicons
-                        name="arrow-forward"
-                        size={13}
-                        color="#c9a96e"
-                      />
+                      <Ionicons name="arrow-forward" size={13} color="#c9a96e" />
                     </LinearGradient>
                   </TouchableOpacity>
 
-                  {/* CANCEL */}
-
-                  {bookingStatus === "pending" && (
+                  {/* CONTINUE PAYMENT — only for pending unpaid */}
+                  {shouldPay && (
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      onPress={async () => {
-                        try {
-                          await api.put(`/bookings/${item.id}`, {
-                            status: "cancelled",
-                          });
+                      onPress={() => handleContinuePayment(item)}
+                      className="bg-[#c9a96e] px-4 rounded-xl justify-center items-center flex-row gap-1.5"
+                    >
+                      <Ionicons name="card-outline" size={16} color="#fff" />
+                      <Text className="text-white text-[11px] font-bold tracking-wide uppercase">
+                        Pay
+                      </Text>
+                    </TouchableOpacity>
+                  )}
 
-                          fetchBookings(page);
-                        } catch (e) {
-                          console.log(e);
-                        }
-                      }}
+                  {/* CANCEL — only for pending */}
+                  {isPending && (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => handleCancelBooking(item)}
                       className="bg-red-600 px-4 rounded-xl justify-center items-center"
                     >
                       <Ionicons name="close" size={18} color="#fff" />
@@ -620,7 +666,7 @@ export default function Bookings() {
       />
 
       {/* ========================================================= */}
-      {/*                    BOOKING DETAILS MODAL                  */}
+      {/* BOOKING DETAILS MODAL                                     */}
       {/* ========================================================= */}
       <Modal
         visible={showBookingDetails}
@@ -636,9 +682,7 @@ export default function Bookings() {
               paddingBottom: Math.max(20, insets.bottom + 10),
             }}
           >
-            {/* ================================================= */}
             {/* MODAL HEADER */}
-            {/* ================================================= */}
             <View className="flex-row items-center justify-between mb-6">
               <View className="flex-1">
                 <Text
@@ -662,17 +706,7 @@ export default function Bookings() {
               </TouchableOpacity>
             </View>
 
-            {/* ================================================= */}
-            {/* IMPORTANT: GET THE CORRECT STATUS */}
-            {/* ================================================= */}
-
             {(() => {
-              /*
-               * IMPORTANT:
-               * The booking card uses booking_status first.
-               * We do the SAME here so the modal will show
-               * CONFIRMED when the booking card is CONFIRMED.
-               */
               const rawStatus =
                 selectedBooking?.booking_status ||
                 selectedBooking?.booked_rooms?.[0]?.status ||
@@ -695,11 +729,6 @@ export default function Bookings() {
                           ? "Confirmed"
                           : "Pending";
 
-              /*
-               * IMPORTANT:
-               * Backend relation is "payments".
-               * Prefer the PAID payment if there are multiple payments.
-               */
               const payments = Array.isArray(selectedBooking?.payments)
                 ? selectedBooking.payments
                 : [];
@@ -711,7 +740,6 @@ export default function Bookings() {
                 ) || payments[0];
 
               const paymentMethod = payment?.payment_method || null;
-
               const paymentStatus = payment?.payment_status || null;
 
               const paymentMethodLabel = paymentMethod
@@ -723,7 +751,6 @@ export default function Bookings() {
                 : "—";
 
               const bookedRoom = selectedBooking?.booked_rooms?.[0];
-
               const room = bookedRoom?.room;
 
               const roomNumber =
@@ -751,12 +778,9 @@ export default function Bookings() {
 
               const nights = (() => {
                 if (!checkIn || !checkOut) return 1;
-
                 const start = new Date(checkIn).getTime();
                 const end = new Date(checkOut).getTime();
-
                 const diff = Math.round((end - start) / (1000 * 60 * 60 * 24));
-
                 return Math.max(1, diff);
               })();
 
@@ -773,24 +797,21 @@ export default function Bookings() {
                           ? "#9333EA"
                           : "#D97706";
 
+              const canCancel = bookingStatus === "pending";
+              const canPay = needsPayment(selectedBooking);
+
               return (
                 <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{
-                    paddingBottom: 20,
-                  }}
+                  contentContainerStyle={{ paddingBottom: 20 }}
                 >
-                  {/* ================================================= */}
                   {/* STATUS */}
-                  {/* ================================================= */}
                   <View className="flex-row items-center justify-between py-4 border-b border-[#1a4a35]/10">
                     <Text className="text-[#1a4a35]/50 text-sm">Status</Text>
 
                     <View
                       className="px-4 py-2 rounded-full"
-                      style={{
-                        backgroundColor: statusColor,
-                      }}
+                      style={{ backgroundColor: statusColor }}
                     >
                       <Text className="text-white text-xs font-bold uppercase">
                         {statusLabel}
@@ -798,14 +819,11 @@ export default function Bookings() {
                     </View>
                   </View>
 
-                  {/* ================================================= */}
                   {/* BOOKING REFERENCE */}
-                  {/* ================================================= */}
                   <View className="py-5 border-b border-[#1a4a35]/10">
                     <Text className="text-[#1a4a35]/45 text-xs mb-1">
                       Booking Reference
                     </Text>
-
                     <Text
                       className="text-[#1a4a35] text-base font-bold"
                       selectable
@@ -814,9 +832,7 @@ export default function Bookings() {
                     </Text>
                   </View>
 
-                  {/* ================================================= */}
                   {/* ROOM */}
-                  {/* ================================================= */}
                   <View className="py-5 border-b border-[#1a4a35]/10">
                     <Text className="text-[#1a4a35]/45 text-xs mb-2">Room</Text>
 
@@ -825,11 +841,9 @@ export default function Bookings() {
                         <Text className="text-[#1a4a35] text-base font-bold">
                           Room {roomNumber}
                         </Text>
-
                         <Text className="text-[#1a4a35]/60 text-sm mt-1">
                           {roomType}
                         </Text>
-
                         <Text className="text-[#1a4a35]/50 text-xs mt-1 capitalize">
                           {String(stayType).replace(/_/g, " ")}
                         </Text>
@@ -846,9 +860,7 @@ export default function Bookings() {
                     </View>
                   </View>
 
-                  {/* ================================================= */}
                   {/* STAY INFORMATION */}
-                  {/* ================================================= */}
                   <View className="py-5 border-b border-[#1a4a35]/10">
                     <Text className="text-[#1a4a35]/45 text-xs mb-4">
                       Stay Information
@@ -859,7 +871,6 @@ export default function Bookings() {
                         <Text className="text-[#1a4a35]/45 text-[10px] uppercase">
                           Check-in
                         </Text>
-
                         <Text className="text-[#1a4a35] font-bold mt-1">
                           {formatDate(checkIn)}
                         </Text>
@@ -869,7 +880,6 @@ export default function Bookings() {
                         <Text className="text-[#1a4a35]/45 text-[10px] uppercase">
                           Check-out
                         </Text>
-
                         <Text className="text-[#1a4a35] font-bold mt-1">
                           {formatDate(checkOut)}
                         </Text>
@@ -881,7 +891,6 @@ export default function Bookings() {
                         <Text className="text-[#1a4a35]/45 text-[10px] uppercase">
                           Stay Type
                         </Text>
-
                         <Text className="text-[#1a4a35] font-bold mt-1 capitalize">
                           {String(stayType).replace(/_/g, " ")}
                         </Text>
@@ -891,7 +900,6 @@ export default function Bookings() {
                         <Text className="text-[#1a4a35]/45 text-[10px] uppercase">
                           Duration
                         </Text>
-
                         <Text className="text-[#1a4a35] font-bold mt-1">
                           {nights} night{nights !== 1 ? "s" : ""}
                         </Text>
@@ -899,9 +907,7 @@ export default function Bookings() {
                     </View>
                   </View>
 
-                  {/* ================================================= */}
                   {/* PAYMENT */}
-                  {/* ================================================= */}
                   <View className="py-5 border-b border-[#1a4a35]/10">
                     <Text className="text-[#1a4a35]/45 text-xs mb-4">
                       Payment
@@ -909,7 +915,6 @@ export default function Bookings() {
 
                     <View className="flex-row justify-between mb-4">
                       <Text className="text-[#1a4a35]/50">Method</Text>
-
                       <Text className="text-[#1a4a35] font-bold">
                         {paymentMethodLabel}
                       </Text>
@@ -917,7 +922,6 @@ export default function Bookings() {
 
                     <View className="flex-row justify-between mb-4">
                       <Text className="text-[#1a4a35]/50">Status</Text>
-
                       <Text
                         className="font-bold"
                         style={{
@@ -933,37 +937,8 @@ export default function Bookings() {
                       </Text>
                     </View>
 
-                    {/* PAYMENT DATE */}
-                    <View className="flex-row justify-between mb-4">
-                      <Text className="text-[#1a4a35]/50">Date</Text>
-
-                      <Text className="text-[#1a4a35] font-semibold">
-                        {payment?.payment_date
-                          ? new Date(payment.payment_date).toLocaleDateString(
-                              "en-PH",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )
-                          : payment?.created_at
-                            ? new Date(payment.created_at).toLocaleDateString(
-                                "en-PH",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                },
-                              )
-                            : "—"}
-                      </Text>
-                    </View>
-
-                    {/* PAYMENT DATE & TIME */}
                     <View className="flex-row justify-between">
                       <Text className="text-[#1a4a35]/50">Date & Time</Text>
-
                       <Text className="text-[#1a4a35] font-semibold">
                         {payment?.payment_date
                           ? `${new Date(
@@ -997,13 +972,11 @@ export default function Bookings() {
                       </Text>
                     </View>
 
-                    {/* PAYMENT REFERENCE */}
                     {(payment?.reference_number ||
                       payment?.gcash_reference ||
                       payment?.bank_reference) && (
                       <View className="flex-row justify-between mt-4">
                         <Text className="text-[#1a4a35]/50">Reference No.</Text>
-
                         <Text
                           className="text-[#1a4a35] font-semibold flex-1 text-right ml-5"
                           numberOfLines={1}
@@ -1016,16 +989,13 @@ export default function Bookings() {
                     )}
                   </View>
 
-                  {/* ================================================= */}
                   {/* TOTAL */}
-                  {/* ================================================= */}
                   <View className="py-5">
                     <View className="flex-row justify-between items-center">
                       <View>
                         <Text className="text-[#1a4a35]/45 text-xs uppercase tracking-wider">
                           Total Amount
                         </Text>
-
                         <Text className="text-[#1a4a35]/40 text-xs mt-1">
                           Booking Total
                         </Text>
@@ -1040,51 +1010,56 @@ export default function Bookings() {
                     </View>
                   </View>
 
-                  {/* ================================================= */}
                   {/* ACTION BUTTONS */}
-                  {/* ================================================= */}
-
-                  <View className="flex-row gap-3 mt-1">
-                    {/* CANCEL - PENDING ONLY */}
-                    {bookingStatus === "pending" && (
+                  <View className="gap-3 mt-1">
+                    {/* CONTINUE PAYMENT */}
+                    {canPay && (
                       <TouchableOpacity
-                        onPress={async () => {
-                          try {
-                            await api.put(`/bookings/${selectedBooking.id}`, {
-                              status: "cancelled",
-                            });
-
-                            closeBookingDetails();
-
-                            await fetchBookings(page);
-                          } catch (error: any) {
-                            console.log(
-                              "❌ CANCEL BOOKING ERROR:",
-                              error?.response?.data || error,
-                            );
-                          }
-                        }}
+                        onPress={() => handleContinuePayment(selectedBooking)}
                         activeOpacity={0.85}
-                        className="flex-1 border border-red-500 rounded-xl py-4 items-center"
+                        className="rounded-xl overflow-hidden"
                       >
-                        <Text className="text-red-600 font-bold">
-                          Cancel Booking
-                        </Text>
+                        <LinearGradient
+                          colors={["#c9a96e", "#a8854a"]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          className="flex-row items-center justify-center py-4 gap-2"
+                        >
+                          <Ionicons name="card-outline" size={18} color="#fff" />
+                          <Text className="text-white font-bold">
+                            Continue Payment
+                          </Text>
+                        </LinearGradient>
                       </TouchableOpacity>
                     )}
 
-                    {/* CLOSE */}
-                    <TouchableOpacity
-                      onPress={closeBookingDetails}
-                      activeOpacity={0.85}
-                      className={
-                        bookingStatus === "pending"
-                          ? "flex-1 bg-[#1a4a35] rounded-xl py-4 items-center"
-                          : "w-full bg-[#1a4a35] rounded-xl py-4 items-center"
-                      }
-                    >
-                      <Text className="text-white font-bold">Close</Text>
-                    </TouchableOpacity>
+                    <View className="flex-row gap-3">
+                      {/* CANCEL - PENDING ONLY */}
+                      {canCancel && (
+                        <TouchableOpacity
+                          onPress={() => handleCancelBooking(selectedBooking)}
+                          activeOpacity={0.85}
+                          className="flex-1 border border-red-500 rounded-xl py-4 items-center"
+                        >
+                          <Text className="text-red-600 font-bold">
+                            Cancel Booking
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* CLOSE */}
+                      <TouchableOpacity
+                        onPress={closeBookingDetails}
+                        activeOpacity={0.85}
+                        className={
+                          canCancel
+                            ? "flex-1 bg-[#1a4a35] rounded-xl py-4 items-center"
+                            : "w-full bg-[#1a4a35] rounded-xl py-4 items-center"
+                        }
+                      >
+                        <Text className="text-white font-bold">Close</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </ScrollView>
               );

@@ -191,10 +191,19 @@ export default function Tasks() {
   // PULL TO REFRESH
   // =========================================================
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
+    if (refreshing) return;
+
     setRefreshing(true);
-    getTasks(true);
-  }, []);
+
+    try {
+      await getTasks(true);
+    } catch (error) {
+      console.log("Pull refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, showAll]);
   // =========================================================
   // FILTER COUNTS
   // =========================================================

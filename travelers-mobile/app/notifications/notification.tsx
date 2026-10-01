@@ -39,6 +39,10 @@ type Section = {
   data: NotificationType[];
 };
 
+// Row height is shared by the notification row and the swipe-delete action
+// so they always line up. Raised from 85 so a 2-line message fits.
+const ROW_HEIGHT = 105;
+
 export default function Notification() {
   const [data, setData] = useState<NotificationType[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -193,7 +197,7 @@ export default function Notification() {
       console.log("MARK AS UNREAD ERROR:", error);
     }
   };
-  
+
   const openNotificationDetails = async (item: NotificationType) => {
     // Close any opened swipe action first
     if (swipeableRefs.current[item.id]) {
@@ -258,7 +262,7 @@ export default function Notification() {
       <Animated.View
         style={{
           width: 80,
-          height: 85,
+          height: ROW_HEIGHT,
           backgroundColor: "#dc2626",
           justifyContent: "center",
           alignItems: "center",
@@ -683,7 +687,7 @@ export default function Notification() {
                   activeOpacity={0.7}
                   onPress={() => openNotificationDetails(item)}
                   style={{
-                    height: 85,
+                    height: ROW_HEIGHT,
                     paddingVertical: 12,
                     paddingHorizontal: 20,
                     backgroundColor: item.is_read
@@ -761,7 +765,7 @@ export default function Notification() {
                     </View>
 
                     <Text
-                      numberOfLines={1}
+                      numberOfLines={2}
                       style={{
                         fontSize: 12,
                         color: item.is_read
@@ -954,46 +958,6 @@ export default function Notification() {
                   {selectedNotification?.message}
                 </Text>
               </View>
-
-              {/* BOOKING REFERENCE */}
-              {selectedNotification?.booking_id && (
-                <View
-                  style={{
-                    backgroundColor: "rgba(26,74,53,0.05)",
-                    borderRadius: 16,
-                    padding: 16,
-                    marginBottom: 20,
-                    flexDirection: "row",
-                    alignItems: "center",
-                  }}
-                >
-                  <Ionicons name="calendar-outline" size={20} color="#1a4a35" />
-
-                  <View style={{ marginLeft: 12 }}>
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        letterSpacing: 1.5,
-                        color: "rgba(26,74,53,0.4)",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Booking
-                    </Text>
-
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        color: "#1a4a35",
-                        fontFamily: "Georgia",
-                        marginTop: 3,
-                      }}
-                    >
-                      Booking #{selectedNotification.booking_id}
-                    </Text>
-                  </View>
-                </View>
-              )}
 
               {/* VIEW BOOKING */}
               {selectedNotification?.booking_id && (

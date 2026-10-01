@@ -11,6 +11,7 @@ import {
   RefreshControl,
   BackHandler,
   Alert,
+  InteractionManager,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,65 +25,28 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "@/services/api";
 import { useLocalSearchParams } from "expo-router";
+import { registerForPushNotificationsAsync } from "@/services/notifications";
 
 const { width } = Dimensions.get("window");
 
 const CARD_WIDTH = width - 56;
 
-const STATUS_CONFIG: Record<
-  string,
-  {
-    bg: string;
-    dot: string;
-    label: string;
-  }
-> = {
-  available: {
-    bg: "rgba(22,163,74,0.85)",
-    dot: "#fff",
-    label: "Available",
-  },
-
-  occupied: {
-    bg: "rgba(37,99,235,0.85)",
-    dot: "#fff",
-    label: "Occupied",
-  },
-
-  maintenance: {
-    bg: "rgba(220,38,38,0.85)",
-    dot: "#fff",
-    label: "Maintenance",
-  },
-};
-
 export default function Home() {
   const { user, token, isLoaded } = useAuthStore();
-
   const router = useRouter();
-
   const insets = useSafeAreaInsets();
 
   const [allRooms, setAllRooms] = useState<any[]>([]);
-
   const [groupedRooms, setGroupedRooms] = useState<any>({});
-
   const [search, setSearch] = useState("");
-
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
-
   const [isNavigating, setIsNavigating] = useState(false);
-
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
-
   const params = useLocalSearchParams();
 
   // =====================================================
@@ -141,6 +105,42 @@ export default function Home() {
       checkUnreadMessages();
     }
   }, [isLoaded, token, user]);
+
+  // =====================================================
+  // REGISTER PUSH NOTIFICATIONS
+  // =====================================================
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+
+    const registerPushNotifications = async () => {
+      try {
+        const pushToken = await registerForPushNotificationsAsync();
+
+        if (pushToken) {
+          console.log("Guest Expo Push Token:", pushToken);
+
+          try {
+            await api.post("/guest/push-token", {
+              expo_push_token: pushToken,
+            });
+
+            console.log("Guest push token saved to Laravel.");
+          } catch (error) {
+            console.log("Failed to save guest push token:", error);
+          }
+        }
+      } catch (error) {
+        console.log("Push notification registration error:", error);
+      }
+    };
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      registerPushNotifications();
+    });
+
+    return () => task.cancel();
+  }, [isLoaded, user]);
 
   // =====================================================
   // CHECK UNREAD NOTIFICATIONS
@@ -240,9 +240,7 @@ export default function Home() {
     try {
       await Promise.all([
         fetchRooms(),
-
         user && checkUnreadNotifications(),
-
         user && checkUnreadMessages(),
       ]);
     } catch (error) {
@@ -264,32 +262,30 @@ export default function Home() {
 
   // =====================================================
   // SEARCH / GROUP ROOMS
+  // ✅ Ipakita LAHAT maliban sa maintenance
   // =====================================================
 
   useEffect(() => {
     const searchTerm = debouncedSearch.trim().toLowerCase();
 
     const filtered = allRooms.filter((room) => {
-      // Guest mobile can see all rooms
-      // except maintenance.
-      const isNotMaintenance = room.status !== "maintenance";
+      const status = String(room.status || "").toLowerCase();
 
-      // Room number
+      // ✅ Hindi lang maintenance — kasi ang guest ay nag-book for future dates
+      const isBookable = status !== "maintenance";
+
       const roomNumber = String(room.room_number ?? "").toLowerCase();
 
-      // Room type name
       const roomTypeName = String(
         room.room_type?.type_name ?? "",
       ).toLowerCase();
 
-      // Search both room number
-      // AND room type.
       const matchesSearch =
         searchTerm === "" ||
         roomNumber.includes(searchTerm) ||
         roomTypeName.includes(searchTerm);
 
-      return isNotMaintenance && matchesSearch;
+      return isBookable && matchesSearch;
     });
 
     const grouped: any = {};
@@ -376,7 +372,6 @@ export default function Home() {
 
     router.push({
       pathname: "/bookings/details",
-
       params: {
         room: JSON.stringify(item),
       },
@@ -444,43 +439,22 @@ export default function Home() {
           />
         }
       >
-        {/* =====================================================
-            HERO / HEADER
-        ===================================================== */}
-
+        {/* HERO / HEADER */}
         <View
           style={{
             width: "100%",
-
-            // IMPORTANT:
-            // minHeight instead of fixed height.
-            // This allows the header to grow when the
-            // greeting wraps on smaller devices.
             minHeight: 280,
-
             borderBottomLeftRadius: 25,
             borderBottomRightRadius: 25,
-
             overflow: "hidden",
           }}
         >
-          {/* =================================================
-              GREEN BACKGROUND
-          ================================================= */}
-
           <LinearGradient
             colors={["#0d2e1f", "#1a4a35", "#0d2e1f"]}
-            start={{
-              x: 0,
-              y: 0,
-            }}
-            end={{
-              x: 1,
-              y: 1,
-            }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={{
               position: "absolute",
-
               top: 0,
               left: 0,
               right: 0,
@@ -488,84 +462,45 @@ export default function Home() {
             }}
           />
 
-          {/* =================================================
-              DECORATIVE CIRCLES
-          ================================================= */}
-
           <View
             className="absolute rounded-full border border-white/5"
-            style={{
-              width: 320,
-              height: 320,
-              top: -80,
-              right: -80,
-            }}
+            style={{ width: 320, height: 320, top: -80, right: -80 }}
           />
 
           <View
             className="absolute rounded-full border border-white/5"
-            style={{
-              width: 200,
-              height: 200,
-              top: -20,
-              right: -20,
-            }}
+            style={{ width: 200, height: 200, top: -20, right: -20 }}
           />
-
-          {/* =================================================
-              HEADER CONTENT
-          ================================================= */}
 
           <View
             style={{
               width: "100%",
-
               paddingTop: insets.top + 16,
-
-              // Responsive horizontal padding
               paddingHorizontal: width < 360 ? 16 : 24,
-
               paddingBottom: 22,
             }}
           >
-            {/* =================================================
-                TOP ROW
-            ================================================= */}
-
+            {/* TOP ROW */}
             <View className="flex-row justify-between items-center mb-7">
-              {/* USER NAME */}
-
               <View className="flex-row items-center gap-1">
-                {/* First Letter */}
-
                 <View className="w-8 h-8 rounded-full bg-[#c9a96e]/20 border border-[#c9a96e]/40 justify-center items-center">
                   <Text
                     className="text-[#c9a96e] text-xs font-bold"
-                    style={{
-                      fontFamily: "Georgia",
-                    }}
+                    style={{ fontFamily: "Georgia" }}
                   >
                     {user?.first_name?.charAt(0)?.toUpperCase() || "G"}
                   </Text>
                 </View>
 
-                {/* Remaining Letters */}
-
                 <Text
                   className="text-white/50 text-xs tracking-widest uppercase"
                   numberOfLines={1}
                   ellipsizeMode="tail"
-                  style={{
-                    maxWidth: width < 360 ? 100 : 180,
-                  }}
+                  style={{ maxWidth: width < 360 ? 100 : 180 }}
                 >
                   {user?.first_name?.slice(1) || "uest"}
                 </Text>
               </View>
-
-              {/* =================================================
-                  NOTIFICATION
-              ================================================= */}
 
               <View className="flex-row">
                 <TouchableOpacity
@@ -581,36 +516,25 @@ export default function Home() {
                     color="#fff"
                   />
 
-                  {/* UNREAD BADGE */}
-
                   {unreadNotificationCount > 0 && (
                     <View
                       style={{
                         position: "absolute",
-
                         top: -5,
                         right: -5,
-
                         minWidth: 18,
                         height: 18,
-
                         borderRadius: 9,
-
                         backgroundColor: "#ef4444",
-
                         justifyContent: "center",
-
                         alignItems: "center",
-
                         paddingHorizontal: 4,
                       }}
                     >
                       <Text
                         style={{
                           color: "#fff",
-
                           fontSize: 10,
-
                           fontWeight: "bold",
                         }}
                       >
@@ -624,136 +548,135 @@ export default function Home() {
               </View>
             </View>
 
-            {/* =================================================
-                WELCOME BACK
-            ================================================= */}
-
-            <Text className="text-[#c9a96e] text-xs tracking-[4px] uppercase mb-2">
+            {/* WELCOME BACK */}
+            <Text
+              className="text-[#c9a96e] uppercase"
+              style={{
+                fontSize: width < 360 ? 9 : 10,
+                letterSpacing: width < 360 ? 3 : 4,
+                marginBottom: 7,
+                fontWeight: "600",
+              }}
+            >
               Welcome back
             </Text>
 
-            {/* =================================================
-                GREETING
-            ================================================= */}
-
+            {/* GREETING */}
             <Text
-              className="text-white mb-1"
+              className="text-white"
               style={{
                 fontFamily: "Georgia",
-
-                // Responsive font
-                fontSize: width < 360 ? 30 : 36,
-
-                lineHeight: width < 360 ? 36 : 43,
-
-                flexShrink: 1,
-              }}
-            >
-              {getGreeting()}, {user?.first_name || "Guest"}
-            </Text>
-
-            {/* =================================================
-                DATE
-            ================================================= */}
-
-            <Text
-              className="text-white/50 mb-1"
-              style={{
-                fontSize: width < 360 ? 12 : 14,
+                fontSize: width < 360 ? 23 : 25,
+                lineHeight: width < 360 ? 29 : 34,
+                fontWeight: "500",
               }}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.85}
+              minimumFontScale={0.8}
             >
-              {getTodayDate()}
+              {getGreeting()},
             </Text>
 
-            {/* =================================================
-                INN NAME
-            ================================================= */}
-
+            {/* USER NAME */}
             <Text
-              className="text-white/40 tracking-wide"
+              className="text-[#c9a96e]"
               style={{
                 fontFamily: "Georgia",
-                fontStyle: "italic",
-
-                fontSize: width < 360 ? 12 : 14,
-
-                marginBottom: 18,
+                fontSize: width < 360 ? 29 : 33,
+                lineHeight: width < 360 ? 34 : 39,
+                fontWeight: "600",
+                marginBottom: 10,
               }}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.85}
+              minimumFontScale={0.8}
             >
-              Lyn Enia's Travelers' Inn
+              {user?.first_name || "Guest"}
             </Text>
 
-            {/* =================================================
-                SEARCH BAR
-            ================================================= */}
+            {/* DATE */}
+            <View className="flex-row items-center" style={{ marginBottom: 4 }}>
+              <Ionicons
+                name="calendar-outline"
+                size={width < 360 ? 12 : 13}
+                color="rgba(255,255,255,0.55)"
+                style={{ marginRight: 8 }}
+              />
 
-            <View
-              style={{
-                width: "100%",
-                marginTop: 0,
-              }}
-            >
+              <Text
+                className="text-white/55"
+                style={{
+                  fontSize: width < 360 ? 10 : 11,
+                  lineHeight: width < 360 ? 14 : 15,
+                }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {getTodayDate()}
+              </Text>
+            </View>
+
+            {/* INN NAME */}
+            <View className="flex-row items-center" style={{ marginBottom: 3 }}>
+              <Ionicons
+                name="business-outline"
+                size={width < 360 ? 12 : 13}
+                color="rgba(255,255,255,0.45)"
+                style={{ marginRight: 8 }}
+              />
+
+              <Text
+                className="text-white/45"
+                style={{
+                  fontFamily: "Georgia",
+                  fontStyle: "italic",
+                  fontSize: width < 360 ? 10 : 11,
+                  lineHeight: width < 360 ? 14 : 15,
+                }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                Lyn Enia's Travelers' Inn
+              </Text>
+            </View>
+
+            {/* SEARCH BAR */}
+            <View style={{ width: "100%", marginTop: 10 }}>
               <BlurView
                 intensity={20}
                 tint="dark"
                 className="rounded-2xl overflow-hidden border border-white/10"
-                style={{
-                  width: "100%",
-
-                  minHeight: 50,
-                }}
+                style={{ width: "100%", minHeight: 50 }}
               >
                 <View
                   style={{
                     width: "100%",
-
                     minHeight: 50,
-
                     flexDirection: "row",
-
                     alignItems: "center",
-
                     paddingHorizontal: width < 360 ? 12 : 14,
-
                     paddingVertical: 5,
                   }}
                 >
-                  {/* SEARCH ICON */}
-
                   <Ionicons
                     name="search-outline"
                     size={18}
                     color="rgba(255,255,255,0.4)"
                   />
 
-                  {/* =================================================
-                      SEARCH INPUT
-                  ================================================= */}
-
                   <TextInput
                     placeholder="Search room number or type..."
                     value={search}
                     onChangeText={setSearch}
                     placeholderTextColor="rgba(255,255,255,0.3)"
-                    // Important for responsive
-                    // behavior on narrow screens.
                     style={{
                       flex: 1,
-
                       minWidth: 0,
-
                       color: "#fff",
-
                       fontSize: width < 360 ? 13 : 14,
-
                       paddingVertical: 8,
-
                       paddingHorizontal: 10,
                     }}
                     numberOfLines={1}
@@ -761,20 +684,11 @@ export default function Home() {
                     autoCorrect={false}
                   />
 
-                  {/* =================================================
-                      CLEAR SEARCH
-                  ================================================= */}
-
                   {search.length > 0 && (
                     <TouchableOpacity
                       onPress={() => setSearch("")}
                       activeOpacity={0.7}
-                      hitSlop={{
-                        top: 10,
-                        bottom: 10,
-                        left: 10,
-                        right: 10,
-                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                       <Ionicons
                         name="close-circle"
@@ -789,14 +703,29 @@ export default function Home() {
           </View>
         </View>
 
-        {/* =====================================================
-            ROOMS
-        ===================================================== */}
-
+        {/* ROOMS */}
         <View className="pt-8">
-          {/* =================================================
-              NO RESULTS
-          ================================================= */}
+          <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+            <Text
+              style={{
+                fontFamily: "Georgia",
+                fontSize: 25,
+                color: "#1a4a35",
+                fontWeight: "600",
+                marginBottom: 8,
+              }}
+            >
+              Available Rooms
+            </Text>
+
+            <View
+              style={{
+                width: 26,
+                height: 2,
+                backgroundColor: "#c9a96e",
+              }}
+            />
+          </View>
 
           {Object.keys(groupedRooms).length === 0 && !loading && (
             <View className="items-center justify-center py-20 px-8">
@@ -806,9 +735,7 @@ export default function Home() {
 
               <Text
                 className="text-[#1a4a35] text-lg mb-2"
-                style={{
-                  fontFamily: "Georgia",
-                }}
+                style={{ fontFamily: "Georgia" }}
               >
                 No rooms found
               </Text>
@@ -819,30 +746,15 @@ export default function Home() {
             </View>
           )}
 
-          {/* =================================================
-              ROOM GROUPS
-          ================================================= */}
-
           {Object.keys(groupedRooms).map((type) => (
             <View key={type} className="mb-10">
-              {/* =================================================
-    SECTION HEADER
-================================================= */}
-
               <View
                 className="flex-row items-center px-6 mb-5"
-                style={{
-                  width: "100%",
-                }}
+                style={{ width: "100%" }}
               >
-                {/* ROOM TYPE */}
-
                 <View
                   className="flex-row items-center"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                  }}
+                  style={{ flex: 1, minWidth: 0 }}
                 >
                   <View className="w-7 h-7 rounded-full bg-[#1a4a35]/10 justify-center items-center mr-3">
                     <Ionicons
@@ -854,10 +766,7 @@ export default function Home() {
 
                   <Text
                     className="text-[#1a4a35] text-xl"
-                    style={{
-                      fontFamily: "Georgia",
-                      flexShrink: 1,
-                    }}
+                    style={{ fontFamily: "Georgia", flexShrink: 1 }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
@@ -865,13 +774,9 @@ export default function Home() {
                   </Text>
                 </View>
 
-                {/* ROOM COUNT */}
-
                 <View
                   className="flex-row items-center ml-3"
-                  style={{
-                    flexShrink: 0,
-                  }}
+                  style={{ flexShrink: 0 }}
                 >
                   <View className="w-1 h-1 rounded-full bg-[#c9a96e] mr-2" />
 
@@ -890,34 +795,15 @@ export default function Home() {
                 </View>
               </View>
 
-              {/* =================================================
-                    ROOM CARDS
-                ================================================= */}
-
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 decelerationRate="fast"
                 snapToInterval={CARD_WIDTH + 16}
                 snapToAlignment="start"
-                contentContainerStyle={{
-                  paddingHorizontal: 24,
-                }}
+                contentContainerStyle={{ paddingHorizontal: 24 }}
               >
                 {groupedRooms[type].map((item: any, idx: number) => {
-                  const s =
-                    item.status === "maintenance"
-                      ? {
-                          bg: "rgba(220,38,38,0.85)",
-                          dot: "#fff",
-                          label: "Maintenance",
-                        }
-                      : {
-                          bg: "rgba(22,163,74,0.85)",
-                          dot: "#fff",
-                          label: "Available",
-                        };
-
                   return (
                     <TouchableOpacity
                       key={item.id}
@@ -925,31 +811,17 @@ export default function Home() {
                       onPress={() => navigateToRoom(item)}
                       style={{
                         width: CARD_WIDTH,
-
                         marginRight:
                           idx === groupedRooms[type].length - 1 ? 0 : 16,
-
                         marginBottom: 10,
-
                         shadowColor: "#000",
-
                         shadowOpacity: 0.06,
-
                         shadowRadius: 12,
-
-                        shadowOffset: {
-                          width: 0,
-                          height: 4,
-                        },
-
+                        shadowOffset: { width: 0, height: 4 },
                         elevation: 4,
                       }}
                       className="rounded-3xl overflow-hidden bg-white"
                     >
-                      {/* =================================================
-                              ROOM IMAGE
-                          ================================================= */}
-
                       <View className="relative">
                         <Image
                           source={{
@@ -957,11 +829,7 @@ export default function Home() {
                               item.image_url ||
                               "https://picsum.photos/seed/room/400/300",
                           }}
-                          style={{
-                            width: "100%",
-
-                            height: 210,
-                          }}
+                          style={{ width: "100%", height: 210 }}
                           className="bg-[#e8e4d9]"
                         />
 
@@ -970,27 +838,20 @@ export default function Home() {
                           className="absolute bottom-0 left-0 right-0 h-28"
                         />
 
-                        {/* STATUS */}
-
+                        {/* ✅ LAGING "AVAILABLE" BADGE */}
                         <View
                           className="absolute top-4 left-4 flex-row items-center gap-1.5 px-3 py-1 rounded-full"
-                          style={{
-                            backgroundColor: s.bg,
-                          }}
+                          style={{ backgroundColor: "rgba(22,163,74,0.85)" }}
                         >
                           <View
                             className="w-1.5 h-1.5 rounded-full"
-                            style={{
-                              backgroundColor: s.dot,
-                            }}
+                            style={{ backgroundColor: "#fff" }}
                           />
 
                           <Text className="text-white text-[10px] tracking-widest uppercase font-medium">
-                            {s.label}
+                            Available
                           </Text>
                         </View>
-
-                        {/* ROOM NUMBER + PRICE */}
 
                         <View className="absolute bottom-4 left-4 right-4 flex-row justify-between items-end">
                           <View>
@@ -1000,9 +861,7 @@ export default function Home() {
 
                             <Text
                               className="text-white text-3xl font-bold"
-                              style={{
-                                fontFamily: "Georgia",
-                              }}
+                              style={{ fontFamily: "Georgia" }}
                             >
                               {item.room_number}
                             </Text>
@@ -1010,10 +869,7 @@ export default function Home() {
 
                           <View
                             className="items-end"
-                            style={{
-                              flexShrink: 0,
-                              minWidth: 85,
-                            }}
+                            style={{ flexShrink: 0, minWidth: 85 }}
                           >
                             <Text
                               className="text-[#c9a96e] font-bold"
@@ -1030,9 +886,7 @@ export default function Home() {
 
                             <Text
                               className="text-white/50 tracking-wide"
-                              style={{
-                                fontSize: width < 360 ? 9 : 10,
-                              }}
+                              style={{ fontSize: width < 360 ? 9 : 10 }}
                               numberOfLines={1}
                             >
                               per night
@@ -1041,14 +895,8 @@ export default function Home() {
                         </View>
                       </View>
 
-                      {/* =================================================
-                              ROOM CARD BODY
-                          ================================================= */}
-
                       <View className="px-5 py-4 bg-white">
                         <View className="flex-row items-center gap-5 mb-4">
-                          {/* GUESTS */}
-
                           <View className="flex-row items-center gap-1.5">
                             <Ionicons
                               name="people-outline"
@@ -1063,8 +911,6 @@ export default function Home() {
 
                           <View className="w-px h-3 bg-[#1a4a35]/15" />
 
-                          {/* SIZE */}
-
                           <View className="flex-row items-center gap-1.5">
                             <Ionicons
                               name="resize-outline"
@@ -1078,8 +924,6 @@ export default function Home() {
                           </View>
 
                           <View className="w-px h-3 bg-[#1a4a35]/15" />
-
-                          {/* TYPE */}
 
                           <View className="flex-row items-center gap-1.5">
                             <Ionicons
@@ -1097,10 +941,6 @@ export default function Home() {
                           </View>
                         </View>
 
-                        {/* =================================================
-                                RESERVE BUTTON
-                            ================================================= */}
-
                         <TouchableOpacity
                           activeOpacity={0.85}
                           onPress={() => navigateToRoom(item)}
@@ -1108,21 +948,13 @@ export default function Home() {
                         >
                           <LinearGradient
                             colors={["#1a4a35", "#0d2e1f"]}
-                            start={{
-                              x: 0,
-                              y: 0,
-                            }}
-                            end={{
-                              x: 1,
-                              y: 0,
-                            }}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
                             className="flex-row items-center justify-center py-3.5 gap-2"
                           >
                             <Text
                               className="text-white text-sm tracking-widest uppercase"
-                              style={{
-                                fontFamily: "Georgia",
-                              }}
+                              style={{ fontFamily: "Georgia" }}
                             >
                               Reserve Room
                             </Text>
@@ -1144,10 +976,7 @@ export default function Home() {
         </View>
       </ScrollView>
 
-      {/* =====================================================
-          FLOATING CHAT BUTTON
-      ===================================================== */}
-
+      {/* FLOATING CHAT BUTTON */}
       <TouchableOpacity
         onPress={() => {
           if (isNavigating) return;
@@ -1165,44 +994,24 @@ export default function Home() {
         activeOpacity={0.85}
         style={{
           position: "absolute",
-
           bottom: insets.bottom + 20,
-
           right: width < 360 ? 16 : 20,
-
           shadowColor: "#000",
-
           shadowOpacity: 0.25,
-
           shadowRadius: 8,
-
-          shadowOffset: {
-            width: 0,
-            height: 4,
-          },
-
+          shadowOffset: { width: 0, height: 4 },
           elevation: 6,
         }}
       >
         <LinearGradient
           colors={["#1a4a35", "#0d2e1f"]}
-          start={{
-            x: 0,
-            y: 0,
-          }}
-          end={{
-            x: 1,
-            y: 1,
-          }}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={{
             width: width < 360 ? 52 : 56,
-
             height: width < 360 ? 52 : 56,
-
             borderRadius: width < 360 ? 26 : 28,
-
             justifyContent: "center",
-
             alignItems: "center",
           }}
         >
@@ -1213,31 +1022,19 @@ export default function Home() {
           />
         </LinearGradient>
 
-        {/* =================================================
-            UNREAD MESSAGE BADGE
-        ================================================= */}
-
         {hasUnreadMessages && (
           <View
             style={{
               position: "absolute",
-
               top: -4,
               right: -4,
-
               width: 20,
               height: 20,
-
               borderRadius: 10,
-
               backgroundColor: "#ef4444",
-
               justifyContent: "center",
-
               alignItems: "center",
-
               borderWidth: 2,
-
               borderColor: "#faf8f3",
             }}
           >
@@ -1245,9 +1042,7 @@ export default function Home() {
               style={{
                 width: 6,
                 height: 6,
-
                 borderRadius: 3,
-
                 backgroundColor: "#fff",
               }}
             />
