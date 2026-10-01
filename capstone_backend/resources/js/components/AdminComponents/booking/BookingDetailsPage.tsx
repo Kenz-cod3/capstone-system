@@ -457,6 +457,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     onClick: () => onAction && onAction("extend"),
                 },
                 {
+                    key: "addons",
+                    label: "Add-ons", // was "Manage Add-ons"
+                    onClick: () => onAction && onAction("addons"),
+                },
+                {
                     key: "refund",
                     label: "Refund Room",
                     danger: true,
@@ -564,6 +569,11 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     key: `extend:${room.id}`,
                     label: "Extend Stay",
                     onClick: () => onAction && onAction(`extend:${room.id}`),
+                },
+                {
+                    key: `addons:${room.id}`,
+                    label: "Add-ons", // was "Manage Add-ons"
+                    onClick: () => onAction && onAction(`addons:${room.id}`),
                 },
                 {
                     key: `refund:${room.id}`,
@@ -1632,14 +1642,14 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                     >
                         Back
                     </Button>
-                    <Button
+                    {/* <Button
                         icon={<PrinterOutlined />}
                         onClick={() => window.print()}
                         style={{ borderRadius: "8px", fontSize: "13px" }}
                     >
                         Print
-                    </Button>
-                    <Button
+                    </Button> */}
+                    {/* <Button
                         type="primary"
                         icon={<EditOutlined />}
                         onClick={() => onAction && onAction("edit")}
@@ -1651,7 +1661,7 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                         }}
                     >
                         Edit Booking
-                    </Button>
+                    </Button> */}
                     <Dropdown menu={getActionMenu()} trigger={["click"]}>
                         <Button
                             icon={<MoreOutlined />}
@@ -1863,7 +1873,14 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                                     fontWeight: 700,
                                 }}
                             >
-                                ₱{booking.total_amount.toLocaleString()}
+                                ₱
+                                {booking.total_amount.toLocaleString(
+                                    undefined,
+                                    {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    },
+                                )}
                             </Text>
                         </div>
                     </div>
@@ -1970,6 +1987,9 @@ const BookingDetails: React.FC<BookingDetailsProps> = ({
                             extra={
                                 <Button
                                     size="small"
+                                    onClick={() =>
+                                        onAction && onAction("add_room")
+                                    }
                                     icon={
                                         <PlusOutlined
                                             style={{ fontSize: "10px" }}

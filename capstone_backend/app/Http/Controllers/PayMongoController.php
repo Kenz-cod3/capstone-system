@@ -25,8 +25,10 @@ class PayMongoController extends Controller
         $validated = $request->validate([
             'booking_id' => 'required|exists:bookings,id',
             'amount'     => 'required|numeric|min:1',
-            'fee_type'   => 'nullable|in:early_checkin,late_checkout,extension',
+            'fee_type'   => 'nullable|in:early_checkin,late_checkout,extension,addon,room',
             'payment_id' => 'nullable|exists:booking_payments,id',
+            'add_on_id'  => 'nullable|integer|exists:add_ons,id',
+            'quantity'   => 'nullable|integer|min:1',
         ]);
 
         $isFeePayment = ! empty($validated['fee_type']);
@@ -75,6 +77,22 @@ class PayMongoController extends Controller
             ], 400);
         }
 
+        // Add-on fee: don't generate a QR for stock that no longer exists.
+        // (The stock itself is only deducted later by POST /booking-addons.)
+        if (($validated['fee_type'] ?? null) === 'addon' && ! empty($validated['add_on_id'])) {
+            $addOn = \App\Models\AddOn::find($validated['add_on_id']);
+            $needed = (int) ($validated['quantity'] ?? 1);
+            $available = (int) ($addOn?->stock ?? 0);
+
+            if (! $addOn || $available < $needed) {
+                return response()->json([
+                    'message' => $available <= 0
+                        ? ($addOn?->add_on_name ?? 'This add-on') . ' is out of stock.'
+                        : "Only {$available} {$addOn->add_on_name} left in stock.",
+                ], 409);
+            }
+        }
+
         /*
         |--------------------------------------------------------------------------
         | STEP 1: Create Payment Intent
@@ -101,6 +119,8 @@ class PayMongoController extends Controller
                             'payment_method' => 'qrph',
                             'booking_type' => $booking->booking_type,
                             'fee_type' => $validated['fee_type'] ?? null,
+                            'add_on_id' => isset($validated['add_on_id']) ? (string) $validated['add_on_id'] : null,
+                            'add_on_qty' => isset($validated['quantity']) ? (string) $validated['quantity'] : null,
                             'booking_payment_id' => $walkInPayment ? (string) $walkInPayment->id : null,
                         ]),
                     ],
@@ -292,13 +312,22 @@ class PayMongoController extends Controller
     // FEE QR STATUS (DB lang, read-only, walang tawag sa PayMongo)
     public function feeStatus(string $paymentIntentId)
     {
-        $payment = BookingPayment::where('bank_reference', $paymentIntentId)
+        // Bago: pay_... ang nasa bank_reference, kaya hanapin ito sa payment_logs gamit ang pi_.
+        // Luma: pi_... mismo ang naka-save, kaya hinahanap din.
+        $refs = array_filter([
+            $paymentIntentId,
+            \App\Models\PaymentLog::where('intent_id', $paymentIntentId)->value('payment_id'),
+        ]);
+
+        $payment = BookingPayment::whereIn('bank_reference', $refs)
             ->where('payment_status', 'paid')
             ->first();
 
         return response()->json([
-            'paid' => (bool) $payment,
-            'payment_id' => $payment?->id,
+            'paid'           => (bool) $payment,
+            'payment_id'     => $payment?->id,
+            'reference'      => $payment?->bank_reference,
+            'receipt_number' => $payment?->receipt_number,
         ]);
     }
 
@@ -363,7 +392,7 @@ class PayMongoController extends Controller
                 'description' => data_get($session, 'attributes.description'),
                 'status'      => 'paid',
                 'paid_at'     => data_get($session, 'attributes.paid_at')
-                    ? \Carbon\Carbon::createFromTimestamp(data_get($session, 'attributes.paid_at'))
+                    ? \Carbon\Carbon::createFromTimestamp(data_get($session, 'attributes.paid_at'), config('app.timezone'))
                     : now(),
             ]
         );
@@ -385,16 +414,18 @@ class PayMongoController extends Controller
         if (data_get($session, 'attributes.metadata.fee_type')) {
             $feeBookingId = data_get($session, 'attributes.metadata.booking_id');
             $feeAmount = ((int) data_get($session, 'attributes.amount', 0)) / 100;
-            // payment intent id (pi_...) ang ginagamit ng frontend sa pag-poll
-            $feeReference = data_get($session, 'attributes.payment_intent_id')
-                ?? data_get($session, 'id');
+            // I-save ang pay_... (parehas sa Payment Logs). Ang pi_... ay hinahanap
+            // ng feeStatus() gamit ang payment_logs.intent_id
+            $feePaymentId = data_get($session, 'id');
+            $feeIntentId  = data_get($session, 'attributes.payment_intent_id');
+            $feeReference = $feePaymentId ?? $feeIntentId;
 
             if (! $feeBookingId || ! $feeReference || $feeAmount <= 0) {
                 Log::warning('PayMongo webhook: fee payment missing data', $payload);
                 return response()->json(['message' => 'Missing data'], 200);
             }
 
-            if (BookingPayment::where('bank_reference', $feeReference)->exists()) {
+            if (BookingPayment::whereIn('bank_reference', array_filter([$feePaymentId, $feeIntentId]))->exists()) {
                 return response()->json(['message' => 'Already processed'], 200);
             }
 

@@ -23,6 +23,8 @@ import FeePaymentModal, {
     FeeType,
     recordFeePayment,
 } from "@/components/AdminComponents/booking/FeePaymentModal";
+import AddOnsModal from "@/components/AdminComponents/booking/AddOnsModal";
+import AddRoomModal from "@/components/AdminComponents/booking/AddRoomModal";
 import nProgress from "nprogress";
 import "nprogress/nprogress.css";
 
@@ -606,7 +608,8 @@ const mapBookingToBookingData = (booking: any): BookingData => {
         );
         return sum + rowAddOns;
     }, 0);
-    const totalAmount = booking.total_price || roomCharges + addOnTotal;
+    const totalAmount =
+        Number(booking.total_price || roomCharges || 0) + addOnTotal;
 
     // Calculate total refund amount from refunded rooms
     const totalRefundAmount = bookedRooms.reduce(
@@ -795,6 +798,11 @@ export default function BookingDetailsPageWrapper() {
     const [roomKeyReturned, setRoomKeyReturned] = React.useState(true);
     const [feePayment, setFeePayment] =
         React.useState<FeePaymentRequest | null>(null);
+    const [addOnsModalVisible, setAddOnsModalVisible] = React.useState(false);
+    const [addRoomModalVisible, setAddRoomModalVisible] = React.useState(false);
+    const [addOnsRoomId, setAddOnsRoomId] = React.useState<number | undefined>(
+        undefined,
+    );
 
     React.useEffect(() => {
         const interval = window.setInterval(() => {
@@ -907,16 +915,19 @@ export default function BookingDetailsPageWrapper() {
         bookedRoomId?: number;
         note?: string;
         okText: string;
+        roomNumber?: string;
+        addOnId?: number;
+        addOnQty?: number;
         action: (reason?: string) => Promise<void>;
     }) => {
         let paid = false;
-        const { action, bookedRoomId, ...rest } = opts;
+        const { action, bookedRoomId, roomNumber, ...rest } = opts;
 
         setFeePayment({
             ...rest,
             bookingId: Number(id),
             guestName: getGuestName(booking),
-            roomNumber: findRoom(bookedRoomId)?.room?.room_number,
+            roomNumber: roomNumber ?? findRoom(bookedRoomId)?.room?.room_number,
             showReason: userRole === "admin",
             onSubmit: async (p) => {
                 if (!paid) {
@@ -947,6 +958,52 @@ export default function BookingDetailsPageWrapper() {
         setCheckoutRoomId(bookedRoomId);
         setRoomKeyReturned(true);
         setCheckoutModalVisible(true);
+    };
+
+    const openAddOnsModal = (bookedRoomId?: number) => {
+        setAddOnsRoomId(bookedRoomId);
+        setAddOnsModalVisible(true);
+    };
+
+    // Always read the latest add-ons from the refetched booking,
+    // so the modal updates live after every add/update/remove.
+    const addOnsRoom = findRoom(addOnsRoomId);
+
+    // Collects payment for an add-on, then runs the API call
+    const handleAddOnCharge = (req: {
+        amount: number;
+        note: string;
+        addOnId?: number;
+        quantity?: number;
+        run: () => Promise<void>;
+    }) => {
+        openFeePayment({
+            feeType: "addon",
+            amount: req.amount,
+            bookedRoomId: addOnsRoomId,
+            note: req.note,
+            okText: "Confirm Payment & Add",
+            addOnId: req.addOnId,
+            addOnQty: req.quantity,
+            action: req.run,
+        });
+    };
+
+    // Collects payment for a newly added room, then creates it
+    const handleAddRoomCharge = (req: {
+        amount: number;
+        note: string;
+        roomNumber?: string;
+        run: () => Promise<void>;
+    }) => {
+        openFeePayment({
+            feeType: "room",
+            amount: req.amount,
+            note: req.note,
+            roomNumber: req.roomNumber,
+            okText: "Confirm Payment & Add Room",
+            action: req.run,
+        });
     };
 
     // Reusable function for actions with admin override
@@ -1214,6 +1271,11 @@ export default function BookingDetailsPageWrapper() {
     const handleAction = async (action: string) => {
         if (!id || !booking) return;
 
+        if (action === "add_room") {
+            setAddRoomModalVisible(true);
+            return;
+        }
+
         // Supports compound keys like "checkin_room:123" (room-level menu)
         const parts = action.split(":");
         const baseAction: string = parts[0] ?? action;
@@ -1224,6 +1286,12 @@ export default function BookingDetailsPageWrapper() {
         // Actual checkout will happen only after confirmation.
         if (baseAction === "checkout" || baseAction === "checkout_room") {
             openCheckoutModal(bookedRoomId);
+            return;
+        }
+
+        // Manage add-ons (checked-in rooms only)
+        if (baseAction === "addons") {
+            openAddOnsModal(bookedRoomId);
             return;
         }
 
@@ -1604,6 +1672,60 @@ export default function BookingDetailsPageWrapper() {
                     backHref={(location.state as any)?.from || "/bookings"}
                     fromTab={fromTab}
                     userRole={userRole}
+                />
+
+                <AddOnsModal
+                    open={addOnsModalVisible}
+                    target={
+                        addOnsRoom
+                            ? {
+                                  bookingId: Number(id),
+                                  bookedRoomId: addOnsRoom.id,
+                                  roomNumber: addOnsRoom.room?.room_number,
+                                  guestName: bookingData.guest_name,
+                              }
+                            : null
+                    }
+                    currentAddOns={(addOnsRoom?.booking_add_ons as any) ?? []}
+                    onClose={() => {
+                        setAddOnsModalVisible(false);
+                        setAddOnsRoomId(undefined);
+                    }}
+                    onChanged={async () => {
+                        await Promise.all([
+                            queryClient.invalidateQueries({
+                                queryKey: ["booking-details", id],
+                            }),
+                            queryClient.invalidateQueries({
+                                queryKey: ["booked-rooms"],
+                            }),
+                        ]);
+                    }}
+                    onCharge={handleAddOnCharge}
+                />
+
+                <AddRoomModal
+                    open={addRoomModalVisible}
+                    target={{
+                        bookingId: Number(id),
+                        guestName: bookingData.guest_name,
+                        bookingReference: bookingData.reference,
+                        existingRoomIds: (booking.booked_rooms ?? []).map(
+                            (br: any) => br.room_id ?? br.room?.id,
+                        ),
+                    }}
+                    onClose={() => setAddRoomModalVisible(false)}
+                    onCharge={handleAddRoomCharge}
+                    onAdded={async () => {
+                        await Promise.all([
+                            queryClient.invalidateQueries({
+                                queryKey: ["booking-details", id],
+                            }),
+                            queryClient.invalidateQueries({
+                                queryKey: ["booked-rooms"],
+                            }),
+                        ]);
+                    }}
                 />
 
                 <FeePaymentModal

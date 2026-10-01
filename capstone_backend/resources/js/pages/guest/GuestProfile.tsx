@@ -68,20 +68,47 @@ const formatPHNumber = (num?: string | null) => {
 // placeholders since neither existed in the original component.
 const NOOP = () => {};
 
+// ── Module-level cache so the profile data survives route changes ──
+// Same pattern as GuestDashboard: keeps the profile instant when
+// navigating back, without hitting the API for a spinner each time.
+let profileCache: AuthUser | null = null;
+let profileCacheTime = 0;
+const PROFILE_CACHE_TTL = 60 * 1000; // 1 minute
+
 export default function GuestProfile() {
-    const [user, setUser] = useState<AuthUser | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState<AuthUser | null>(() => {
+        if (profileCache && Date.now() - profileCacheTime < PROFILE_CACHE_TTL) {
+            return profileCache;
+        }
+        return null;
+    });
+
+    const [loading, setLoading] = useState<boolean>(() => {
+        // Skip the loading state entirely if a fresh cache exists.
+        return !(
+            profileCache && Date.now() - profileCacheTime < PROFILE_CACHE_TTL
+        );
+    });
+
     const [isEditing, setIsEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [formData, setFormData] = useState({
-        first_name: "",
-        middle_name: "",
-        last_name: "",
-        email: "",
-        contact_number: "",
-        address: "",
+    const [formData, setFormData] = useState(() => {
+        // Seed the form from cache too, so the inputs render with values
+        // immediately on back-navigation.
+        const seed =
+            profileCache && Date.now() - profileCacheTime < PROFILE_CACHE_TTL
+                ? profileCache
+                : null;
+        return {
+            first_name: seed?.first_name || "",
+            middle_name: seed?.middle_name || "",
+            last_name: seed?.last_name || "",
+            email: seed?.email || "",
+            contact_number: seed?.contact_number || "",
+            address: seed?.address || "",
+        };
     });
 
     const [imageFile, setImageFile] = useState<File | null>(null);
@@ -101,30 +128,59 @@ export default function GuestProfile() {
     const [passwordSuccess, setPasswordSuccess] = useState(false);
 
     // ── Fetch logged-in user: GET /user ──
-    const fetchUser = async () => {
+    // When called in the background (cache hit), it silently updates
+    // state without flipping the loading spinner or clearing the form.
+    const fetchUser = async (isBackgroundRefresh = false) => {
         try {
-            setLoading(true);
+            if (!isBackgroundRefresh) {
+                setLoading(true);
+            }
+
             const res = await api.get("/user");
             const data: AuthUser = res.data;
+
             setUser(data);
-            setFormData({
-                first_name: data.first_name || "",
-                middle_name: data.middle_name || "",
-                last_name: data.last_name || "",
-                email: data.email || "",
-                contact_number: data.contact_number || "",
-                address: data.address || "",
-            });
+            profileCache = data;
+            profileCacheTime = Date.now();
+
+            // Only refresh the form fields on background refresh if the
+            // user isn't actively editing — otherwise we'd wipe their input.
+            if (!isBackgroundRefresh || !isEditing) {
+                setFormData({
+                    first_name: data.first_name || "",
+                    middle_name: data.middle_name || "",
+                    last_name: data.last_name || "",
+                    email: data.email || "",
+                    contact_number: data.contact_number || "",
+                    address: data.address || "",
+                });
+            }
         } catch (err) {
             console.log("PROFILE ERROR:", err);
-            setError("Failed to load profile.");
+            if (!isBackgroundRefresh) {
+                setError("Failed to load profile.");
+            }
         } finally {
-            setLoading(false);
+            if (!isBackgroundRefresh) {
+                setLoading(false);
+            }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     };
 
     useEffect(() => {
-        fetchUser();
+        const hasFreshCache =
+            profileCache &&
+            Date.now() - profileCacheTime < PROFILE_CACHE_TTL;
+
+        if (hasFreshCache) {
+            // Cache is fresh → show instantly, then refresh silently.
+            fetchUser(true);
+        } else {
+            // No cache (first load or expired) → normal load with spinner.
+            fetchUser(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,7 +236,15 @@ export default function GuestProfile() {
                 headers: { "Content-Type": "multipart/form-data" },
             });
 
-            setUser(res.data.data);
+            const updated: AuthUser = res.data.data;
+
+            setUser(updated);
+
+            // Keep the module cache in sync with the freshly-saved data
+            // so back-navigation continues to show the latest values.
+            profileCache = updated;
+            profileCacheTime = Date.now();
+
             setImageFile(null);
             setImagePreview(null);
             setIsEditing(false);

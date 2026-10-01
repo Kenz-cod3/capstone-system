@@ -8,6 +8,7 @@ import {
     Calendar,
     Users,
     Moon,
+    Clock,
     User,
     Mail,
     Phone,
@@ -15,7 +16,6 @@ import {
     MessageSquare,
     ShieldCheck,
     CreditCard,
-    Info,
     Lock,
     Loader2,
     Check,
@@ -24,6 +24,8 @@ import {
 import api from "../../services/api";
 import { createBooking } from "../../services/bookingService";
 
+type StayType = "overnight" | "short_stay";
+
 interface RoomType {
     id?: number;
     type_name: string;
@@ -31,6 +33,8 @@ interface RoomType {
     base_price: number;
     max_occupancy: number;
     size?: number;
+    short_stay_price?: number | null;
+    short_stay_hours?: number | null;
 }
 
 interface RoomData {
@@ -47,10 +51,29 @@ interface AuthUser {
     contact_number?: string;
 }
 
+interface DraftRoom {
+    id: number;
+    room_number: string;
+    room_type_name: string;
+    image_url?: string | null;
+    base_price: number;
+    short_stay_price: number;
+    short_stay_hours?: number;
+    stay_type: StayType;
+    check_in_date: string;
+    check_out_date: string;
+    guests: number;
+    nights: number;
+    subtotal: number;
+}
+
 interface ReservationDraft {
     checkIn: string;
     checkOut: string;
     guests: number;
+    stayType?: StayType;
+    multiple?: boolean;
+    rooms?: DraftRoom[];
 }
 
 interface PaymentNavState {
@@ -60,6 +83,8 @@ interface PaymentNavState {
     guests: number;
     total: number;
     phone: string;
+    stayType: StayType;
+    rooms?: DraftRoom[];
 }
 
 const STEPS = [
@@ -104,6 +129,12 @@ export default function GuestConfirmReservation() {
     const [checkIn] = useState(location.state?.checkIn || "");
     const [checkOut] = useState(location.state?.checkOut || "");
     const [guests, setGuests] = useState(location.state?.guests || 2);
+    const [stayType] = useState<StayType>(
+        location.state?.stayType || "overnight",
+    );
+    const isShort = stayType === "short_stay";
+    const draftRooms: DraftRoom[] = location.state?.rooms ?? [];
+    const isMultiple = draftRooms.length > 1;
 
     const currentUser: AuthUser | null = JSON.parse(
         localStorage.getItem("user") || "null",
@@ -117,12 +148,17 @@ export default function GuestConfirmReservation() {
     const [email, setEmail] = useState(currentUser?.email || "");
     const [phone, setPhone] = useState(currentUser?.contact_number || "");
     const [specialRequests, setSpecialRequests] = useState("");
-    const [paymentMethod, setPaymentMethod] = useState<
-        "pay_at_hotel" | "online"
-    >("pay_at_hotel");
 
     const [confirming, setConfirming] = useState(false);
     const [confirmError, setConfirmError] = useState<string | null>(null);
+
+    // If the page was refreshed or opened directly, router state is lost.
+    // Send the guest back to the room page to pick dates again.
+    useEffect(() => {
+        if (!checkIn && id) {
+            navigate(`/guest/rooms/${id}`, { replace: true });
+        }
+    }, [checkIn, id, navigate]);
 
     useEffect(() => {
         const fetchRoom = async () => {
@@ -167,8 +203,11 @@ export default function GuestConfirmReservation() {
 
     const roomType = room.room_type;
     const basePrice = roomType?.base_price ?? 0;
+    const shortPrice = roomType?.short_stay_price ?? basePrice;
+    const shortHours = roomType?.short_stay_hours ?? 3;
 
     const nights = (() => {
+        if (isShort) return checkIn ? 1 : 0;
         if (!checkIn || !checkOut) return 0;
         const diff =
             (new Date(checkOut).getTime() - new Date(checkIn).getTime()) /
@@ -176,7 +215,11 @@ export default function GuestConfirmReservation() {
         return Math.max(0, Math.round(diff));
     })();
 
-    const roomSubtotal = basePrice * (nights || 0);
+    const roomSubtotal = isMultiple
+        ? draftRooms.reduce((sum, r) => sum + Number(r.subtotal || 0), 0)
+        : isShort
+          ? shortPrice
+          : basePrice * nights;
     const taxesAndFees = 0;
     const total = roomSubtotal + taxesAndFees;
 
@@ -205,13 +248,18 @@ export default function GuestConfirmReservation() {
                     {
                         params: {
                             check_in_date: checkIn,
-                            check_out_date: checkOut,
-                            stay_type: "overnight",
+                            // Short stay: backend expects check-out === check-in
+                            check_out_date: isShort ? checkIn : checkOut,
+                            stay_type: stayType,
                         },
                     },
                 );
 
-                const avail = availRes.data?.available ?? availRes.data;
+                const payload = availRes.data?.data ?? availRes.data;
+                const avail =
+                    typeof payload === "object" && payload !== null
+                        ? payload.available
+                        : payload;
                 if (avail === false) {
                     setConfirmError(
                         "This room is no longer available for the selected dates. Please choose another room or different dates.",
@@ -225,16 +273,25 @@ export default function GuestConfirmReservation() {
             }
 
             const bookingRes = await createBooking({
-                rooms: [
-                    {
-                        room_id: room.id,
-                        stay_type: "overnight",
-                        check_in_date: checkIn,
-                        check_out_date: checkOut,
-                    },
-                ],
-                payment_method:
-                    paymentMethod === "online" ? "gcash" : "pay_at_hotel",
+                rooms: isMultiple
+                    ? draftRooms.map((r) => ({
+                          room_id: r.id,
+                          stay_type: r.stay_type,
+                          check_in_date: r.check_in_date,
+                          check_out_date:
+                              r.stay_type === "short_stay"
+                                  ? r.check_in_date
+                                  : r.check_out_date,
+                      }))
+                    : [
+                          {
+                              room_id: room.id,
+                              stay_type: stayType,
+                              check_in_date: checkIn,
+                              check_out_date: isShort ? checkIn : checkOut,
+                          },
+                      ],
+                payment_method: "gcash",
             });
 
             // Unwrap axios/laravel response shapes in one pass. Handles:
@@ -253,28 +310,27 @@ export default function GuestConfirmReservation() {
                 return;
             }
 
-            if (paymentMethod === "online") {
-                const paymentState: PaymentNavState = {
-                    bookingId: newBookingId,
-                    checkIn,
-                    checkOut,
-                    guests,
-                    total,
-                    phone,
-                };
-                navigate(`/guest/rooms/${room.id}/payment`, {
-                    state: paymentState,
-                });
-            } else {
-                navigate("/guest/bookings");
-            }
+            const paymentState: PaymentNavState = {
+                bookingId: newBookingId,
+                checkIn,
+                checkOut: isShort ? checkIn : checkOut,
+                guests,
+                total,
+                phone,
+                stayType,
+                rooms: isMultiple ? draftRooms : undefined,
+            };
+            navigate(`/guest/rooms/${room.id}/payment`, {
+                state: paymentState,
+            });
         } catch (err: any) {
             console.log("CONFIRM RESERVATION ERROR:", err);
 
             const status = err?.response?.status;
             if (status === 409) {
                 setConfirmError(
-                    "This room is already booked for the selected dates. Please choose another room or different dates.",
+                    err?.response?.data?.message ||
+                        "This room is already booked for the selected dates. Please choose another room or different dates.",
                 );
             } else if (status === 422) {
                 setConfirmError(
@@ -520,7 +576,7 @@ export default function GuestConfirmReservation() {
                         </div>
                     </div>
 
-                    {/* Payment Method */}
+                    {/* Payment Method — online only */}
                     <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
                         <div className="flex items-start gap-3 mb-5">
                             <div className="w-10 h-10 rounded-xl bg-[#eaf3ea] flex items-center justify-center shrink-0">
@@ -531,80 +587,24 @@ export default function GuestConfirmReservation() {
                                     Payment Method
                                 </h2>
                                 <p className="text-gray-500 text-sm">
-                                    Choose your preferred payment method.
+                                    Your payment is completed online.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                            <button
-                                type="button"
-                                onClick={() => setPaymentMethod("pay_at_hotel")}
-                                className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left transition-colors ${
-                                    paymentMethod === "pay_at_hotel"
-                                        ? "border-[#1a4a35] bg-[#eaf3ea]/60"
-                                        : "border-gray-200 hover:bg-gray-50"
-                                }`}
-                            >
-                                <span
-                                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                                        paymentMethod === "pay_at_hotel"
-                                            ? "border-[#1a4a35]"
-                                            : "border-gray-300"
-                                    }`}
-                                >
-                                    {paymentMethod === "pay_at_hotel" && (
-                                        <span className="w-2 h-2 rounded-full bg-[#1a4a35]" />
-                                    )}
-                                </span>
-                                <CreditCard className="w-4 h-4 text-gray-500 shrink-0" />
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                        Pay at Hotel
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                        Pay upon check-in
-                                    </p>
-                                </span>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setPaymentMethod("online")}
-                                className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left transition-colors ${
-                                    paymentMethod === "online"
-                                        ? "border-[#1a4a35] bg-[#eaf3ea]/60"
-                                        : "border-gray-200 hover:bg-gray-50"
-                                }`}
-                            >
-                                <span
-                                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                                        paymentMethod === "online"
-                                            ? "border-[#1a4a35]"
-                                            : "border-gray-300"
-                                    }`}
-                                >
-                                    {paymentMethod === "online" && (
-                                        <span className="w-2 h-2 rounded-full bg-[#1a4a35]" />
-                                    )}
-                                </span>
-                                <CreditCard className="w-4 h-4 text-gray-500 shrink-0" />
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                        Online Payment
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                        Pay now via PayMongo
-                                    </p>
-                                </span>
-                            </button>
-                        </div>
-
-                        <div className="flex items-start gap-2.5 rounded-2xl bg-[#eaf3ea] px-4 py-3">
-                            <Info className="w-4 h-4 text-[#1a4a35] shrink-0 mt-0.5" />
-                            <p className="text-xs text-[#1a4a35] leading-relaxed">
-                                You can also pay at the hotel during check-in.
-                            </p>
+                        <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-[#1a4a35] bg-[#eaf3ea]/60">
+                            <span className="w-4 h-4 rounded-full border-2 border-[#1a4a35] flex items-center justify-center shrink-0">
+                                <span className="w-2 h-2 rounded-full bg-[#1a4a35]" />
+                            </span>
+                            <CreditCard className="w-4 h-4 text-gray-500 shrink-0" />
+                            <span>
+                                <p className="text-sm font-semibold text-gray-900">
+                                    Online Payment
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    Pay now via PayMongo
+                                </p>
+                            </span>
                         </div>
                     </div>
 
@@ -680,6 +680,11 @@ export default function GuestConfirmReservation() {
                                     <span className="px-2 py-0.5 rounded-full bg-[#eaf3ea] text-[#1a4a35] text-[10px] font-semibold">
                                         {roomType?.type_name || "Standard"}
                                     </span>
+                                    {isShort && (
+                                        <span className="px-2 py-0.5 rounded-full bg-[#0d2e1f] text-white text-[10px] font-semibold">
+                                            Short Stay
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="text-gray-500 text-xs leading-relaxed line-clamp-2">
                                     {roomType?.description ||
@@ -693,7 +698,7 @@ export default function GuestConfirmReservation() {
                                 <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                                 <div>
                                     <p className="text-[11px] text-gray-500">
-                                        Check-in
+                                        {isShort ? "Date" : "Check-in"}
                                     </p>
                                     <p className="text-sm font-medium text-gray-800">
                                         {formatDate(checkIn)}
@@ -707,7 +712,9 @@ export default function GuestConfirmReservation() {
                                         Check-out
                                     </p>
                                     <p className="text-sm font-medium text-gray-800">
-                                        {formatDate(checkOut)}
+                                        {isShort
+                                            ? "Same day"
+                                            : formatDate(checkOut)}
                                     </p>
                                 </div>
                             </div>
@@ -723,13 +730,19 @@ export default function GuestConfirmReservation() {
                                 </div>
                             </div>
                             <div className="flex items-start gap-2.5 rounded-2xl bg-gray-50 px-3.5 py-3">
-                                <Moon className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                                {isShort ? (
+                                    <Clock className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                                ) : (
+                                    <Moon className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                                )}
                                 <div>
                                     <p className="text-[11px] text-gray-500">
-                                        Nights
+                                        {isShort ? "Duration" : "Nights"}
                                     </p>
                                     <p className="text-sm font-medium text-gray-800">
-                                        {nights} night{nights === 1 ? "" : "s"}
+                                        {isShort
+                                            ? `${shortHours} hours`
+                                            : `${nights} night${nights === 1 ? "" : "s"}`}
                                     </p>
                                 </div>
                             </div>
@@ -739,16 +752,49 @@ export default function GuestConfirmReservation() {
                             <p className="text-sm font-semibold text-[#0d2e1f] mb-3">
                                 Price Breakdown
                             </p>
-                            <div className="space-y-2 text-sm">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">
-                                        Room Price ({nights || 0} night
-                                        {nights === 1 ? "" : "s"})
-                                    </span>
-                                    <span className="font-medium text-gray-900">
-                                        {formatPrice(roomSubtotal)}
-                                    </span>
-                                </div>
+                            <div className="space-y-3 text-sm">
+                                {isMultiple ? (
+                                    draftRooms.map((r, i) => (
+                                        <div
+                                            key={`${r.id}-${i}`}
+                                            className="flex justify-between gap-3"
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="text-gray-700 font-medium">
+                                                    Room {r.room_number}
+                                                    <span className="text-gray-400 font-normal">
+                                                        {" "}
+                                                        · {r.room_type_name}
+                                                    </span>
+                                                </p>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    {r.stay_type ===
+                                                    "short_stay"
+                                                        ? `${formatDate(r.check_in_date)} · Short stay (${r.short_stay_hours ?? 3}h)`
+                                                        : `${formatDate(r.check_in_date)} → ${formatDate(r.check_out_date)} · ${r.nights} night${r.nights === 1 ? "" : "s"}`}
+                                                </p>
+                                                <p className="text-xs text-gray-400">
+                                                    {r.guests} guest
+                                                    {r.guests > 1 ? "s" : ""}
+                                                </p>
+                                            </div>
+                                            <span className="font-medium text-gray-900 shrink-0">
+                                                {formatPrice(r.subtotal)}
+                                            </span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">
+                                            {isShort
+                                                ? `Short stay (${shortHours} hours)`
+                                                : `Room Price (${nights || 0} night${nights === 1 ? "" : "s"})`}
+                                        </span>
+                                        <span className="font-medium text-gray-900">
+                                            {formatPrice(roomSubtotal)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

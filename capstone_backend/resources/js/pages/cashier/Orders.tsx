@@ -25,6 +25,10 @@ import {
     ReceiptText,
 } from "lucide-react";
 import { toast } from "sonner";
+import OrderReceiptModal, {
+    type OrderReceiptData,
+    type OrderReceiptItem,
+} from "./OrderReceiptModal";
 
 // ---------------------------------------------------------------------------
 // Design tokens
@@ -52,6 +56,8 @@ const PAYMENT_META = {
 
 type QrState = {
     orderId: number;
+    orderNumber?: string | null;
+    items: OrderReceiptItem[];
     imageUrl: string;
     intentId: string;
     clientKey: string;
@@ -66,6 +72,7 @@ export default function Orders() {
     const [cart, setCart] = useState<any[]>([]);
     const [cashAmount, setCashAmount] = useState<number | string>("");
     const [qr, setQr] = useState<QrState | null>(null);
+    const [receipt, setReceipt] = useState<OrderReceiptData | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("All");
     const [paymentMethod, setPaymentMethod] = useState<
@@ -177,6 +184,47 @@ export default function Orders() {
         }).format(isNaN(amount) ? 0 : amount);
 
     // -----------------------------------------------------------------------
+    // Receipt helpers
+    // -----------------------------------------------------------------------
+    const cartToReceiptItems = (): OrderReceiptItem[] =>
+        cart.map((i: any) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.price),
+        }));
+
+    // Kunin ang QRPH reference: galing sa saved order payments (webhook/fallback),
+    // o sa PayMongo status kung wala pa
+    const getQrReference = (order: any, fallback?: string | null) => {
+        const qrPayment = (order?.payments || []).find(
+            (p: any) =>
+                p.payment_method === "qrph" &&
+                p.payment_status === "paid" &&
+                p.gcash_reference,
+        );
+        return qrPayment?.gcash_reference ?? fallback ?? null;
+    };
+
+    // Receipt after a QRPH or split payment is confirmed
+    const openQrReceipt = (q: QrState, reference?: string | null) => {
+        const orderTotal = q.items.reduce(
+            (s, i) => s + i.price * i.quantity,
+            0,
+        );
+        setReceipt({
+            orderId: q.orderId,
+            orderNumber: q.orderNumber ?? null,
+            items: q.items,
+            total: orderTotal,
+            paymentMethod: q.cash > 0 ? "split" : "qrph",
+            cashPaid: q.cash,
+            qrPaid: q.amount,
+            reference: reference ?? null,
+            paidAt: new Date().toISOString(),
+        });
+    };
+
+    // -----------------------------------------------------------------------
     // Reset / cancel
     // -----------------------------------------------------------------------
     const resetPos = () => {
@@ -255,14 +303,17 @@ export default function Orders() {
                             toast.success(
                                 "QR payment received. Order completed!",
                             );
+                            openQrReceipt(
+                                qr,
+                                getQrReference(order, data.payment_id),
+                            );
                             resetPos();
                             return;
                         }
 
                         // If not yet paid, save the payment manually (fallback)
                         if (totalPaid < order.total_amount) {
-                            const remaining =
-                                order.total_amount - totalPaid;
+                            const remaining = order.total_amount - totalPaid;
 
                             // Save QRPH payment (webhook fallback)
                             await api.post("/order-payments", {
@@ -291,6 +342,13 @@ export default function Orders() {
                                 toast.success(
                                     "QR payment received. Order completed!",
                                 );
+                                openQrReceipt(
+                                    qr,
+                                    getQrReference(
+                                        finalRes.data,
+                                        data.payment_id,
+                                    ),
+                                );
                                 resetPos();
                             } else {
                                 // Still not paid? Wait for next poll
@@ -308,6 +366,10 @@ export default function Orders() {
                             clearInterval(timer);
                             toast.success(
                                 "QR payment received. Order completed!",
+                            );
+                            openQrReceipt(
+                                qr,
+                                getQrReference(order, data.payment_id),
                             );
                             resetPos();
                         }
@@ -366,6 +428,7 @@ export default function Orders() {
                 })),
             });
             newOrderId = orderResponse.data.data.id;
+            const orderNumber = orderResponse.data.data.order_number ?? null;
 
             if (paymentMethod === "cash") {
                 const res = await api.post("/order-payments", {
@@ -377,6 +440,18 @@ export default function Orders() {
                 toast.success(
                     `Order completed! Change ${formatCurrency(res.data.change)}`,
                 );
+                setReceipt({
+                    orderId: newOrderId!,
+                    orderNumber,
+                    items: cartToReceiptItems(),
+                    total: grandTotal,
+                    paymentMethod: "cash",
+                    cashPaid: grandTotal,
+                    qrPaid: 0,
+                    cashTendered: cashNum,
+                    change: Number(res.data.change) || 0,
+                    paidAt: new Date().toISOString(),
+                });
                 resetPos();
             } else {
                 // qrph or split
@@ -386,6 +461,8 @@ export default function Orders() {
                 toast.dismiss(loadingToast);
                 setQr({
                     orderId: newOrderId!,
+                    orderNumber,
+                    items: cartToReceiptItems(),
                     imageUrl: data.qr_image_url,
                     intentId: data.payment_intent_id,
                     clientKey: data.client_key,
@@ -1040,6 +1117,12 @@ export default function Orders() {
                     </div>
                 </div>
             )}
+
+            {/* RESTAURANT RECEIPT */}
+            <OrderReceiptModal
+                receipt={receipt}
+                onClose={() => setReceipt(null)}
+            />
         </div>
     );
 }

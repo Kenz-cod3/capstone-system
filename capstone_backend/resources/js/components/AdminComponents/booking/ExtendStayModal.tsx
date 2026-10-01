@@ -80,7 +80,7 @@ export default function ExtendStayModal({
 
     const effectiveHours = mode === "hours" ? hours : computedHoursFromDateTime;
 
-    const ratePerHour = Number(target?.extensionFee ?? 100);
+    const ratePerHour = Number(target?.extensionFee ?? 0);
     const fee = ratePerHour * effectiveHours;
     const feeLabel = `₱${fee.toLocaleString(undefined, {
         minimumFractionDigits: 2,

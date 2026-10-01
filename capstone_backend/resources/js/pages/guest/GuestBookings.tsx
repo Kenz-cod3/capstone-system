@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
     Calendar,
     Clock,
@@ -27,12 +27,28 @@ import {
     updateBooking,
 } from "../../services/bookingService";
 
+interface Payment {
+    id?: number;
+    payment_status?: string;
+    payment_method?: string;
+    payment_date?: string;
+    reference_number?: string;
+    gcash_reference?: string;
+    bank_reference?: string;
+}
+
 interface BookedRoom {
     status?: string;
+    stay_type?: string;
+    check_in_date?: string;
+    check_out_date?: string;
+    room_id?: number;
+    subtotal?: number;
+    price_at_time_of_booking?: number;
     room?: {
+        id?: number;
         room_number?: string;
         image_url?: string | null;
-        // Optional — wire these to your RoomType relation if available.
         amenities?: string[];
         max_guests?: number;
         room_type?: {
@@ -45,11 +61,18 @@ interface BookingRecord {
     id: number;
     booking_reference?: string;
     booking_status?: string;
+    stay_type?: string;
     total_price: number;
     check_in_date: string;
     check_out_date: string;
+    created_at?: string;
     booked_rooms?: BookedRoom[];
-    rooms?: { room_number?: string; image_url?: string | null }[];
+    rooms?: {
+        id?: number;
+        room_number?: string;
+        image_url?: string | null;
+    }[];
+    payments?: Payment[];
 }
 
 // Same status set as the mobile app's STATUS_CONFIG.
@@ -62,6 +85,12 @@ const STATUS_CONFIG: Record<
         text: "text-amber-700",
         dot: "bg-amber-500",
         label: "Pending",
+    },
+    confirmed: {
+        bg: "bg-blue-100",
+        text: "text-blue-700",
+        dot: "bg-blue-500",
+        label: "Confirmed",
     },
     checked_in: {
         bg: "bg-blue-100",
@@ -128,39 +157,115 @@ const getAmenityIcon = (label: string) =>
 const BANNER_IMAGE =
     "https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=1600&auto=format&fit=crop";
 
+// ── Module-level cache so bookings survive route changes ──
+// Keyed by filter ("active" | "history") + page, so switching tabs
+// doesn't clobber each other's cached data.
+type FilterType = "active" | "history";
+
+interface BookingsCacheEntry {
+    data: BookingRecord[];
+    lastPage: number;
+    cachedAt: number;
+}
+
+const bookingsCache: Record<string, BookingsCacheEntry> = {};
+const BOOKINGS_CACHE_TTL = 60 * 1000; // 1 minute
+
+const cacheKey = (filter: FilterType, page: number) => `${filter}:${page}`;
+
 export default function GuestBookings() {
-    const [filter, setFilter] = useState<"active" | "history">("active");
-    const [data, setData] = useState<BookingRecord[]>([]);
-    const [loading, setLoading] = useState(true);
+    const navigate = useNavigate();
+    const [filter, setFilter] = useState<FilterType>("active");
+
+    // Seed the initial state from cache (using the default filter + page 1)
+    // so the very first paint on back-navigation already has rows.
+    const initialEntry = (() => {
+        const entry = bookingsCache[cacheKey("active", 1)];
+        if (entry && Date.now() - entry.cachedAt < BOOKINGS_CACHE_TTL) {
+            return entry;
+        }
+        return null;
+    })();
+
+    const [data, setData] = useState<BookingRecord[]>(
+        () => initialEntry?.data ?? [],
+    );
+    const [loading, setLoading] = useState<boolean>(() => !initialEntry);
     const [refreshing, setRefreshing] = useState(false);
     const [page, setPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
+    const [lastPage, setLastPage] = useState(() => initialEntry?.lastPage ?? 1);
     const [cancellingId, setCancellingId] = useState<number | null>(null);
 
-    const fetchBookings = async (currentPage = 1, isRefresh = false) => {
+    const fetchBookings = async (
+        currentPage = 1,
+        isRefresh = false,
+        isBackgroundRefresh = false,
+    ) => {
         try {
-            isRefresh ? setRefreshing(true) : setLoading(true);
+            // Only flip the spinner for foreground loads. Background
+            // refreshes (cache already on screen) stay silent, and the
+            // explicit "refresh" button keeps its own spinning icon.
+            if (isRefresh) {
+                setRefreshing(true);
+            } else if (!isBackgroundRefresh) {
+                setLoading(true);
+            }
+
+            let nextData: BookingRecord[] = [];
+            let nextLastPage = 1;
 
             if (filter === "history") {
                 const res = await getBookingHistory(currentPage, 10);
-                setData(res.data.data ?? []);
-                setLastPage(res.data.last_page ?? 1);
+                nextData = res.data.data ?? [];
+                nextLastPage = res.data.last_page ?? 1;
             } else {
                 const res = await getBookings();
                 const result = (res as any)?.data ?? res;
-                setData(Array.isArray(result) ? result : []);
+                nextData = Array.isArray(result) ? result : [];
             }
+
+            setData(nextData);
+            setLastPage(nextLastPage);
+
+            // Update the cache entry for this (filter, page) combo.
+            bookingsCache[cacheKey(filter, currentPage)] = {
+                data: nextData,
+                lastPage: nextLastPage,
+                cachedAt: Date.now(),
+            };
         } catch (e) {
             console.log("Error fetching bookings:", e);
-            setData([]);
+            // Only wipe state on a real (foreground) failure — a failed
+            // background refresh should leave the cached rows visible.
+            if (!isBackgroundRefresh) {
+                setData([]);
+            }
         } finally {
-            setLoading(false);
-            setRefreshing(false);
+            if (isRefresh) {
+                setRefreshing(false);
+            } else if (!isBackgroundRefresh) {
+                setLoading(false);
+            }
         }
     };
 
     useEffect(() => {
-        fetchBookings(page);
+        const key = cacheKey(filter, page);
+        const entry = bookingsCache[key];
+        const hasFreshCache =
+            entry && Date.now() - entry.cachedAt < BOOKINGS_CACHE_TTL;
+
+        if (hasFreshCache) {
+            // Hydrate synchronously from cache so there's no flash, then
+            // quietly re-fetch in the background.
+            setData(entry.data);
+            setLastPage(entry.lastPage);
+            setLoading(false);
+            fetchBookings(page, false, true);
+        } else {
+            // No cache (first load, tab switch, or expired) → normal load.
+            fetchBookings(page);
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filter, page]);
 
@@ -194,10 +299,52 @@ export default function GuestBookings() {
         });
     };
 
+    // ── Determine whether "Continue Payment" should show ──
+    // Mirrors the mobile app: only pending bookings, and no payment yet marked "paid".
+    const needsPayment = (booking: BookingRecord) => {
+        if (!booking) return false;
+
+        const rawStatus =
+            booking.booked_rooms?.[0]?.status ||
+            booking.booking_status ||
+            "pending";
+
+        const status = String(rawStatus)
+            .toLowerCase()
+            .trim()
+            .replace(/[\s-]+/g, "_");
+
+        // Only pending bookings can continue payment
+        if (status !== "pending") return false;
+
+        const payments = Array.isArray(booking.payments)
+            ? booking.payments
+            : [];
+
+        // No payment records at all → still unpaid → show button
+        if (payments.length === 0) return true;
+
+        const hasPaid = payments.some(
+            (p) =>
+                String(p?.payment_status || "")
+                    .toLowerCase()
+                    .trim() === "paid",
+        );
+
+        return !hasPaid;
+    };
+
     const handleCancel = async (id: number) => {
         try {
             setCancellingId(id);
             await updateBooking(id, { status: "cancelled" });
+
+            // Invalidate any cached pages for both filters — the cancel
+            // changes which tab each booking belongs to.
+            Object.keys(bookingsCache).forEach((k) => {
+                delete bookingsCache[k];
+            });
+
             fetchBookings(page);
         } catch (e) {
             console.log("Error cancelling booking:", e);
@@ -206,11 +353,52 @@ export default function GuestBookings() {
         }
     };
 
+    // ── Continue Payment handler ──
+    // The existing GuestPayment.tsx expects:
+    //   - :id           → ROOM id (used by `api.get(\`/rooms/${id}\`)`)
+    //   - location.state → { bookingId, checkIn, checkOut, guests, total, phone }
+    const handleContinuePayment = (booking: BookingRecord) => {
+        const bookedRoom = booking.booked_rooms?.[0];
+        const room = bookedRoom?.room || booking.rooms?.[0];
+
+        const roomId = room?.id || bookedRoom?.room_id;
+        if (!roomId) {
+            console.warn(
+                "Cannot continue payment — missing room id on booking",
+                booking,
+            );
+            return;
+        }
+
+        const checkIn =
+            bookedRoom?.check_in_date || booking.check_in_date || "";
+        const checkOut =
+            bookedRoom?.check_out_date || booking.check_out_date || "";
+
+        navigate(`/guest/rooms/${roomId}/payment`, {
+            state: {
+                bookingId: booking.id,
+                checkIn,
+                checkOut,
+                guests: bookedRoom?.room?.max_guests ?? 2,
+                total: booking.total_price,
+            },
+        });
+    };
+
+    // Manual refresh button handler — clears the cache so the refetch is
+    // guaranteed to hit the server, then re-uses the normal fetch flow.
+    const handleManualRefresh = () => {
+        Object.keys(bookingsCache).forEach((k) => {
+            delete bookingsCache[k];
+        });
+        fetchBookings(page, true);
+    };
+
     return (
         <div className="w-full">
             {/* ── HERO BANNER (full-bleed: no top gap, no side margins) ── */}
             <div className="relative overflow-hidden h-64 sm:h-72 w-full">
-                {/* ── HERO BANNER (full-bleed: no top gap, no side margins) ── */}
                 <div className="relative overflow-hidden h-64 sm:h-72 w-screen left-1/2 right-1/2 -mx-[50vw]">
                     <img
                         src={BANNER_IMAGE}
@@ -220,7 +408,7 @@ export default function GuestBookings() {
                     <div className="absolute inset-0 bg-gradient-to-r from-[#f7f8f5] via-[#f7f8f5]/85 to-transparent" />
 
                     <button
-                        onClick={() => fetchBookings(page, true)}
+                        onClick={handleManualRefresh}
                         className="absolute top-5 right-5 sm:right-10 w-10 h-10 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
                         aria-label="Refresh bookings"
                     >
@@ -332,6 +520,9 @@ export default function GuestBookings() {
                                 return Math.max(1, Math.round(diff));
                             })();
 
+                            const isPending = status === "pending";
+                            const shouldPay = needsPayment(item);
+
                             return (
                                 <div
                                     key={item.id}
@@ -441,7 +632,7 @@ export default function GuestBookings() {
                                         {/* Divider */}
                                         <div className="w-px self-stretch bg-gray-100 shrink-0" />
 
-                                        {/* Right: price + action */}
+                                        {/* Right: price + actions */}
                                         <div className="flex flex-col items-end gap-3 shrink-0 w-44">
                                             <div className="text-right">
                                                 <p
@@ -459,7 +650,22 @@ export default function GuestBookings() {
                                                 </p>
                                             </div>
 
-                                            {status === "pending" && (
+                                            {/* Continue Payment — pending & unpaid only */}
+                                            {shouldPay && (
+                                                <button
+                                                    onClick={() =>
+                                                        handleContinuePayment(
+                                                            item,
+                                                        )
+                                                    }
+                                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#c9a96e] text-white rounded-xl text-sm font-medium w-full hover:bg-[#b8975a] transition-colors"
+                                                >
+                                                    Continue Payment
+                                                </button>
+                                            )}
+
+                                            {/* Cancel — pending only */}
+                                            {isPending && (
                                                 <button
                                                     onClick={() =>
                                                         handleCancel(item.id)
@@ -467,7 +673,7 @@ export default function GuestBookings() {
                                                     disabled={
                                                         cancellingId === item.id
                                                     }
-                                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-xl text-sm w-full hover:bg-red-700 transition-colors disabled:opacity-50"
+                                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium w-full hover:bg-red-700 transition-colors disabled:opacity-50"
                                                 >
                                                     {cancellingId ===
                                                     item.id ? (
@@ -478,6 +684,8 @@ export default function GuestBookings() {
                                                     Cancel
                                                 </button>
                                             )}
+
+                                            {/* View Details */}
                                             <Link
                                                 to={`/guest/bookings/${item.id}`}
                                                 className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#0d2e1f] text-white rounded-xl text-sm font-medium w-full hover:bg-[#1a4a35] transition-colors"

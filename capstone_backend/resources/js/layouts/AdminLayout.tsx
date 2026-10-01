@@ -216,6 +216,7 @@ const AdminLayout = ({
         "/bookings": "Bookings",
         "/booking-management": "Booking List",
         "/booking-transaction": "Booking Transaction",
+        "/booking-addon-transaction": "Add-on Transactions",
         "/incidents": "Incidents Reports",
         "/walk-in-guests": "Walk-in Guests",
         "/rooms": "Rooms",
@@ -1011,6 +1012,12 @@ const AdminLayout = ({
                             description: "View and print transaction",
                             href: "/booking-transaction",
                             icon: ClipboardList,
+                        },
+                        {
+                            name: "Add-on Transactions",
+                            description: "Record of room add-ons sold",
+                            href: "/booking-addon-transaction",
+                            icon: ReceiptText,
                         },
                     ],
                 },
@@ -2403,4 +2410,4 @@ const AdminLayout = ({
     );
 };
 
-export default AdminLayout;
+export default AdminLayout; 

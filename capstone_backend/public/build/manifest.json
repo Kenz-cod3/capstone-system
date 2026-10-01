@@ -11,6 +11,22 @@
     "file": "assets/geist-latin-wght-normal-Dm3htQBi.woff2",
     "src": "node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"
   },
+  "resources/images/bg1.jpg": {
+    "file": "assets/bg1-DV5ttqGJ.jpg",
+    "src": "resources/images/bg1.jpg"
+  },
+  "resources/images/bg2.jpg": {
+    "file": "assets/bg2-BS_YKuzD.jpg",
+    "src": "resources/images/bg2.jpg"
+  },
+  "resources/images/bg3.jpg": {
+    "file": "assets/bg3-CLiei-gA.jpg",
+    "src": "resources/images/bg3.jpg"
+  },
+  "resources/images/bg4.jpg": {
+    "file": "assets/bg4-CJKr35au.jpg",
+    "src": "resources/images/bg4.jpg"
+  },
   "resources/images/iconD.png": {
     "file": "assets/iconD-C7qLbsnV.png",
     "src": "resources/images/iconD.png"
@@ -36,12 +52,12 @@
     "src": "resources/images/logo1.png"
   },
   "resources/js/main.tsx": {
-    "file": "assets/main-DZ23Uk6a.js",
+    "file": "assets/main-B7OpWNW9.js",
     "name": "main",
     "src": "resources/js/main.tsx",
     "isEntry": true,
     "css": [
-      "assets/main-CjjrWsei.css"
+      "assets/main-Cj6FLhAj.css"
     ],
     "assets": [
       "assets/logo-7g_sbbQ6.png",
@@ -50,6 +66,10 @@
       "assets/loginLogo-BLbGTmxJ.png",
       "assets/login-CZ4Zkjko.png",
       "assets/login1-B2A1p2XG.png",
+      "assets/bg1-DV5ttqGJ.jpg",
+      "assets/bg2-BS_YKuzD.jpg",
+      "assets/bg3-CLiei-gA.jpg",
+      "assets/bg4-CJKr35au.jpg",
       "assets/geist-cyrillic-wght-normal-CHSlOQsW.woff2",
       "assets/geist-latin-ext-wght-normal-DMtmJ5ZE.woff2",
       "assets/geist-latin-wght-normal-Dm3htQBi.woff2"

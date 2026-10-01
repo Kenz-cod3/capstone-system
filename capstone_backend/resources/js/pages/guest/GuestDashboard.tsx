@@ -37,6 +37,13 @@ interface RoomAmenity {
     name: string;
 }
 
+interface RoomImage {
+    id: number;
+    image_type: string;
+    image_path?: string;
+    url: string;
+}
+
 interface Room {
     id: number;
     room_number: string;
@@ -52,6 +59,7 @@ interface Room {
     image_url: string | null;
     panorama_url?: string | null;
     room_type_id?: number;
+    images?: RoomImage[];
     room_type: {
         id?: number;
         type_name: string;
@@ -86,10 +94,28 @@ const TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 
 const getTypeIcon = (type: string) => TYPE_ICON[type] ?? HomeIcon;
 
+// Case-insensitive icon lookup so DB entries like "WiFi", "WIFI", or
+// "wifi" all resolve correctly.
 const AMENITY_ICON: Record<string, ComponentType<{ className?: string }>> = {
-    "Air Conditioning": Snowflake,
-    "Private Bathroom": Bath,
+    "air conditioning": Snowflake,
+    "private bathroom": Bath,
+    wifi: Wifi,
+    tv: Tv,
+    television: Tv,
+    "hot & cold shower": Droplets,
 };
+
+const getAmenityIcon = (name: string) =>
+    AMENITY_ICON[name.toLowerCase().trim()] ?? Sparkles;
+
+// Normalize certain DB amenity names to shorter, cleaner display labels.
+// Everything else falls through unchanged.
+const getAmenityLabel = (name: string) => {
+    const key = name.toLowerCase().trim();
+    if (key === "television") return "TV";
+    return name;
+};
+
 interface AuthUser {
     first_name?: string;
 }
@@ -103,14 +129,9 @@ export default function GuestDashboard() {
     const [guests, setGuests] = useState(1);
     const [showAvailableOnly, setShowAvailableOnly] = useState(false);
 
-    // ── The single source of truth for the text search: the ?q= param
-    // set by the header search bar in GuestLayout. ──
     const [searchParams] = useSearchParams();
     const search = searchParams.get("q") || "";
 
-    // ── Hero search-bar "auto demo" animation state — plays only while
-    // there's no active search, and now just reflects the header's
-    // search value instead of owning its own text. ──
     const [demoActive, setDemoActive] = useState(true);
     const [demoTypedText, setDemoTypedText] = useState("");
     const [highlightField, setHighlightField] = useState<
@@ -129,25 +150,24 @@ export default function GuestDashboard() {
     const demoGuestsRef = useRef<HTMLDivElement>(null);
     const demoButtonRef = useRef<HTMLButtonElement>(null);
 
-    // ── Ref for the available rooms section (for scrolling) ──
     const availableRoomsRef = useRef<HTMLDivElement>(null);
+
+    const [imageIndexes, setImageIndexes] = useState<Record<number, number>>(
+        {},
+    );
 
     const DEMO_PHRASES = ["Room 204", "Deluxe", "Ocean view", "Family suite"];
     const sleep = (ms: number) =>
         new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-    // Stop the auto-demo the moment the guest actually searches something
-    // from the header, so the fake typing doesn't fight the real value.
     useEffect(() => {
         if (search) {
             setDemoActive(false);
         }
     }, [search]);
 
-    // ── Scroll to available rooms when search changes ──
     useEffect(() => {
         if (search && availableRoomsRef.current) {
-            // Small delay to allow the filtered results to render
             setTimeout(() => {
                 availableRoomsRef.current?.scrollIntoView({
                     behavior: "smooth",
@@ -157,7 +177,6 @@ export default function GuestDashboard() {
         }
     }, [search]);
 
-    // ── Filter row horizontal-scroll state/refs ──
     const filterScrollRef = useRef<HTMLDivElement>(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
@@ -215,7 +234,6 @@ export default function GuestDashboard() {
         });
     }, [rooms, search, activeType, showAvailableOnly]);
 
-    // ── Update arrow visibility based on scroll position ──
     const updateFilterScrollButtons = () => {
         const el = filterScrollRef.current;
         if (!el) return;
@@ -236,7 +254,6 @@ export default function GuestDashboard() {
         el.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
     };
 
-    // Select a filter pill and bring it to the center of the scroll row
     const handleSelectType = (label: string, el: HTMLButtonElement | null) => {
         setActiveType(label);
         if (el) {
@@ -248,8 +265,6 @@ export default function GuestDashboard() {
         }
     };
 
-    // Move the fake demo cursor to sit centered over a given element,
-    // positioned relative to the search-bar container.
     const moveCursorTo = (el: HTMLElement | null) => {
         const container = demoContainerRef.current;
         if (!el || !container) return;
@@ -261,11 +276,6 @@ export default function GuestDashboard() {
         });
     };
 
-    // Cursor position stays relative to the search-bar container.
-
-    // Auto-playing demo: types a sample query, then "clicks" through
-    // check-in, check-out, and guests before pressing Search — on loop —
-    // until the real user searches from the header (see the effect above).
     useEffect(() => {
         if (!demoActive) return;
         let cancelled = false;
@@ -301,7 +311,6 @@ export default function GuestDashboard() {
                     "Room 204";
                 phraseIndex++;
 
-                // 1. Type a sample search query
                 moveCursorTo(demoSearchRef.current);
                 setHighlightField("search");
                 await sleep(450);
@@ -314,7 +323,6 @@ export default function GuestDashboard() {
                 setHighlightField(null);
                 await sleep(300);
 
-                // 2. Click check-in
                 if (cancelled) return;
                 moveCursorTo(demoCheckInRef.current);
                 await sleep(400);
@@ -324,7 +332,6 @@ export default function GuestDashboard() {
                 await sleep(650);
                 setHighlightField(null);
 
-                // 3. Click check-out
                 if (cancelled) return;
                 moveCursorTo(demoCheckOutRef.current);
                 await sleep(400);
@@ -334,7 +341,6 @@ export default function GuestDashboard() {
                 await sleep(650);
                 setHighlightField(null);
 
-                // 4. Click guests
                 if (cancelled) return;
                 moveCursorTo(demoGuestsRef.current);
                 await sleep(400);
@@ -344,7 +350,6 @@ export default function GuestDashboard() {
                 await sleep(650);
                 setHighlightField(null);
 
-                // 5. Click Search Rooms
                 if (cancelled) return;
                 moveCursorTo(demoButtonRef.current);
                 await sleep(400);
@@ -366,18 +371,41 @@ export default function GuestDashboard() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [demoActive]);
 
+    const getRoomImages = (room: Room): string[] => {
+        const normalImages = (room.images || [])
+            .filter((img) => img.image_type === "normal")
+            .map((img) => img.url)
+            .filter(Boolean);
+
+        if (normalImages.length > 0) return normalImages;
+
+        if (room.image_url) return [room.image_url];
+
+        return [];
+    };
+
+    const nextImage = (roomId: number, total: number) => {
+        setImageIndexes((prev) => {
+            const current = prev[roomId] ?? 0;
+            return { ...prev, [roomId]: (current + 1) % total };
+        });
+    };
+
+    const prevImage = (roomId: number, total: number) => {
+        setImageIndexes((prev) => {
+            const current = prev[roomId] ?? 0;
+            return { ...prev, [roomId]: (current - 1 + total) % total };
+        });
+    };
+
     return (
         <div className="bg-[#f7f8f5] min-h-dvh pb-4 sm:pb-16 font-['Inter']">
-            {/* Hide native scrollbar on the filter row (Chrome/Safari/Edge) */}
             <style>{`
                 .filter-scroll::-webkit-scrollbar { display: none; }
             `}</style>
 
             <div className="max-w-[100rem] mx-auto px-4 sm:px-6 lg:px-8 pt-6">
                 {/* ── HERO ── */}
-                {/* min-h grows on mobile since the decorative search bar
-                    stacks its five fields vertically there and needs more
-                    room than it does on larger screens where it's one row. */}
                 <div className="relative overflow-hidden rounded-3xl mb-10 min-h-[560px] sm:min-h-[420px]">
                     <div
                         className="absolute inset-0"
@@ -433,10 +461,6 @@ export default function GuestDashboard() {
                             </p>
                         </div>
 
-                        {/* Decorative search-preview bar. Read-only display —
-                            the real search box lives in the header now, so
-                            this just mirrors whatever's typed there (or runs
-                            the auto-demo while nothing's been searched). */}
                         <div
                             ref={demoContainerRef}
                             className="relative mt-6 bg-white rounded-2xl shadow-xl p-2 flex flex-col md:flex-row items-stretch md:items-center gap-2 md:gap-0 pointer-events-none select-none"
@@ -558,7 +582,6 @@ export default function GuestDashboard() {
                                 <ArrowRight className="w-4 h-4" />
                             </button>
 
-                            {/* Fake animated cursor for the auto-demo */}
                             {demoActive && !search && cursorPos && (
                                 <div
                                     className="pointer-events-none absolute z-30 transition-all duration-500 ease-in-out"
@@ -611,12 +634,7 @@ export default function GuestDashboard() {
                         </p>
                     </div>
 
-                    {/* Availability toggle + scrollable type filter row.
-                        Stacks on mobile so the switch and the filter pills
-                        each get their own full-width row instead of being
-                        squeezed side by side. */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0 md:max-w-[70%]">
-                        {/* Available-only switch */}
                         <label className="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 shrink-0 cursor-pointer select-none self-start sm:self-auto">
                             <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
                                 <input
@@ -647,9 +665,7 @@ export default function GuestDashboard() {
                             </span>
                         </label>
 
-                        {/* Scrollable filter row with edge arrows + fade hint */}
                         <div className="relative flex items-center min-w-0 flex-1">
-                            {/* Left fade — shown only while scrolled away from the start */}
                             {canScrollLeft && (
                                 <div
                                     className="pointer-events-none absolute left-0 top-0 bottom-0 w-12 z-[5]"
@@ -709,7 +725,6 @@ export default function GuestDashboard() {
                                 })}
                             </div>
 
-                            {/* Right fade — shown while there's more content to scroll to */}
                             {canScrollRight && (
                                 <div
                                     className="pointer-events-none absolute right-0 top-0 bottom-0 w-12 z-[5]"
@@ -772,22 +787,36 @@ export default function GuestDashboard() {
                                       dot: "#fff",
                                       label: item.status,
                                   });
+
+                            const roomImages = getRoomImages(item);
+                            const activeImageIndex = imageIndexes[item.id] ?? 0;
+                            const hasMultipleImages = roomImages.length > 1;
+
+                            const hasAmenities =
+                                item.amenities && item.amenities.length > 0;
+
                             return (
                                 <div
                                     key={item.id}
                                     className="bg-white rounded-3xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row gap-4 h-auto sm:h-[300px]"
                                 >
-                                    {/* Image - fixed height on mobile, fills
-                                        the card height from sm: up */}
-                                    <div className="relative w-full sm:w-[42%] shrink-0 h-48 sm:h-full rounded-2xl overflow-hidden">
-                                        <img
-                                            src={
-                                                item.image_url ||
-                                                "https://picsum.photos/seed/room/400/300"
-                                            }
-                                            alt={`Room ${item.room_number}`}
-                                            className="w-full h-full object-cover"
-                                        />
+                                    {/* Image carousel */}
+                                    <div className="relative w-full sm:w-[42%] shrink-0 h-48 sm:h-full rounded-2xl overflow-hidden group bg-gray-100">
+                                        {roomImages.length > 0 ? (
+                                            <img
+                                                src={
+                                                    roomImages[
+                                                        activeImageIndex
+                                                    ] || roomImages[0]
+                                                }
+                                                alt={`Room ${item.room_number}`}
+                                                className="w-full h-full object-cover transition-opacity duration-300"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <Bed className="w-8 h-8 text-gray-300" />
+                                            </div>
+                                        )}
 
                                         <div
                                             className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full"
@@ -804,35 +833,76 @@ export default function GuestDashboard() {
                                             </span>
                                         </div>
 
-                                        <button className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors">
-                                            <ChevronLeft className="w-3.5 h-3.5 text-gray-700" />
-                                        </button>
-                                        <button className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors">
-                                            <ChevronRight className="w-3.5 h-3.5 text-gray-700" />
-                                        </button>
+                                        {hasMultipleImages && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        prevImage(
+                                                            item.id,
+                                                            roomImages.length,
+                                                        )
+                                                    }
+                                                    aria-label="Previous image"
+                                                    className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                                >
+                                                    <ChevronLeft className="w-3.5 h-3.5 text-gray-700" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        nextImage(
+                                                            item.id,
+                                                            roomImages.length,
+                                                        )
+                                                    }
+                                                    aria-label="Next image"
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                                >
+                                                    <ChevronRight className="w-3.5 h-3.5 text-gray-700" />
+                                                </button>
+                                            </>
+                                        )}
 
-                                        <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1">
-                                            {[0, 1, 2, 3, 4].map((dot) => (
-                                                <span
-                                                    key={dot}
-                                                    className={`rounded-full ${dot === 0 ? "w-1.5 h-1.5 bg-white" : "w-1 h-1 bg-white/50"}`}
-                                                />
-                                            ))}
-                                        </div>
+                                        {hasMultipleImages && (
+                                            <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1">
+                                                {roomImages.map((_, dot) => (
+                                                    <button
+                                                        key={dot}
+                                                        type="button"
+                                                        aria-label={`Go to image ${dot + 1}`}
+                                                        onClick={() =>
+                                                            setImageIndexes(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    [item.id]:
+                                                                        dot,
+                                                                }),
+                                                            )
+                                                        }
+                                                        className={`rounded-full transition-all ${
+                                                            dot ===
+                                                            activeImageIndex
+                                                                ? "w-1.5 h-1.5 bg-white"
+                                                                : "w-1 h-1 bg-white/50 hover:bg-white/80"
+                                                        }`}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Info - natural height on mobile so
-                                        nothing gets clipped; constrained to
-                                        the fixed card height from sm: up */}
+                                    {/* Info */}
                                     <div className="flex-1 py-0.5 flex flex-col sm:h-full sm:overflow-hidden">
                                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                                             <h3 className="text-[#0d2e1f] text-xl font-bold font-['Playfair_Display']">
                                                 Room {item.room_number}
                                             </h3>
-                                            <span className="px-2 py-0.5 rounded-full bg-[#1a4a35]/10 text-[#1a4a35] text-[10px] font-medium">
-                                                {item.room_type?.type_name ??
-                                                    "Room"}
-                                            </span>
+                                            {item.room_type?.type_name && (
+                                                <span className="px-2 py-0.5 rounded-full bg-[#1a4a35]/10 text-[#1a4a35] text-[10px] font-medium">
+                                                    {item.room_type.type_name}
+                                                </span>
+                                            )}
                                         </div>
 
                                         <p className="mb-2">
@@ -848,75 +918,60 @@ export default function GuestDashboard() {
                                             </span>
                                         </p>
 
+                                        {/* Guests + size — DB only, no hardcoded WiFi */}
                                         <div className="flex items-center gap-4 text-gray-500 text-sm mb-2 flex-wrap">
-                                            <span className="flex items-center gap-1.5">
-                                                <Users className="w-4 h-4" />
-                                                {item.room_type
-                                                    ?.max_occupancy || 2}{" "}
-                                                guests
-                                            </span>
-                                            <span className="flex items-center gap-1.5">
-                                                <Ruler className="w-4 h-4" />
-                                                {item.room_type?.size || 25} m²
-                                            </span>
-                                            <span className="flex items-center gap-1.5">
-                                                <Wifi className="w-4 h-4" />
-                                                Free WiFi
-                                            </span>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 mb-2 flex-wrap min-h-[32px]">
-                                            {(item.amenities?.length
-                                                ? item.amenities
-                                                : [
-                                                      {
-                                                          id: -1,
-                                                          name: "Air Conditioning",
-                                                      },
-                                                      {
-                                                          id: -2,
-                                                          name: "Private Bathroom",
-                                                      },
-                                                  ]
-                                            )
-                                                .slice(0, 2)
-                                                .map((amenity) => {
-                                                    const AmenityIcon =
-                                                        AMENITY_ICON[
-                                                            amenity.name
-                                                        ] ?? Sparkles;
-                                                    return (
-                                                        <span
-                                                            key={amenity.id}
-                                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px]"
-                                                        >
-                                                            <AmenityIcon className="w-3 h-3" />
-                                                            {amenity.name}
-                                                        </span>
-                                                    );
-                                                })}
-                                            {(item.amenities?.length || 0) >
-                                                2 && (
-                                                <span className="text-[10px] text-gray-400 font-medium">
-                                                    +
-                                                    {item.amenities!.length - 2}{" "}
-                                                    more
+                                            {item.room_type?.max_occupancy !=
+                                                null && (
+                                                <span className="flex items-center gap-1.5">
+                                                    <Users className="w-4 h-4" />
+                                                    {
+                                                        item.room_type
+                                                            .max_occupancy
+                                                    }{" "}
+                                                    guests
+                                                </span>
+                                            )}
+                                            {item.room_type?.size != null && (
+                                                <span className="flex items-center gap-1.5">
+                                                    <Ruler className="w-4 h-4" />
+                                                    {item.room_type.size} m²
                                                 </span>
                                             )}
                                         </div>
 
-                                        <div className="flex items-center gap-4 text-gray-500 text-sm mb-3 flex-wrap">
-                                            <span className="flex items-center gap-1.5">
-                                                <Tv className="w-4 h-4" />
-                                                TV
-                                            </span>
-                                            <span className="flex items-center gap-1.5">
-                                                <Droplets className="w-4 h-4" />
-                                                Hot &amp; Cold Shower
-                                            </span>
-                                        </div>
+                                        {/* Amenities — DB only. Nothing renders
+                                            if the room has no amenities. */}
+                                        {hasAmenities && (
+                                            <div className="flex items-center gap-2 mb-2 flex-wrap min-h-[32px]">
+                                                {item.amenities!.map(
+                                                    (amenity) => {
+                                                        const AmenityIcon =
+                                                            getAmenityIcon(
+                                                                amenity.name,
+                                                            );
+                                                        return (
+                                                            <span
+                                                                key={amenity.id}
+                                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px]"
+                                                            >
+                                                                <AmenityIcon className="w-3 h-3" />
+                                                                {getAmenityLabel(
+                                                                    amenity.name,
+                                                                )}
+                                                            </span>
+                                                        );
+                                                    },
+                                                )}
+                                            </div>
+                                        )}
 
-                                        {/* Buttons - Balanced */}
+                                        {item.room_type?.description && (
+                                            <p className="text-gray-500 text-xs mb-2 line-clamp-2 leading-4">
+                                                {item.room_type.description}
+                                            </p>
+                                        )}
+
+                                        {/* Reserve button */}
                                         <div className="mt-auto flex items-center gap-2 pt-1">
                                             {isAvailable ? (
                                                 <Link

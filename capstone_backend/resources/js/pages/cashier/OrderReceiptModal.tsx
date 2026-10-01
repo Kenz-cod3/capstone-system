@@ -1,3 +1,4 @@
+// src/pages/cashier/OrderReceiptModal.tsx
 import {
     useEffect,
     useState,
@@ -10,18 +11,10 @@ import {
     PrinterOutlined,
     SearchOutlined,
     ReloadOutlined,
-    UserOutlined,
-    EyeInvisibleOutlined,
 } from "@ant-design/icons";
 import { QRCodeSVG } from "qrcode.react";
-import type {
-    FeePaymentPayload,
-    FeePaymentRequest,
-    FeeType,
-    PaymentMethod,
-} from "./FeePaymentModal";
 import {
-    printFeeReceipt,
+    printOrderReceipt,
     searchPrinter,
     refreshPrinter,
     isSerialSupported,
@@ -29,8 +22,7 @@ import {
     getQrLink,
 } from "@/pages/admin/operations/thermalPrinter";
 
-const HOTEL_NAME = "Travelers Inn";
-const ANONYMOUS_LABEL = "Anonymous";
+const HOTEL_NAME = "Lyn Enia Travelers Inn";
 const QR_LINK = getQrLink();
 
 const MINT_GREEN = "#10b981";
@@ -46,89 +38,40 @@ const SLATE_DARK = "#0f172a";
 const FONT_STACK =
     'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-const ITEM_LABEL: Record<FeeType, string> = {
-    early_checkin: "Early Check-in Fee",
-    late_checkout: "Late Check-out Fee",
-    extension: "Stay Extension Fee",
-    addon: "Add-on Charge",
-};
-
-const METHOD_LABEL: Record<PaymentMethod, string> = {
-    cash: "Cash",
-    qrph: "QRPH",
-};
-
-const STAY_LABEL: Record<"overnight" | "short_stay", string> = {
-    overnight: "Overnight",
-    short_stay: "Short Stay",
-};
-
 type PrinterStatus = "checking" | "connected" | "disconnected" | "unsupported";
 
-export interface FeeReceiptData {
-    feeType: FeeType;
-    amount: number;
-    paymentMethod: PaymentMethod;
-    /** QRPH reference number */
-    reference?: string;
-    /** Cash only */
-    amountTendered?: number;
-    guestName?: string;
-    roomNumber?: string;
-    /** e.g. "2 hours" for extensions */
-    note?: string;
-    /** From the server (booking-payments.receipt_number), if it returns one */
-    receiptNumber?: string | null;
-    /** ISO timestamp of when the payment was recorded */
-    paidAt: string;
+export interface OrderReceiptItem {
+    name: string;
+    quantity: number;
+    price: number;
+}
 
-    // ---- extra details for a real-world receipt ----
-    /** e.g. "Deluxe Room" */
-    roomType?: string;
-    stayType?: "overnight" | "short_stay";
-    bookingReference?: string;
-    checkInDate?: string;
-    checkOutDate?: string;
-    /** Staff/admin who received the payment */
+export interface OrderReceiptData {
+    orderId: number;
+    orderNumber?: string | null;
+    items: OrderReceiptItem[];
+    total: number;
+    paymentMethod: "cash" | "qrph" | "split";
+    /** Cash actually paid toward the order */
+    cashPaid: number;
+    /** QRPH actually paid toward the order */
+    qrPaid: number;
+    /** Cash only: what the customer handed over */
+    cashTendered?: number;
+    change?: number;
+    reference?: string | null;
+    paidAt: string;
     cashierName?: string;
 }
 
-/**
- * Builds receipt data from what the cashier just confirmed.
- * `apiResponse` is the `res.data` returned by POST /booking-payments (optional).
- * It's read for `receipt_number`, either at the top level or under `data`.
- */
-export function buildFeeReceipt(
-    request: FeePaymentRequest,
-    payload: FeePaymentPayload,
-    apiResponse?: any,
-    cashierName?: string,
-): FeeReceiptData {
-    const payment = apiResponse?.data ?? apiResponse ?? {};
-
-    return {
-        feeType: request.feeType,
-        amount: request.amount,
-        paymentMethod: payload.payment_method,
-        reference: payload.reference,
-        amountTendered: payload.amount_tendered,
-        guestName: request.guestName,
-        roomNumber: request.roomNumber,
-        note: request.note,
-        receiptNumber: payment?.receipt_number ?? null,
-        paidAt: new Date().toISOString(),
-
-        roomType: request.roomType,
-        stayType: request.stayType,
-        bookingReference: request.bookingReference,
-        checkInDate: request.checkInDate,
-        checkOutDate: request.checkOutDate,
-        cashierName: cashierName || undefined,
-    };
-}
+const METHOD_LABEL: Record<OrderReceiptData["paymentMethod"], string> = {
+    cash: "Cash",
+    qrph: "QRPH",
+    split: "Cash + QRPH",
+};
 
 const peso = (n: number) =>
-    `₱${n.toLocaleString(undefined, {
+    `₱${(Number(n) || 0).toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     })}`;
@@ -141,15 +84,6 @@ const formatDateTime = (iso: string) =>
         hour: "numeric",
         minute: "2-digit",
     });
-
-const formatDate = (d?: string) =>
-    d
-        ? new Date(d).toLocaleDateString("en-PH", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-          })
-        : "-";
 
 /* ---------- Receipt paper ---------- */
 
@@ -169,6 +103,15 @@ const paperStyle: CSSProperties = {
 const dividerStyle: CSSProperties = {
     borderTop: "1px dashed #cbd5e1",
     margin: "14px 0",
+};
+
+const sectionTitleStyle: CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: SLATE_MUTED,
+    marginBottom: 6,
 };
 
 function Row({
@@ -205,18 +148,8 @@ function Row({
     );
 }
 
-function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
-    const change =
-        receipt.paymentMethod === "cash"
-            ? Math.max(
-                  0,
-                  (receipt.amountTendered ?? receipt.amount) - receipt.amount,
-              )
-            : 0;
-
-    const roomValue = receipt.roomType
-        ? `${receipt.roomNumber ?? "-"} · ${receipt.roomType}`
-        : (receipt.roomNumber ?? "-");
+function ReceiptPaper({ receipt }: { receipt: OrderReceiptData }) {
+    const orderLabel = receipt.orderNumber || `#${receipt.orderId}`;
 
     return (
         <div className="fee-receipt-paper" style={paperStyle}>
@@ -225,67 +158,48 @@ function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
                     {HOTEL_NAME}
                 </div>
                 <div style={{ fontSize: 11, color: SLATE_MUTED, marginTop: 2 }}>
-                    Payment Receipt
+                    Restaurant Receipt
                 </div>
             </div>
 
             <div style={dividerStyle} />
 
-            {receipt.receiptNumber && (
-                <Row label="Receipt no." value={receipt.receiptNumber} strong />
-            )}
-            {receipt.bookingReference && (
-                <Row label="Booking ref." value={receipt.bookingReference} />
-            )}
+            <Row label="Order no." value={orderLabel} strong />
             <Row label="Date" value={formatDateTime(receipt.paidAt)} />
 
             <div style={dividerStyle} />
 
-            <Row label="Guest" value={receipt.guestName || ANONYMOUS_LABEL} />
-            <Row label="Room" value={roomValue} />
-            {receipt.stayType && (
-                <Row label="Stay type" value={STAY_LABEL[receipt.stayType]} />
-            )}
-            {receipt.checkInDate && (
-                <Row label="Check-in" value={formatDate(receipt.checkInDate)} />
-            )}
-            {receipt.checkOutDate && (
-                <Row
-                    label="Check-out"
-                    value={formatDate(receipt.checkOutDate)}
-                />
-            )}
-
-            <div style={dividerStyle} />
-
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 12,
-                }}
-            >
-                <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>
-                        {ITEM_LABEL[receipt.feeType]}
-                    </div>
-                    {receipt.note && (
+            <div style={sectionTitleStyle}>Items</div>
+            {receipt.items.map((item, idx) => (
+                <div
+                    key={idx}
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        padding: "4px 0",
+                    }}
+                >
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                            {item.name}
+                        </div>
                         <div
                             style={{
                                 fontSize: 11,
                                 color: SLATE_MUTED,
-                                marginTop: 2,
+                                marginTop: 1,
                             }}
                         >
-                            {receipt.note}
+                            {item.quantity} x {peso(item.price)}
                         </div>
-                    )}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        {peso(item.price * item.quantity)}
+                    </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>
-                    {peso(receipt.amount)}
-                </div>
-            </div>
+            ))}
 
             <div style={dividerStyle} />
 
@@ -300,7 +214,7 @@ function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
                     Total paid
                 </span>
                 <span style={{ fontSize: 20, fontWeight: 700 }}>
-                    {peso(receipt.amount)}
+                    {peso(receipt.total)}
                 </span>
             </div>
 
@@ -309,20 +223,32 @@ function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
                     label="Payment method"
                     value={METHOD_LABEL[receipt.paymentMethod]}
                 />
-                {receipt.paymentMethod === "cash" ? (
+
+                {receipt.paymentMethod === "cash" && (
                     <>
                         <Row
                             label="Amount received"
                             value={peso(
-                                receipt.amountTendered ?? receipt.amount,
+                                receipt.cashTendered ?? receipt.cashPaid,
                             )}
                         />
-                        <Row label="Change" value={peso(change)} />
+                        <Row label="Change" value={peso(receipt.change ?? 0)} />
                     </>
-                ) : (
-                    receipt.reference && (
-                        <Row label="Reference no." value={receipt.reference} />
-                    )
+                )}
+
+                {receipt.paymentMethod === "split" && (
+                    <>
+                        <Row label="Cash" value={peso(receipt.cashPaid)} />
+                        <Row label="QRPH" value={peso(receipt.qrPaid)} />
+                    </>
+                )}
+
+                {/* QRPH / Cash + QRPH: laging may Reference no. */}
+                {receipt.paymentMethod !== "cash" && (
+                    <Row
+                        label="Reference no."
+                        value={receipt.reference || "N/A"}
+                    />
                 )}
             </div>
 
@@ -341,7 +267,7 @@ function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
                     marginTop: 10,
                 }}
             >
-                Thank you for staying with us!
+                Thank you for dining with us!
             </div>
 
             {QR_LINK && (
@@ -369,13 +295,12 @@ function ReceiptPaper({ receipt }: { receipt: FeeReceiptData }) {
 /* ---------- Modal ---------- */
 
 interface Props {
-    receipt: FeeReceiptData | null;
+    receipt: OrderReceiptData | null;
     onClose: () => void;
 }
 
-export default function FeeReceiptModal({ receipt, onClose }: Props) {
+export default function OrderReceiptModal({ receipt, onClose }: Props) {
     const [printing, setPrinting] = useState(false);
-    const [anonymous, setAnonymous] = useState(true);
     const [printerStatus, setPrinterStatus] =
         useState<PrinterStatus>("checking");
 
@@ -390,24 +315,11 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
     };
 
     useEffect(() => {
-        if (receipt) {
-            setAnonymous(true); // default: anonymous for every new receipt
-            checkPrinter();
-        }
+        if (receipt) checkPrinter();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [receipt]);
 
     if (!receipt) return null;
-
-    const realName = receipt.guestName?.trim() || "";
-    const hasName = realName.length > 0;
-    const useAnonymous = anonymous || !hasName;
-
-    // What actually gets shown and printed
-    const displayReceipt: FeeReceiptData = {
-        ...receipt,
-        guestName: useAnonymous ? ANONYMOUS_LABEL : realName,
-    };
 
     const handleSearchPrinter = async () => {
         try {
@@ -427,16 +339,15 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
         message.info("Refreshed");
     };
 
-    // Thermal printer (ESC/POS over Web Serial)
-    const handleThermalPrint = async () => {
+    const handlePrint = async () => {
         try {
             setPrinting(true);
-            await printFeeReceipt(displayReceipt);
+            await printOrderReceipt(receipt);
             setPrinterStatus("connected");
             message.success("Receipt sent to printer");
         } catch (err: any) {
             if (err?.name === "NotFoundError") return;
-            console.error("Fee receipt printing error:", err);
+            console.error("Order receipt printing error:", err);
             setPrinterStatus("disconnected");
             message.error(
                 err?.message || "Could not print. Is the printer on?",
@@ -445,6 +356,9 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
             setPrinting(false);
         }
     };
+
+    const itemCount = receipt.items.reduce((sum, i) => sum + i.quantity, 0);
+    const orderLabel = receipt.orderNumber || `#${receipt.orderId}`;
 
     const dotColor =
         printerStatus === "connected"
@@ -480,16 +394,12 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         top: 20px;
                         right: 20px;
                     }
-
-                    /* ---------- Landscape layout ---------- */
                     .fee-receipt-layout {
                         display: grid;
                         grid-template-columns: 340px 1fr;
                         gap: 24px;
                         align-items: stretch;
                     }
-
-                    /* Left: receipt */
                     .fee-receipt-panel {
                         padding: 16px 10px;
                         border-radius: 12px;
@@ -498,8 +408,6 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         max-height: 70vh;
                         overflow-y: auto;
                     }
-
-                    /* Right: info + controls */
                     .fee-receipt-side {
                         display: flex;
                         flex-direction: column;
@@ -507,7 +415,6 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         min-width: 0;
                         padding-right: 28px;
                     }
-
                     .fee-receipt-head {
                         display: flex;
                         align-items: center;
@@ -537,8 +444,6 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         color: ${SLATE_MUTED};
                         line-height: 1.4;
                     }
-
-                    /* Summary card */
                     .fee-receipt-summary {
                         padding: 14px 16px;
                         border-radius: 12px;
@@ -561,13 +466,12 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         font-size: 12px;
                         color: ${SLATE_MUTED};
                         line-height: 1.5;
+                        word-break: break-word;
                     }
                     .fee-receipt-summary-meta strong {
                         color: ${SLATE_DARK};
                         font-weight: 600;
                     }
-
-                    /* Printer / guest cards */
                     .fee-printer-card {
                         padding: 14px 16px;
                         border: 1px solid ${SLATE_BORDER};
@@ -601,15 +505,12 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         gap: 10px;
                         margin-top: 12px;
                     }
-
-                    /* Action buttons */
                     .fee-receipt-actions {
                         display: flex;
                         flex-direction: column;
                         gap: 10px;
                         margin-top: auto;
                     }
-
                     .fee-receipt-btn {
                         display: inline-flex;
                         align-items: center;
@@ -645,12 +546,6 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         border-color: ${MINT_GREEN};
                         color: ${MINT_GREEN_STRONG};
                     }
-                    .fee-receipt-btn-active,
-                    .fee-receipt-btn-active:hover:not(:disabled) {
-                        color: ${MINT_GREEN_STRONG};
-                        background: ${MINT_GREEN_BG};
-                        border-color: ${MINT_GREEN};
-                    }
                     .fee-receipt-btn-print {
                         color: #fff;
                         background: ${MINT_GREEN_STRONG};
@@ -660,8 +555,6 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         background: ${MINT_GREEN_HOVER};
                         border-color: ${MINT_GREEN_HOVER};
                     }
-
-                    /* ---------- Small screens: stack ---------- */
                     @media (max-width: 760px) {
                         .fee-receipt-layout {
                             grid-template-columns: 1fr;
@@ -679,7 +572,7 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
             <div className="fee-receipt-layout">
                 {/* ---------- Left: receipt ---------- */}
                 <div className="fee-receipt-panel">
-                    <ReceiptPaper receipt={displayReceipt} />
+                    <ReceiptPaper receipt={receipt} />
                 </div>
 
                 {/* ---------- Right: info + controls ---------- */}
@@ -690,10 +583,10 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         </div>
                         <div>
                             <div className="fee-receipt-head-title">
-                                Payment recorded
+                                Order completed
                             </div>
                             <div className="fee-receipt-head-sub">
-                                Print the receipt for the guest or close this
+                                Print the receipt for the customer or close this
                                 window.
                             </div>
                         </div>
@@ -701,64 +594,31 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
 
                     <div className="fee-receipt-summary">
                         <div className="fee-receipt-summary-label">
-                            {ITEM_LABEL[receipt.feeType]}
+                            Restaurant order
                         </div>
                         <div className="fee-receipt-summary-amount">
-                            {peso(receipt.amount)}
+                            {peso(receipt.total)}
                         </div>
                         <div className="fee-receipt-summary-meta">
-                            <strong>{displayReceipt.guestName}</strong>
-                            {" · Room "}
-                            {receipt.roomNumber ?? "-"}
+                            <strong>
+                                {itemCount} item{itemCount > 1 ? "s" : ""}
+                            </strong>
+                            {` · Order ${orderLabel}`}
                             <br />
                             Paid by{" "}
                             <strong>{METHOD_LABEL[receipt.paymentMethod]}</strong>
+                            {receipt.paymentMethod !== "cash" &&
+                                receipt.reference && (
+                                    <>
+                                        <br />
+                                        Ref: <strong>{receipt.reference}</strong>
+                                    </>
+                                )}
                         </div>
                     </div>
 
                     <div className="fee-printer-card">
-                        <div className="fee-printer-title">
-                            Guest name on receipt
-                        </div>
-                        <div
-                            className="fee-printer-actions"
-                            style={{ marginTop: 0 }}
-                        >
-                            <button
-                                type="button"
-                                className={`fee-receipt-btn fee-receipt-btn-close${
-                                    useAnonymous ? " fee-receipt-btn-active" : ""
-                                }`}
-                                onClick={() => setAnonymous(true)}
-                                aria-pressed={useAnonymous}
-                            >
-                                <EyeInvisibleOutlined />
-                                Anonymous
-                            </button>
-                            <button
-                                type="button"
-                                className={`fee-receipt-btn fee-receipt-btn-close${
-                                    !useAnonymous ? " fee-receipt-btn-active" : ""
-                                }`}
-                                onClick={() => setAnonymous(false)}
-                                disabled={!hasName}
-                                aria-pressed={!useAnonymous}
-                                title={
-                                    hasName
-                                        ? undefined
-                                        : "No guest name on this booking"
-                                }
-                            >
-                                <UserOutlined />
-                                Show name
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="fee-printer-card">
-                        <div className="fee-printer-title">
-                            Thermal printer
-                        </div>
+                        <div className="fee-printer-title">Thermal printer</div>
                         <div className="fee-printer-status" aria-live="polite">
                             <span
                                 className="fee-printer-dot"
@@ -791,7 +651,7 @@ export default function FeeReceiptModal({ receipt, onClose }: Props) {
                         <button
                             type="button"
                             className="fee-receipt-btn fee-receipt-btn-lg fee-receipt-btn-print"
-                            onClick={handleThermalPrint}
+                            onClick={handlePrint}
                             disabled={
                                 printing || printerStatus === "unsupported"
                             }

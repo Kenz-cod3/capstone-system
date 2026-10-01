@@ -17,6 +17,7 @@ class RoomType extends Model
         'standard_checkin_time',
         'early_checkin_fee',
         'late_checkout_fee',
+        'extension_fee',
     ];
 
     protected $casts = [
@@ -24,6 +25,7 @@ class RoomType extends Model
         'short_stay_price' => 'decimal:2',
         'early_checkin_fee' => 'decimal:2',
         'late_checkout_fee' => 'decimal:2',
+        'extension_fee' => 'decimal:2',
     ];
 
     public function rooms()

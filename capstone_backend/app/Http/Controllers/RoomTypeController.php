@@ -64,7 +64,8 @@ class RoomTypeController extends Controller
             'overnight_checkout_time' => 'nullable|date_format:H:i',
             'standard_checkin_time' => 'nullable|date_format:H:i',
             'early_checkin_fee' => 'nullable|numeric|min:0',
-            'late_checkout_fee' => 'nullable|numeric|min:0',
+            'late_checkout_fee' => 'sometimes|numeric|min:0',
+            'extension_fee'     => 'sometimes|numeric|min:0',
         ], [
             'type_name.unique' => 'This room type already exists.',
         ]);
@@ -121,6 +122,7 @@ class RoomTypeController extends Controller
             'standard_checkin_time' => 'sometimes|date_format:H:i',
             'early_checkin_fee' => 'sometimes|numeric|min:0',
             'late_checkout_fee' => 'sometimes|numeric|min:0',
+            'extension_fee'     => 'sometimes|numeric|min:0',
         ], [
             'type_name.unique' => 'This room type already exists.',
         ]);

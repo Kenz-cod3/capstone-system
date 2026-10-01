@@ -53,8 +53,14 @@ export default function Menu() {
     const fetchItems = async () => {
         try {
             setLoading(true);
-            const res = await api.get("/menu-items-available");
-            setItems(res.data);
+            // Fetch ALL items so 0-stock items still show up.
+            const res = await api.get("/menu-items");
+            // Hide only items the admin manually deactivated (and still have stock).
+            // 0-stock items always stay visible.
+            const visible = (res.data as any[]).filter(
+                (i) => Boolean(i.is_active) || Number(i.stock_quantity) <= 0,
+            );
+            setItems(visible);
         } catch (error) {
             console.error("Failed to fetch menu:", error);
             toast.error("Failed to load menu items");
@@ -68,11 +74,18 @@ export default function Menu() {
         [items],
     );
 
-    const filteredItems = items.filter((item) => {
-        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
-        return matchesSearch && matchesCategory;
-    });
+    const filteredItems = items
+        .filter((item) => {
+            const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
+            return matchesSearch && matchesCategory;
+        })
+        // In-stock first, out-of-stock last
+        .sort((a, b) => {
+            const aOut = Number(a.stock_quantity) <= 0 ? 1 : 0;
+            const bOut = Number(b.stock_quantity) <= 0 ? 1 : 0;
+            return aOut - bOut;
+        });
 
     const getCategoryIcon = (category: string) => {
         switch (category?.toLowerCase()) {

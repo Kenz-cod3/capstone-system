@@ -225,6 +225,7 @@ class BookedRoomController extends Controller
             'stay_type' => 'required|in:overnight,short_stay',
             'check_in_date' => 'required|date',
             'check_out_date' => 'required|date',
+            'validate_only' => 'sometimes|boolean',
         ]);
 
         $room = Room::findOrFail($validated['room_id']);
@@ -267,6 +268,11 @@ class BookedRoomController extends Controller
             ], 409);
         }
 
+        // Dry run: the frontend checks availability BEFORE collecting payment
+        if ($request->boolean('validate_only')) {
+            return response()->json(['message' => 'Room is available.'], 200);
+        }
+
         $bookedRoom = BookedRoom::create([
             'booking_id'               => $validated['booking_id'],
             'room_id'                  => $validated['room_id'],
@@ -276,6 +282,15 @@ class BookedRoomController extends Controller
             'check_in_date'            => $requestedCheckIn->toDateString(),
             'check_out_date'           => $requestedCheckOut->toDateString(),
             'status'                   => $validated['status'] ?? 'pending',
+        ]);
+
+        // Recompute the booking total so the new room shows up in the Total
+        $parentBooking = \App\Models\Booking::find($validated['booking_id']);
+        $parentBooking->update([
+            'total_price' => $parentBooking->bookedRooms()
+                ->whereNull('archived_at')
+                ->whereNotIn('status', ['cancelled', 'refunded'])
+                ->sum('subtotal'),
         ]);
 
         broadcast(new DashboardUpdated())->toOthers();
@@ -292,6 +307,20 @@ class BookedRoomController extends Controller
                 'bookingAddOns.addOn',
             ])
         ], 201);
+    }
+
+    // "Room 101 (Oct 05, 2026 - Oct 07, 2026)" or "Room 101 (Oct 05, 2026 - Short stay)"
+    private function roomStaySummary($bookedRoom): string
+    {
+        $in = Carbon::parse($bookedRoom->check_in_date);
+        $out = Carbon::parse($bookedRoom->check_out_date);
+
+        $dates = $bookedRoom->stay_type === 'short_stay'
+            ? $in->format('M d, Y') . ' - Short stay'
+            : $in->format('M d, Y') . ' - ' . $out->format('M d, Y');
+
+        return 'Room ' . ($bookedRoom->room->room_number ?? $bookedRoom->room_id) .
+            ' (' . $dates . ')';
     }
 
     public function show($id)
@@ -444,6 +473,7 @@ class BookedRoomController extends Controller
                                 'booking_id' => $booking->id,
                                 'message' => 'Your booking ' .
                                     $booking->booking_reference .
+                                    ' for ' . $this->roomStaySummary($bookedRoom) .
                                     ' has been confirmed.',
                                 'is_read' => false,
                             ]);

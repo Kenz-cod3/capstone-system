@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderPayment;
+use App\Models\PaymentLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -167,6 +168,14 @@ class OrderQrController extends Controller
             'raw_payments'      => $payments,
         ]);
 
+        if ($status === 'succeeded') {
+            Log::channel('paymongo')->info('✅ Order QR status poll: SUCCEEDED', [
+                'payment_intent_id' => $paymentIntentId,
+                'payment_id'        => $paymentId,
+                'order_id'          => $orderId,
+            ]);
+        }
+
         return response()->json([
             'status'       => $status,
             'payment_id'   => $paymentId,
@@ -230,6 +239,32 @@ class OrderQrController extends Controller
         }
 
         // -------------------------------------------------------------------
+        // PAYMENT LOG (idempotent: walang duplicate kahit na-log na ng
+        // PayMongoController@webhook)
+        // -------------------------------------------------------------------
+        PaymentLog::firstOrCreate(
+            ['payment_id' => $reference],
+            [
+                'event'       => $eventType,
+                'intent_id'   => data_get($payment, 'attributes.payment_intent_id'),
+                'booking_id'  => null,
+                'amount'      => $centavos / 100,
+                'fee'         => ((int) data_get($payment, 'attributes.fee', 0)) / 100,
+                'net_amount'  => ((int) data_get($payment, 'attributes.net_amount', 0)) / 100,
+                'method'      => data_get($payment, 'attributes.source.type', 'qrph'),
+                'description' => data_get($payment, 'attributes.description')
+                    ?? "Restaurant Order {$order->order_number}",
+                'status'      => 'paid',
+                'paid_at'     => data_get($payment, 'attributes.paid_at')
+                    ? \Carbon\Carbon::createFromTimestamp(
+                        data_get($payment, 'attributes.paid_at'),
+                        config('app.timezone')
+                    )
+                    : now(),
+            ]
+        );
+
+        // -------------------------------------------------------------------
         // I-save ang payment as PAID (confirmed na ng PayMongo webhook)
         // -------------------------------------------------------------------
         OrderPayment::create([
@@ -241,6 +276,13 @@ class OrderQrController extends Controller
             'user_id'         => $order->cashier_id,
             'change_amount'   => 0,
             'payment_date'    => now(),
+        ]);
+
+        Log::channel('paymongo')->info('💾 Order payment saved to DB', [
+            'order_id'     => $order->id,
+            'order_number' => $order->order_number,
+            'reference'    => $reference,
+            'amount'       => $centavos / 100,
         ]);
 
         // -------------------------------------------------------------------

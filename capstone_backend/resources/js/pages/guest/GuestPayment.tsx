@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
     Home,
     ChevronRight,
-    ArrowLeft,
     Calendar,
     Users,
     Maximize2,
@@ -12,23 +11,24 @@ import {
     Info,
     ShieldCheck,
     Headphones,
-    Landmark,
     QrCode,
     Loader2,
     Check,
     Phone,
     AlertCircle,
+    RefreshCw,
 } from "lucide-react";
 
 // Same axios instance used across the guest pages.
 import api from "../../services/api";
-// NEW: real QR creation + polling (see paymentService.additions.ts)
 import {
     createQrPayment,
     checkQrPaymentStatus,
 } from "../../services/paymentService";
 
 // ── Types ──────────────────────────────────────────────────────────
+type StayType = "overnight" | "short_stay";
+
 interface RoomType {
     id?: number;
     type_name: string;
@@ -36,6 +36,8 @@ interface RoomType {
     base_price: number;
     max_occupancy: number;
     size?: number;
+    short_stay_price?: number | null;
+    short_stay_hours?: number | null;
 }
 
 interface RoomData {
@@ -45,13 +47,29 @@ interface RoomData {
     room_type: RoomType;
 }
 
+interface DraftRoom {
+    id: number;
+    room_number: string;
+    room_type_name: string;
+    image_url?: string | null;
+    stay_type: StayType;
+    check_in_date: string;
+    check_out_date: string;
+    short_stay_hours?: number;
+    guests: number;
+    nights: number;
+    subtotal: number;
+}
+
 interface ReservationDraft {
-    bookingId: number; // NEW — required to create the QR payment
+    rooms?: DraftRoom[];
+    bookingId: number; // required to create the QR payment
     checkIn: string;
     checkOut: string;
     guests: number;
     total?: number;
     phone?: string;
+    stayType?: StayType;
 }
 
 interface AuthUser {
@@ -102,8 +120,6 @@ const formatCountdown = (totalSeconds: number) => {
 const PAYMENT_WINDOW_SECONDS = 30 * 60;
 const POLL_INTERVAL_MS = 5000;
 
-type PaymentMethod = "qrph" | "bank_transfer";
-
 export default function GuestPayment() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -117,6 +133,60 @@ export default function GuestPayment() {
     const [checkIn] = useState(location.state?.checkIn || "");
     const [checkOut] = useState(location.state?.checkOut || "");
     const [guests] = useState(location.state?.guests || 2);
+    const stayType: StayType = location.state?.stayType || "overnight";
+    const isShort = stayType === "short_stay";
+    const [bookingRooms, setBookingRooms] = useState<DraftRoom[]>([]);
+    const stateRooms: DraftRoom[] = location.state?.rooms ?? [];
+    const draftRooms: DraftRoom[] =
+        bookingRooms.length > 0 ? bookingRooms : stateRooms;
+    const isMultiple = draftRooms.length > 1;
+
+    // Load the rooms that were actually saved in the booking.
+    useEffect(() => {
+        if (!bookingId) return;
+        let cancelled = false;
+        const loadBookingRooms = async () => {
+            try {
+                const res = await api.get(`/bookings/${bookingId}`);
+                const b = res.data?.data ?? res.data;
+                const list: any[] = b?.booked_rooms ?? b?.bookedRooms ?? [];
+                const mapped: DraftRoom[] = list
+                    .filter(
+                        (r) => !["cancelled", "refunded"].includes(r.status),
+                    )
+                    .map((r) => {
+                        const ci = r.check_in_date;
+                        const co = r.check_out_date;
+                        const diff = Math.round(
+                            (new Date(co).getTime() - new Date(ci).getTime()) /
+                                86400000,
+                        );
+                        return {
+                            id: r.room_id ?? r.room?.id,
+                            room_number: r.room?.room_number ?? "",
+                            room_type_name:
+                                r.room?.room_type?.type_name ?? "Standard",
+                            image_url: r.room?.image_url ?? null,
+                            stay_type: r.stay_type,
+                            check_in_date: ci,
+                            check_out_date: co,
+                            short_stay_hours:
+                                r.room?.room_type?.short_stay_hours ?? 3,
+                            guests: 0,
+                            nights: Math.max(1, diff),
+                            subtotal: Number(r.subtotal || 0),
+                        };
+                    });
+                if (!cancelled) setBookingRooms(mapped);
+            } catch (err) {
+                console.log("FETCH BOOKING ROOMS ERROR:", err);
+            }
+        };
+        loadBookingRooms();
+        return () => {
+            cancelled = true;
+        };
+    }, [bookingId]);
 
     const currentUser: AuthUser | null = JSON.parse(
         localStorage.getItem("user") || "null",
@@ -124,29 +194,24 @@ export default function GuestPayment() {
     const guestPhone =
         location.state?.phone || currentUser?.contact_number || "";
 
-    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("qrph");
-
     const [secondsLeft, setSecondsLeft] = useState(PAYMENT_WINDOW_SECONDS);
 
     const [status, setStatus] = useState<
-        | "loading_qr"
-        | "waiting"
-        | "verifying"
-        | "confirmed"
-        | "expired"
-        | "error"
+        "loading_qr" | "waiting" | "confirmed" | "expired" | "error"
     >("loading_qr");
 
     const [statusError, setStatusError] = useState<string | null>(null);
 
-    // NEW: real QR state instead of a placeholder icon.
     const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
     const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
     const [clientKey, setClientKey] = useState<string | null>(null);
-    // NEW: test-mode simulation link (only populated by PayMongo in test mode)
+    // Test-mode simulation link (only populated by PayMongo in test mode)
     const [testUrl, setTestUrl] = useState<string | null>(null);
 
-    // NEW: booking reference fetched once payment is confirmed, for the success screen.
+    // Bumping this regenerates the QR (used by the "Generate new QR" button).
+    const [qrAttempt, setQrAttempt] = useState(0);
+
+    // Booking reference fetched once payment is confirmed, for the success screen.
     const [confirmedBookingRef, setConfirmedBookingRef] = useState<
         string | null
     >(null);
@@ -169,21 +234,29 @@ export default function GuestPayment() {
     }, [id]);
 
     const basePrice = room?.room_type?.base_price ?? 0;
+    const shortPrice = room?.room_type?.short_stay_price ?? basePrice;
+    const shortHours = room?.room_type?.short_stay_hours ?? 3;
+
     const nights = useMemo(() => {
+        if (isShort) return checkIn ? 1 : 0;
         if (!checkIn || !checkOut) return 0;
         const diff =
             (new Date(checkOut).getTime() - new Date(checkIn).getTime()) /
             (1000 * 60 * 60 * 24);
         return Math.max(0, Math.round(diff));
-    }, [checkIn, checkOut]);
+    }, [isShort, checkIn, checkOut]);
 
-    const roomSubtotal = basePrice * (nights || 0);
+    const roomSubtotal = isMultiple
+        ? draftRooms.reduce((sum, r) => sum + Number(r.subtotal || 0), 0)
+        : isShort
+          ? shortPrice
+          : basePrice * (nights || 0);
     const taxesAndFees = 0;
     const total = location.state?.total ?? roomSubtotal + taxesAndFees;
 
-    // NEW: create the actual QR Ph payment intent once we know the booking + total.
+    // Create the actual QR Ph payment intent once we know the booking + total.
     useEffect(() => {
-        if (paymentMethod !== "qrph" || !bookingId || !total) return;
+        if (!bookingId || !total) return;
 
         let cancelled = false;
 
@@ -203,7 +276,7 @@ export default function GuestPayment() {
                 console.log("CREATE QR PAYMENT ERROR:", err);
                 if (!cancelled) {
                     setStatusError(
-                        "Failed to generate QR code. Please go back and try again.",
+                        "Failed to generate QR code. Please try again.",
                     );
                     setStatus("error");
                 }
@@ -215,7 +288,7 @@ export default function GuestPayment() {
         return () => {
             cancelled = true;
         };
-    }, [paymentMethod, bookingId, total]);
+    }, [bookingId, total, qrAttempt]);
 
     // Countdown timer for the payment window.
     useEffect(() => {
@@ -307,7 +380,7 @@ export default function GuestPayment() {
                     reservation again.
                 </p>
                 <Link
-                    to={`/guest/rooms/${room.id}/confirm`}
+                    to={`/guest/rooms/${room.id}`}
                     className="inline-block mt-4 px-6 py-2.5 bg-[#c9a96e] text-[#0d2e1f] rounded-full font-medium hover:bg-[#d9bb84] transition-colors"
                 >
                     Back to Reservation
@@ -374,8 +447,7 @@ export default function GuestPayment() {
                                     {confirmedBookingRef || "—"}
                                 </p>
                                 <p className="text-xs text-[#1a4a35]/60 mt-1">
-                                    Please keep this reference for your
-                                    records.
+                                    Please keep this reference for your records.
                                 </p>
                             </div>
 
@@ -433,9 +505,13 @@ export default function GuestPayment() {
                                             Room {room.room_number}
                                         </p>
                                         <span className="px-2 py-0.5 rounded-full bg-[#eaf3ea] text-[#1a4a35] text-[10px] font-semibold">
-                                            {roomType?.type_name ||
-                                                "Standard"}
+                                            {roomType?.type_name || "Standard"}
                                         </span>
+                                        {isShort && (
+                                            <span className="px-2 py-0.5 rounded-full bg-[#0d2e1f] text-white text-[10px] font-semibold">
+                                                Short Stay
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -445,7 +521,7 @@ export default function GuestPayment() {
                                     <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                                     <div>
                                         <p className="text-[11px] text-gray-500">
-                                            Check-in
+                                            {isShort ? "Date" : "Check-in"}
                                         </p>
                                         <p className="text-sm font-medium text-gray-800">
                                             {formatDate(checkIn)}
@@ -459,7 +535,9 @@ export default function GuestPayment() {
                                             Check-out
                                         </p>
                                         <p className="text-sm font-medium text-gray-800">
-                                            {formatDate(checkOut)}
+                                            {isShort
+                                                ? "Same day"
+                                                : formatDate(checkOut)}
                                         </p>
                                     </div>
                                 </div>
@@ -525,13 +603,6 @@ export default function GuestPayment() {
                     Room {room.room_number}
                 </Link>
                 <ChevronRight className="w-3.5 h-3.5" />
-                <Link
-                    to={`/guest/rooms/${room.id}/confirm`}
-                    className="hover:text-[#1a4a35] transition-colors"
-                >
-                    Confirm Reservation
-                </Link>
-                <ChevronRight className="w-3.5 h-3.5" />
                 <span className="text-gray-700 font-medium">Payment</span>
             </div>
 
@@ -588,8 +659,8 @@ export default function GuestPayment() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* ── LEFT COLUMN ── */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
+                {/* ── LEFT COLUMN (sticky: QR + waiting status stay in place) ── */}
+                <div className="lg:col-span-2 flex flex-col gap-6 lg:sticky lg:top-24 lg:self-start">
                     <div>
                         <h1 className="text-3xl font-bold text-[#0d2e1f] font-['Playfair_Display']">
                             Complete Your Payment
@@ -601,242 +672,126 @@ export default function GuestPayment() {
                         </p>
                     </div>
 
-                    {/* Select Payment Method */}
-                    <div>
-                        <h2 className="text-lg font-bold text-[#0d2e1f] font-['Playfair_Display'] mb-3">
-                            Select Payment Method
-                        </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setPaymentMethod("qrph")}
-                                className={`flex items-start gap-3 px-4 py-4 rounded-2xl border text-left transition-colors ${
-                                    paymentMethod === "qrph"
-                                        ? "border-[#1a4a35] bg-[#eaf3ea]/50"
-                                        : "border-gray-200 hover:bg-gray-50"
-                                }`}
-                            >
-                                <span
-                                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                                        paymentMethod === "qrph"
-                                            ? "border-[#1a4a35]"
-                                            : "border-gray-300"
-                                    }`}
-                                >
-                                    {paymentMethod === "qrph" && (
-                                        <span className="w-2 h-2 rounded-full bg-[#1a4a35]" />
-                                    )}
-                                </span>
-                                <QrCode className="w-5 h-5 text-[#1a4a35] shrink-0" />
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                        QR Ph (Mobile Banking)
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                        Pay using any PH banking app (GCash,
-                                        BPI, Maya, etc.)
-                                    </p>
-                                </span>
-                            </button>
+                    {/* QR Ph panel */}
+                    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+                        <h3 className="text-lg font-bold text-[#0d2e1f] font-['Playfair_Display'] mb-3">
+                            Scan QR Ph to Pay
+                        </h3>
 
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    setPaymentMethod("bank_transfer")
-                                }
-                                className={`flex items-start gap-3 px-4 py-4 rounded-2xl border text-left transition-colors ${
-                                    paymentMethod === "bank_transfer"
-                                        ? "border-[#1a4a35] bg-[#eaf3ea]/50"
-                                        : "border-gray-200 hover:bg-gray-50"
-                                }`}
-                            >
-                                <span
-                                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                                        paymentMethod === "bank_transfer"
-                                            ? "border-[#1a4a35]"
-                                            : "border-gray-300"
-                                    }`}
-                                >
-                                    {paymentMethod === "bank_transfer" && (
-                                        <span className="w-2 h-2 rounded-full bg-[#1a4a35]" />
-                                    )}
-                                </span>
-                                <Landmark className="w-5 h-5 text-gray-500 shrink-0" />
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-900">
-                                        Bank Transfer
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                        Send payment to our bank account
-                                    </p>
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Payment panel */}
-                    {paymentMethod === "qrph" ? (
-                        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
-                            <h3 className="text-lg font-bold text-[#0d2e1f] font-['Playfair_Display'] mb-4">
-                                Scan QR Ph to Pay
-                            </h3>
-
-                            <div className="flex flex-col sm:flex-row gap-6">
-                                {/* QR code */}
-                                <div className="w-full sm:w-64 shrink-0">
-                                    <div className="aspect-square rounded-2xl bg-[#eaf3ea] p-4 flex items-center justify-center">
-                                        {status === "loading_qr" ? (
-                                            <div className="flex flex-col items-center gap-2 text-[#1a4a35]/60">
-                                                <Loader2 className="w-8 h-8 animate-spin" />
-                                                <p className="text-xs">
-                                                    Generating QR code…
-                                                </p>
-                                            </div>
-                                        ) : status === "error" ? (
-                                            <div className="flex flex-col items-center gap-2 text-red-500 text-center px-2">
-                                                <AlertCircle className="w-8 h-8" />
-                                                <p className="text-xs">
-                                                    Couldn't load QR code
-                                                </p>
-                                            </div>
-                                        ) : qrImageUrl ? (
-                                            <div className="w-full h-full rounded-xl bg-white flex items-center justify-center overflow-hidden">
-                                                <img
-                                                    src={qrImageUrl}
-                                                    alt="Scan to pay with QR Ph"
-                                                    className="w-full h-full object-contain"
-                                                />
-                                            </div>
-                                        ) : (
-                                            <div className="w-full h-full rounded-xl bg-white flex items-center justify-center overflow-hidden">
-                                                <QrCode className="w-4/5 h-4/5 text-[#0d2e1f]" />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* NEW: test-mode simulation link — only shows when PayMongo returns a test_url */}
-                                    {testUrl && status === "waiting" && (
-                                        <a
-                                            href={testUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="mt-3 block text-center w-full px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-semibold hover:bg-amber-200 transition-colors"
-                                        >
-                                            🧪 Simulate Payment (Test Mode Only)
-                                        </a>
-                                    )}
-                                </div>
-
-                                {/* Details */}
-                                <div className="flex-1 flex flex-col gap-4">
-                                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                                        <div>
-                                            <p className="text-sm font-semibold text-gray-700">
-                                                Total Amount
-                                            </p>
-                                            <p className="text-3xl font-bold text-[#0d2e1f] font-['Playfair_Display']">
-                                                {formatPrice(total)}
+                        <div className="flex flex-col sm:flex-row gap-6">
+                            {/* QR code */}
+                            <div className="w-full sm:w-64 shrink-0">
+                                <div className="aspect-square rounded-2xl bg-[#eaf3ea] p-4 flex items-center justify-center">
+                                    {status === "loading_qr" ? (
+                                        <div className="flex flex-col items-center gap-2 text-[#1a4a35]/60">
+                                            <Loader2 className="w-8 h-8 animate-spin" />
+                                            <p className="text-xs">
+                                                Generating QR code…
                                             </p>
                                         </div>
+                                    ) : status === "error" ? (
+                                        <div className="flex flex-col items-center gap-2 text-red-500 text-center px-2">
+                                            <AlertCircle className="w-8 h-8" />
+                                            <p className="text-xs">
+                                                Couldn't load QR code
+                                            </p>
+                                        </div>
+                                    ) : status === "expired" ? (
+                                        <div className="flex flex-col items-center gap-2 text-amber-600 text-center px-2">
+                                            <Clock className="w-8 h-8" />
+                                            <p className="text-xs">
+                                                QR code expired
+                                            </p>
+                                        </div>
+                                    ) : qrImageUrl ? (
+                                        <div className="w-full h-full rounded-xl bg-white flex items-center justify-center overflow-hidden">
+                                            <img
+                                                src={qrImageUrl}
+                                                alt="Scan to pay with QR Ph"
+                                                className="w-full h-full object-contain"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="w-full h-full rounded-xl bg-white flex items-center justify-center overflow-hidden">
+                                            <QrCode className="w-4/5 h-4/5 text-[#0d2e1f]" />
+                                        </div>
+                                    )}
+                                </div>
 
-                                        {status === "waiting" && (
-                                            <div className="flex items-center gap-2.5 rounded-2xl bg-[#eaf3ea] px-4 py-2.5">
-                                                <Clock className="w-4 h-4 text-[#1a4a35]" />
-                                                <div>
-                                                    <p className="text-[11px] text-[#1a4a35]/70">
-                                                        Payment expires in
-                                                    </p>
-                                                    <p className="text-sm font-bold text-[#0d2e1f]">
-                                                        {formatCountdown(
-                                                            secondsLeft,
-                                                        )}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                {/* Test-mode simulation link — only shows when PayMongo returns a test_url */}
+                                {testUrl && status === "waiting" && (
+                                    <a
+                                        href={testUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="mt-3 block text-center w-full px-4 py-2 rounded-xl bg-amber-100 text-amber-800 text-xs font-semibold hover:bg-amber-200 transition-colors"
+                                    >
+                                        🧪 Simulate Payment (Test Mode Only)
+                                    </a>
+                                )}
+                            </div>
 
-                                    <ol className="flex flex-col gap-2.5">
-                                        {[
-                                            "Open your preferred banking app (GCash, BPI, Maya, etc.)",
-                                            "Scan the QR Ph code",
-                                            "Complete the payment and wait for verification",
-                                        ].map((text, i) => (
-                                            <li
-                                                key={i}
-                                                className="flex items-start gap-2.5"
-                                            >
-                                                <span className="w-5 h-5 rounded-full bg-[#0d2e1f] text-white text-[11px] font-semibold flex items-center justify-center shrink-0 mt-0.5">
-                                                    {i + 1}
-                                                </span>
-                                                <span className="text-sm text-gray-600">
-                                                    {text}
-                                                </span>
-                                            </li>
-                                        ))}
-                                    </ol>
-
-                                    <div className="flex items-start gap-2.5 rounded-2xl bg-gray-50 px-4 py-3">
-                                        <Info className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
-                                        <p className="text-xs text-gray-500 leading-relaxed">
-                                            After payment, your reservation will
-                                            be automatically confirmed within a
-                                            few minutes. You will receive a
-                                            confirmation email.
+                            {/* Details */}
+                            <div className="flex-1 flex flex-col gap-4">
+                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-700">
+                                            Total Amount
+                                        </p>
+                                        <p className="text-3xl font-bold text-[#0d2e1f] font-['Playfair_Display']">
+                                            {formatPrice(total)}
                                         </p>
                                     </div>
+
+                                    {status === "waiting" && (
+                                        <div className="flex items-center gap-2.5 rounded-2xl bg-[#eaf3ea] px-4 py-2.5">
+                                            <Clock className="w-4 h-4 text-[#1a4a35]" />
+                                            <div>
+                                                <p className="text-[11px] text-[#1a4a35]/70">
+                                                    Payment expires in
+                                                </p>
+                                                <p className="text-sm font-bold text-[#0d2e1f]">
+                                                    {formatCountdown(
+                                                        secondsLeft,
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <ol className="flex flex-col gap-2.5">
+                                    {[
+                                        "Open your preferred banking app (GCash, BPI, Maya, etc.)",
+                                        "Scan the QR Ph code",
+                                        "Complete the payment and wait for verification",
+                                    ].map((text, i) => (
+                                        <li
+                                            key={i}
+                                            className="flex items-start gap-2.5"
+                                        >
+                                            <span className="w-5 h-5 rounded-full bg-[#0d2e1f] text-white text-[11px] font-semibold flex items-center justify-center shrink-0 mt-0.5">
+                                                {i + 1}
+                                            </span>
+                                            <span className="text-sm text-gray-600">
+                                                {text}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ol>
+
+                                <div className="flex items-start gap-2.5 rounded-2xl bg-gray-50 px-4 py-3">
+                                    <Info className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                                    <p className="text-xs text-gray-500 leading-relaxed">
+                                        After payment, your reservation will be
+                                        automatically confirmed within a few
+                                        minutes. You will receive a confirmation
+                                        email.
+                                    </p>
                                 </div>
                             </div>
                         </div>
-                    ) : (
-                        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
-                            <h3 className="text-lg font-bold text-[#0d2e1f] font-['Playfair_Display'] mb-4">
-                                Bank Transfer Details
-                            </h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                                    <p className="text-[11px] text-gray-500">
-                                        Bank Name
-                                    </p>
-                                    <p className="text-sm font-semibold text-gray-800">
-                                        BDO Unibank
-                                    </p>
-                                </div>
-                                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                                    <p className="text-[11px] text-gray-500">
-                                        Account Name
-                                    </p>
-                                    <p className="text-sm font-semibold text-gray-800">
-                                        Lyn Enia&apos;s Traveler&apos;s Inn
-                                    </p>
-                                </div>
-                                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                                    <p className="text-[11px] text-gray-500">
-                                        Account Number
-                                    </p>
-                                    <p className="text-sm font-semibold text-gray-800">
-                                        0012 3456 7890
-                                    </p>
-                                </div>
-                                <div className="rounded-2xl bg-[#eaf3ea] px-4 py-3">
-                                    <p className="text-[11px] text-[#1a4a35]/70">
-                                        Amount to Transfer
-                                    </p>
-                                    <p className="text-sm font-bold text-[#0d2e1f]">
-                                        {formatPrice(total)}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-start gap-2.5 rounded-2xl bg-gray-50 px-4 py-3">
-                                <Info className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-gray-500 leading-relaxed">
-                                    Please upload your deposit slip or transfer
-                                    receipt after sending payment so our team
-                                    can verify it.
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                    </div>
 
                     {statusError && (
                         <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm">
@@ -846,37 +801,46 @@ export default function GuestPayment() {
 
                     {status === "expired" && (
                         <div className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm">
-                            This payment window has expired. Go back and try
-                            again to generate a new QR code.
+                            This payment window has expired. Generate a new QR
+                            code to continue.
                         </div>
                     )}
 
-                    {/* Back / status actions */}
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                        <button
-                            onClick={() => navigate(-1)}
-                            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
-                        >
-                            <ArrowLeft className="w-4 h-4" />
-                            Back
-                        </button>
-
-                        <div className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-[#eaf3ea] text-[#1a4a35]">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Waiting for payment...
-                        </div>
+                    {/* Status / retry */}
+                    <div className="flex items-center justify-end">
+                        {status === "expired" || status === "error" ? (
+                            <button
+                                onClick={() => setQrAttempt((n) => n + 1)}
+                                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                                style={{
+                                    background:
+                                        "linear-gradient(to right, #1a4a35, #0d2e1f)",
+                                }}
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                                Generate new QR
+                            </button>
+                        ) : (
+                            <div className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-[#eaf3ea] text-[#1a4a35]">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {status === "loading_qr"
+                                    ? "Preparing payment..."
+                                    : "Waiting for payment..."}
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* ── RIGHT COLUMN: Booking Summary ── */}
+                {/* ── RIGHT COLUMN: Booking Summary (scrolls normally) ── */}
                 <div>
-                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sticky top-24 flex flex-col gap-5">
+                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col gap-5">
                         <div>
                             <h3 className="text-lg font-bold text-[#0d2e1f] font-['Playfair_Display']">
                                 Booking Summary
                             </h3>
                             <p className="text-gray-500 text-sm mt-1">
                                 Please review your booking details.
+                                {isMultiple && ` (${draftRooms.length} rooms)`}
                             </p>
                         </div>
 
@@ -899,6 +863,11 @@ export default function GuestPayment() {
                                     <span className="px-2 py-0.5 rounded-full bg-[#eaf3ea] text-[#1a4a35] text-[10px] font-semibold">
                                         {roomType?.type_name || "Standard"}
                                     </span>
+                                    {isShort && (
+                                        <span className="px-2 py-0.5 rounded-full bg-[#0d2e1f] text-white text-[10px] font-semibold">
+                                            Short Stay
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="text-gray-500 text-xs leading-relaxed line-clamp-2">
                                     {roomType?.description ||
@@ -906,6 +875,46 @@ export default function GuestPayment() {
                                 </p>
                             </div>
                         </div>
+
+                        {isMultiple && (
+                            <div className="flex flex-col gap-3">
+                                <p className="text-sm font-semibold text-[#0d2e1f]">
+                                    Your Rooms ({draftRooms.length})
+                                </p>
+                                {draftRooms.map((r, i) => (
+                                    <div
+                                        key={`${r.id}-${i}`}
+                                        className="flex items-center gap-3 rounded-2xl bg-gray-50 p-2.5"
+                                    >
+                                        <div className="w-16 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0">
+                                            <img
+                                                src={
+                                                    buildImageUrl(
+                                                        r.image_url,
+                                                    ) ||
+                                                    "https://picsum.photos/seed/room/200/160"
+                                                }
+                                                alt={`Room ${r.room_number}`}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-[#0d2e1f]">
+                                                Room {r.room_number}
+                                                <span className="ml-1.5 text-[10px] font-semibold text-[#1a4a35] bg-[#eaf3ea] px-2 py-0.5 rounded-full">
+                                                    {r.room_type_name}
+                                                </span>
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                                {r.stay_type === "short_stay"
+                                                    ? `${formatDate(r.check_in_date)} · Short stay`
+                                                    : `${formatDate(r.check_in_date)} → ${formatDate(r.check_out_date)}`}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         <div className="flex items-center gap-4 text-gray-500 text-sm flex-wrap">
                             <span className="flex items-center gap-1.5">
@@ -927,7 +936,7 @@ export default function GuestPayment() {
                                 <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                                 <div>
                                     <p className="text-[11px] text-gray-500">
-                                        Check-in
+                                        {isShort ? "Date" : "Check-in"}
                                     </p>
                                     <p className="text-sm font-medium text-gray-800">
                                         {formatDate(checkIn)}
@@ -941,7 +950,9 @@ export default function GuestPayment() {
                                         Check-out
                                     </p>
                                     <p className="text-sm font-medium text-gray-800">
-                                        {formatDate(checkOut)}
+                                        {isShort
+                                            ? "Same day"
+                                            : formatDate(checkOut)}
                                     </p>
                                 </div>
                             </div>
@@ -966,15 +977,44 @@ export default function GuestPayment() {
                                 Price Breakdown
                             </p>
                             <div className="space-y-2 text-sm">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">
-                                        Room Price ({nights || 0} night
-                                        {nights === 1 ? "" : "s"})
-                                    </span>
-                                    <span className="font-medium text-gray-900">
-                                        {formatPrice(roomSubtotal)}
-                                    </span>
-                                </div>
+                                {isMultiple ? (
+                                    draftRooms.map((r, i) => (
+                                        <div
+                                            key={`${r.id}-${i}`}
+                                            className="flex justify-between gap-3"
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="text-gray-700 font-medium">
+                                                    Room {r.room_number}
+                                                    <span className="text-gray-400 font-normal">
+                                                        {" "}
+                                                        · {r.room_type_name}
+                                                    </span>
+                                                </p>
+                                                <p className="text-xs text-gray-500">
+                                                    {r.stay_type ===
+                                                    "short_stay"
+                                                        ? `${formatDate(r.check_in_date)} · Short stay (${r.short_stay_hours ?? 3}h)`
+                                                        : `${formatDate(r.check_in_date)} → ${formatDate(r.check_out_date)} · ${r.nights} night${r.nights === 1 ? "" : "s"}`}
+                                                </p>
+                                            </div>
+                                            <span className="font-medium text-gray-900 shrink-0">
+                                                {formatPrice(r.subtotal)}
+                                            </span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500">
+                                            {isShort
+                                                ? `Short stay (${shortHours} hours)`
+                                                : `Room Price (${nights || 0} night${nights === 1 ? "" : "s"})`}
+                                        </span>
+                                        <span className="font-medium text-gray-900">
+                                            {formatPrice(roomSubtotal)}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="flex justify-between">
                                     <span className="text-gray-500">
                                         Taxes &amp; Fees (0%)

@@ -288,19 +288,45 @@ export default function ReservationMonitor() {
     const goToday = () => setCalendarMonth(new Date());
 
     return (
-        <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden bg-slate-50 text-slate-900">
+        <div className="flex h-full w-full overflow-hidden bg-slate-50 text-slate-900">
+            <style>
+                {`
+                    /* Slim scrollbar */
+                    .slim-scroll {
+                        scrollbar-width: thin;
+                        scrollbar-color: #cbd5e1 transparent;
+                    }
+                    .slim-scroll::-webkit-scrollbar {
+                        width: 5px;
+                        height: 5px;
+                    }
+                    .slim-scroll::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    .slim-scroll::-webkit-scrollbar-thumb {
+                        background: #cbd5e1;
+                        border-radius: 9999px;
+                    }
+                    .slim-scroll::-webkit-scrollbar-thumb:hover {
+                        background: #94a3b8;
+                    }
+                `}
+            </style>
+
             {/* SIDEBAR - Hidden on small screens, shown on medium and up */}
-            <aside className="hidden md:flex h-full w-[250px] shrink-0 flex-col border-r border-slate-200 bg-white">
-                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3.5">
-                    <h2 className="text-sm font-semibold text-slate-700">
+            <aside className="hidden md:flex h-full w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
+                {/* HEADER (fixed, same height as breadcrumb bar) */}
+                <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-5">
+                    <h2 className="text-sm font-semibold text-slate-900">
                         Users Reservation
                     </h2>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-600">
                         {bookings.length}
                     </span>
                 </div>
 
-                <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+                {/* LIST (only this area scrolls) */}
+                <div className="slim-scroll min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                     {loading ? (
                         <div className="px-4 py-10 text-center text-sm text-slate-400">
                             Loading reservations…
@@ -316,7 +342,7 @@ export default function ReservationMonitor() {
                                 <button
                                     key={b.id}
                                     onClick={() => handleSelect(b)}
-                                    className={`relative flex w-full items-start gap-3 px-4 py-3 text-left transition ${
+                                    className={`relative flex w-full items-start gap-3 px-5 py-3 text-left transition ${
                                         isActive
                                             ? "bg-emerald-50"
                                             : "hover:bg-slate-50"
@@ -339,47 +365,42 @@ export default function ReservationMonitor() {
                     )}
                 </div>
 
-                <div className="shrink-0 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-400">
-                    Showing 1 to {filteredList.length} of {bookings.length}{" "}
-                    reservations
+                {/* FOOTER (fixed) */}
+                <div className="shrink-0 border-t border-slate-100 px-5 py-2.5 text-xs text-slate-400">
+                    Showing {filteredList.length === 0 ? 0 : 1} to{" "}
+                    {filteredList.length} of {bookings.length} reservations
                 </div>
             </aside>
 
-            {/* MOBILE SIDEBAR TOGGLE - shown on small screens */}
-            <div className="md:hidden flex h-[60px] w-full items-center justify-between border-b border-slate-200 bg-white px-4">
-                <h2 className="text-sm font-semibold text-slate-700">
-                    Reservations
-                </h2>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
-                    {bookings.length}
-                </span>
-            </div>
+            {/* MAIN COLUMN (does NOT scroll itself) */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                {/* MOBILE BAR - shown on small screens only */}
+                <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">
+                    <h2 className="text-sm font-semibold text-slate-900">
+                        Reservations
+                    </h2>
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-600">
+                        {bookings.length}
+                    </span>
+                </div>
 
-            {/* MAIN */}
-            {/*
-              CHANGED: overflow-hidden -> overflow-y-auto so this column can
-              scroll vertically once its content (breadcrumb + header +
-              filters + calendar/details) is taller than the viewport gives
-              it. Previously content that overflowed was simply clipped with
-              no way to reach it.
-            */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-                {/* BREADCRUMB */}
-                <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-white px-3 md:px-5 py-2.5 text-sm text-slate-400">
+                {/* BREADCRUMB (fixed, same height as sidebar header) */}
+                <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 text-sm text-slate-400 md:px-6">
                     <span className="hidden sm:inline">Reservations</span>
                     <span className="sm:hidden">Bookings</span>
                     {selected && (
                         <>
                             <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 truncate font-medium text-slate-600">
+                            <span className="min-w-0 truncate font-medium text-slate-700">
                                 {fullName(guestOf(selected))}
                             </span>
                         </>
                     )}
                 </div>
 
+                {/* ERROR (fixed) */}
                 {error && (
-                    <div className="mx-3 md:mx-5 mt-3 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <div className="mx-3 mt-3 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 md:mx-6">
                         {error}{" "}
                         <button
                             onClick={loadBookings}
@@ -391,12 +412,13 @@ export default function ReservationMonitor() {
                 )}
 
                 {selected ? (
-                    <>
+                    /* ONLY THIS AREA SCROLLS */
+                    <div className="scrollbar-mint min-h-0 flex-1 overflow-y-auto">
                         {/* GUEST HEADER */}
-                        <div className="flex flex-col sm:flex-row shrink-0 items-start sm:items-center justify-between gap-3 px-3 md:px-5 py-4 md:py-5">
+                        <div className="flex flex-col items-start justify-between gap-3 px-3 py-4 sm:flex-row sm:items-center md:px-6 md:py-5">
                             <div className="flex min-w-0 items-start gap-3">
                                 <div className="min-w-0 space-y-0.5">
-                                    <h1 className="truncate text-lg sm:text-xl font-semibold leading-tight tracking-tight text-slate-900">
+                                    <h1 className="truncate text-lg font-semibold leading-tight tracking-tight text-slate-900 sm:text-xl">
                                         {fullName(guestOf(selected))}
                                     </h1>
                                     <div className="flex flex-wrap items-center gap-1.5">
@@ -431,9 +453,9 @@ export default function ReservationMonitor() {
                                 </div>
                             </div>
 
-                            <div className="flex w-full sm:w-auto shrink-0 flex-wrap items-center gap-2 sm:gap-3">
-                                <button className="flex flex-1 sm:flex-none items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-                                    <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-slate-400" />
+                            <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
+                                <button className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 sm:flex-none sm:px-4 sm:text-sm">
+                                    <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
                                     <span className="hidden sm:inline">
                                         {formatShort(selected.check_in_date)} –{" "}
                                         {formatLong(selected.check_out_date)}
@@ -444,9 +466,9 @@ export default function ReservationMonitor() {
                                 </button>
                                 <button
                                     onClick={handleExport}
-                                    className="flex flex-1 sm:flex-none items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                                    className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 sm:flex-none sm:px-4 sm:text-sm"
                                 >
-                                    <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                                    <Download className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
                                     <span className="hidden sm:inline">
                                         Export
                                     </span>
@@ -455,8 +477,8 @@ export default function ReservationMonitor() {
                         </div>
 
                         {/* SEARCH / FILTERS */}
-                        <div className="flex flex-col sm:flex-row shrink-0 flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 px-3 md:px-5">
-                            <div className="relative min-w-[140px] sm:min-w-[220px] flex-1">
+                        <div className="flex flex-col flex-wrap items-stretch gap-2 px-3 sm:flex-row sm:items-center sm:gap-3 md:px-6">
+                            <div className="relative min-w-[140px] flex-1 sm:min-w-[220px]">
                                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={search}
@@ -472,7 +494,7 @@ export default function ReservationMonitor() {
                                         e.target.value as "all" | BookingStatus,
                                     )
                                 }
-                                className="flex-1 sm:flex-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 focus:border-emerald-500 focus:outline-none"
+                                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 focus:border-emerald-500 focus:outline-none sm:flex-none"
                             >
                                 <option value="all">All Status</option>
                                 {Object.entries(STATUS_STYLES).map(
@@ -488,7 +510,7 @@ export default function ReservationMonitor() {
                                 onChange={(e) =>
                                     setRoomTypeFilter(e.target.value)
                                 }
-                                className="flex-1 sm:flex-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 focus:border-emerald-500 focus:outline-none"
+                                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 focus:border-emerald-500 focus:outline-none sm:flex-none"
                             >
                                 <option value="all">All Room Types</option>
                                 {roomTypes.map((rt) => (
@@ -500,27 +522,10 @@ export default function ReservationMonitor() {
                         </div>
 
                         {/* CALENDAR + DETAILS */}
-                        {/*
-                          CHANGED: removed `min-h-0` from this row. `flex-1
-                          min-h-0` forces the row to compress to whatever
-                          space is left, which fights against the calendar
-                          and details panel ever growing taller than the
-                          viewport. Without `min-h-0` the row is free to grow
-                          with its content, and the parent's
-                          `overflow-y-auto` (added above) picks up the slack.
-                        */}
-                        <div className="mt-2 flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_300px] gap-3 px-3 md:px-5 pb-4">
-                            {/*
-                              CHANGED: calendar card wrapper no longer pins
-                              itself to `h-full min-h-0` with an internal
-                              `overflow-hidden`. That combination was made
-                              for a fixed-height card with its own internal
-                              scroll region; since the whole page scrolls now,
-                              the card just grows to fit its content.
-                            */}
-                            <div className="flex flex-col min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
-                                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 sm:px-4 py-2 sm:py-3">
-                                    <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                        <div className="mt-3 flex flex-col gap-3 px-3 pb-6 md:px-6 lg:grid lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_300px]">
+                            <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+                                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 sm:px-4 sm:py-3">
+                                    <h2 className="text-sm font-semibold text-slate-900 sm:text-base">
                                         Reservation Calendar
                                     </h2>
                                     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -548,8 +553,8 @@ export default function ReservationMonitor() {
                                     booking={selected}
                                 />
 
-                                <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-500">
-                                    <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 shrink-0 rounded-full bg-emerald-400 ring-2 ring-emerald-100" />
+                                <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-3 py-2 text-xs text-slate-500 sm:px-4 sm:py-2.5 sm:text-sm">
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 ring-2 ring-emerald-100 sm:h-2 sm:w-2" />
                                     <span className="truncate">
                                         {fullName(guestOf(selected))}&apos;s
                                         Reservation
@@ -561,7 +566,7 @@ export default function ReservationMonitor() {
                                 <DetailsPanel booking={selected} />
                             </div>
                         </div>
-                    </>
+                    </div>
                 ) : (
                     !loading && (
                         <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
@@ -597,16 +602,12 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
     const checkOut = toDateOnly(new Date(booking.check_out_date));
 
     return (
-        // CHANGED: dropped `min-h-0 flex-1 overflow-hidden` — the grid now
-        // renders at its natural height instead of being squeezed to fit a
-        // fixed-height parent. The weekday header + grid rows both take
-        // their full needed height, and the page around them scrolls.
         <div className="flex flex-col">
             <div className="grid shrink-0 grid-cols-7 border-b border-slate-200 bg-slate-100">
                 {WEEKDAY_LABELS.map((w) => (
                     <div
                         key={w}
-                        className="border-r border-slate-200 py-2 text-center text-[10px] sm:text-xs font-semibold tracking-wide text-slate-600 last:border-r-0"
+                        className="border-r border-slate-200 py-2 text-center text-[10px] font-semibold tracking-wide text-slate-600 last:border-r-0 sm:text-xs"
                     >
                         {w.slice(0, 3)}
                     </div>
@@ -628,12 +629,12 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                     return (
                         <div
                             key={key}
-                            className={`flex flex-col items-center gap-0.5 sm:gap-1 overflow-hidden border-b border-l border-slate-100 pt-1 sm:pt-2 first:border-l-0 ${
+                            className={`flex flex-col items-center gap-0.5 overflow-hidden border-b border-l border-slate-100 pt-1 first:border-l-0 sm:gap-1 sm:pt-2 ${
                                 inStay ? "bg-emerald-50/60" : ""
                             }`}
                         >
                             <span
-                                className={`flex h-5 w-5 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full text-[10px] sm:text-sm font-semibold ${
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold sm:h-7 sm:w-7 sm:text-sm ${
                                     isCheckIn || isCheckOut
                                         ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-400"
                                         : inMonth
@@ -644,12 +645,12 @@ function MonthGrid({ month, booking }: { month: Date; booking: Booking }) {
                                 {d.getDate()}
                             </span>
                             {isCheckIn && (
-                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] sm:text-[10px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200">
+                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200 sm:text-[10px]">
                                     Check-in
                                 </span>
                             )}
                             {isCheckOut && (
-                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] sm:text-[10px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200">
+                                <span className="rounded-full bg-emerald-50 px-1.5 py-[1px] text-[8px] font-medium leading-tight text-emerald-700 ring-1 ring-emerald-200 sm:text-[10px]">
                                     Check-out
                                 </span>
                             )}
@@ -701,10 +702,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
     };
 
     return (
-        // CHANGED: dropped `h-full overflow-hidden` on this card — it now
-        // sizes to its own content, matching the calendar card beside it,
-        // instead of being forced to match a fixed-height row.
-        <div className="flex flex-col min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-2">
                 <h2 className="min-w-0 truncate text-base font-semibold text-slate-900">
                     Reservation Details
@@ -726,8 +724,6 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                 </button>
             </div>
 
-            {/* CHANGED: removed `flex-1 overflow-y-auto` — no longer needs
-                its own inner scroll region since the whole page scrolls. */}
             <div className="mt-3 space-y-2.5 text-sm">
                 <Field label="Booking Reference">
                     <div className="flex min-w-0 items-center gap-2">
@@ -762,12 +758,12 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                     </span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-x-4 sm:gap-x-5 gap-y-4 border-t border-slate-100 pt-4">
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-slate-100 pt-4 sm:gap-x-5">
                     <div className="min-w-0">
                         <p className="text-[11px] font-medium text-slate-400">
                             Check-in
                         </p>
-                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800 sm:text-sm">
                             {formatLong(booking.check_in_date)}
                         </p>
                     </div>
@@ -776,7 +772,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                         <p className="text-[11px] font-medium text-slate-400">
                             Check-out
                         </p>
-                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800 sm:text-sm">
                             {formatLong(booking.check_out_date)}
                         </p>
                     </div>
@@ -785,7 +781,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                         <p className="text-[11px] font-medium text-slate-400">
                             Duration
                         </p>
-                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800 sm:text-sm">
                             {nights} {nights === 1 ? "Night" : "Nights"}
                         </p>
                     </div>
@@ -794,7 +790,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                         <p className="text-[11px] font-medium text-slate-400">
                             Room
                         </p>
-                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800 sm:text-sm">
                             Room {roomLabel(booking)}
                         </p>
                     </div>
@@ -803,7 +799,7 @@ function DetailsPanel({ booking }: { booking: Booking }) {
                         <p className="text-[11px] font-medium text-slate-400">
                             Room Type
                         </p>
-                        <p className="mt-1 truncate text-xs sm:text-sm font-semibold text-slate-800">
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-800 sm:text-sm">
                             {roomTypeLabel(booking)}
                         </p>
                     </div>

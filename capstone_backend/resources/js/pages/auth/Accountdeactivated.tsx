@@ -1,14 +1,14 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Mail, Phone, LogOut, ArrowRight } from "lucide-react";
-import loginLogo from "../../../images/loginLogo.png";
 
 interface DeactivatedState {
     email?: string;
 }
 
-const SUPPORT_EMAIL = "support@lynnennia.com";
-const SUPPORT_PHONE = "+63 900 000 0000";
+// ====== Travelers Inn support contact ======
+const SUPPORT_EMAIL = "lyeniatravellersinn@gmail.com";
+const SUPPORT_PHONE = "09177045341";
 
 /**
  * Shown when a login attempt succeeds on credentials but the account has
@@ -33,6 +33,10 @@ export default function AccountDeactivated() {
         }`;
     };
 
+    const handleCallSupport = () => {
+        window.location.href = `tel:${SUPPORT_PHONE.replace(/\s+/g, "")}`;
+    };
+
     const handleBackToLogin = () => {
         localStorage.clear();
         navigate("/login", { replace: true });
@@ -51,23 +55,6 @@ export default function AccountDeactivated() {
 
             <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-xl shadow-[#1B2B27]/5 border border-[#1B2B27]/6">
                 <div className="p-8 sm:p-10 text-center">
-                    {/* Static site logo — no slideshow, no motion
-                    <div className="h-16 w-16 rounded-full bg-[#1B2B27] mx-auto mb-6 flex items-center justify-center">
-                        <img
-                            src={loginLogo}
-                            alt="Lyn Enia's Travelers Inn logo"
-                            className="h-9 w-9 object-contain brightness-0 invert"
-                        />
-                    </div>
-
-                    <div className="flex items-center justify-center gap-3 mb-3">
-                        <span className="h-px w-8 bg-[#C89B5A]" />
-                        <span className="text-[11px] tracking-[0.24em] uppercase text-[#C89B5A] font-medium">
-                            Travelers Inn
-                        </span>
-                        <span className="h-px w-8 bg-[#C89B5A]" />
-                    </div> */}
-
                     <h1 className="font-display text-2xl sm:text-3xl leading-tight text-[#c60505] mb-3">
                         Your account is on hold
                     </h1>
@@ -87,13 +74,21 @@ export default function AccountDeactivated() {
                         </p>
                     )}
 
-                    {/* Contact options */}
+                    {/* Contact options — tappable */}
                     <div className="space-y-2.5 mb-8 text-left">
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[#F7F4EF] border border-[#1B2B27]/8">
-                            <div className="h-9 w-9 rounded-lg bg-white border border-[#1B2B27]/8 flex items-center justify-center flex-shrink-0">
-                                <Mail className="h-4 w-4 text-[#1B2B27]/50" />
+                        {/* Email row */}
+                        <a
+                            href={`mailto:${SUPPORT_EMAIL}?subject=Account%20Access%20Question${
+                                email
+                                    ? `&body=Account%20email%3A%20${encodeURIComponent(email)}`
+                                    : ""
+                            }`}
+                            className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[#F7F4EF] border border-[#1B2B27]/8 hover:bg-white hover:border-[#1B2B27]/15 transition-colors group"
+                        >
+                            <div className="h-9 w-9 rounded-lg bg-white border border-[#1B2B27]/8 flex items-center justify-center flex-shrink-0 group-hover:border-[#C89B5A]/40">
+                                <Mail className="h-4 w-4 text-[#1B2B27]/50 group-hover:text-[#C89B5A] transition-colors" />
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                                 <p className="text-[11px] text-[#1B2B27]/40 leading-none mb-0.5">
                                     Email
                                 </p>
@@ -101,12 +96,18 @@ export default function AccountDeactivated() {
                                     {SUPPORT_EMAIL}
                                 </p>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[#F7F4EF] border border-[#1B2B27]/8">
-                            <div className="h-9 w-9 rounded-lg bg-white border border-[#1B2B27]/8 flex items-center justify-center flex-shrink-0">
-                                <Phone className="h-4 w-4 text-[#1B2B27]/50" />
+                            <ArrowRight className="h-3.5 w-3.5 text-[#1B2B27]/25 group-hover:text-[#1B2B27]/60 transition-colors" />
+                        </a>
+
+                        {/* Phone row */}
+                        <a
+                            href={`tel:${SUPPORT_PHONE.replace(/\s+/g, "")}`}
+                            className="flex items-center gap-3 px-4 py-3 rounded-lg bg-[#F7F4EF] border border-[#1B2B27]/8 hover:bg-white hover:border-[#1B2B27]/15 transition-colors group"
+                        >
+                            <div className="h-9 w-9 rounded-lg bg-white border border-[#1B2B27]/8 flex items-center justify-center flex-shrink-0 group-hover:border-[#C89B5A]/40">
+                                <Phone className="h-4 w-4 text-[#1B2B27]/50 group-hover:text-[#C89B5A] transition-colors" />
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                                 <p className="text-[11px] text-[#1B2B27]/40 leading-none mb-0.5">
                                     Phone
                                 </p>
@@ -114,7 +115,8 @@ export default function AccountDeactivated() {
                                     {SUPPORT_PHONE}
                                 </p>
                             </div>
-                        </div>
+                            <ArrowRight className="h-3.5 w-3.5 text-[#1B2B27]/25 group-hover:text-[#1B2B27]/60 transition-colors" />
+                        </a>
                     </div>
 
                     {/* Actions */}
@@ -127,6 +129,7 @@ export default function AccountDeactivated() {
                             Message Support
                             <ArrowRight className="h-4 w-4" />
                         </button>
+
                         <button
                             type="button"
                             onClick={handleBackToLogin}

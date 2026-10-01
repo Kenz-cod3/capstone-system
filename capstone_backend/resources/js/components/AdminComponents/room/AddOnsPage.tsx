@@ -1,640 +1,645 @@
-import { useEffect, useState, useRef } from "react";
+import { useState } from "react";
 import {
-    Plus,
-    Pencil,
-    Trash2,
-    X,
-    AlertCircle,
-    CheckCircle,
-    Package,
-    Search,
-    ChevronUp,
-    ChevronDown,
-    Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Package,
+  Search,
+  X,
 } from "lucide-react";
-import api from "@/services/api"; // ← your axios instance
+import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-    AlertDialog,
-    AlertDialogContent,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogDescription,
-    AlertDialogFooter,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { Skeleton } from "@/components/ui/skeleton";
+import api from "@/services/api";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface AddOn {
-    id: number;
-    add_on_name: string;
-    price: number;
+  id: number;
+  add_on_name: string;
+  price: number;
+  stock: number;
 }
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
-
-const fetchAddOns = async (): Promise<AddOn[]> => {
-    const res = await api.get("/add-ons");
-    const json = res.data;
-    return Array.isArray(json) ? json : json.data ?? [];
-};
-
-const createAddOn = async (payload: Omit<AddOn, "id">): Promise<AddOn> => {
-    const res = await api.post("/add-ons", payload);
-    return res.data.data ?? res.data;
-};
-
-const updateAddOn = async (
-    id: number,
-    payload: Omit<AddOn, "id">,
-): Promise<AddOn> => {
-    const res = await api.put(`/add-ons/${id}`, payload);
-    return res.data.data ?? res.data;
-};
-
-const deleteAddOn = async (id: number): Promise<void> => {
-    await api.delete(`/add-ons/${id}`);
-};
-
-// ─── Add / Edit Modal ─────────────────────────────────────────────────────────
-
-interface ModalProps {
-    initial?: AddOn | null;
-    onClose: () => void;
-    onSaved: () => void;
+interface AddOnPayload {
+  add_on_name: string;
+  price: number;
+  stock: number;
 }
 
-function AddOnModal({ initial, onClose, onSaved }: ModalProps) {
-    const isEdit = !!initial;
-    const [form, setForm] = useState({
-        add_on_name: initial?.add_on_name ?? "",
-        price: initial?.price?.toString() ?? "",
-    });
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    const [loading, setLoading] = useState(false);
-    const nameRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        // slight delay so the dialog's own focus trap settles first
-        const t = setTimeout(() => nameRef.current?.focus(), 0);
-        return () => clearTimeout(t);
-    }, []);
-
-    const validate = () => {
-        const next: Record<string, string> = {};
-        if (!form.add_on_name.trim()) next.add_on_name = "Name is required";
-        else if (form.add_on_name.trim().length < 2)
-            next.add_on_name = "At least 2 characters";
-        const p = parseFloat(form.price);
-        if (!form.price) next.price = "Price is required";
-        else if (isNaN(p) || p < 0) next.price = "Enter a valid positive price";
-        setErrors(next);
-        return Object.keys(next).length === 0;
-    };
-
-    const handleSubmit = async () => {
-        if (!validate()) return;
-        setLoading(true);
-        try {
-            const payload = {
-                add_on_name: form.add_on_name.trim(),
-                price: parseFloat(form.price),
-            };
-            if (isEdit && initial) {
-                await updateAddOn(initial.id, payload);
-            } else {
-                await createAddOn(payload);
-            }
-            onSaved();
-            onClose();
-        } catch (err: any) {
-            const backendErrors = err?.response?.data?.errors;
-            if (backendErrors) {
-                const formatted: Record<string, string> = {};
-                Object.keys(backendErrors).forEach((k) => {
-                    formatted[k] = Array.isArray(backendErrors[k])
-                        ? backendErrors[k][0]
-                        : backendErrors[k];
-                });
-                setErrors(formatted);
-            } else {
-                setErrors({
-                    submit:
-                        err?.response?.data?.message ??
-                        "Something went wrong. Please try again.",
-                });
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent
-                className="max-w-sm bg-white border border-gray-100 shadow-2xl rounded-2xl p-0 gap-0 overflow-hidden [&>button]:hidden"
-                onOpenAutoFocus={(e) => e.preventDefault()}
-            >
-                {/* Header */}
-                <DialogHeader className="flex-row items-center justify-between space-y-0 px-6 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-                            <Package className="w-5 h-5 text-indigo-600" />
-                        </div>
-                        <div>
-                            <DialogTitle className="text-base font-semibold text-gray-900">
-                                {isEdit ? "Edit Add-On" : "New Add-On"}
-                            </DialogTitle>
-                            <p className="text-xs text-gray-400">
-                                {isEdit
-                                    ? "Update the details below"
-                                    : "Fill in the details below"}
-                            </p>
-                        </div>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <X className="w-4 h-4 text-gray-500" />
-                    </button>
-                </DialogHeader>
-
-                <div className="px-6 py-5 space-y-4">
-                    {/* Name */}
-                    <div>
-                        <Label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Add-On Name <span className="text-red-500">*</span>
-                        </Label>
-                        <Input
-                            ref={nameRef}
-                            type="text"
-                            className={`w-full px-3.5 py-2.5 h-auto border rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none transition-all ${
-                                errors.add_on_name
-                                    ? "border-red-400 bg-red-50"
-                                    : "border-gray-200"
-                            }`}
-                            placeholder="e.g., Extra Towel, Foam, Transportation"
-                            value={form.add_on_name}
-                            onChange={(e) => {
-                                setForm((p) => ({
-                                    ...p,
-                                    add_on_name: e.target.value,
-                                }));
-                                if (errors.add_on_name)
-                                    setErrors((p) => ({ ...p, add_on_name: "" }));
-                            }}
-                            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                        />
-                        {errors.add_on_name && (
-                            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5" />{" "}
-                                {errors.add_on_name}
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Price */}
-                    <div>
-                        <Label className="block text-sm font-medium text-gray-700 mb-1.5">
-                            Price (₱) <span className="text-red-500">*</span>
-                        </Label>
-                        <div className="relative">
-                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">
-                                ₱
-                            </span>
-                            <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                className={`w-full pl-7 pr-3.5 py-2.5 h-auto border rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                                    errors.price
-                                        ? "border-red-400 bg-red-50"
-                                        : "border-gray-200"
-                                }`}
-                                placeholder="0.00"
-                                value={form.price}
-                                onChange={(e) => {
-                                    setForm((p) => ({
-                                        ...p,
-                                        price: e.target.value,
-                                    }));
-                                    if (errors.price)
-                                        setErrors((p) => ({ ...p, price: "" }));
-                                }}
-                                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                            />
-                        </div>
-                        {errors.price && (
-                            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                                <AlertCircle className="w-3.5 h-3.5" /> {errors.price}
-                            </p>
-                        )}
-                    </div>
-
-                    {errors.submit && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
-                            <p className="text-xs text-red-600 flex items-center gap-1.5">
-                                <AlertCircle className="w-4 h-4 flex-shrink-0" />{" "}
-                                {errors.submit}
-                            </p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <DialogFooter className="px-6 pb-5 pt-0 flex-row gap-3 sm:justify-start">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={onClose}
-                        className="flex-1 h-auto px-4 py-2.5 border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={loading}
-                        className="flex-1 h-auto px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                {isEdit ? "Saving..." : "Adding..."}
-                            </>
-                        ) : (
-                            <>
-                                <CheckCircle className="w-4 h-4" />
-                                {isEdit ? "Save Changes" : "Add Add-On"}
-                            </>
-                        )}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
-
-interface DeleteModalProps {
-    addOn: AddOn;
-    onClose: () => void;
-    onDeleted: () => void;
-}
-
-function DeleteModal({ addOn, onClose, onDeleted }: DeleteModalProps) {
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-
-    const handleDelete = async () => {
-        setLoading(true);
-        try {
-            await deleteAddOn(addOn.id);
-            onDeleted();
-            onClose();
-        } catch (err: any) {
-            setError(
-                err?.response?.data?.message ??
-                    "Failed to delete. It may be linked to existing bookings.",
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <AlertDialog open onOpenChange={(open) => !open && onClose()}>
-            <AlertDialogContent className="max-w-sm bg-white border border-gray-100 shadow-2xl rounded-2xl p-0 gap-0 overflow-hidden">
-                <AlertDialogHeader className="px-6 pt-6 pb-2 text-center space-y-0">
-                    <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-                        <Trash2 className="w-6 h-6 text-red-500" />
-                    </div>
-                    <AlertDialogTitle className="text-lg font-semibold text-gray-900">
-                        Delete Add-On?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription className="text-sm text-gray-500 mt-1">
-                        <span className="font-medium text-gray-800">
-                            {addOn.add_on_name}
-                        </span>{" "}
-                        will be permanently removed. This cannot be undone.
-                    </AlertDialogDescription>
-                    {error && (
-                        <p className="mt-3 text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg p-2">
-                            {error}
-                        </p>
-                    )}
-                </AlertDialogHeader>
-                <AlertDialogFooter className="px-6 pb-6 pt-4 flex-row gap-3 sm:justify-start">
-                    <Button
-                        variant="outline"
-                        onClick={onClose}
-                        className="flex-1 h-auto px-4 py-2.5 border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleDelete}
-                        disabled={loading}
-                        className="flex-1 h-auto px-4 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                            <Trash2 className="w-4 h-4" />
-                        )}
-                        {loading ? "Deleting..." : "Delete"}
-                    </Button>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
-    );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-type SortKey = "add_on_name" | "price";
+type SortKey = "add_on_name" | "price" | "stock";
 type SortDir = "asc" | "desc";
 
-export default function AddOnsPage() {
-    const [addOns, setAddOns] = useState<AddOn[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
+// Stock at or below this number shows the "low stock" warning
+const LOW_STOCK_THRESHOLD = 5;
 
-    const [search, setSearch] = useState("");
-    const [sortKey, setSortKey] = useState<SortKey>("add_on_name");
-    const [sortDir, setSortDir] = useState<SortDir>("asc");
+// ─── Fetch function ──────────────────────────────────────────────────────────
 
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [editTarget, setEditTarget] = useState<AddOn | null>(null);
-    const [deleteTarget, setDeleteTarget] = useState<AddOn | null>(null);
+const fetchAddOns = async (): Promise<AddOn[]> => {
+  const res = await api.get("/add-ons");
+  const data = res.data;
+  return Array.isArray(data) ? data : data.data || [];
+};
 
-    const load = async () => {
-        setLoading(true);
-        setError("");
-        try {
-            const data = await fetchAddOns();
-            setAddOns(data);
-        } catch (err: any) {
-            // 401 is auto-handled by the axios interceptor (redirect to login)
-            setError(
-                err?.response?.data?.message ??
-                    "Could not load add-ons. Please try again.",
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+// ─── Stock Badge ─────────────────────────────────────────────────────────────
 
-    useEffect(() => {
-        load();
-    }, []);
+function StockBadge({ stock }: { stock: number }) {
+  const qty = Number(stock);
 
-    const toggleSort = (key: SortKey) => {
-        if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        else {
-            setSortKey(key);
-            setSortDir("asc");
-        }
-    };
-
-    const filtered = addOns
-        .filter((a) =>
-            a.add_on_name.toLowerCase().includes(search.toLowerCase()),
-        )
-        .sort((a, b) => {
-            const mul = sortDir === "asc" ? 1 : -1;
-            if (sortKey === "price") return (a.price - b.price) * mul;
-            return a.add_on_name.localeCompare(b.add_on_name) * mul;
-        });
-
-    const SortIcon = ({ col }: { col: SortKey }) =>
-        sortKey === col ? (
-            sortDir === "asc" ? (
-                <ChevronUp className="w-3.5 h-3.5 text-indigo-600" />
-            ) : (
-                <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
-            )
-        ) : (
-            <ChevronUp className="w-3.5 h-3.5 text-gray-300" />
-        );
-
+  if (qty <= 0) {
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
-            <div className="max-w-3xl mx-auto">
-                {/* Page Header */}
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-200">
-                            <Package className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-bold text-gray-900">
-                                Add-Ons
-                            </h1>
-                            <p className="text-sm text-gray-500">
-                                {addOns.length} item
-                                {addOns.length !== 1 ? "s" : ""} available
-                            </p>
-                        </div>
-                    </div>
-                    <Button
-                        onClick={() => setShowAddModal(true)}
-                        className="flex items-center gap-2 h-auto px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all shadow-md shadow-indigo-200"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add New
-                    </Button>
-                </div>
+      <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+        Out of stock
+      </span>
+    );
+  }
 
-                {/* Search */}
-                <div className="mb-4 flex justify-end">
-                    <div className="relative">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+  if (qty <= LOW_STOCK_THRESHOLD) {
+    return (
+      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+        {qty} left
+      </span>
+    );
+  }
 
-                        <Input
-                            type="text"
-                            className="w-[250px] h-auto pl-10 pr-10 py-2.5 bg-white border-gray-200 rounded-xl text-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 outline-none shadow-sm transition-all"
-                            placeholder="Search add-ons..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
+  return (
+    <span className="rounded-full border border-mint-200 bg-mint-50 px-2 py-0.5 text-[11px] font-semibold text-mint-700">
+      {qty} in stock
+    </span>
+  );
+}
 
-                        {search && (
-                            <button
-                                onClick={() => setSearch("")}
-                                className="absolute right-3 top-1/2 -translate-y-1/2"
-                            >
-                                <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
-                            </button>
-                        )}
-                    </div>
-                </div>
+// ─── Component ──────────────────────────────────────────────────────────────
 
-                {/* Table Card */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    {/* Table Header */}
-                    <div className="grid grid-cols-[1fr_160px_100px] px-5 py-3 border-b border-gray-100 bg-gray-50/80">
-                        <button
-                            onClick={() => toggleSort("add_on_name")}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-indigo-600 transition-colors text-left"
-                        >
-                            Name <SortIcon col="add_on_name" />
-                        </button>
-                        <button
-                            onClick={() => toggleSort("price")}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-indigo-600 transition-colors text-left"
-                        >
-                            Price <SortIcon col="price" />
-                        </button>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">
-                            Actions
-                        </span>
-                    </div>
+export default function AddOnsPage() {
+  const queryClient = useQueryClient();
 
-                    {/* Loading */}
-                    {loading && (
-                        <div className="flex flex-col items-center justify-center py-16 gap-3">
-                            <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
-                            <p className="text-sm text-gray-400">
-                                Loading add-ons...
-                            </p>
-                        </div>
-                    )}
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<AddOn | null>(null);
+  const [form, setForm] = useState({ add_on_name: "", price: "", stock: "" });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-                    {/* Error */}
-                    {!loading && error && (
-                        <div className="flex flex-col items-center justify-center py-16 gap-3">
-                            <AlertCircle className="w-8 h-8 text-red-400" />
-                            <p className="text-sm text-red-500">{error}</p>
-                            <button
-                                onClick={load}
-                                className="text-sm text-indigo-600 hover:underline font-medium"
-                            >
-                                Try again
-                            </button>
-                        </div>
-                    )}
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("add_on_name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-                    {/* Empty */}
-                    {!loading && !error && filtered.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-16 gap-3">
-                            <Package className="w-9 h-9 text-gray-300" />
-                            <p className="text-sm text-gray-400">
-                                {search
-                                    ? `No results for "${search}"`
-                                    : "No add-ons yet. Create one!"}
-                            </p>
-                        </div>
-                    )}
+  // ── Query ──────────────────────────────────────────────────────────────────
 
-                    {/* Rows */}
-                    {!loading && !error && filtered.length > 0 && (
-                        <div className="divide-y divide-gray-50">
-                            {filtered.map((addon) => (
-                                <div
-                                    key={addon.id}
-                                    className="grid grid-cols-[1fr_160px_100px] items-center px-5 py-4 hover:bg-indigo-50/40 transition-colors group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                                            <Package className="w-4 h-4 text-indigo-400" />
-                                        </div>
-                                        <span className="text-sm font-medium text-gray-800">
-                                            {addon.add_on_name}
-                                        </span>
-                                    </div>
+  const {
+    data: addOns = [],
+    isLoading,
+    isFetching,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["addOns"],
+    queryFn: fetchAddOns,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 
-                                    <div>
-                                        <Badge className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 shadow-none">
-                                            ₱
-                                            {Number(
-                                                addon.price,
-                                            ).toLocaleString("en-PH", {
-                                                minimumFractionDigits: 2,
-                                            })}
-                                        </Badge>
-                                    </div>
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
-                                    <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => setEditTarget(addon)}
-                                            className="p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-500 hover:text-indigo-700 transition-colors"
-                                            title="Edit"
-                                        >
-                                            <Pencil className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() =>
-                                                setDeleteTarget(addon)
-                                            }
-                                            className="p-1.5 rounded-lg hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+  const handleServerErrors = (err: any, fallback: string) => {
+    const serverErrors = err.response?.data?.errors;
+    if (serverErrors) {
+      const formatted: Record<string, string> = {};
+      Object.keys(serverErrors).forEach((k) => {
+        formatted[k] = Array.isArray(serverErrors[k])
+          ? serverErrors[k][0]
+          : serverErrors[k];
+      });
+      setFormErrors(formatted);
+    } else {
+      toast.error(err.response?.data?.message || fallback);
+    }
+  };
 
-                    {/* Footer */}
-                    {!loading && !error && filtered.length > 0 && (
-                        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex items-center justify-between">
-                            <span className="text-xs text-gray-400">
-                                Showing {filtered.length} of {addOns.length}{" "}
-                                add-ons
-                            </span>
-                            <span className="text-xs text-gray-500 font-medium">
-                                Total pool value:{" "}
-                                <span className="text-emerald-600 font-semibold">
-                                    ₱
-                                    {filtered
-                                        .reduce(
-                                            (s, a) => s + Number(a.price),
-                                            0,
-                                        )
-                                        .toLocaleString("en-PH", {
-                                            minimumFractionDigits: 2,
-                                        })}
-                                </span>
-                            </span>
-                        </div>
-                    )}
-                </div>
+  const createMutation = useMutation({
+    mutationFn: (payload: AddOnPayload) => api.post("/add-ons", payload),
+    onSuccess: () => {
+      toast.success("Add-on created successfully");
+      queryClient.invalidateQueries({ queryKey: ["addOns"] });
+      closeDialog();
+    },
+    onError: (err: any) => handleServerErrors(err, "Failed to create add-on"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: AddOnPayload }) =>
+      api.put(`/add-ons/${id}`, payload),
+    onSuccess: () => {
+      toast.success("Add-on updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["addOns"] });
+      closeDialog();
+    },
+    onError: (err: any) => handleServerErrors(err, "Failed to update add-on"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/add-ons/${id}`),
+    onSuccess: () => {
+      toast.success("Add-on deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["addOns"] });
+    },
+    onError: (err: any) => {
+      toast.error(
+        err.response?.data?.message ||
+          "Failed to delete. It may be linked to existing bookings.",
+      );
+    },
+  });
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  // ── Dialog helpers ─────────────────────────────────────────────────────────
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ add_on_name: "", price: "", stock: "" });
+    setFormErrors({});
+    setDialogOpen(true);
+  };
+
+  const openEdit = (addOn: AddOn) => {
+    setEditing(addOn);
+    setForm({
+      add_on_name: addOn.add_on_name,
+      price: addOn.price.toString(),
+      stock: addOn.stock.toString(),
+    });
+    setFormErrors({});
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setEditing(null);
+    setForm({ add_on_name: "", price: "", stock: "" });
+    setFormErrors({});
+  };
+
+  const setField = (key: keyof typeof form, value: string) => {
+    setForm((p) => ({ ...p, [key]: value }));
+    if (formErrors[key]) setFormErrors((p) => ({ ...p, [key]: "" }));
+  };
+
+  const validate = () => {
+    const next: Record<string, string> = {};
+
+    if (!form.add_on_name.trim()) next.add_on_name = "Name is required";
+    else if (form.add_on_name.trim().length < 2)
+      next.add_on_name = "At least 2 characters";
+
+    const p = parseFloat(form.price);
+    if (!form.price) next.price = "Price is required";
+    else if (isNaN(p) || p < 0) next.price = "Enter a valid positive price";
+
+    const s = Number(form.stock);
+    if (form.stock === "") next.stock = "Stock is required";
+    else if (!Number.isInteger(s) || s < 0)
+      next.stock = "Enter a whole number (0 or more)";
+
+    setFormErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const saveAddOn = () => {
+    if (!validate()) return;
+
+    const payload: AddOnPayload = {
+      add_on_name: form.add_on_name.trim(),
+      price: parseFloat(form.price),
+      stock: parseInt(form.stock, 10),
+    };
+
+    if (editing) {
+      updateMutation.mutate({ id: editing.id, payload });
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  // ── Sort + filter ──────────────────────────────────────────────────────────
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) =>
+    sortKey === col ? (
+      <span className="ml-1 text-xs">{sortDir === "asc" ? "▲" : "▼"}</span>
+    ) : (
+      <span className="ml-1 text-xs opacity-30">⇅</span>
+    );
+
+  const filtered = [...addOns]
+    .filter((a) => a.add_on_name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      const mul = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "price") return (a.price - b.price) * mul;
+      if (sortKey === "stock") return (a.stock - b.stock) * mul;
+      return a.add_on_name.localeCompare(b.add_on_name) * mul;
+    });
+
+  const lowStockCount = addOns.filter(
+    (a) => Number(a.stock) <= LOW_STOCK_THRESHOLD,
+  ).length;
+
+  const inventoryValue = filtered.reduce(
+    (sum, a) => sum + Number(a.price) * Number(a.stock),
+    0,
+  );
+
+  // ── Skeleton Row ──────────────────────────────────────────────────────────
+
+  const SkeletonRow = () => (
+    <tr className="border-b border-slate-100">
+      <td className="px-4 py-3 pl-8">
+        <Skeleton className="h-4 w-40 bg-slate-200" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-4 w-20 bg-slate-200" />
+      </td>
+      <td className="px-4 py-3">
+        <Skeleton className="h-5 w-20 rounded-full bg-slate-200" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex justify-end gap-2 pr-4">
+          <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
+          <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
+        </div>
+      </td>
+    </tr>
+  );
+
+  // ── Empty State ───────────────────────────────────────────────────────────
+
+  const EmptyState = () => (
+    <tr>
+      <td colSpan={4} className="px-4 py-16 text-center">
+        <p className="mt-2 font-semibold text-slate-600">
+          {search ? `No results for "${search}"` : "No add-ons yet"}
+        </p>
+        {!search && (
+          <p className="mt-1 text-xs text-slate-400">
+            Click "Add Add-on" to get started
+          </p>
+        )}
+      </td>
+    </tr>
+  );
+
+  // ── Error state ────────────────────────────────────────────────────────────
+
+  if (error) {
+    return (
+      <div className="flex h-64 items-center justify-center rounded-xl border border-red-200 bg-red-50 p-4">
+        <div className="text-center">
+          <p className="font-semibold text-red-700">Failed to load add-ons</p>
+          <p className="mt-1 text-sm text-red-500">{(error as Error).message}</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 rounded-lg bg-mint-600 px-4 py-2 text-sm font-medium text-white hover:bg-mint-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const loading = isLoading || isFetching;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <>
+      <div className="mx-auto max-w-7xl">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Card header — logo + title + description */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-mint-600 shadow-md shadow-mint-200">
+                <Package className="size-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Add-ons</h2>
+                <p className="text-xs text-slate-500">
+                  {loading
+                    ? "Loading add-ons..."
+                    : `${addOns.length} ${
+                        addOns.length === 1 ? "add-on" : "add-ons"
+                      } available`}
+                  {!loading && lowStockCount > 0 && (
+                    <span className="font-medium text-amber-600">
+                      {" "}
+                      • {lowStockCount} low or out of stock
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
 
-            {/* Modals */}
-            {showAddModal && (
-                <AddOnModal onClose={() => setShowAddModal(false)} onSaved={load} />
-            )}
-            {editTarget && (
-                <AddOnModal
-                    initial={editTarget}
-                    onClose={() => setEditTarget(null)}
-                    onSaved={load}
+            <div className="flex items-center gap-3">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search add-ons..."
+                  className="w-[220px] rounded-lg border border-slate-200 py-2 pl-9 pr-8 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 transition-none"
                 />
-            )}
-            {deleteTarget && (
-                <DeleteModal
-                    addOn={deleteTarget}
-                    onClose={() => setDeleteTarget(null)}
-                    onDeleted={load}
-                />
-            )}
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                  >
+                    <X className="size-3.5 text-slate-400 hover:text-slate-600" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-sm font-semibold text-white hover:bg-mint-700 active:scale-95 transition-all"
+              >
+                <Plus className="size-4" />
+                Add Add-on
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left">
+                  <th
+                    onClick={() => handleSort("add_on_name")}
+                    className="cursor-pointer select-none border-b border-slate-200 px-4 py-3 pl-8 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
+                  >
+                    Name
+                    <SortIcon col="add_on_name" />
+                  </th>
+                  <th
+                    onClick={() => handleSort("price")}
+                    className="cursor-pointer select-none border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
+                  >
+                    Price
+                    <SortIcon col="price" />
+                  </th>
+                  <th
+                    onClick={() => handleSort("stock")}
+                    className="cursor-pointer select-none border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100"
+                  >
+                    Stock
+                    <SortIcon col="stock" />
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 pr-24 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <SkeletonRow key={`skeleton-${i}`} />
+                  ))
+                ) : filtered.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  filtered.map((addon) => (
+                    <tr
+                      key={addon.id}
+                      className="border-b border-slate-100 transition-colors hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 pl-8 font-medium text-slate-900">
+                        {addon.add_on_name}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        ₱
+                        {Number(addon.price).toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StockBadge stock={addon.stock} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2 pr-4">
+                          <button
+                            onClick={() => openEdit(addon)}
+                            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all"
+                          >
+                            <Pencil className="size-3" />
+                            Edit
+                          </button>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 active:scale-95 transition-all">
+                                <Trash2 className="size-3" />
+                                Delete
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="bg-white ring-0 border border-gray-200 shadow-lg">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Delete "{addon.add_on_name}"?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. The add-on will
+                                  be permanently removed.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(addon.id)}
+                                  className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                                >
+                                  {deleteMutation.isPending ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    "Delete"
+                                  )}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
+            <p className="text-xs text-slate-500">
+              Showing{" "}
+              <span className="font-semibold text-slate-700">
+                {loading ? "..." : filtered.length}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-slate-700">
+                {loading ? "..." : addOns.length}
+              </span>{" "}
+              {addOns.length === 1 ? "add-on" : "add-ons"}
+            </p>
+            <p className="text-xs text-slate-500">
+              Inventory value:{" "}
+              <span className="font-semibold text-mint-700">
+                {loading
+                  ? "..."
+                  : `₱${inventoryValue.toLocaleString("en-PH", {
+                      minimumFractionDigits: 2,
+                    })}`}
+              </span>
+            </p>
+          </div>
         </div>
-    );
+      </div>
+
+      {/* ── Create / Edit Dialog ── */}
+      <Dialog open={dialogOpen} onOpenChange={closeDialog}>
+        <DialogContent
+          className="max-w-lg bg-white border border-gray-200 shadow-lg outline-none ring-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 [&>button]:hidden transition-none data-open:animate-none data-closed:animate-none"
+          onPointerDownOutside={() => {
+            closeDialog();
+          }}
+          onFocusOutside={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {editing ? "Edit Add-on" : "Create New Add-on"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveAddOn();
+            }}
+            className="mt-2 space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              {/* Name */}
+              <div className="col-span-2 space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Add-on Name
+                </label>
+                <input
+                  type="text"
+                  value={form.add_on_name}
+                  onChange={(e) => setField("add_on_name", e.target.value)}
+                  placeholder="e.g. Extra Towel, Foam, Transportation"
+                  autoFocus
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 transition-none"
+                />
+                {formErrors.add_on_name && (
+                  <p className="text-xs text-red-500">
+                    {formErrors.add_on_name}
+                  </p>
+                )}
+              </div>
+
+              {/* Price */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Price
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    ₱
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.price}
+                    onChange={(e) => setField("price", e.target.value)}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                  />
+                </div>
+                {formErrors.price && (
+                  <p className="text-xs text-red-500">{formErrors.price}</p>
+                )}
+              </div>
+
+              {/* Stock */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Stock
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.stock}
+                  onChange={(e) => setField("stock", e.target.value)}
+                  placeholder="e.g. 50"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                />
+                {formErrors.stock && (
+                  <p className="text-xs text-red-500">{formErrors.stock}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 rounded-lg bg-mint-600 px-4 py-2 text-sm font-semibold text-white hover:bg-mint-700 disabled:opacity-60 disabled:cursor-not-allowed transition-none"
+              >
+                {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+                {editing ? "Update Add-on" : "Create Add-on"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }

@@ -50,6 +50,7 @@ Route::apiResource('booked-rooms', BookedRoomController::class)->except(['index'
 
 Route::apiResource('booking-addons', BookingAddOnController::class)->only(['index', 'show']);
 Route::apiResource('booking-addons', BookingAddOnController::class)->except(['index', 'show'])->middleware('shift.open');
+Route::get('/booking-add-ons/transactions', [BookingAddOnController::class, 'transactions']);
 
 Route::post('booking-payments/refund', [BookingPaymentController::class, 'refund'])
     ->middleware('shift.open');

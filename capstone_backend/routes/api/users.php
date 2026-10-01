@@ -13,6 +13,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('users/{id}/status', [UserController::class, 'updateStatus']);
     Route::post('/change-password', [UserController::class, 'changePassword']);
 
+    // ✅ PUSH NOTIFICATION TOKEN (guest, housekeeper, staff, admin)
+    Route::post('/guest/push-token', [UserController::class, 'savePushToken']);
+
     Route::get('/user/status', function (Request $request) {
         return response()->json([
             'id' => $request->user()->id,
@@ -20,5 +23,3 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
     });
 });
-
-

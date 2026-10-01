@@ -148,6 +148,7 @@ interface AddOn {
     id: number;
     add_on_name: string;
     price: number;
+    stock: number;
 }
 
 interface SelectedAddOn {
@@ -911,14 +912,15 @@ interface AddOnsModalProps {
     onConfirm: (selectedAddOns: SelectedAddOn[]) => void;
     initialSelected?: SelectedAddOn[];
     roomNumber?: string;
+    reservedByOthers?: Record<number, number>;
 }
-
 function AddOnsModal({
     visible,
     onClose,
     onConfirm,
     initialSelected = [],
     roomNumber,
+    reservedByOthers = {},
 }: AddOnsModalProps) {
     const [addOns, setAddOns] = useState<AddOn[]>([]);
     const [loading, setLoading] = useState(false);
@@ -953,7 +955,22 @@ function AddOnsModal({
         }
     };
 
+    // Stock minus what the other rooms in this check-in already hold
+    const getAvailable = (addon: AddOn) =>
+        Math.max(
+            0,
+            Number(addon.stock ?? 0) - (reservedByOthers[addon.id] || 0),
+        );
+
     const updateQuantity = (addon: AddOn, quantity: number) => {
+        const available = getAvailable(addon);
+        if (quantity > available) {
+            message.warning(
+                `Only ${available} ${addon.add_on_name} available.`,
+            );
+            return;
+        }
+
         if (quantity <= 0) {
             setSelected((prev) => {
                 const newMap = new Map(prev);
@@ -1127,6 +1144,25 @@ function AddOnsModal({
                                             }}
                                         >
                                             {formatPeso(addon.price)}
+                                            {" · "}
+                                            <span
+                                                style={{
+                                                    fontWeight: 500,
+                                                    color:
+                                                        getAvailable(addon) ===
+                                                        0
+                                                            ? T.danger
+                                                            : getAvailable(
+                                                                    addon,
+                                                                ) <= 5
+                                                              ? T.warn
+                                                              : T.muted,
+                                                }}
+                                            >
+                                                {getAvailable(addon) === 0
+                                                    ? "Out of stock"
+                                                    : `${getAvailable(addon)} left`}
+                                            </span>
                                         </div>
                                     </div>
 
@@ -1174,6 +1210,9 @@ function AddOnsModal({
                                             size="small"
                                             type="primary"
                                             icon={<Plus size={12} />}
+                                            disabled={
+                                                quantity >= getAvailable(addon)
+                                            }
                                             onClick={() =>
                                                 updateQuantity(
                                                     addon,
@@ -2026,6 +2065,18 @@ function WalkInContent() {
             selectedRoomsDetails.find((r) => r.id === currentRoomForAddOns)
                 ?.addons || []
         );
+    };
+
+    // How many of each add-on the OTHER rooms already hold in this check-in
+    const getReservedByOtherRooms = (): Record<number, number> => {
+        const reserved: Record<number, number> = {};
+        selectedRoomsDetails.forEach((room) => {
+            if (room.id === currentRoomForAddOns) return;
+            room.addons.forEach((addon) => {
+                reserved[addon.id] = (reserved[addon.id] || 0) + addon.quantity;
+            });
+        });
+        return reserved;
     };
 
     const getCurrentRoomNumber = (): string => {
@@ -4270,6 +4321,7 @@ function WalkInContent() {
                 onConfirm={handleAddOnsConfirm}
                 initialSelected={getCurrentRoomAddOns()}
                 roomNumber={getCurrentRoomNumber()}
+                reservedByOthers={getReservedByOtherRooms()}
             />
 
             <QrModal

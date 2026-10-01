@@ -21,7 +21,8 @@ class AddOnController extends Controller
     {
         $validated = $request->validate([
             'add_on_name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
+            'price'       => 'required|numeric|min:0',
+            'stock'       => 'required|integer|min:0',
         ]);
 
         $addon = AddOn::create($validated);
@@ -47,7 +48,8 @@ class AddOnController extends Controller
 
         $validated = $request->validate([
             'add_on_name' => 'sometimes|string|max:255',
-            'price' => 'sometimes|numeric|min:0',
+            'price'       => 'sometimes|numeric|min:0',
+            'stock'       => 'sometimes|integer|min:0',
         ]);
 
         $addon->update($validated);

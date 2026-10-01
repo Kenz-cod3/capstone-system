@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Cache;
 use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 use Illuminate\Support\Facades\DB;
 use App\Events\DashboardUpdated;
@@ -96,7 +98,8 @@ class BookingController extends Controller
                 $q->whereNull('archived_at')
                     ->whereNotIn('status', [
                         'checked_out',
-                        'refunded'
+                        'refunded',
+                        'cancelled',
                     ]);
 
                 if (!empty($status) && $status !== 'all') {
@@ -120,7 +123,8 @@ class BookingController extends Controller
                 ->whereNull('archived_at')
                 ->whereNotIn('status', [
                     'checked_out',
-                    'refunded'
+                    'refunded',
+                    'cancelled',
                 ]);
 
             if (!empty($status) && $status !== 'all') {
@@ -189,7 +193,8 @@ class BookingController extends Controller
                 $q->whereNull('archived_at')
                     ->whereIn('status', [
                         'checked_out',
-                        'refunded'
+                        'refunded',
+                        'cancelled',
                     ]);
 
                 if (!empty($status) && $status !== 'all') {
@@ -219,7 +224,8 @@ class BookingController extends Controller
                 ->whereNull('archived_at')
                 ->whereIn('status', [
                     'checked_out',
-                    'refunded'
+                    'refunded',
+                    'cancelled',
                 ]);
 
             if (!empty($status) && $status !== 'all') {
@@ -295,6 +301,8 @@ class BookingController extends Controller
             'rooms.*.room_id' => 'required|exists:rooms,id',
 
             'rooms.*.stay_type' => 'required|in:overnight,short_stay',
+
+            'rooms.*.guests' => 'nullable|integer|min:1',
 
             'rooms.*.check_in_date' => 'required|date|after_or_equal:today',
 
@@ -519,6 +527,9 @@ class BookingController extends Controller
 
             'message' => 'Your booking ' .
                 $booking->booking_reference .
+                ' for ' . $this->bookingStaySummary(
+                    $booking->bookedRooms()->with('room')->get()
+                ) .
                 ' has been submitted and is waiting for staff confirmation.',
 
             'is_read' => false,
@@ -605,6 +616,7 @@ class BookingController extends Controller
         ]);
 
         $booking = Booking::with([
+            'user',              // ✅ IDAGDAG ITO
             'bookedRooms.room',
             'payments'
         ])->findOrFail($id);
@@ -626,6 +638,9 @@ class BookingController extends Controller
         $oldStatus = $targetRooms->first()->status ?? 'pending';
 
         $type = $booking->walk_in_guest_id ? 'Walk-in' : 'Guest';
+
+        // "Room 101 (Oct 05, 2026 - Oct 07, 2026), Room 102 (...)"
+        $staySummary = $this->bookingStaySummary($targetRooms);
 
         if ($newStatus === 'confirmed') {
 
@@ -675,11 +690,21 @@ class BookingController extends Controller
                     'user_id' => $booking->user_id,
                     'title' => 'Booking Confirmed',
                     'booking_id' => $booking->id,
-                    'message' => 'Your booking ' . $booking->booking_reference . ' has been confirmed.',
+                    'message' => 'Your booking ' . $booking->booking_reference .
+                        ' for ' . $staySummary . ' has been confirmed.',
                     'is_read' => false
                 ]);
 
                 broadcast(new NotificationCreated($notification));
+
+                // ✅ EXPO PUSH TO GUEST
+                $this->sendGuestPush(
+                    $booking->user,
+                    $notification->title,
+                    $notification->message,
+                    $booking->id,
+                    'confirmed'
+                );
             }
         } elseif ($newStatus === 'checked_in') {
 
@@ -764,11 +789,22 @@ class BookingController extends Controller
                 $notification = Notification::create([
                     'user_id' => $booking->user_id,
                     'title' => 'Checked In',
-                    'message' => 'Your booking ' . $booking->booking_reference . ' checked in.',
+                    'booking_id' => $booking->id,
+                    'message' => 'Your booking ' . $booking->booking_reference .
+                        ' for ' . $staySummary . ' has been checked in.',
                     'is_read' => false
                 ]);
 
                 broadcast(new NotificationCreated($notification));
+
+                // ✅ EXPO PUSH TO GUEST
+                $this->sendGuestPush(
+                    $booking->user,
+                    $notification->title,
+                    $notification->message,
+                    $booking->id,
+                    'checked_in'
+                );
             }
 
             Room::whereIn('id', $targetRooms->pluck('room_id'))
@@ -809,11 +845,22 @@ class BookingController extends Controller
                 $notification = Notification::create([
                     'user_id' => $booking->user_id,
                     'title' => 'Checked Out',
-                    'message' => 'Your booking ' . $booking->booking_reference . ' has been checked out.',
+                    'booking_id' => $booking->id,
+                    'message' => 'Your booking ' . $booking->booking_reference .
+                        ' for ' . $staySummary . ' has been checked out.',
                     'is_read' => false
                 ]);
 
                 broadcast(new NotificationCreated($notification));
+
+                // ✅ EXPO PUSH TO GUEST
+                $this->sendGuestPush(
+                    $booking->user,
+                    $notification->title,
+                    $notification->message,
+                    $booking->id,
+                    'checked_out'
+                );
             }
         } elseif ($newStatus === 'cancelled') {
 
@@ -825,7 +872,7 @@ class BookingController extends Controller
                     'status' => 'cancelled',
                     'expected_checkout_at' => null,
                     'overdue_started_at' => null,
-                    'checkout_status' => null,
+                    'checkout_status' => 'ontime',
                 ]);
 
                 $room = $bookedRoom->room;
@@ -850,11 +897,22 @@ class BookingController extends Controller
                 $notification = Notification::create([
                     'user_id' => $booking->user_id,
                     'title' => 'Booking Cancelled',
-                    'message' => 'Your booking ' . $booking->booking_reference . ' has been cancelled.',
+                    'booking_id' => $booking->id,
+                    'message' => 'Your booking ' . $booking->booking_reference .
+                        ' for ' . $staySummary . ' has been cancelled.',
                     'is_read' => false
                 ]);
 
                 broadcast(new NotificationCreated($notification));
+
+                // ✅ EXPO PUSH TO GUEST
+                $this->sendGuestPush(
+                    $booking->user,
+                    $notification->title,
+                    $notification->message,
+                    $booking->id,
+                    'cancelled'
+                );
             }
         } elseif ($newStatus === 'refunded') {
 
@@ -866,6 +924,7 @@ class BookingController extends Controller
                     'status' => 'refunded',
                     'expected_checkout_at' => null,
                     'overdue_started_at' => null,
+                    'checkout_status' => 'ontime',
                 ]);
 
                 $room = $bookedRoom->room;
@@ -955,9 +1014,10 @@ class BookingController extends Controller
 
         $hours = (int) ($request->hours ?? 1);
 
+        // Kung walang ipinadalang amount: rate kada oras × bilang ng oras
         $extendAmount = $request->amount !== null
             ? (float) $request->amount
-            : (float) ($bookedRoom->room?->roomType?->extension_fee ?? 100);
+            : (float) ($bookedRoom->room?->roomType?->extension_fee ?? 0) * $hours;
 
         $base = $bookedRoom->expected_checkout_at
             ? Carbon::parse($bookedRoom->expected_checkout_at)
@@ -1267,6 +1327,26 @@ class BookingController extends Controller
         return $query;
     }
 
+    // "Room 101 (Oct 05, 2026 - Oct 07, 2026)" or "Room 101 (Oct 05, 2026 (Short stay))"
+    private function roomStaySummary($bookedRoom): string
+    {
+        $in = Carbon::parse($bookedRoom->check_in_date);
+        $out = Carbon::parse($bookedRoom->check_out_date);
+
+        $dates = $bookedRoom->stay_type === 'short_stay'
+            ? $in->format('M d, Y') . ' - Short stay'
+            : $in->format('M d, Y') . ' - ' . $out->format('M d, Y');
+
+        return 'Room ' . $this->roomLabel($bookedRoom) . ' (' . $dates . ')';
+    }
+
+    private function bookingStaySummary($rooms): string
+    {
+        return collect($rooms)
+            ->map(fn($r) => $this->roomStaySummary($r))
+            ->implode(', ');
+    }
+
     private function roomLabel($bookedRoom): string
     {
         return $bookedRoom->room?->room_number
@@ -1384,5 +1464,54 @@ class BookingController extends Controller
 
             'changed_at' => now()
         ]);
+    }
+
+    /**
+     * ✅ Send an Expo push notification to a guest user.
+     */
+    private function sendGuestPush(
+        ?User $user,
+        string $title,
+        string $message,
+        int $bookingId,
+        string $status
+    ): void {
+        if (! $user || ! $user->expo_push_token) {
+            return;
+        }
+
+        try {
+            Http::post(
+                'https://exp.host/--/api/v2/push/send',
+                [
+                    'to'        => $user->expo_push_token,
+                    'title'     => $title,
+                    'body'      => $message,
+                    'sound'     => 'default',
+                    'channelId' => 'bookings',
+                    'data'      => [
+                        'type'       => 'booking_update',
+                        'booking_id' => $bookingId,
+                        'status'     => $status,
+                    ],
+                ]
+            );
+
+            Log::info('✅ Guest push sent', [
+                'user_id'    => $user->id,
+                'booking_id' => $bookingId,
+                'status'     => $status,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error(
+                'Failed to send guest push notification',
+                [
+                    'user_id'    => $user->id,
+                    'booking_id' => $bookingId,
+                    'status'     => $status,
+                    'error'      => $e->getMessage(),
+                ]
+            );
+        }
     }
 }

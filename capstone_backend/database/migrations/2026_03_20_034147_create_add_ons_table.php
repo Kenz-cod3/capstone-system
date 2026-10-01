@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('add_on_name');
             $table->decimal('price', 10, 2);
+            $table->unsignedInteger('stock')->default(0);
         });
     }
 
@@ -23,6 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('add_ons');
+        Schema::dropIfExists('add_ons');    
     }
 };

@@ -10,6 +10,7 @@ import {
     Loader2,
     ChevronsUpDown,
     Check,
+    BedDouble,
 } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,6 +57,7 @@ interface RoomType {
     standard_checkin_time: string;
     early_checkin_fee: number;
     late_checkout_fee: number;
+    extension_fee: number;
 }
 
 interface RoomTypePayload {
@@ -69,6 +71,7 @@ interface RoomTypePayload {
     standard_checkin_time: string;
     early_checkin_fee: number;
     late_checkout_fee: number;
+    extension_fee: number;
 }
 
 interface PaginationMeta {
@@ -101,6 +104,7 @@ interface FormValues {
     standard_checkin_time?: string;
     early_checkin_fee?: number | string;
     late_checkout_fee?: number | string;
+    extension_fee?: number | string;
 }
 
 // ─── Table Columns Configuration ──────────────────────────────────────────
@@ -115,6 +119,7 @@ const TABLE_COLUMNS = [
     { key: "overnight_checkout_time", label: "Checkout", center: true },
     { key: "early_checkin_fee", label: "Early Check-in Fee" },
     { key: "late_checkout_fee", label: "Late Checkout Fee" },
+    { key: "extension_fee", label: "Extension Fee / hr" },
     { key: "actions", label: "Actions", noSort: true, center: true },
 ];
 
@@ -280,6 +285,7 @@ export default function RoomTypeManager({
             overnight_checkout_time: "11:00",
             early_checkin_fee: 0,
             late_checkout_fee: 0,
+            extension_fee: 0,
         });
         setDialogOpen(true);
     };
@@ -299,6 +305,7 @@ export default function RoomTypeManager({
                 rt.standard_checkin_time?.slice(0, 5) ?? "14:00",
             early_checkin_fee: rt.early_checkin_fee ?? 0,
             late_checkout_fee: rt.late_checkout_fee ?? 0,
+            extension_fee: rt.extension_fee ?? 0,
         });
         setDialogOpen(true);
     };
@@ -327,6 +334,7 @@ export default function RoomTypeManager({
             standard_checkin_time: values.standard_checkin_time || "14:00",
             early_checkin_fee: Number(values.early_checkin_fee) || 0,
             late_checkout_fee: Number(values.late_checkout_fee) || 0,
+            extension_fee: Number(values.extension_fee) || 0,
         };
 
         if (editingRoomType) {
@@ -425,6 +433,9 @@ export default function RoomTypeManager({
                 <Skeleton className="h-4 w-20 bg-slate-200" />
             </td>
             <td className="px-3 py-2">
+                <Skeleton className="h-4 w-20 bg-slate-200" />
+            </td>
+            <td className="px-3 py-2">
                 <div className="flex justify-center gap-2">
                     <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
                     <Skeleton className="h-8 w-16 rounded-lg bg-slate-200" />
@@ -437,7 +448,7 @@ export default function RoomTypeManager({
 
     const EmptyState = () => (
         <tr>
-            <td colSpan={10} className="px-4 py-16 text-center">
+            <td colSpan={11} className="px-4 py-16 text-center">
                 <div className="text-3xl">🏨</div>
                 <p className="mt-2 font-semibold text-slate-600">
                     No room types yet
@@ -571,12 +582,26 @@ export default function RoomTypeManager({
                         <>
                             <div className="mx-auto max-w-7xl">
                                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                                    {/* Card header */}
+                                    {/* Card header — logo + title + description */}
                                     <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold text-slate-800">
-                                                Room Types
-                                            </span>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-mint-600 shadow-md shadow-mint-200">
+                                                <BedDouble className="size-5 text-white" />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-base font-bold text-slate-900">
+                                                    Room Types
+                                                </h2>
+                                                <p className="text-xs text-slate-500">
+                                                    {meta
+                                                        ? `${meta.total} room type${
+                                                              meta.total !== 1
+                                                                  ? "s"
+                                                                  : ""
+                                                          } available`
+                                                        : "Manage rates, check-in times and fees"}
+                                                </p>
+                                            </div>
                                         </div>
                                         <button
                                             onClick={openCreate}
@@ -666,9 +691,7 @@ export default function RoomTypeManager({
                                                                 key={rt.id}
                                                                 onClick={() =>
                                                                     setSelectedRowId(
-                                                                        (
-                                                                            id,
-                                                                        ) =>
+                                                                        (id) =>
                                                                             id ===
                                                                             rt.id
                                                                                 ? null
@@ -772,6 +795,24 @@ export default function RoomTypeManager({
                                                                         <>
                                                                             ₱
                                                                             {rt.late_checkout_fee.toLocaleString()}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-slate-300">
+                                                                            —
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 font-medium text-slate-800">
+                                                                    {rt.extension_fee ? (
+                                                                        <>
+                                                                            ₱
+                                                                            {Number(
+                                                                                rt.extension_fee,
+                                                                            ).toLocaleString()}
+                                                                            <span className="ml-1 text-xs text-slate-400">
+                                                                                /
+                                                                                hr
+                                                                            </span>
                                                                         </>
                                                                     ) : (
                                                                         <span className="text-slate-300">
@@ -1248,6 +1289,36 @@ export default function RoomTypeManager({
                                 {errors.late_checkout_fee && (
                                     <p className="text-xs text-red-500">
                                         {errors.late_checkout_fee.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Extension Fee */}
+                            <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-700">
+                                    Extension Fee / hour
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                                        ₱
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        {...register("extension_fee", {
+                                            min: {
+                                                value: 0,
+                                                message: "Must be positive",
+                                            },
+                                        })}
+                                        placeholder="0"
+                                        className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-none"
+                                    />
+                                </div>
+                                {errors.extension_fee && (
+                                    <p className="text-xs text-red-500">
+                                        {errors.extension_fee.message}
                                     </p>
                                 )}
                             </div>

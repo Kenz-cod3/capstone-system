@@ -9,11 +9,24 @@ const LINE_WIDTH = 32;
 const BAUD_RATE = 9600;
 const CHUNK_SIZE = 256;
 const CHUNK_DELAY_MS = 30;
+const QR_MODULE_SIZE = 6; // 1-16, 6 fits well on 58mm paper
 
 const DASH = "-".repeat(LINE_WIDTH);
 const encoder = new TextEncoder();
 
 let serialPort: any = null;
+
+// ============================================================
+// QR LINK (from .env)
+// ============================================================
+
+/** Link encoded in the receipt QR code. Change the env name here if needed. */
+export const getQrLink = (): string => {
+    const link = String(
+        import.meta.env.VITE_APP_URL ?? import.meta.env.VITE_API_URL ?? "",
+    ).trim();
+    return link.replace(/\/+$/, "");
+};
 
 // ============================================================
 // FORMATTING HELPERS
@@ -107,6 +120,35 @@ function createWriter() {
         text: (s = "") => bytes.push(...encoder.encode(clean(s) + "\n")),
         dash() {
             this.text(DASH);
+        },
+        /** Native ESC/POS QR code (GS ( k). Call align(1) first to center it. */
+        qr(data: string, size = QR_MODULE_SIZE) {
+            const d = encoder.encode(clean(data));
+            if (!d.length) return;
+
+            const len = d.length + 3;
+
+            // Model 2
+            raw(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+            // Module size
+            raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size);
+            // Error correction level M
+            raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31);
+            // Store data
+            raw(
+                0x1d,
+                0x28,
+                0x6b,
+                len & 0xff,
+                (len >> 8) & 0xff,
+                0x31,
+                0x50,
+                0x30,
+            );
+            bytes.push(...d);
+            // Print stored QR
+            raw(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30);
+            bytes.push(0x0a);
         },
         toBytes: () => new Uint8Array(bytes),
     };
@@ -202,7 +244,7 @@ export async function disconnectPrinter() {
 const writeHeader = (w: Writer) => {
     w.align(1);
     w.bold(true);
-    w.text("LYNN ENNIA TRAVELERS INN");
+    w.text("LYN ENIA TRAVELERS INN");
     w.bold(false);
     w.text("Official Receipt");
     w.dash();
@@ -271,7 +313,9 @@ const writeRoomCharges = (w: Writer, rooms: any[]) => {
         w.text(field("Scheduled Check-in", formatDate(room.check_in_date)));
 
         if (room.check_in_time) {
-            w.text(field("Actual Check-in", formatDateTime(room.check_in_time)));
+            w.text(
+                field("Actual Check-in", formatDateTime(room.check_in_time)),
+            );
         }
 
         w.text(field("Scheduled Check-out", formatDate(room.check_out_date)));
@@ -335,6 +379,13 @@ const writeFooter = (w: Writer) => {
     w.text("Thank you for staying");
     w.text("with us.");
     w.text();
+
+    const qrLink = getQrLink();
+    if (qrLink) {
+        w.qr(qrLink);
+        w.text("Scan to visit us");
+        w.text();
+    }
 };
 
 // ============================================================
@@ -384,6 +435,251 @@ export async function printReceipt(receipts: any[]) {
     }
 
     await sendToPrinter(buildReceipt(receipts));
+}
+
+// ============================================================
+// FEE RECEIPT (early check-in / late check-out / extension / add-on)
+// ============================================================
+
+export interface FeeReceiptPrintData {
+    feeType: "early_checkin" | "late_checkout" | "extension" | "addon";
+    amount: number;
+    paymentMethod: "cash" | "qrph";
+    reference?: string;
+    amountTendered?: number;
+    guestName?: string;
+    roomNumber?: string;
+    note?: string;
+    receiptNumber?: string | null;
+    paidAt: string;
+    roomType?: string;
+    stayType?: "overnight" | "short_stay";
+    bookingReference?: string;
+    checkInDate?: string;
+    checkOutDate?: string;
+    cashierName?: string;
+}
+
+const FEE_ITEM_LABELS: Record<FeeReceiptPrintData["feeType"], string> = {
+    early_checkin: "Early Check-in Fee",
+    late_checkout: "Late Check-out Fee",
+    extension: "Stay Extension Fee",
+    addon: "Add-on Charge",
+};
+
+export function buildFeeReceipt(receipt: FeeReceiptPrintData): Uint8Array {
+    const w = createWriter();
+
+    const change =
+        receipt.paymentMethod === "cash"
+            ? Math.max(
+                  0,
+                  (receipt.amountTendered ?? receipt.amount) - receipt.amount,
+              )
+            : 0;
+
+    w.init();
+    writeHeader(w);
+
+    // ---- Transaction ----
+    if (receipt.receiptNumber) {
+        w.text(row("Receipt No.", receipt.receiptNumber));
+    }
+    if (receipt.bookingReference) {
+        w.text(row("Booking Ref.", receipt.bookingReference));
+    }
+    w.text(row("Date", formatDateTime(receipt.paidAt)));
+    w.dash();
+
+    // ---- Guest / room ----
+    w.text(field("Guest", receipt.guestName || "Anonymous"));
+    w.text(
+        field(
+            "Room",
+            receipt.roomType
+                ? `${receipt.roomNumber ?? "-"} - ${receipt.roomType}`
+                : (receipt.roomNumber ?? "-"),
+        ),
+    );
+    if (receipt.stayType) {
+        w.text(
+            row(
+                "Stay Type",
+                receipt.stayType === "short_stay" ? "Short Stay" : "Overnight",
+            ),
+        );
+    }
+    if (receipt.checkInDate) {
+        w.text(field("Check-in", formatDate(receipt.checkInDate)));
+    }
+    if (receipt.checkOutDate) {
+        w.text(field("Check-out", formatDate(receipt.checkOutDate)));
+    }
+    w.dash();
+
+    // ---- Charge ----
+    w.bold(true);
+    w.text(row(FEE_ITEM_LABELS[receipt.feeType], peso(receipt.amount)));
+    w.bold(false);
+    if (receipt.note) {
+        // Add-on notes can be long ("Towel x2, Water x3"), so wrap them
+        const words = clean(receipt.note).split(" ");
+        let line = " ";
+        words.forEach((word) => {
+            if ((line + " " + word).length > LINE_WIDTH) {
+                w.text(line);
+                line = " " + word;
+            } else {
+                line += (line === " " ? "" : " ") + word;
+            }
+        });
+        if (line.trim()) w.text(line);
+    }
+    w.dash();
+
+    // ---- Total ----
+    w.bold(true);
+    w.text(row("TOTAL PAID", peso(receipt.amount)));
+    w.bold(false);
+    w.text();
+
+    w.text(row("Payment Method", methodLabel(receipt.paymentMethod)));
+    if (receipt.paymentMethod === "cash") {
+        w.text(
+            row(
+                "Amount Received",
+                peso(receipt.amountTendered ?? receipt.amount),
+            ),
+        );
+        w.text(row("Change", peso(change)));
+    } else if (receipt.reference) {
+        w.text(field("Reference", receipt.reference));
+    }
+    w.dash();
+
+    if (receipt.cashierName) {
+        w.text(row("Cashier", receipt.cashierName));
+        w.dash();
+    }
+
+    writeFooter(w);
+    w.feed(4);
+
+    return w.toBytes();
+}
+
+export async function printFeeReceipt(receipt: FeeReceiptPrintData) {
+    if (!receipt) throw new Error("No receipt data to print.");
+    await sendToPrinter(buildFeeReceipt(receipt));
+}
+
+// ============================================================
+// RESTAURANT ORDER RECEIPT (POS)
+// ============================================================
+
+export interface OrderReceiptPrintData {
+    orderId: number;
+    orderNumber?: string | null;
+    items: { name: string; quantity: number; price: number }[];
+    total: number;
+    paymentMethod: "cash" | "qrph" | "split";
+    cashPaid: number;
+    qrPaid: number;
+    cashTendered?: number;
+    change?: number;
+    reference?: string | null;
+    paidAt: string;
+    cashierName?: string;
+}
+
+export function buildOrderReceipt(receipt: OrderReceiptPrintData): Uint8Array {
+    const w = createWriter();
+
+    w.init();
+
+    // Header
+    w.align(1);
+    w.bold(true);
+    w.text("LYN ENIA TRAVELERS INN");
+    w.bold(false);
+    w.text("Restaurant Receipt");
+    w.dash();
+    w.align(0);
+
+    // Transaction
+    w.text(row("Order No.", receipt.orderNumber || `#${receipt.orderId}`));
+    w.text(row("Date", formatDateTime(receipt.paidAt)));
+    w.dash();
+
+    // Items
+    w.bold(true);
+    w.text("ITEMS");
+    w.bold(false);
+    receipt.items.forEach((item) => {
+        w.text(
+            row(
+                `${item.quantity} x ${item.name}`,
+                peso(item.price * item.quantity),
+            ),
+        );
+    });
+    w.dash();
+
+    // Total
+    w.bold(true);
+    w.text(row("TOTAL PAID", peso(receipt.total)));
+    w.bold(false);
+    w.text();
+
+    if (receipt.paymentMethod === "cash") {
+        w.text(row("Payment Method", "Cash"));
+        w.text(
+            row(
+                "Amount Received",
+                peso(receipt.cashTendered ?? receipt.cashPaid),
+            ),
+        );
+        w.text(row("Change", peso(receipt.change ?? 0)));
+    } else if (receipt.paymentMethod === "split") {
+        w.text(row("Payment Method", "Cash + QR Ph"));
+        w.text(row("  Cash", peso(receipt.cashPaid)));
+        w.text(row("  QR Ph", peso(receipt.qrPaid)));
+    } else {
+        w.text(row("Payment Method", "QR Ph"));
+    }
+
+    if (receipt.paymentMethod !== "cash" && receipt.reference) {
+        w.text(field("Reference", receipt.reference));
+    }
+    w.dash();
+
+    if (receipt.cashierName) {
+        w.text(row("Cashier", receipt.cashierName));
+        w.dash();
+    }
+
+    // Footer (with QR from .env)
+    w.align(1);
+    w.text();
+    w.text("Thank you for dining");
+    w.text("with us.");
+    w.text();
+
+    const qrLink = getQrLink();
+    if (qrLink) {
+        w.qr(qrLink);
+        w.text("Scan to visit us");
+        w.text();
+    }
+
+    w.feed(4);
+
+    return w.toBytes();
+}
+
+export async function printOrderReceipt(receipt: OrderReceiptPrintData) {
+    if (!receipt) throw new Error("No receipt data to print.");
+    await sendToPrinter(buildOrderReceipt(receipt));
 }
 
 // ============================================================

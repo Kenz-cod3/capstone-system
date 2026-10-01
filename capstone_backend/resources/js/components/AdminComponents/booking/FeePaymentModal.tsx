@@ -32,7 +32,13 @@ const MUTED = "#6b7280";
 const DARK = "#111827";
 const PLACEHOLDER = "#9ca3af";
 
-export type FeeType = "early_checkin" | "late_checkout" | "extension";
+// NEW: added "addon"
+export type FeeType =
+    | "early_checkin"
+    | "late_checkout"
+    | "extension"
+    | "addon"
+    | "room";
 export type PaymentMethod = "cash" | "qrph";
 
 export interface FeePaymentPayload {
@@ -56,6 +62,9 @@ export interface FeePaymentRequest {
     bookingReference?: string;
     checkInDate?: string;
     checkOutDate?: string;
+    /** Only for feeType "addon": lets the server check stock before making the QR */
+    addOnId?: number;
+    addOnQty?: number;
     onSubmit: (payload: FeePaymentPayload) => Promise<void>;
 }
 
@@ -98,6 +107,19 @@ const FEE_META: Record<
         description: "Additional fee for extending the stay",
         title: "Complete Payment & Extend Stay",
         subtitle: "Record the guest's payment to confirm the extension.",
+    },
+    // NEW
+    room: {
+        label: "Room Charge",
+        description: "Additional room added to the booking",
+        title: "Complete Payment & Add Room",
+        subtitle: "Record the guest's payment to add this room to the booking.",
+    },
+    addon: {
+        label: "Add-on Charge",
+        description: "Additional items for the room",
+        title: "Complete Payment & Add Item",
+        subtitle: "Record the guest's payment to add this item to the room.",
     },
 };
 
@@ -225,6 +247,12 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                 booking_id: request.bookingId,
                 amount: request.amount,
                 fee_type: request.feeType,
+                ...(request.feeType === "addon" && request.addOnId
+                    ? {
+                          add_on_id: request.addOnId,
+                          quantity: request.addOnQty ?? 1,
+                      }
+                    : {}),
             });
 
             if (token !== genToken.current) return;
@@ -278,7 +306,9 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                         prev
                             ? {
                                   ...prev,
-                                  paymentReference: prev.paymentIntentId,
+                                  // pay_... mula sa server (parehas sa Payment Logs)
+                                  paymentReference:
+                                      data.reference ?? prev.paymentIntentId,
                               }
                             : prev,
                     );
@@ -974,16 +1004,18 @@ export default function FeePaymentModal({ request, onClose }: Props) {
                             </div>
                         )}
 
-                        {qrPhase !== "paid" && qr?.testUrl && qrPhase === "ready" && (
-                            <a
-                                className="fee-link"
-                                href={qr.testUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                Open sandbox payment page
-                            </a>
-                        )}
+                        {qrPhase !== "paid" &&
+                            qr?.testUrl &&
+                            qrPhase === "ready" && (
+                                <a
+                                    className="fee-link"
+                                    href={qr.testUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    Open sandbox payment page
+                                </a>
+                            )}
                     </div>
                 </div>
             )}

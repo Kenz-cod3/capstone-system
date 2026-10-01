@@ -378,6 +378,45 @@ class WalkInGuestController extends Controller
                 $reference = 'BOOK-' . strtoupper(Str::random(8));
             } while (Booking::where('booking_reference', $reference)->exists());
 
+            // ---------------------------------------------------------
+            // ADD-ON STOCK: check, then deduct. Rows are locked so two
+            // check-ins can't take the same last stock.
+            // ---------------------------------------------------------
+            $requestedAddOns = [];
+
+            foreach ($validated['bookings'] as $bookingData) {
+                foreach ($bookingData['addons'] ?? [] as $addonData) {
+                    $requestedAddOns[$addonData['id']] =
+                        ($requestedAddOns[$addonData['id']] ?? 0) + (int) $addonData['quantity'];
+                }
+            }
+
+            if (!empty($requestedAddOns)) {
+
+                $lockedAddOns = AddOn::whereIn('id', array_keys($requestedAddOns))
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($requestedAddOns as $addOnId => $qty) {
+                    $addOn = $lockedAddOns->get($addOnId);
+
+                    if (!$addOn || $addOn->stock < $qty) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'message' => 'Not enough stock for ' .
+                                ($addOn?->add_on_name ?? 'add-on #' . $addOnId) .
+                                '. Only ' . ($addOn?->stock ?? 0) . ' left.'
+                        ], 422);
+                    }
+                }
+
+                foreach ($requestedAddOns as $addOnId => $qty) {
+                    $lockedAddOns->get($addOnId)->decrement('stock', $qty);
+                }
+            }
+
             foreach ($validated['bookings'] as $bookingData) {
 
                 $roomSubtotal = $bookingData['room_subtotal'];

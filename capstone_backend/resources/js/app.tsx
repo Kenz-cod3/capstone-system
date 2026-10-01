@@ -20,6 +20,7 @@ import ReservationMonitor from "./pages/admin/main/ReservationMonitor";
 import Bookings from "./pages/admin/management/BookingManagement";
 import BookingManagement from "./pages/admin/management/BookingManagement";
 import BookingTransaction from "./pages/admin/management/BookingTransaction";
+import BookingAddOnTransaction from "./pages/admin/management/Bookingaddontransaction";
 import IncidentsRooms from "./pages/admin/management/incidents";
 import BookingDetailsPageWrapper from "@/components/AdminComponents/booking/BookingDetailsPageWrapper";
 
@@ -186,6 +187,10 @@ export default function App() {
                                 element={<BookingTransaction />}
                             />
                             <Route
+                                path="/booking-addon-transaction"
+                                element={<BookingAddOnTransaction />}
+                            />
+                            <Route
                                 path="/incidents"
                                 element={<IncidentsRooms />}
                             />
@@ -346,9 +351,10 @@ export default function App() {
                                 element={<GuestPayment />}
                             />
 
-                            {/* DEFAULT */}
+                            {/* DEFAULT — scoped to /guest/* only so it doesn't compete
+            with the more specific /guest/rooms/:id route above. */}
                             <Route
-                                path="*"
+                                path="/guest/*"
                                 element={<Navigate to="/guest-dashboard" />}
                             />
                         </Route>

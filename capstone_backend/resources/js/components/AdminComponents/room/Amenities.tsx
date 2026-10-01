@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -195,10 +195,24 @@ export default function Amenities() {
     <>
       <div className="mx-auto max-w-7xl">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          {/* Card header */}
+          {/* Card header — logo + title + description */}
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-slate-800">Amenities</span>
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-mint-600 shadow-md shadow-mint-200">
+                <Sparkles className="size-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Amenities
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {loading
+                    ? "Loading amenities..."
+                    : `${amenities.length} ${
+                        amenities.length === 1 ? "amenity" : "amenities"
+                      } available`}
+                </p>
+              </div>
             </div>
             <button
               onClick={openCreate}
@@ -335,7 +349,7 @@ export default function Amenities() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. WiFi, Coffe, Parking"
+                placeholder="e.g. WiFi, Coffee, Parking"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500/30 [appearance:textfield] transition-none"
                 autoFocus
                 onKeyDown={(e) => {

@@ -56,6 +56,12 @@ import FeeReceiptModal, {
     buildFeeReceipt,
     type FeeReceiptData,
 } from "@/components/AdminComponents/booking/Feereceiptmodal";
+import AddOnsModal, {
+    AddOnsTarget,
+} from "@/components/AdminComponents/booking/AddOnsModal";
+import AddRoomModal, {
+    AddRoomTarget,
+} from "@/components/AdminComponents/booking/AddRoomModal";
 const { Title, Text } = Typography;
 
 const MINT_GREEN = "#10b981";
@@ -471,6 +477,12 @@ export default function Bookings() {
         null,
     );
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const [addOnsModalVisible, setAddOnsModalVisible] = useState(false);
+    const [addOnsTarget, setAddOnsTarget] = useState<AddOnsTarget | null>(null);
+    const [addRoomModalVisible, setAddRoomModalVisible] = useState(false);
+    const [addRoomTarget, setAddRoomTarget] = useState<AddRoomTarget | null>(
+        null,
+    );
     const [filterStatus, setFilterStatus] = useState<string>("all");
     const [filterPaymentStatus, setFilterPaymentStatus] =
         useState<string>("all");
@@ -990,6 +1002,8 @@ export default function Bookings() {
         note?: string;
         okText: string;
         showReason?: boolean;
+        addOnId?: number;
+        addOnQty?: number;
         action: (reason?: string) => Promise<void>;
     }) => {
         let paid = false;
@@ -1167,6 +1181,93 @@ export default function Bookings() {
         );
     };
 
+    // Opens the Add-ons modal for the given room
+    const handleAddOns = (record: BookingRow) => {
+        setAddOnsTarget({
+            bookingId: record.id,
+            bookedRoomId: record.booked_room_id,
+            roomNumber: record.room?.room_number,
+            guestName: getGuestName(record),
+        });
+        setAddOnsModalVisible(true);
+    };
+
+    // Always read the latest add-ons from the refetched table data,
+    // so the modal updates live after every add/update/remove.
+    const addOnsRow = addOnsTarget
+        ? tableData.find((r) => r.booked_room_id === addOnsTarget.bookedRoomId)
+        : undefined;
+
+    // Collects payment for an add-on, then runs the API call
+    const handleAddOnCharge = (req: {
+        amount: number;
+        note: string;
+        addOnId?: number;
+        quantity?: number;
+        run: () => Promise<void>;
+    }) => {
+        if (!addOnsTarget) return;
+
+        openFeePayment({
+            feeType: "addon",
+            amount: req.amount,
+            bookingId: addOnsTarget.bookingId,
+            guestName: addOnsTarget.guestName,
+            roomNumber: addOnsTarget.roomNumber,
+            roomType: addOnsRow?.room?.room_type?.type_name,
+            stayType: addOnsRow?.stay_type,
+            bookingReference: addOnsRow?.booking_reference,
+            checkInDate: addOnsRow?.check_in_date,
+            checkOutDate: addOnsRow?.check_out_date,
+            note: req.note,
+            okText: "Confirm Payment & Add",
+            showReason: false,
+            addOnId: req.addOnId,
+            addOnQty: req.quantity,
+            action: req.run,
+        });
+    };
+
+    // Opens the Add Room modal for the booking of the given row
+    const handleAddRoom = (record: BookingRow) => {
+        // Rooms of this booking that are visible in the current table
+        const existingRoomIds = tableData
+            .filter((r) => r.id === record.id)
+            .map((r) => r.room?.id)
+            .filter((id): id is number => typeof id === "number");
+
+        setAddRoomTarget({
+            bookingId: record.id,
+            guestName: getGuestName(record),
+            bookingReference: record.booking_reference,
+            existingRoomIds,
+        });
+        setAddRoomModalVisible(true);
+    };
+
+    // Collects payment for a newly added room, then creates it
+    const handleAddRoomCharge = (req: {
+        amount: number;
+        note: string;
+        roomNumber?: string;
+        run: () => Promise<void>;
+    }) => {
+        if (!addRoomTarget) return;
+
+        openFeePayment({
+            feeType: "room",
+            amount: req.amount,
+            bookingId: addRoomTarget.bookingId,
+            guestName: addRoomTarget.guestName,
+            roomNumber: req.roomNumber,
+            bookingReference: addRoomTarget.bookingReference,
+            note: req.note,
+            okText: "Confirm Payment & Add Room",
+            showReason: false,
+            action: req.run,
+        });
+    };
+
     // Opens the Extend Stay modal for the given booking row
     const handleExtend = (booking: BookingRow) => {
         setExtendTarget({
@@ -1175,7 +1276,7 @@ export default function Bookings() {
             roomNumber: booking.room?.room_number,
             guestName: getGuestName(booking),
             expectedCheckoutAt: (booking as any).expected_checkout_at ?? null,
-            extensionFee: Number(booking.room?.room_type?.extension_fee ?? 100),
+            extensionFee: Number(booking.room?.room_type?.extension_fee ?? 0),
         });
         setExtendModalVisible(true);
     };
@@ -1962,6 +2063,18 @@ export default function Bookings() {
                             onClick: () => handleCheckoutAction(r),
                         })),
                     });
+
+                    items.push({
+                        key: "addons-group",
+                        label: "Add-ons",
+                        children: checkedInRooms.map((r) => ({
+                            key: `addons-${r.booked_room_id}`,
+                            label: `Room ${
+                                r.room?.room_number ?? r.booked_room_id
+                            }`,
+                            onClick: () => handleAddOns(r),
+                        })),
+                    });
                 }
             } else if (record.status === "checked_in") {
                 items.push(
@@ -1976,12 +2089,27 @@ export default function Bookings() {
                         onClick: () => handleExtend(record),
                     },
                     {
+                        key: "addons",
+                        label: "Add-ons", // was "Manage Add-ons"
+                        onClick: () => handleAddOns(record),
+                    },
+                    {
                         key: "refund",
                         label: "Refund Room",
                         danger: true,
                         onClick: () => handleRefund(record),
                     },
                 );
+            }
+
+            if (
+                ["pending", "confirmed", "checked_in"].includes(record.status)
+            ) {
+                items.push({
+                    key: "add_room",
+                    label: "Add Room",
+                    onClick: () => handleAddRoom(record),
+                });
             }
 
             if (record.status === "cancelled") {
@@ -3728,7 +3856,35 @@ export default function Bookings() {
                 </div>
             </Modal>
 
+            <AddOnsModal
+                open={addOnsModalVisible}
+                target={addOnsTarget}
+                currentAddOns={(addOnsRow?.booking_add_ons as any) ?? []}
+                onClose={() => {
+                    setAddOnsModalVisible(false);
+                    setAddOnsTarget(null);
+                }}
+                onChanged={() =>
+                    queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    })
+                }
+                onCharge={handleAddOnCharge}
+            />
+
             <FeePaymentModal request={feePayment} onClose={closeFeePayment} />
+
+            <AddRoomModal
+                open={addRoomModalVisible}
+                target={addRoomTarget}
+                onClose={() => setAddRoomModalVisible(false)}
+                onCharge={handleAddRoomCharge}
+                onAdded={async () => {
+                    await queryClient.invalidateQueries({
+                        queryKey: ["booked-rooms"],
+                    });
+                }}
+            />
 
             <FeeReceiptModal
                 receipt={receipt}
