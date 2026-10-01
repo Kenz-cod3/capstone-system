@@ -742,6 +742,21 @@ class BookingController extends Controller
                 ], 409);
             }
 
+            $notReadyRooms = [];
+
+            foreach ($targetRooms as $bookedRoom) {
+                if (in_array($bookedRoom->room?->status, [Room::STATUS_PREPARING, 'ongoing'], true)) {
+                    $notReadyRooms[] = $this->roomLabel($bookedRoom);
+                }
+            }
+
+            if (!empty($notReadyRooms)) {
+                return response()->json([
+                    'message' => 'Room(s) ' . implode(', ', $notReadyRooms) .
+                        ' are still being prepared by housekeeping. Please wait until they are ready.'
+                ], 409);
+            }
+
             $receivedBy = Auth::id();
 
             $shift = \App\Models\Shift::where('opened_by', $receivedBy)

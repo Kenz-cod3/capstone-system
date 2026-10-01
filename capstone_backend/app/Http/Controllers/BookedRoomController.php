@@ -525,6 +525,20 @@ class BookedRoomController extends Controller
                             return $bookedRoom;
                         }
 
+                        // Block check-in while housekeeping still has the room
+                        $roomStatus = $bookedRoom->room?->status;
+
+                        if (in_array($roomStatus, [Room::STATUS_PREPARING, 'ongoing'], true)) {
+                            $label = $roomStatus === 'ongoing' ? 'being cleaned' : 'queued for cleaning';
+
+                            $earlyResponse = response()->json([
+                                'message' => 'Room ' .
+                                    ($bookedRoom->room->room_number ?? $bookedRoom->room_id) .
+                                    ' is still ' . $label . '. Please wait until housekeeping finishes before checking in.'
+                            ], 409);
+                            return $bookedRoom;
+                        }
+
                         $bookedRoom->check_in_time = now();
 
                         $roomType = $bookedRoom->room?->roomType;

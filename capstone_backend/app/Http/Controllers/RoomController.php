@@ -124,9 +124,8 @@ class RoomController extends Controller
                      * remains occupied until checkout.
                      */
                         if ($booking->status === 'checked_in') {
-                            return $today->gte($in);
+                            return true;
                         }
-
                         /*
                      * PENDING / CONFIRMED
                      *
@@ -428,7 +427,9 @@ class RoomController extends Controller
         $today = \Carbon\Carbon::now()->startOfDay();
 
         $rooms = Room::with([
+            'roomType:id,type_name',
             'bookedRooms' => function ($q) {
+                // Archived/trashed bookings must NEVER count toward the
                 // Archived/trashed bookings must NEVER count toward the
                 // live room status or checkout countdown on the dashboard.
                 $q->whereNull('archived_at')
@@ -443,7 +444,8 @@ class RoomController extends Controller
             ->select(
                 'id',
                 'room_number',
-                'status'
+                'status',
+                'room_type_id'
             )
             ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
             ->get();
@@ -465,8 +467,8 @@ class RoomController extends Controller
                     $in = \Carbon\Carbon::parse($br->check_in_date)->startOfDay();
 
                     if ($br->status === 'checked_in') {
-                        // Still occupying the room — hasn't checked out yet.
-                        return $today->gte($in);
+                        // Checked in = occupying the room, regardless of date/timezone.
+                        return true;
                     }
 
                     $out = $br->stay_type === 'short_stay'
@@ -482,10 +484,9 @@ class RoomController extends Controller
 
             // Cleaning rooms are being prepared, so don't attach a pending/confirmed
             // booking's guest info to them. A real checked-in stay stays visible.
-            if (
-                $room->status === 'ongoing' &&
-                $bookedRoom?->status !== 'checked_in'
-            ) {
+            // Only occupied rooms should display an active guest.
+            // Confirmed/reserved bookings must not appear as current guests.
+            if ($bookedRoom?->status !== 'checked_in') {
                 $bookedRoom = null;
             }
 
@@ -547,6 +548,7 @@ class RoomController extends Controller
             // BASIC BOOKING DATA
             // ============================================
 
+            $room->room_type_name = $room->roomType?->type_name;
             $room->current_guest = $guestName;
             $room->booking_status = $bookedRoom?->status;
             $room->check_in_date = $bookedRoom?->check_in_date;

@@ -271,6 +271,10 @@ export default function App() {
                                 element={<Transaction />}
                             />
                             <Route
+                                path="/booking-addon-transaction"
+                                element={<BookingAddOnTransaction />}
+                            />
+                            <Route
                                 path="/incidents"
                                 element={<IncidentsRooms />}
                             />

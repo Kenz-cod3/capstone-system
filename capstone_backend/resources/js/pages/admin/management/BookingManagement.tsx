@@ -83,6 +83,7 @@ interface AddOn {
 interface Room {
     id: number;
     room_number: string;
+    status?: string;
     room_type?: {
         type_name?: string;
         base_price?: number;
@@ -1378,6 +1379,28 @@ export default function Bookings() {
 
     // Opens the Check In modal, but only if the room is free of another checked-in guest
     const handleCheckInAction = async (record: BookingRow) => {
+        const roomStatus = record.room?.status;
+
+        if (roomStatus === "preparing" || roomStatus === "ongoing") {
+            Modal.warning({
+                title: "Room is not ready",
+                centered: true,
+                okText: "Got it",
+                content: (
+                    <div style={{ fontSize: 12 }}>
+                        Room <strong>{record.room?.room_number ?? "-"}</strong>{" "}
+                        is still{" "}
+                        {roomStatus === "ongoing"
+                            ? "being cleaned"
+                            : "queued for cleaning"}
+                        . Please wait until housekeeping finishes before
+                        checking in <strong>{getGuestName(record)}</strong>.
+                    </div>
+                ),
+            });
+            return;
+        }
+
         const hide = message.loading("Checking room availability...", 0);
 
         try {

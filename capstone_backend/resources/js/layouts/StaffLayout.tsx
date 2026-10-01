@@ -190,6 +190,7 @@ const StaffLayout = ({
         "/booking-details": "Booking Details",
         "/incidents": "Incidents Reports",
         "/transactions": "Transaction",
+        "/booking-addon-transaction": "Add-on Transactions",
         "/walk-in-guests": "Walk-in Guests",
         "/cash": "Cash",
         "/handled-summary": "Handled Summary",
@@ -243,6 +244,14 @@ const StaffLayout = ({
 
         if (pathname === "/incidents") {
             breadcrumbs.push({ name: "Incidents Reports", path: "/incidents" });
+            return breadcrumbs;
+        }
+
+        if (pathname === "/booking-addon-transaction") {
+            breadcrumbs.push({
+                name: "Add-on Transactions",
+                path: "/booking-addon-transaction",
+            });
             return breadcrumbs;
         }
 
@@ -795,6 +804,12 @@ const StaffLayout = ({
                     description: "Payment History",
                     href: "/transactions",
                     icon: ClipboardList,
+                },
+                {
+                    name: "Add-on Transactions",
+                    description: "Record of room add-ons sold",
+                    href: "/booking-addon-transaction",
+                    icon: ShoppingCart,
                 },
                 {
                     name: "Incidents Rooms",

@@ -233,6 +233,12 @@ const AdminLayout = ({
     };
 
     const getPageTitle = () => {
+        // Booking Details should still belong under Bookings
+        // and should not display "Booking Details" in the breadcrumb.
+        if (location.pathname.startsWith("/booking-details/")) {
+            return "Bookings Details";
+        }
+
         return routesMap[location.pathname] || "Dashboard";
     };
 
@@ -1175,12 +1181,17 @@ const AdminLayout = ({
         depth: number = 0,
         isMobile: boolean = false,
     ) => {
+        const isBookingDetails =
+            location.pathname.startsWith("/booking-details/");
+
         const isActive =
-            location.pathname === item.href ||
-            (item.dropdownItems &&
-                item.dropdownItems.some(
-                    (subItem: any) => location.pathname === subItem.href,
-                ));
+            isBookingDetails && item.name === "Bookings Management"
+                ? true
+                : location.pathname === item.href ||
+                  (item.dropdownItems &&
+                      item.dropdownItems.some(
+                          (subItem: any) => location.pathname === subItem.href,
+                      ));
         const isOpen =
             openDropdowns[
                 `${isMobile ? "mobile_" : ""}${item.name.toLowerCase()}`
@@ -1283,7 +1294,15 @@ const AdminLayout = ({
                                 <div className="space-y-1">
                                     {item.dropdownItems.map((subItem: any) => {
                                         const isSubActive =
-                                            location.pathname === subItem.href;
+                                            subItem.href ===
+                                            "/booking-management"
+                                                ? location.pathname ===
+                                                      "/booking-management" ||
+                                                  location.pathname.startsWith(
+                                                      "/booking-details/",
+                                                  )
+                                                : location.pathname ===
+                                                  subItem.href;
                                         return (
                                             <div
                                                 key={subItem.name}
@@ -2410,4 +2429,4 @@ const AdminLayout = ({
     );
 };
 
-export default AdminLayout; 
+export default AdminLayout;

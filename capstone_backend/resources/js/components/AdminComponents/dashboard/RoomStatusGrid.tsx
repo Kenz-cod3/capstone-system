@@ -499,6 +499,11 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                         <p className={`text-xs ${theme.subtle} capitalize`}>
                             {statusLabel(hovered.room.status)}
                         </p>
+                        {hovered.room.room_type_name && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                {hovered.room.room_type_name}
+                            </p>
+                        )}
                     </div>
 
                     {hovered.room.status === "preparing" && (
@@ -529,7 +534,6 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                                 </p>
                             </div>
                         )}
-
                     {hovered.room.booking_status && (
                         <div className="mb-2">
                             <p className={`text-[11px] ${theme.subtle}`}>
@@ -547,21 +551,24 @@ export default function RoomStatusGrid({ rooms = [] }: any) {
                                 Check-in
                             </p>
                             <p className="text-sm">
-                                {formatDate(hovered.room.check_in_date)}
+                                {hovered.room.check_in_time
+                                    ? formatDateTime(hovered.room.check_in_time)
+                                    : formatDate(hovered.room.check_in_date)}
                             </p>
                         </div>
                     )}
 
-                    {hovered.room.check_out_date && (
-                        <div className="mb-2">
-                            <p className={`text-[11px] ${theme.subtle}`}>
-                                Check-out
-                            </p>
-                            <p className="text-sm">
-                                {formatDate(hovered.room.check_out_date)}
-                            </p>
-                        </div>
-                    )}
+                    {hovered.room.check_out_date &&
+                        hovered.room.booking_status !== "checked_in" && (
+                            <div className="mb-2">
+                                <p className={`text-[11px] ${theme.subtle}`}>
+                                    Check-out
+                                </p>
+                                <p className="text-sm">
+                                    {formatDate(hovered.room.check_out_date)}
+                                </p>
+                            </div>
+                        )}
 
                     {hovered.room.expected_checkout_at && (
                         <div className="mb-2">
